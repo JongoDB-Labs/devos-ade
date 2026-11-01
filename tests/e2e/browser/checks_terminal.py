@@ -118,10 +118,12 @@ def ws_handshake(cookie: str | None, origin_hdr: str | None) -> int:
 
 
 def term_text(frame) -> str:
-    """The visible screen of ttyd's xterm (window.term), one line per row."""
+    """The visible screen of ttyd's xterm (window.term), one line per row — a row that continues the one above (xterm
+    wrapped it: a narrow view) joined to it."""
     return frame.evaluate("""() => { const b = window.term && window.term.buffer.active; if (!b) return '';
         const out = []; for (let i = b.viewportY; i < b.viewportY + window.term.rows; i++) {
-          const l = b.getLine(i); out.push(l ? l.translateToString(true) : ''); } return out.join('\\n'); }""")
+          const l = b.getLine(i), t = l ? l.translateToString(true) : '';
+          if (l && l.isWrapped && out.length) out[out.length - 1] += t; else out.push(t); } return out.join('\\n'); }""")
 
 
 def locate_line(frame, want: str):
@@ -674,10 +676,11 @@ def widgets_views(ctx):
         sessions = {}
         for n in (2, 3, 4):
             run_in(page, n, "echo sess=$(tmux display-message -p '#S') win=$(tmux display-message -p '#W')")
-            out = wait_text(frames[n], r"sess=view-\d win=\w+")
-            sessions[n] = re.search(r"sess=(view-\d) win=(\w+)", out).groups()
+            out = wait_text(frames[n], r"sess=view-\d win=[\w-]+")
+            sessions[n] = re.search(r"sess=(view-\d) win=([\w-]+)", out).groups()
             expect(sessions[n][0] == f"view-{n}", f"view {n} is in session {sessions[n][0]}")
-        expect(len({s[1] for s in sessions.values()}) == 1 and sessions[2][1] == "shell", f"the windows made current: {sessions}")
+        # (shell-N, not "shell": Open a shell here finds the workspace's own shell window by that name)
+        expect(all(s[1] == f"shell-{n}" for n, s in sessions.items()), f"the windows made current: {sessions}")
         # a marker typed in view 2 is not in view 3's or view 4's current window (nor in view 1's): each has its own shell
         mark = f"m{os.getpid()}x{int(time.time()) % 10000}"
         run_in(page, 2, f"echo {mark}")
@@ -746,14 +749,15 @@ def widgets_key_bar(ctx):
         add_back(page, "keys")
         f2, f3 = add_terminal(page, 2), add_terminal(page, 3)
         for n in (2, 3):
-            run_in(page, n, "cat -v")   # prints what it is sent: Esc as ^[, Up as ^[[A, Tab as ^I
+            run_in(page, n, "cat -vT")   # prints what it is sent: Esc as ^[, Up as ^[[A, Tab as ^I (-T), NUL as ^@
         page.wait_for_timeout(500)
         # a click on a key button leaves the keyboard in the terminal (the page's active element is its frame)
         focus_view(page, 2)
         page.click("[data-key=esc]")
         wait_text(f2, r"\^\[")
         expect(page.evaluate("() => document.activeElement.tagName") == "IFRAME", "the key button took the keyboard from the terminal")
-        # (the terminal echoes Esc as ^[ but a Tab as spacing: cat -v shows ^I once Enter sends it the line)
+        # (the terminal echoes Esc as ^[ but a Tab as spacing: cat shows ^I once Enter sends it the line). Esc arrives alone:
+        # the terminal's report that it has the focus back came after it once, and tmux read the two as Alt with nothing (^[^@)
         page.click("[data-key=tab]")
         page.keyboard.press("Enter")
         wait_text(f2, r"^\^\[\^I$")
@@ -772,7 +776,7 @@ def widgets_key_bar(ctx):
         page.wait_for_function("() => document.querySelector('[data-mod=ctrl]').getAttribute('aria-pressed') === 'false'", timeout=5000)
         # Ctrl-b is tmux's prefix: with c it makes a window, in that view's session only (its status line lists it)
         page.click("[data-key=ctrl-c]")   # ends cat -v in view 3
-        wait_text(f3, r"\^C|\$ $", 10)
+        wait_text(f3, r"\^C|\$ ?$", 10)
         page.click("[data-key=ctrl-b]")
         f3.locator(".xterm-helper-textarea").focus()
         page.keyboard.press("c")
@@ -845,6 +849,7 @@ def widgets_commands(ctx):
             page.fill("#tp-cmd-text", f"echo {i}")
             page.click("#tp-cmd-form button[type=submit]")
         expect(page.locator(".tp-cmd").count() == 20 and page.locator("#tp-cmd-add").is_disabled(), "the 20th command does not close Add a command")
+        expect(page.evaluate("() => document.activeElement.classList.contains('tp-cmd')"), "the focus was lost when Add a command closed")
         shot(page, "terminal-widgets-commands")
         rec.save()
     finally:
@@ -906,7 +911,11 @@ def widgets_projects(ctx):
         page.wait_for_function("(p) => /arg=open&arg=shell&arg=/.test(document.querySelector('iframe[data-app=terminal]').src) && (p === '/workspace' || document.querySelector('iframe[data-app=terminal]').src.endsWith(encodeURIComponent(p)))",
                                arg=target, timeout=15000)
         f = view_frame(page, 1)
+        t0 = time.time()
+        while "arg=open" not in f.url and time.time() - t0 < 15:   # (until then it is the old page, about to go)
+            page.wait_for_timeout(200)
         wait_xterm(f)
+        wait_text(f, r"\$ ?$", 20)
         run_in(page, 1, "echo cwd=$(pwd)")
         wait_text(f, rf"^cwd={re.escape(target)}$", 20)
         shot(page, "terminal-widgets-projects")
@@ -946,6 +955,11 @@ def widgets_keyboard(ctx):
         page.focus("#term-add")
         page.keyboard.press("Enter")
         page.wait_for_selector(".tp-div")
+        # (ttyd focuses its terminal as it connects: the new view gives the keyboard back to Add a terminal)
+        f2 = view_frame(page, 2)
+        wait_xterm(f2)
+        page.wait_for_timeout(800)
+        expect(page.evaluate("() => document.activeElement.id") == "term-add", f"the new terminal took the keyboard as it connected: {page.evaluate(FOCUS_SEEN)}")
         page.focus(".tp-div")
         before = int(page.get_attribute(".tp-div", "aria-valuenow"))
         page.keyboard.press("ArrowRight")
@@ -955,7 +969,7 @@ def widgets_keyboard(ctx):
         # a key button used with the keyboard keeps the focus on the button (a keyboard user is not shut in the terminal)
         page.focus("[data-key=esc]")
         page.keyboard.press("Enter")
-        expect(page.evaluate("() => document.activeElement.getAttribute('data-key')") == "esc", "the Esc button gave the focus away")
+        expect(page.evaluate("() => document.activeElement.getAttribute('data-key')") == "esc", f"the Esc button gave the focus away: {page.evaluate(FOCUS_SEEN)}")
         # Escape leaves Customize and gives the focus back to its button
         page.focus("#term-done")
         page.keyboard.press("Escape")
@@ -981,6 +995,7 @@ def widgets_layout(ctx):
         for width, height in ((1440, 900), (1100, 800), (900, 800)):
             page.set_viewport_size({"width": width, "height": height})
             page.wait_for_timeout(900)
+            expect(page.evaluate("() => [document.querySelector('.stage').scrollTop, document.querySelector('.stage').scrollLeft]") == [0, 0], f"{width}: the stage was scrolled")
             boxes = page.evaluate(BOXES)
             for b in boxes:
                 expect(b["frame"] and all(abs(a - c) <= 2 for a, c in zip(b["slot"], b["frame"])), f"{width}: view {b['view']}'s frame is off its slot: {b}")
