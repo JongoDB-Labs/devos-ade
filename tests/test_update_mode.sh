@@ -100,6 +100,29 @@ test_force_and_a_plain_setup_run_every_step() {
   assert_contains "$(sed -n '/^cmd_update() {/,/^}/p' "$T_ROOT/lib/commands.sh")" "setupargs=(--update-mode)"
 }
 
+# The AWS key check (2 s: a container asks AWS who the key is): again for another key, secret, region or shell key, and at
+# least once a day; its time is the one it last passed
+test_the_aws_key_check_runs_for_another_key_or_region_and_once_a_day() {
+  _um_setup
+  printf 'AWS_ACCESS_KEY_ID=AKIA-T\nAWS_SECRET_ACCESS_KEY=s1\n' >> "$ENV_FILE"
+  setup_aws_creds() { echo aws >> "$TMP/ran"; }
+  local rs
+  _aws_run() { : > "$TMP/ran"; upd_begin; UPD_MODE="${1:-1}"; upd_gate aws "AWS key check" "why" _setup_aws_check >/dev/null; upd_commit; tr -d '\n' < "$TMP/ran"; }
+  assert_eq "$(_aws_run 0)" aws; assert_eq "$(_aws_run)" ""; assert_eq "$(_aws_run)" ""
+  assert_not_contains "$(cat "$STATE_DIR/update/step-inputs.tsv")" "s1"
+  sed -i.bak 's/^AWS_SECRET_ACCESS_KEY=.*/AWS_SECRET_ACCESS_KEY=s2/' "$ENV_FILE"; assert_eq "$(_aws_run)" aws; assert_eq "$(_aws_run)" ""
+  sed -i.bak 's/us-east-1/eu-west-1/' "$ENV_FILE"; assert_eq "$(_aws_run)" aws; assert_eq "$(_aws_run)" ""
+  export AWS_ACCESS_KEY_ID=AKIA-SHELL; assert_eq "$(_aws_run)" aws; assert_eq "$(_aws_run)" ""
+  unset AWS_ACCESS_KEY_ID; assert_eq "$(_aws_run)" aws
+  # a day after the check passed: again (and a check that failed leaves its time as it was)
+  touch -t 202601010000 "$STATE_DIR/update/aws-checked"; assert_eq "$(_aws_run)" aws; assert_eq "$(_aws_run)" ""
+  touch -t 202601010000 "$STATE_DIR/update/aws-checked"
+  setup_aws_creds() { echo aws >> "$TMP/ran"; return 1; }
+  _aws_run >/dev/null || true; rs="$(find "$STATE_DIR/update/aws-checked" -mmin -1440)"; assert_eq "$rs" ""
+  # setup gates it
+  assert_contains "$(sed -n '/^cmd_setup() {/,/^}/p' "$T_ROOT/lib/commands.sh")" 'upd_gate aws "AWS key check"'
+}
+
 test_remote_access_on_always_runs_the_settings_step() {
   _um_setup; _um_run > /dev/null
   remote_on() { return 0; }; _um_run > /dev/null

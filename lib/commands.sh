@@ -508,6 +508,8 @@ _env_aws_creds_chosen() {
   esac
 }
 
+# _setup_aws_check — setup_aws_creds (it stops setup when AWS refuses the key), and the time it passed, for update mode
+_setup_aws_check() { setup_aws_creds || return; mkdir -p "$STATE_DIR/update" && touch "$STATE_DIR/update/aws-checked" 2>/dev/null || true; }
 setup_aws_creds() {
   local id='' secret='' region arn errf
   setup_instance_role && return 0   # EC2 with an IAM role and no key configured: no keys at all (lib/host.sh)
@@ -730,7 +732,9 @@ cmd_setup() {
   fix_bind_mount_perms
   # (each stretch below is a step of its own on Home's update card, with its time: timed_step, run_phase)
   setup_step "checking your AWS key"
-  timed_step "AWS key check" setup_aws_creds
+  # Safe to skip: with the same key (or role), region and shell keys, it would check what it checked — once a day at least,
+  # as a key can be deactivated with nothing here changing
+  upd_gate aws "AWS key check" "the same AWS key and region were checked in the last 24 hours" _setup_aws_check
   setup_done "AWS key checked"; setup_step "choosing ports"
   # Safe to skip: it only writes .env (ports, generated secrets, the optional services' settings) from .env itself; with every
   # .env key it reads unchanged (and remote access off, which it checks the network for) it would write what is there.

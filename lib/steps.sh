@@ -323,6 +323,17 @@ upd_in_settings() {
   _upd_files "$STACK_DIR"/lib/ports.sh "$STACK_DIR"/lib/remote.sh "$STACK_DIR"/lib/openrouter.sh "$STACK_DIR"/lib/explabs.sh "$STACK_DIR"/lib/stt.sh
   if ! remote_on; then echo remote-off; else echo "remote-on $RANDOM$RANDOM"; fi
 }
+# The AWS key check: the key, its secret and the region in .env (or this machine's IAM role), the AWS keys in your shell
+# (setup takes those), the aws-cli image and the check's code; and a check passed in the last 24 hours
+upd_in_aws() {
+  local k
+  for k in AWS_AUTH AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_REGION_NAME; do printf '%s=%s\n' "$k" "$(get_env "$k")"; done
+  printf 'SHELL_AWS=%s %s %s %s %s\n' "${AWS_ACCESS_KEY_ID:-}" "${AWS_SECRET_ACCESS_KEY:-}" "${AWS_SESSION_TOKEN:-}" "${AWS_REGION_NAME:-}" "${AWS_REGION:-}"
+  printf 'image=%s\n' "$AWS_CLI_IMAGE"
+  _upd_fn _setup_aws_check setup_aws_creds setup_instance_role _env_aws_creds_chosen _reject_temporary_creds verify_key_leaving_role \
+    aws_cli aws_run aws_run_role
+  if [ -n "$(find "$STATE_DIR/update/aws-checked" -mmin -1440 2>/dev/null)" ]; then echo fresh; else echo "stale $RANDOM$RANDOM"; fi
+}
 # Prices: the portal image that runs the updater, whether prices are updated at all, the catalog's prices, and the price
 # file's age (fresh: written in the last 12 hours — the portal asks the sources itself every 24 h)
 upd_in_prices() {
