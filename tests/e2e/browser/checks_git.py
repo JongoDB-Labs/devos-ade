@@ -40,7 +40,7 @@ def forgejo(ctx, method: str, path: str, body=None) -> tuple[int, dict | list | 
     try:
         return r.status, r.json()
     except ValueError:
-        return r.status, r.text()
+        return r.status, r.text
 
 
 def make(ctx):
@@ -216,18 +216,23 @@ def _token_stays(ctx):
     expect(len(tok) >= 20, "the throwaway has no search token (./stack up makes LOCALGIT_READ_TOKEN)")
     sess = ctx.session()
     r = http("GET", None, f"/api/search/git?q={quote(REPO)}", {"X-Requested-With": "devos-ade"}, cookie=sess)
-    expect(r.status == 200 and tok not in r.text() and "authorization" not in {k.lower() for k in dict(r.headers).keys()}, f"the answer: HTTP {r.status}")
+    expect(r.status == 200 and tok not in r.text and not r.header("authorization"), f"the answer: HTTP {r.status}")
     expect(http("GET", None, f"/api/search/git?q={quote(REPO)}", {"X-Requested-With": "devos-ade"}).status == 401, "the search answered without a session")
     for path in ("/", "/static/search.js", "/static/git.js", "/static/app.js", "/api/summary", "/api/settings"):
-        body = http("GET", None, path, {"X-Requested-With": "devos-ade"}, cookie=sess).text()
+        body = http("GET", None, path, {"X-Requested-With": "devos-ade"}, cookie=sess).text
         expect(tok not in body, f"the token is in {path}")
     page, rec = ctx.page("git-token")
+    seen = []   # the search's own requests: their headers, then the answer's headers and body (the recorder keeps URLs only)
+    page.on("request", lambda q: seen.append(json.dumps(q.headers)) if "/api/search/git" in q.url else None)
     login(page)
-    page.keyboard.press("Control+K")
-    page.fill("#search-input", REPO)
-    page.wait_for_timeout(2500)
+    open_search(page)
+    with page.expect_response(lambda r: f"/api/search/git?q={quote(REPO, safe='')}" in r.url, timeout=30000) as answer:
+        page.fill("#search-input", REPO)
+    seen += [json.dumps(answer.value.headers), answer.value.text()]
+    page.wait_for_function("() => !document.querySelector('#sg-git ~ .search-busy')", timeout=15000)
     expect(tok not in page.content(), "the token is in the page")
-    expect(not any(tok in json.dumps(e) for e in rec.events), "the token is in a request or answer the browser saw")
+    expect(len(seen) >= 3 and not any(tok in s for s in seen), "the token is in the search's request or answer" if len(seen) >= 3 else "the browser made no Git search")
+    expect(not any(tok in json.dumps(e) for e in rec.events), "the token is in an address the browser used")
     # the sandbox gets none: the terminal's and the Code page's containers do not hold it (their environments are compose's)
     rec.save()
     return "the search answer, the page, the scripts, Summary and Settings, and the browser's own traffic hold no token"
