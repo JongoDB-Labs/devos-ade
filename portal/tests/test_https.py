@@ -14,7 +14,7 @@ from portal import activity
 from portal.app import create_app
 from conftest import PASSWORD_HASH
 from portal.config import from_env
-from portal.security import COOKIE, cookie_params, unlock_cookie_params
+from portal.security import COOKIE, cookie_params, safe_next, unlock_cookie_params
 
 HTTPS_ORIGIN = {"Origin": "https://devos-ade.localhost:8800"}
 
@@ -71,6 +71,28 @@ def test_login_over_https_sets_a_secure_cookie_and_accepts_only_the_https_origin
         # the CSP's frame sources and form targets are https origins
         csp = c.get("/").headers["content-security-policy"]
         assert "https://chat.devos-ade.localhost:8800" in csp and "http://" not in csp
+
+
+def test_a_sign_in_over_https_comes_back_over_https(https):
+    # (found on the test host: the way back was http:// with HTTPS on, and the login form's redirect to it broke the CSP's
+    # form-action, so the browser never finished the sign-in)
+    with TestClient(create_app(https, transport=httpx.MockTransport(offline)), base_url="https://devos-ade.localhost:8800", follow_redirects=False) as c:
+        nav = {"Accept": "text/html", "X-Forwarded-Method": "GET", "X-Forwarded-Host": "devos-ade.localhost:8800", "X-Forwarded-Uri": "/"}
+        r = c.get("/auth/verify", headers=nav)
+        assert r.headers["location"] == "https://devos-ade.localhost:8800/login?next=https%3A%2F%2Fdevos-ade.localhost%3A8800%2F"
+        chat = {**nav, "X-Forwarded-Host": "chat.devos-ade.localhost:8800", "X-Forwarded-Uri": "/c/1"}
+        assert c.get("/auth/verify", headers=chat).headers["location"].endswith("/login?next=https%3A%2F%2Fchat.devos-ade.localhost%3A8800%2Fc%2F1")
+        r = c.post("/login", data={"password": "correct horse", "next": "https://chat.devos-ade.localhost:8800/c/1"}, headers=HTTPS_ORIGIN)
+        assert r.status_code == 303 and r.headers["location"] == "https://chat.devos-ade.localhost:8800/c/1"
+
+
+def test_where_a_sign_in_may_go_back_to_follows_the_scheme(settings, https):
+    assert safe_next("https://chat.devos-ade.localhost:8800/c/1", https) == "https://chat.devos-ade.localhost:8800/c/1"
+    assert safe_next("https://devos-ade.localhost:8800/", https) == "https://devos-ade.localhost:8800/"
+    assert safe_next("http://chat.devos-ade.localhost:8800/c/1", https) == "/"   # (http there only redirects to https)
+    plain = replace(settings, port=8800)
+    assert safe_next("http://chat.devos-ade.localhost:8800/c/1", plain) == "http://chat.devos-ade.localhost:8800/c/1"
+    assert safe_next("https://chat.devos-ade.localhost:8800/c/1", plain) == "/"
 
 
 def test_login_over_http_is_not_secure(settings):

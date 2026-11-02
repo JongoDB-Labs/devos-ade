@@ -467,7 +467,8 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
             rem = remote(request)
             host = request.headers.get("x-forwarded-host", "").lower()
             uri = request.headers.get("x-forwarded-uri", "/")
-            nxt = safe_next(f"{'https' if rem else 'http'}://{host}{uri}" if host else uri, settings)
+            # (back to the site it came from: the remote one is https, the local ones are what PORTAL_HTTPS says)
+            nxt = safe_next(f"{'https' if rem else settings.scheme}://{host}{uri}" if host else uri, settings)
             if rem and host in remote_app_hosts():
                 # An app host has no cookie of its own yet: fetch one from the portal host (hand-off).
                 target = (f"{settings.origin(remote=True)}/auth/handoff?to={quote('https://' + host, safe='')}"

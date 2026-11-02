@@ -199,9 +199,10 @@ class LoginThrottle:
 
 
 def safe_next(raw: str | None, settings: Settings) -> str:
-    """Where to go after login: a local path, or a URL on one of the portal's own sites — http on the portal
-    host or an app host (same port), or, with remote access on, https on a remote host (port 443). Anything
-    else falls back to "/" — no open redirect."""
+    """Where to go after login: a local path, or a URL on one of the portal's own sites — the portal host or an app
+    host in the local sites' scheme (http, or https with PORTAL_HTTPS on: then http there only redirects, and a form's
+    redirect to it would break the login page's form-action) and on their port, or, with remote access on, https on a
+    remote host (port 443). Anything else falls back to "/" — no open redirect."""
     if not raw or len(raw) > 2000:
         return "/"
     if any(ord(c) < 33 or c == "\\" or ord(c) == 127 for c in raw):
@@ -216,7 +217,7 @@ def safe_next(raw: str | None, settings: Settings) -> str:
     if u.username is not None or u.password is not None:
         return "/"
     host = (u.hostname or "").lower()
-    if u.scheme == "http" and port == settings.port and host in _site_hosts(settings, remote=False):
+    if u.scheme == settings.scheme and port == settings.port and host in _site_hosts(settings, remote=False):
         return raw
     if u.scheme == "https" and port == 443 and settings.remote_on() and host in _site_hosts(settings, remote=True):
         return raw
