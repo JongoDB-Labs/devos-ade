@@ -311,6 +311,26 @@ in the audit log and on Home. It cannot run anything but `./stack config apply` 
 change hosts, ports, the helper's own switches or the internal secrets (beyond asking for a new random RustFS pair
 or MCP token — it is restarted with them, as it holds the current ones), and cannot restore a backup.
 
+## HTTPS on this computer
+
+With `PORTAL_HTTPS` on (`./stack https on`, or Settings), the portal is served over HTTPS from a certificate authority
+made for this install ([advanced](advanced.md#https-for-the-portal-stack-https) has the commands).
+
+- **The CA can only vouch for your install.** It is an EC P-256 CA with `CA:TRUE, pathlen:0` and a critical *name
+  constraint* that permits only `PORTAL_HOST`, its subdomains, the preview domain's subdomains and any other local host
+  you configured. A browser or `openssl` refuses a certificate it signs for any other name (`evil.example`,
+  `other.localhost`); `tests/test_tls.sh` and the end-to-end check `https-local-portal` assert this. Even so, it is only
+  added to a trust store with your own action: the macOS password prompt, or your yes to `sudo` on Linux.
+- **Its key never leaves the host.** `.state/tls/ca.key` is mode 600, is not mounted in any container, and is used only by
+  `./stack` to sign the site certificate. Caddy gets the site certificate and its key only: a copy in `.state/tls/serve`
+  (mode 644 in a folder under `.state`, which is 700, as the built-in git server's certificate is), mounted read-only.
+  The site key can vouch for the install's addresses only and expires within 397 days.
+- **The session cookie becomes `Secure`,** and every origin the portal allows (CSP `frame-ancestors`, Chat's CORS, the
+  built-in git server's root URL, `wss://` for terminals and the Code page) follows the scheme.
+- **Undo.** `./stack https off` (or the Settings switch) removes the CA from the login keychain / NSS database (it asks
+  first), deletes `.state/tls` and serves http again. If something went wrong, `security delete-certificate -Z <SHA-1>`
+  (macOS) or `certutil -D -d sql:$HOME/.pki/nssdb -n "DevOS ADE local CA (<host>)"` (Linux) removes the trust by hand.
+
 ## Activity and search
 
 The portal's notification centre (the bell, `static/activity.js`) and its global search (Ctrl/⌘+K, `static/search.js`)

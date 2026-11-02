@@ -20,6 +20,18 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   reaches it. In a terminal, each finished step is followed by a one-line bar, `[████████░░░░] 14/31 · Images · ~1 min left`,
   only when the output is a terminal: a pipe, a log and the helper's job log get no extra lines. The bar is a `progressbar`
   with `aria-valuetext` ("Step 14 of 31, Images, about 1 minute left") and a polite announcement once for each step.
+- **The portal over HTTPS on this computer (JON-976, opt-in).** `./stack https on|off|status`, or Settings › Account &
+  security › **Serve the portal over HTTPS** (`PORTAL_HTTPS`; setup asks once, default yes; unattended setups and updates
+  leave it as it is; Home shows existing installs a one-time card). The certificates are made on the host by `lib/tls.sh`
+  from a per-install CA (EC P-256) whose critical name constraints permit only this install's own addresses, so it cannot
+  vouch for any other site. The CA's key stays in `.state/tls` (mode 600) and is mounted in no container; Caddy gets the
+  site certificate only. Trust is added only through your own action (macOS login keychain with its password prompt; Linux
+  user NSS database; the system store only after a yes with `sudo`) and checked afterwards: if the certificate is not
+  accepted, HTTPS turns itself off again and says why. The scheme then follows everywhere: the portal's origin, the session
+  cookie (`Secure`), CSP and CORS origins, Forgejo's root URL, `wss://`, and printed addresses; plain http on the same port
+  redirects. After switching Home tells you once that the address changed (sign in again, reinstall the app from the new
+  address). The site certificate renews at setup/update with 30 days left or when host names change. `./stack https off`
+  undoes all of it. Remote access is unchanged. See docs/security.md and docs/advanced.md.
 
 ## [0.52.0] - 2026-11-02
 
@@ -94,6 +106,13 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   removes only the `-prep` names; clean-up never removes a name outside the prep project or an image a container uses;
   Update now prepares first with its steps in the job's log, and goes on when the prepare fails. Portal and JS tests for the
   status and the card's states.
+- **The portal over HTTPS (JON-976).** Shell tests (`tests/test_tls.sh`, `security`, `certutil`, `sudo` and the system-store
+  tools stubbed on PATH, each refusing and failing the suite when bypassed): CA and site certificate fields (critical
+  constraints, pathlen 0, SANs), key modes, the CA key in no compose volume, the CA accepts the site certificate and refuses
+  `evil.example` and `other.localhost` (LibreSSL and OpenSSL 3), renewal under 30 days and on a host change, the exact trust
+  and removal commands, a failed check turns HTTPS off, `https off` restores http, Caddy snippets on and off, a
+  non-interactive setup never enables it. Portal tests (origin, `Secure` cookie, the Home card and notice). End-to-end check
+  `https/https-local-portal` (`tests/e2e/https.sh`).
 
 ## [0.49.0] - 2026-11-02
 

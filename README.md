@@ -169,6 +169,15 @@ stay signed in for 30 days (Settings → Account & security → Session length);
 open` opens it: the installed app if you have installed it (see [Desktop app](#desktop-app)), otherwise a tab in
 your browser.
 
+**HTTPS on this computer (optional).** `./stack https on`, or Settings › Account & security › **Serve the portal over HTTPS**
+(setup asks once, default yes), serves the portal, Chat, Admin, Files, the Terminal and the Code page at `https://…`
+from a certificate authority made for this install alone: it can only vouch for this install's own addresses
+(`devos-ade.localhost`, its subdomains and the preview names), so it cannot be used to impersonate any other site.
+macOS asks for your password to add it to your login keychain; Linux adds it to your user certificate database.
+Plain `http://` on the same port redirects to `https://`. Your address changes (sign in again and reinstall the app from the
+new address). `./stack https off` serves plain http again and removes the authority and its files; `./stack https status`
+says where things stand. Details: [docs/security.md](docs/security.md#https-on-this-computer).
+
 | Tab | What it is | Sign-in |
 |---|---|---|
 | **Home** | First **Continue**: the Code sessions that need you, the recent ones and your newest chats, each a click away, with **New session** and **New chat** — and on a first visit **Get started** ([Home: Continue and Get started](#home-continue-and-get-started)). Under them: spend per key against its budget, the services (one line), the models your key can use (one line, the table with prices under it), the `devos-claude` command. Under the title: *Up to date · checked 12 min ago ·* **Check for updates** ([Updating](#updating)). Refreshes every 30 s; makes no Bedrock calls. Above the tabs: **Search** (Ctrl/⌘+K) and the **Activity** bell ([Activity and search](#activity-and-search)). | the portal |
@@ -1857,7 +1866,7 @@ by what you came to do — a list on the left (on a phone, a section picker at t
 
 | Section | What is in it |
 |---|---|
-| **Account & security** | portal password, owner email, Admin (LiteLLM) password, session length, signed-in devices, storing prompts |
+| **Account & security** | portal password, owner email, Admin (LiteLLM) password, session length, **Serve the portal over HTTPS**, signed-in devices, storing prompts |
 | **Models & providers** | a card for each provider: Bedrock (the AWS key, with *Check*, or this EC2 machine's role), OpenRouter (its key and models), Experiential Labs (its key and models) and *Your AI subscriptions* (Claude, Codex, Copilot, Cursor, Grok, Gemini: Sign in, Sign out, Check again; Claude's *Use my Claude plan*); *Search*: Claude Code's WebSearch and its backends (the built-in SearXNG, AgentCore Web Search, Tavily, Brave Search, Perplexity, your own SearXNG; each with an **i** for its cost, what it sends and where its key comes from) — [below](#models--providers); *More*: OpenRouter's cap and aliases |
 | **Bedrock (AWS)** | the region, **Re-check models** |
 | **Spending & budgets** | the budgets of Chat, `devos-claude` and the Terminal/Code page (with this period's spend), alert threshold and webhook; *More*: the setup key's budget, daily price updates |

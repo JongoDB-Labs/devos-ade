@@ -88,6 +88,25 @@ does not end in `.localhost` is refused unless you also set `DEVOS_ADE_ALLOW_PUB
 plain HTTP, so its session cookie is not `Secure` and goes to that name and all its subdomains. Only use a name
 that resolves to this computer alone.
 
+## HTTPS for the portal (`./stack https`)
+
+`PORTAL_HTTPS=true` (Settings › Account & security › **Serve the portal over HTTPS**) serves the portal and its
+sibling hosts over HTTPS on the same port. `./stack https on` makes the certificates, trusts the install's own CA (macOS:
+login keychain, asks for your password; Linux: your user NSS database, and the system store only if you say yes to a `sudo`
+question, otherwise it prints the command), checks that the certificate is accepted, then restarts the portal, Chat and
+Caddy with `https://` addresses. If the check fails it turns itself off again and says why: an untrusted portal is never
+left on. `./stack https off` asks before removing the CA from the keychain or database, serves plain http, and deletes
+`.state/tls`. `./stack https status` shows the switch, the CA's expiry, the site certificate's expiry and whether the
+certificate is trusted.
+
+- **Renewal.** The site certificate lasts 397 days; setup and updates renew it without a question when less than 30 days
+  are left or the host names changed. A host name outside the CA's constraints needs a new CA, which needs your consent
+  again.
+- **Non-interactive runs** (`-y`, the update helper, a pipe) never switch it on or off by themselves.
+- **Port 80.** Plain http on the portal port redirects to https; the old-address redirects (`LEGACY_HOSTS`) stay plain http
+  and are not published while HTTPS is on.
+- **Remote access** (Tailscale, your own domain) is unchanged: it already is HTTPS with its own certificates.
+
 ## Opening the portal (`./stack open`)
 
 `./stack open` first looks for the installed web app of this portal, by the name its manifest gives
