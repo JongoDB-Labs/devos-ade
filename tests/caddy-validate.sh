@@ -21,12 +21,13 @@ command -v docker >/dev/null && docker info >/dev/null 2>&1 || { echo "needs a r
 
 TN=tail1234.ts.net
 fails=0; n=0
+EXTRA_MOUNT=()   # (extra docker flags for run(): the HTTPS combinations mount the site certificate)
 # run IMAGE NAME KEY=VALUE... — caddy validate with that environment
 run() {
   local img="$1" name="$2" out; shift 2
   local envs=(); for kv in "$@"; do envs+=(-e "$kv"); done
   n=$((n + 1))
-  if out="$(docker run --rm --network none "${envs[@]}" -v "$here/caddy:/etc/caddy:ro" --entrypoint caddy "$img" \
+  if out="$(docker run --rm --network none "${envs[@]}" ${EXTRA_MOUNT[@]+"${EXTRA_MOUNT[@]}"} -v "$here/caddy:/etc/caddy:ro" --entrypoint caddy "$img" \
         validate --config /etc/caddy/Caddyfile --adapter caddyfile 2>&1)"; then
     printf 'ok   %s\n' "$name"
   else
@@ -74,6 +75,32 @@ for rm in off tailscale domain; do
     done
   done; done
 done
+# The portal over HTTPS (PORTAL_HTTPS, lib/tls.sh; compose.https.yaml sets these four): the local sites on https:// with the site
+# certificate mounted at /etc/bn-tls, plain http redirected, a plain listener for the health check, with remote access off and
+# on (the remote sites keep their own addresses), the terminal, Code page and git server off and on
+https_tls="$(mktemp -d)"
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 2 -subj "/CN=bn.localhost" -addext "subjectAltName=DNS:bn.localhost,DNS:*.bn.localhost" \
+  -keyout "$https_tls/site.key" -out "$https_tls/site.pem" >/dev/null 2>&1
+chmod 755 "$https_tls"; chmod 644 "$https_tls"/site.*
+EXTRA_MOUNT=(-v "$https_tls:/etc/bn-tls:ro")
+hb=("${base[@]}"); hb=("${hb[@]/PORTAL_ORIGIN=http:*/PORTAL_ORIGIN=https://bn.localhost:8800}")
+for rm in off tailscale; do
+  case "$rm" in
+    off) r=(REMOTE_MODE=off REMOTE_HOST=remote.invalid REMOTE_CHAT_HOST=chat.remote.invalid REMOTE_ADMIN_HOST=admin.remote.invalid
+            REMOTE_FILES_HOST=files.remote.invalid REMOTE_ORIGIN=https://remote.invalid) ;;
+    tailscale) r=(REMOTE_MODE=tailscale REMOTE_HOST=bn.$TN REMOTE_CHAT_HOST=bn-chat.$TN REMOTE_ADMIN_HOST=bn-admin.$TN
+                  REMOTE_FILES_HOST=bn-files.$TN REMOTE_ORIGIN=https://bn.$TN) ;;
+  esac
+  for on in off on; do
+    t=(TERMINAL_MODE=$on); c=(CODE_MODE=$on PREVIEW_MODE=$on)
+    [ "$on" = off ] || { t+=(TERMINAL_HOST=terminal.bn.localhost TERMINAL_PROXY_SECRET=0123456789abcdef0123456789abcdef)
+                         c+=(CODE_HOST=code.bn.localhost CODE_ORIGIN=https://code.bn.localhost:8800 PORTAL_PORT=8800 CODE_PROXY_SECRET=0123456789abcdef0123456789abcdef
+                             PREVIEW_DOMAIN=bn-preview.localhost PREVIEW_PROXY_SECRET=00112233445566778899aabbccddeeff) ; }
+    run "$IMAGE" "https-local remote-$rm terminal-$on code-$on git-$on" "${hb[@]}" "${r[@]}" "${t[@]}" "${c[@]}" LOCALGIT_MODE=$on \
+      LOCAL_TLS=on LOCAL_SCHEME=https HTTP_PORT=8089 HTTPS_PORT=8080
+  done
+done
+EXTRA_MOUNT=(); rm -rf "$https_tls"
 n=$((n + 1))
 if out="$(docker run --rm --network none -e PREVIEW_PROXY_SECRET=00112233445566778899aabbccddeeff -e TERMINAL_PROXY_SECRET=0123456789abcdef0123456789abcdef \
       -v "$here/caddy:/etc/caddy:ro" --entrypoint caddy "$IMAGE" validate --config /etc/caddy/terminal-gateway.caddy --adapter caddyfile 2>&1)"; then
