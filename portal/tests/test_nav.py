@@ -86,6 +86,14 @@ def test_one_set_of_rules_for_the_icon_rail_tablets_and_a_collapsed_desktop_side
     assert re.search(r"prefers-reduced-motion: reduce\) \{\n  \.toast, html\.nav-anim body\.shell \{ transition: none; \}", app)
 
 
+def test_a_short_window_never_squeezes_the_collapsed_sidebars_toggle():
+    # (600 px tall, with the Git tab: the rail's content ran past the window and the toggle, the one item that could
+    # shrink, became 18 px tall, a target under 24 px)
+    short = block(css("mobile.css"), "@media (min-width: 1100px) and (max-height: 759.98px) {")
+    assert "html.nav-collapsed .nav-toggle { flex-shrink: 0; height: 32px; }" in short
+    assert "html.nav-collapsed .tab { min-height: 36px; }" in short
+
+
 def test_the_walkthrough_and_the_tabs_tooltips_follow_the_rail():
     tour, mobile = (STATIC / "tour.js").read_text(encoding="utf-8"), (STATIC / "mobile.js").read_text(encoding="utf-8")
     for js in (tour, mobile):

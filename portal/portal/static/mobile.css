@@ -90,7 +90,13 @@
    are 40 px; under 560 px the sidebar scrolls (the walkthrough's card beside the rail is fixed to the window, tour.css,
    so the scrolling never cuts it). */
 @media (min-width: 768px) and (max-width: 1099.98px) and (max-height: 759.98px) { .sidebar { gap: 10px; } }
-@media (min-width: 1100px) and (max-height: 759.98px) { html.nav-collapsed .sidebar { gap: 10px; } }
+@media (min-width: 1100px) and (max-height: 759.98px) {
+  html.nav-collapsed .sidebar { gap: 10px; }
+  /* (the collapsed sidebar's toggle never gives its height to a long rail — with the Git tab it was squeezed to 18 px at
+     600 px tall —, and the tabs are 36 px to make room for it) */
+  html.nav-collapsed .nav-toggle { flex-shrink: 0; height: 32px; }
+  html.nav-collapsed .tab { min-height: 36px; }
+}
 @media (min-width: 768px) and (max-height: 759.98px) {
   @container rail (min-width: 0px) {
     .tabs { gap: 2px; }
