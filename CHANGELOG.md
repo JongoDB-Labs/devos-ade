@@ -6,18 +6,7 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
-## [0.48.1] - 2026-11-02
-
 ### Fixed
-- **Customize's tray no longer covers the handles (JON-974).** The tray sticks to the top while the page scrolls, and at
-  about 240 px it hid the handles and resize edges that scrolled under it (and a handle reached with the keyboard could end
-  up entirely behind it). Scrolled away from the top, it now shrinks to one row (the title, the hidden widgets, **Reset to
-  default** and **Done**; the help text waits until you are back at the top, and the status line is still read out), and
-  while you customize the page keeps room for it, so Tab and scrolling to a handle land below the tray. Home and the
-  Terminal page.
-- **Reloading a page with a terminal in it no longer trips ttyd's leave prompt.** ttyd asks "Close terminal?" before a page
-  is left until the server tells it not to (it always does here); a reload of the portal or the Code page in that first
-  moment had Chrome block the prompt and log an error. The terminal's page now turns the prompt off from the start.
 - **Codex opens in the Terminal again.** From 0.164.0 its screen would not start from the program alone: signed in with
   **open**, it stopped at "this CLI has no complete local package … --no-daemon". The sandbox now has OpenAI's whole
   release package (pinned by its sum), and `codex` runs with its background server and its own updates off, in the process
@@ -38,6 +27,21 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 - **The layout sweep knows a bar held at the bottom.** A sticky bar at the bottom of its scrolling box (the walkthrough's
   Back and Next on a phone, over a long step) is stuck while there is more below it to scroll to; the sweep counted it
   as in the flow, so the step's text under it was nine "overlaps" in the first sweep of every state.
+
+## [0.48.1] - 2026-11-02
+
+### Fixed
+- **Customize's tray no longer covers the handles (JON-974).** The tray sticks to the top while the page scrolls, and at
+  about 240 px it hid the handles and resize edges that scrolled under it (and a handle reached with the keyboard could end
+  up entirely behind it). Scrolled away from the top, it now shrinks to one row (the title, the hidden widgets, **Reset to
+  default** and **Done**; the help text waits until you are back at the top, and the status line is still read out), and
+  while you customize the page keeps room for it, so Tab and scrolling to a handle land below the tray. Home and the
+  Terminal page.
+- **Reloading a page with a terminal in it no longer trips ttyd's leave prompt.** ttyd asks "Close terminal?" before a page
+  is left until the server tells it not to (it always does here); a reload of the portal or the Code page in that first
+  moment had Chrome block the prompt and log an error. The terminal's page now turns the prompt off from the start.
+
+### Tests
 - **The Code page's cost-and-state check** reads the page's errors before it deletes its test folders: the page, still
   open, could list one again as it went, and that 404 counted as the page's own.
 
