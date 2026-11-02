@@ -1468,6 +1468,18 @@ elif [ "$SUBSCRIPTIONS" = 1 ]; then
     tmux -L e2e-gemini capture-pane -p -J -t g; tmux -L e2e-gemini kill-server' 2>/dev/null)"
   if printf '%s' "$out" | grep 'accounts.google.com/o/oauth2' >/dev/null; then record subscriptions signin-gemini PASS "$(( $(now) - t0 ))" "its own sign-in (Login with Google, NO_BROWSER) printed its link; ended there, never completed"
   else record subscriptions signin-gemini FAIL "$(( $(now) - t0 ))" "no Google link in: $(printf '%s' "$out" | tr '\n' ' ' | tail -c 300)"; fi
+  # Codex's own screen opens once signed in (from 0.164.0, from the program alone it stopped at "no complete local
+  # package", and only once signed in): signed in with a stand-in API key in a home of the check's own, never the
+  # sandbox's, removed after; nothing of Codex is copied into that home (its background server is off)
+  t0="$(now)"
+  out="$(docker exec -e TERM=xterm-256color "$tc" sh -c 'H="$(mktemp -d)" || exit 1; export HOME="$H"
+    printf "sk-e2e-not-a-key\n" | codex login --with-api-key >/dev/null 2>&1
+    tmux -L e2e-codex -f /dev/null new-session -d -s c -x 200 -y 50 "codex; sleep 60"; sleep 12
+    tmux -L e2e-codex capture-pane -p -J -t c; tmux -L e2e-codex kill-server
+    ls "$H/.codex/packages" 2>/dev/null | sed "s/^/packages: /"; rm -rf "${H:?}"' 2>/dev/null)"
+  if printf '%s' "$out" | grep 'OpenAI Codex' >/dev/null && ! printf '%s' "$out" | grep -E 'no complete local package|^packages: ' >/dev/null; then
+    record subscriptions codex-screen PASS "$(( $(now) - t0 ))" "signed in (a stand-in key, a home of its own), Codex's screen opened; nothing of it copied into the home"
+  else record subscriptions codex-screen FAIL "$(( $(now) - t0 ))" "$(printf '%s' "$out" | grep -v '^[[:space:]]*$' | tr '\n' ' ' | tail -c 300)"; fi
   # what the tools run is the image's, root's alone: Copilot's own package unpacked at build (nothing of it in the home
   # after its sign-in ran), Cursor without a compile cache there, every file of theirs root's and not writable by others
   t0="$(now)"
