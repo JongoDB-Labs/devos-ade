@@ -6,6 +6,19 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Added
+- **A progress bar for `./stack update`, with the time left (JON-978).** Home's update card, for Update now and for an update you
+  typed in a terminal, shows a bar: **Step 14 of 31 · Images · about 1 minute left**, and always which step runs and for how
+  long. The steps are measured against the last update on this computer (its steps and how long each took are kept in
+  `.state/update/last-steps.tsv` when an update ends well; a failed or stopped one leaves the list as it was); until there is
+  one, against a list shipped with the code, measured on the test host. The bar never claims done while a step runs long (it
+  keeps a few seconds left and stays short of the end), a step the plan did not have counts as it comes, and at **Updated to
+  vX** it is full. The steps still to come are listed under the bar. Which steps an update skips is not known up front (what
+  decides it changes during the run), so none is predicted: a step shows as skipped, greyed, with its reason, once the update
+  reaches it. In a terminal, each finished step is followed by a one-line bar, `[████████░░░░] 14/31 · Images · ~1 min left`,
+  only when the output is a terminal: a pipe, a log and the helper's job log get no extra lines. The bar is a `progressbar`
+  with `aria-valuetext` ("Step 14 of 31, Images, about 1 minute left") and a polite announcement once for each step.
+
 ## [0.52.0] - 2026-11-02
 
 ### Added
@@ -18,17 +31,6 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   server for them with a read-only token (`read:repository` and `read:issue`) that only the portal container holds. Code is
   not searched: the git server's code indexer is off by default (`LOCALGIT_INDEXER=true` turns it on, and the search then offers
   the server's own code search). If the git server does not answer, one **Search in Git** entry opens the tab.
-- **A progress bar for `./stack update`, with the time left (JON-978).** Home's update card, for Update now and for an update you
-  typed in a terminal, shows a bar: **Step 14 of 31 · Images · about 1 minute left**, and always which step runs and for how
-  long. The steps are measured against the last update on this computer (its steps and how long each took are kept in
-  `.state/update/last-steps.tsv` when an update ends well; a failed or stopped one leaves the list as it was); until there is
-  one, against a list shipped with the code, measured on the test host. The bar never claims done while a step runs long (it
-  keeps a few seconds left and stays short of the end), a step the plan did not have counts as it comes, and at **Updated to
-  vX** it is full. The steps still to come are listed under the bar. Which steps an update skips is not known up front (what
-  decides it changes during the run), so none is predicted: a step shows as skipped, greyed, with its reason, once the update
-  reaches it. In a terminal, each finished step is followed by a one-line bar, `[████████░░░░] 14/31 · Images · ~1 min left`,
-  only when the output is a terminal: a pipe, a log and the helper's job log get no extra lines. The bar is a `progressbar`
-  with `aria-valuetext` ("Step 14 of 31, Images, about 1 minute left") and a polite announcement once for each step.
 
 ## [0.51.1] - 2026-11-02
 
