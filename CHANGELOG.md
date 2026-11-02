@@ -6,6 +6,23 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Added
+- **Chat offers every model a signed-in subscription offers (JON-981).** Chat had one entry per subscription, the tool's
+  own default (`plan-codex`, `plan-claude` …), with no way to pick another. Each now also has one entry per model its tool
+  offers (`plan-codex--gpt-5.1-codex`; any character other than letters, digits and `. _ : + -` is written `~` and two hex
+  digits), read from the tool as the Code page reads it: Claude Code's list for your plan, Codex's `model/list`, the models
+  Copilot's and Grok's agents report. The list is kept for 10 minutes (30 seconds after a failed read), so Open WebUI
+  asking for models does not start an agent each time; the plain entry stays, for chats and settings that use it. An id the
+  tool does not offer (now) is refused with what it offers. Gemini and Cursor are still not in Chat or the Code page.
+- **Tests: one list of models everywhere.** The file the Code page reads, LiteLLM's `bn_id` keys and devos-claude's rows
+  hold the same models (all, and the ones `CODE_MODELS` lists); the Code page's and Chat's tools are the catalog's.
+
+### Changed
+- **The Code page lists the models Claude Code reports for your plan,** not four fixed names (default, Opus, Sonnet,
+  Haiku), once the session runs; the four stay for a session that has not started and for a list that cannot be read.
+- **`CODE_MODELS` narrows the Code page and the terminal only,** as before; its setting now says that Chat lists every
+  enabled model (Settings' hidden models narrow Chat) and that your subscriptions' models are not narrowed by it.
+
 ## [0.50.0] - 2026-11-02
 
 ### Added
@@ -28,21 +45,6 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
     builds go when it is installed or a newer release replaces it; its downloads go too when nothing uses them.
   - **On by default.** Settings › Updates & backups › More settings › **Prepare updates ahead** (`UPDATE_PREPARE=false`)
     turns it off. A checkout that follows a branch is not prepared.
-- **Chat offers every model a signed-in subscription offers (JON-981).** Chat had one entry per subscription, the tool's
-  own default (`plan-codex`, `plan-claude` …), with no way to pick another. Each now also has one entry per model its tool
-  offers (`plan-codex--gpt-5.1-codex`; any character other than letters, digits and `. _ : + -` is written `~` and two hex
-  digits), read from the tool as the Code page reads it: Claude Code's list for your plan, Codex's `model/list`, the models
-  Copilot's and Grok's agents report. The list is kept for 10 minutes (30 seconds after a failed read), so Open WebUI
-  asking for models does not start an agent each time; the plain entry stays, for chats and settings that use it. An id the
-  tool does not offer (now) is refused with what it offers. Gemini and Cursor are still not in Chat or the Code page.
-- **Tests: one list of models everywhere.** The file the Code page reads, LiteLLM's `bn_id` keys and devos-claude's rows
-  hold the same models (all, and the ones `CODE_MODELS` lists); the Code page's and Chat's tools are the catalog's.
-
-### Changed
-- **The Code page lists the models Claude Code reports for your plan,** not four fixed names (default, Opus, Sonnet,
-  Haiku), once the session runs; the four stay for a session that has not started and for a list that cannot be read.
-- **`CODE_MODELS` narrows the Code page and the terminal only,** as before; its setting now says that Chat lists every
-  enabled model (Settings' hidden models narrow Chat) and that your subscriptions' models are not narrowed by it.
 
 ### Tests
 - **Preparing a release ahead (JON-972).** Shell tests (`tests/test_prepare.sh`, a real git origin and a stubbed Docker): the
