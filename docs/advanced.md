@@ -203,6 +203,17 @@ the smoke test, the clean-up of old images and what's new. The helper's log of t
 first update into this version is still run by the helper of the version before it, which shows only the steps from
 setup on and writes its log without the time; the updates after it show the whole job.
 
+Home's update card (and a terminal) also shows how far along the update is (JON-978): the steps done of a *plan*, the steps and
+seconds of the last successful update, kept in `.state/update/last-steps.tsv` (`LABEL<TAB>SECONDS`, or `skipped`; a label is
+compared without its trailing parenthesised part, so `Services (9) (http://…)` is `Services`). Until a first update has ended
+well on this computer the plan is `lib/update-steps.tsv`, measured on the Linux test host. The helper's status
+(`.state/status/helper-status.json`) and a terminal update's record (`.state/status/terminal-job.json`) both carry the plan and
+the steps (`step`, `step_started_at`, `steps`, `plan`; a skipped step has `"took": "skipped"` and `why`). The time left is what the
+plan expects of the steps not seen yet plus what the running step is still expected to take, at least 5 seconds. Skips are not
+predicted: which steps are skipped depends on inputs that change during the run, so a step greyed as skipped is one the update
+has already reached. A terminal that is a TTY prints `[████████░░░░] 14/31 · Images · ~1 min left` after each step; nothing is
+printed for a pipe or a log, which stay what the helper's `_job_steps` reads.
+
 ## Model names, icons and tiers
 
 `catalog/display.tsv` maps each model to the name Open WebUI shows (`claude-sonnet-5-5` → `Claude Sonnet 5.5`),

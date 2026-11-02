@@ -732,6 +732,88 @@ def update_last_job_and_reconnecting(ctx):
     return "; ".join(states)
 
 
+@check("browser", "home-update-progress-bar")
+def update_progress_bar(ctx):
+    """JON-978: a ./stack update typed in a terminal (its record, .state/status/terminal-job.json, carries the steps and the
+    plan) shows on Home like Update now: a progressbar with its range and words, the steps done (a skipped one greyed with
+    its reason), the steps still to come, one announcement for each step, and 100 % when it has finished."""
+    if real_helper_running():
+        raise Skip("a real update helper is running: this check fakes its heartbeat and its job")
+    st = STATE / "status"
+    files = {n: st / n for n in ("helper.json", "helper-status.json", "terminal-job.json")}
+    saved = {n: f.read_bytes() for n, f in files.items() if f.exists()}
+    page, rec = ctx.page("update-progress")
+    login(page)
+    states = []
+    plan = [{"label": l, "secs": s} for l, s in (("Backup", 4), ("New code", 0), ("AWS key check", 0), ("Images", 20), ("Services", 6))]
+    why = "the same AWS key and region were checked in the last 24 hours"
+
+    def job(phase, steps, step="", at=None, message="Running in a terminal", fin=None):
+        t = int(time.time())
+        _write_json(files["terminal-job.json"], {"id": "t-1700000000-1", "action": "update", "command": "update", "phase": phase, "message": message,
+                                                 "started_at": t - 30, "updated_at": t, "finished_at": fin, "version": "v0.9.0",
+                                                 "step": step, "step_started_at": (t - 3) if step else None, "steps": steps, "plan": plan, "pid": 1})
+
+    try:
+        # (no helper job: only the terminal's record, newest of any origin)
+        files["helper-status.json"].unlink(missing_ok=True)
+        done = [{"label": "Backup", "took": "4s"}, {"label": "New code (git)", "took": "0s"}, {"label": "AWS key check", "took": "skipped", "why": why}]
+        job("running", done, step="Images")
+        page.reload()
+        page.locator("#job-title", has_text="in progress").wait_for(timeout=15000)
+        page.locator("#job-progress:not([hidden])").wait_for(timeout=15000)
+        bar = page.locator("#job-bar")
+        expect(bar.get_attribute("role") == "progressbar", "the bar is no progressbar")
+        expect((bar.get_attribute("aria-valuemin"), bar.get_attribute("aria-valuemax"), bar.get_attribute("aria-valuenow")) == ("0", "5", "4"),
+               f"range: {[bar.get_attribute(a) for a in ('aria-valuemin', 'aria-valuemax', 'aria-valuenow')]}")
+        text = bar.get_attribute("aria-valuetext") or ""
+        expect(re.fullmatch(r"Step 4 of 5, Images, (a few seconds|less than a minute|about \d+ minutes?) left", text), f"valuetext: {text!r}")
+        pct = page.eval_on_selector("#job-bar-fill", "e => parseFloat(e.style.width)")
+        expect(0 < pct < 100, f"fill {pct}")
+        expect(page.inner_text("#job-progress-text").startswith("Step 4 of 5 \u00b7 Images"), f"words: {page.inner_text('#job-progress-text')!r}")
+        expect(page.locator("#job-progress-text").get_attribute("aria-hidden") == "true", "the visible words are read out on every poll")
+        expect(page.inner_text("#job-step").startswith("Images"), f"step: {page.inner_text('#job-step')!r}")
+        shown = [x.strip() for x in page.locator("#job-done li").all_inner_texts()]
+        expect(shown == ["Backup \u00b7 4s", "New code (git) \u00b7 0s", f"AWS key check \u00b7 skipped ({why})"], f"steps done: {shown!r}")
+        expect(page.locator("#job-done li.skipped").count() == 1, "a skipped step is not greyed")
+        expect(page.inner_text("#job-todo-sum") == "Still to come (1)", f"to come: {page.inner_text('#job-todo-sum')!r}")
+        live = page.text_content("#job-progress-live") or ""
+        expect(live.startswith("Step 4 of 5, Images"), f"announced: {live!r}")
+        shot(page, "06e-home-terminal-update-progress")
+        states.append(f"terminal update: progressbar 4 of 5 ({text}); a skipped step greyed; one to come")
+        # phone width: nothing runs off the side
+        wide = page.viewport_size
+        page.set_viewport_size({"width": 390, "height": 844})
+        page.wait_for_timeout(300)
+        expect(page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "the bar's card is wider than a phone")
+        shot(page, "06f-home-terminal-update-progress-phone")
+        page.set_viewport_size(wide or {"width": 1280, "height": 800})
+        states.append("phone width: no sideways scroll")
+        # the next step: the bar moves on and says so once
+        job("running", done + [{"label": "Images", "took": "21s"}], step="Services")
+        page.locator("#job-bar[aria-valuenow='5']").wait_for(timeout=15000)
+        page.locator("#job-progress-live", has_text="Step 5 of 5, Services").wait_for(state="attached", timeout=15000)
+        pct = page.eval_on_selector("#job-bar-fill", "e => parseFloat(e.style.width)")
+        expect(pct < 100, f"the bar claims done while the last step runs: {pct}")
+        states.append("next step: 5 of 5, announced, still short of done")
+        # finished: 100 %
+        job("done", done + [{"label": "Images", "took": "21s"}, {"label": "Services (9) (http://x)", "took": "7s"}], message="Updated to v9.9.9", fin=int(time.time()))
+        page.locator("#job-title", has_text="finished").wait_for(timeout=15000)
+        expect(page.eval_on_selector("#job-bar-fill", "e => parseFloat(e.style.width)") == 100, "not at 100 % when done")
+        expect(bar.get_attribute("aria-valuenow") == bar.get_attribute("aria-valuemax"), "valuenow is not valuemax when done")
+        expect((bar.get_attribute("aria-valuetext") or "").startswith("Done"), f"valuetext: {bar.get_attribute('aria-valuetext')!r}")
+        expect(page.locator("#job-todo-box").is_hidden(), "steps still to come after it finished")
+        states.append("done: 100 %")
+    finally:
+        for n, f in files.items():
+            if n in saved:
+                f.write_bytes(saved[n])
+            else:
+                f.unlink(missing_ok=True)
+    rec.save()
+    return "; ".join(states)
+
+
 @check("browser", "home-auto-update-switch")
 def auto_switch(ctx):
     if real_helper_running():

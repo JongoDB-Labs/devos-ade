@@ -2761,6 +2761,12 @@ prepares it first, its steps shown with their times.
 Settings › Updates & backups › More settings › *Prepare updates ahead* (`UPDATE_PREPARE=false`) turns it off. A checkout that
 follows a branch is not prepared.
 
+**Progress (Update now, or `./stack update` in a terminal):** Home's card shows a bar — *Step 14 of 31 · Images · about 1 minute
+left* — with the step that runs and for how long, the steps done (one the update left out is greyed, with why), and the steps
+still to come. It measures against the last update on this computer (`.state/update/last-steps.tsv`, written when an update
+ends well), or against a list shipped with the code until there is one; it never claims done while a step runs long. In a
+terminal each finished step is followed by `[████████░░░░] 14/31 · Images · ~1 min left` (only when the output is a terminal).
+
 **Automatic updates (off by default):** in Home → Maintenance, *Automatic updates: Off | Nightly (03:00–06:00)*
 (asks for the portal password), or `./stack helper auto on [--hour N]` / `off` / `status` (`AUTO_UPDATE` and
 `AUTO_UPDATE_HOUR` in `.env`). When on, the helper installs a new **release** by itself between `N:00` and

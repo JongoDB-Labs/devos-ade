@@ -684,6 +684,35 @@ with open(sys.argv[3], "w") as f:
 print(f"{len(got)} steps on Home's card ({'the whole job, a stamped log' if stamped else 'after the last update: N/4 line, an older helper'}), each with its time: " + ", ".join(f"{l} {t}" for l, t in got))
 PY
 check home-card-steps "$?" "$(tail -n 1 "$OUT/steps.check")"
+# JON-978: the update recorded its steps as the next update's plan (label, seconds or skipped, in order), and Home's card, given the
+# job's final status, is at 100 % at "Updated to" — the portal's own arithmetic (static/updatecheck.js progress) run by node when the
+# host has it, the status' fields checked by hand when not. A helper of an older version writes no plan: the card then counts the steps.
+python3 - "$STACK/.state/update/last-steps.tsv" "$LOGS/helper-status.json" > "$OUT/progress.check" 2>&1 <<'PY'
+import json, re, sys
+rows = [l.rstrip("\n").split("\t") for l in open(sys.argv[1], encoding="utf-8") if l.strip()]
+assert rows, "the update recorded no steps (.state/update/last-steps.tsv)"
+bad = [r for r in rows if len(r) != 2 or not re.fullmatch(r"[0-9]+|skipped", r[1]) or " (" in r[0]]
+assert not bad, f"unusable lines in the recorded plan: {bad[:3]}"
+assert rows[0][0] == "Backup", f"the plan starts with {rows[0][0]!r}"
+st = json.load(open(sys.argv[2]))
+assert st.get("phase") == "done" and str(st.get("message", "")).startswith("Updated to"), f"not at 'Updated to': {st.get('phase')} {st.get('message')!r}"
+assert not st.get("step"), f"a step left running: {st.get('step')}"
+plan = st.get("plan")
+assert plan is None or (isinstance(plan, list) and all(isinstance(p.get("label"), str) and isinstance(p.get("secs"), int) for p in plan)), f"plan: {plan!r}"
+print(f"{len(rows)} steps recorded as the next plan; the status is done at {st['message']!r}, " + ("its plan has %d steps" % len(plan) if plan else "no plan (an older helper)"))
+PY
+check progress-plan-recorded "$?" "$(tail -n 1 "$OUT/progress.check")"
+if command -v node >/dev/null 2>&1 && [ -f "$STACK/portal/portal/static/updatecheck.js" ]; then
+  node -e 'const fs = require("fs"), vm = require("vm"); const c = vm.createContext({ console });
+    vm.runInContext(fs.readFileSync(process.argv[1], "utf8"), c);
+    const p = c.bnUpdateCheck._pure.progress(JSON.parse(fs.readFileSync(process.argv[2], "utf8")));
+    if (!p || p.pct !== 100 || p.valuenow !== p.valuemax || !/^Done/.test(p.valuetext)) { console.log("the card is not at 100 %: " + JSON.stringify(p)); process.exit(1); }
+    console.log("the card is at 100 %: " + p.valuetext + " (aria-valuenow " + p.valuenow + " of " + p.valuemax + ")")' \
+    "$STACK/portal/portal/static/updatecheck.js" "$LOGS/helper-status.json" > "$OUT/progress-card.check" 2>&1
+  check home-card-100-percent "$?" "$(tail -n 1 "$OUT/progress-card.check")"
+else
+  say "no node here: the card's 100 % is checked in the portal's unit tests (portal/tests/js/updateprogress.test.mjs)"
+fi
 # each step's time, one line each (and the whole job's wall-clock time, bounded)
 while IFS="$(printf '\t')" read -r l t; do say "step  ${t:-?}  $l"; done < "$OUT/steps.tsv"
 UPD_S=$((UPD_T1 - UPD_T0))
