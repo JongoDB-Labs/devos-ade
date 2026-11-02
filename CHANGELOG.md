@@ -26,12 +26,18 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   (the computer or Docker busy), Update now is disabled until it answers. Home asked again only every 30 seconds, and
   not when you came back to the page, so the button could stay disabled well after the helper was back. Home now asks
   every 5 seconds while the helper is late, and at once when the page is shown or focused.
+- **A long badge in Settings no longer runs under the row's buttons.** A setting's "Restarts Files, Chat, the shared
+  file server, the portal" did not wrap, and in a window about 1080 px wide it ran under **Reveal**. It wraps in the
+  setting's column now.
 - **An update's move check no longer passes a runtime that failed.** After the move to devos-ade, the check that each
   local runtime's program still runs from the moved folder took the shell's `wait` as the program's answer; under load,
   bash 3.2 once answered 0 for a program that exited 3, and the old copy was removed. The check now reads the status the
   program's own subshell writes down; nothing written in time is a failure.
 
 ### Tests
+- **The layout sweep knows a bar held at the bottom.** A sticky bar at the bottom of its scrolling box (the walkthrough's
+  Back and Next on a phone, over a long step) is stuck while there is more below it to scroll to; the sweep counted it
+  as in the flow, so the step's text under it was nine "overlaps" in the first sweep of every state.
 - **The Code page's cost-and-state check** reads the page's errors before it deletes its test folders: the page, still
   open, could list one again as it went, and that 404 counted as the page's own.
 

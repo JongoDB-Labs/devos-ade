@@ -160,10 +160,15 @@
       if (top || s.position === 'fixed' || ((s.position === 'absolute' || s.position === 'relative') && z >= 2 && p.matches('[role=dialog], [role=menu], [role=listbox], [role=tooltip], [role=alertdialog], [role=status], [role=alert], [popover], dialog') )
           || (s.position === 'absolute' && z >= 2)) { L = p; break; }
       if (s.position === 'sticky') {
-        // stuck (its scrolling box is scrolled): over what scrolls under it; at rest it is in the flow
+        // stuck: over what scrolls under it; at rest it is in the flow. One held at the top (or left) is stuck once its
+        // scrolling box is scrolled; one held at the bottom (a bar of buttons under a long step) while there is more
+        // below it to scroll to
         let sc = p.parentElement;
         while (sc && sc !== document.body && !/(auto|scroll|hidden)/.test(style(sc).overflowY + style(sc).overflowX)) sc = sc.parentElement;
-        const scrolled = sc && sc !== document.body ? (sc.scrollTop > 0 || sc.scrollLeft > 0) : (window.scrollY > 0 || window.scrollX > 0);
+        const box = sc && sc !== document.body ? sc : document.scrollingElement || document.documentElement;
+        const atEnd = s.bottom !== 'auto' && s.top === 'auto';
+        const scrolled = atEnd ? box.scrollHeight - box.clientHeight - box.scrollTop > 1
+          : sc && sc !== document.body ? (sc.scrollTop > 0 || sc.scrollLeft > 0) : (window.scrollY > 0 || window.scrollX > 0);
         if (scrolled) { L = p; break; }
       }
     }

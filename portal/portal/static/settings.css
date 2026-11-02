@@ -52,6 +52,9 @@
 .set-row:focus { outline: none; }
 .set-main { min-width: 0; }
 .set-label { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+/* a long badge ("Restarts Files, Chat, the shared file server, the portal") wraps in the name's column instead of running
+   under the row's buttons (the layout sweep: Reveal over it at 1080 px) */
+.set-label .badge { white-space: normal; max-width: 100%; }
 .set-name { font-weight: 600; }
 .set-sum { margin: 2px 0 0; color: var(--muted); font-size: 13.5px; max-width: 70ch; }
 .set-value { margin: 6px 0 0; font-family: var(--mono); font-size: 13.5px; overflow-wrap: anywhere; }
