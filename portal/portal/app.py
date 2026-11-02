@@ -617,7 +617,7 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
         # a deep link (rebuilt from what checks out: same host, the root path, ?session / ?prompt / ?git only — the
         # terminal's: ?arg= words of the pickers only) or the page
         resp = RedirectResponse(nxt or "/", status_code=303)
-        c = unlock_cookie_params(app, rem)
+        c = unlock_cookie_params(app, rem, settings.https)
         resp.set_cookie(c["key"], unlocks[app].issue(session_login(request.headers, settings)), max_age=TERMINAL_MAX_AGE,
                         path="/", domain=c["domain"], httponly=True, samesite="strict", secure=c["secure"])
         return _no_store(resp)
@@ -853,7 +853,7 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
             if not rem or not isinstance(s_iat, (int, float)) or not sessions.valid(sessions.issue(s_iat, login), login):
                 return _no_store(login_redirect(settings.origin(TERMINAL, rem) + "/", rem))
             set_session(resp, True, login, s_iat)
-        c = unlock_cookie_params(TERMINAL, rem)
+        c = unlock_cookie_params(TERMINAL, rem, settings.https)
         left = max(1, int(TERMINAL_MAX_AGE - (time.time() - data["iat"])))
         resp.set_cookie(c["key"], cookie, max_age=left, path="/", domain=c["domain"], httponly=True, samesite="strict",
                         secure=c["secure"])
@@ -941,7 +941,7 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
             url = f"{origin}/.bn/preview-callback?t={quote(token, safe='')}&next={quote(path, safe='')}"
         else:
             host = f"{previews.label(int(port), unlock['iat'])}.{settings.preview_domain}"
-            origin = f"http://{host}" if settings.port == 80 else f"http://{host}:{settings.port}"
+            origin = settings.local_origin(host)
             url = origin + path
         if wants_json(request):
             return _no_store(JSONResponse({"url": url, "origin": origin, "port": int(port), "handoff": rem,
@@ -1001,7 +1001,7 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
         else:
             suffix = "." + settings.preview_domain
             cap = previews.check(name[: -len(suffix)]) if name.endswith(suffix) else None
-            own_origin = f"http://{fwd}"
+            own_origin = f"{settings.scheme}://{fwd}"
         origin = request.headers.get("origin")
         # its own Origin, or none; or "null" from the preview itself — a page with Referrer-Policy no-referrer (an app
         # may set it) makes browsers send that for its own form posts, and Sec-Fetch-Site (which no page can set)
@@ -1044,7 +1044,7 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
         if unlock is None:   # (code_guard checked it; a race with Sign out)
             return _no_store(JSONResponse({"available": False, "error": "locked"}, status_code=401))
         host = f"{previews.artifact_label(unlock['iat'])}.artifact.{settings.preview_domain}"
-        origin = f"http://{host}" if settings.port == 80 else f"http://{host}:{settings.port}"
+        origin = settings.local_origin(host)
         return _no_store(JSONResponse({"available": True, "origin": origin, "expires": int(unlock["iat"] + TERMINAL_MAX_AGE)}))
 
     artifact_refusals = {"last": 0.0}
@@ -1231,7 +1231,7 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
             resp = appsso.files_page(portal, None, nxt, manual, appsso.files_mark(settings, claims["iat"], login),
                                      "/.bn/sso?" + appsso.MINT + "&next=" + quote(nxt, safe=""))
             resp.set_cookie(pass_name, "1", max_age=appsso.PASS_SECONDS, path="/", httponly=True, samesite="strict",
-                            secure=rem)
+                            secure=rem or settings.https)
             return _no_store(resp)
         raw = request.cookies.get(loop_name, "0")
         count = int(raw) if raw.isdigit() and len(raw) < 4 else 0
@@ -1249,22 +1249,22 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
                 resp = RedirectResponse(nxt, status_code=303)
                 # LiteLLM's own cookie as its sign-in sets it (host-only, Lax, readable by the dashboard's script)
                 resp.set_cookie("token", token, max_age=int(exp - time.time()), path="/", httponly=False, samesite="lax",
-                                secure=rem)
+                                secure=rem or settings.https)
                 resp.delete_cookie("litellm_return_url", path="/")
                 mark = markers.issue(app, claims["iat"], appsso.fingerprint(settings, app), login, exp - appsso.MARGIN)
                 resp.set_cookie(mark_name, mark, max_age=max(60, int(exp - appsso.MARGIN - time.time())), path="/",
-                                httponly=True, samesite="strict", secure=rem)
+                                httponly=True, samesite="strict", secure=rem or settings.https)
             else:
                 creds, _exp = await appsso.rustfs_session(request.app.state.http, settings)
                 resp = appsso.files_page(portal, creds, nxt, manual, appsso.files_mark(settings, claims["iat"], login))
                 # its next step (the console page it opens) goes straight through
                 resp.set_cookie(pass_name, "1", max_age=appsso.PASS_SECONDS, path="/", httponly=True, samesite="strict",
-                                secure=rem)
+                                secure=rem or settings.https)
         except appsso.SignInError as e:
             log.warning("automatic sign-in to %s failed: %s", appsso.NAME[app], e)
             return appsso.error_page(portal, app, str(e), manual, e.status)
         resp.set_cookie(loop_name, str(count + 1), max_age=appsso.LOOP_WINDOW, path="/", httponly=True, samesite="strict",
-                        secure=rem)
+                        secure=rem or settings.https)
         resp.headers["Referrer-Policy"] = "no-referrer"
         log.info("signed in to %s automatically%s", appsso.NAME[app], " (remote)" if rem else "")
         return _no_store(resp)

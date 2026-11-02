@@ -159,3 +159,20 @@ test('previews over remote access: a link to their setting only when that settin
     assert.equal(normPreviewInfo(o).setup, '', JSON.stringify(o));
   }
 });
+
+test('a preview link follows the page\'s own scheme: https only while the portal is served over https (PORTAL_HTTPS)', () => {
+  const cap = 'a'.repeat(9) + 'b'.repeat(24);
+  const host = `p5173-${cap}.devos-ade-preview.localhost:8800`;
+  const https = { url: `https://${host}/`, origin: `https://${host}`, port: 5173, expires: 1800000000 };
+  const g = globalThis as { location?: unknown };
+  const was = g.location;
+  try {
+    g.location = { protocol: 'https:' };
+    assert.deepEqual(previewLinkOk(https, 5173), { url: https.url, origin: https.origin, port: 5173, expires: 1800000000000, handoff: false });
+    assert.equal(previewLinkOk({ ...https, url: https.url.replace('https:', 'http:'), origin: https.origin.replace('https:', 'http:') }, 5173), null);   // (the old scheme is refused there)
+    g.location = { protocol: 'http:' };
+    assert.equal(previewLinkOk(https, 5173), null);                                              // and https over http, too
+  } finally {
+    if (was === undefined) delete g.location; else g.location = was;
+  }
+});

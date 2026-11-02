@@ -18,6 +18,7 @@ def settings(tmp_path):
         keys=(("claude-code", "Claude Code", "sk-cc"), ("open-webui", "Chat (Open WebUI)", "sk-ow"), ("setup", "Setup and tests", "")),
         litellm_ui_password="ui-pass", rustfs_access_key="bn-access", rustfs_secret_key="rustfs-secret",
         litellm_dir=lit, catalog_dir=cat, prices_dir=tmp_path / "prices",
+        https_raw="false",   # (HTTPS declined: the tests of the offer and of https say otherwise: test_https.py)
     )
 
 

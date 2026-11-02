@@ -127,6 +127,8 @@
     if (d && typeof d === "object") {
       if (it.kind === "code-default" && Number.isInteger(d.at) && typeof d.workspace === "string") {
         it.data = { at: d.at, workspace: d.workspace.slice(0, 1024), egress: d.egress === true, terminal: d.terminal === true };
+      } else if (it.kind === "https") {
+        it.data = { offer: d.offer === true };
       } else if (it.kind === "job") {
         it.data = { origin: d.origin === "terminal" ? "terminal" : "helper", action: String(d.action || "").slice(0, 32), phase: String(d.phase || "").slice(0, 32) };
       }
@@ -384,7 +386,7 @@
     if (s < 172800) return `${Math.round(s / 3600)} h ago`;
     return `${Math.round(s / 86400)} days ago`;
   }
-  const KIND_LABEL = { budget: "Budget", update: "Update", job: "Job", "code-default": "Code page", code: "Code", models: "Models", openrouter: "OpenRouter", voice: "Voice", health: "Container", runtime: "Runtime" };
+  const KIND_LABEL = { budget: "Budget", update: "Update", job: "Job", "code-default": "Code page", code: "Code", models: "Models", openrouter: "OpenRouter", voice: "Voice", health: "Container", runtime: "Runtime", https: "HTTPS" };
 
   function go(link) {
     if (!LINK.test(link)) return;
@@ -428,6 +430,10 @@
     else if (it.kind === "voice") act("Voice in Settings", () => go(it.link));
     else if (it.kind === "health") act("Diagnostics", () => go(it.link));
     else if (it.kind === "runtime") act("Local models", () => go(it.link));
+    else if (it.kind === "https" && it.data && it.data.offer) {
+      // the switch itself: Settings' own password dialog (settings.js bnHttpsOn); Dismiss is "not now"
+      act("Turn on", () => { setOpen(false, false); if (window.bnHttpsOn) window.bnHttpsOn(); else go(it.link); }, "action");
+    }
     else if (it.kind === "job") act(it.link === "#home" ? "Show on Home" : "Open Settings", () => (it.link === "#home" ? onHome("#job") : go(it.link)));
     else if (it.link) act("Open", () => go(it.link));
     return out;

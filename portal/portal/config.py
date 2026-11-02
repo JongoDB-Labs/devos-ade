@@ -71,6 +71,7 @@ class Settings:
     secret: str = field(repr=False)
     host: str = "devos-ade.localhost"
     port: int = 80
+    https_raw: str = ""   # PORTAL_HTTPS as .env holds it: blank = never decided (Home offers it), true = the local sites are https, false = declined
     user_email: str = "admin@devos-ade.local"
     litellm_url: str = "http://litellm:4000"
     litellm_master_key: str = ""
@@ -160,12 +161,26 @@ class Settings:
             return self.remote_app_hosts.get(sub, "") if sub else self.remote_host
         return (self.app_hosts.get(sub) or f"{sub}.{self.host}") if sub else self.host
 
+    @property
+    def https(self) -> bool:
+        """The local sites are served over HTTPS (PORTAL_HTTPS=true: lib/tls.sh, caddy/tls-on.caddy)."""
+        return _on(self.https_raw)
+
+    @property
+    def scheme(self) -> str:
+        return "https" if self.https else "http"
+
+    def local_origin(self, host: str) -> str:
+        """<scheme>://<host>[:port] on this computer, as browsers send it in Origin: ':80' is left out of http, never
+        from https (whose own default is 443, which this listener is not)."""
+        return f"http://{host}" if self.port == 80 and not self.https else f"{self.scheme}://{host}:{self.port}"
+
     def origin(self, sub: str | None = None, remote: bool = False) -> str:
-        """http://<host>[:port] (':80' left out, exactly as browsers send it in Origin); remote: https://<host>."""
+        """<scheme>://<host>[:port] (http's ':80' left out, exactly as browsers send it in Origin); remote: https://<host>."""
         host = self.app_host(sub, remote)
         if remote:
             return f"https://{host}"
-        return f"http://{host}" if self.port == 80 else f"http://{host}:{self.port}"
+        return self.local_origin(host)
 
     def portal_origins(self) -> list[str]:
         """The portal's own origins: the local one, plus the remote one while remote access is on."""
@@ -303,6 +318,7 @@ def from_env(env: dict | None = None) -> Settings:
         secret=secret,
         host=(env.get("PORTAL_HOST") or "devos-ade.localhost").lower(),
         port=port,
+        https_raw=(env.get("PORTAL_HTTPS") or "").strip(),
         # Open WebUI matches trusted-header users by lower-cased email.
         user_email=(env.get("PORTAL_USER_EMAIL") or "admin@devos-ade.local").strip().lower(),
         litellm_url=env.get("LITELLM_URL", "http://litellm:4000"),

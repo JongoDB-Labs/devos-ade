@@ -151,3 +151,14 @@ test("needs you: the Code sessions that wait and are not read yet, newest first,
   assert.equal(A.notificationLink({ kind: "code", data: { session: "nope" } }), "");
   assert.equal(A.notificationLink({ kind: "budget", link: "#settings/BUDGET_TERMINAL" }), "", "anything else opens Activity");
 });
+
+test("HTTPS: the offer and the notice that the address changed pass through checked, and only the offer carries the switch", () => {
+  const offer = { id: "https-offer", kind: "https", level: "info", title: "Serve the portal over HTTPS", text: "x", at: null, link: "#settings/PORTAL_HTTPS", notify: false, data: { offer: true } };
+  const sw = { id: "https-switched:1792700000", kind: "https", level: "good", title: "The portal's address changed", text: "Sign in again", at: 1792700000, link: "#home", notify: true, data: { offer: false } };
+  assert.deepEqual(plain(A.takeServerItem(offer)).data, { offer: true });
+  assert.equal(plain(A.takeServerItem(offer)).notify, false);
+  assert.deepEqual(plain(A.takeServerItem(sw)).data, { offer: false });
+  // anything but true is not the offer: no Turn on button for a record the server did not mean as one
+  assert.deepEqual(plain(A.takeServerItem({ ...sw, data: { offer: "yes" } })).data, { offer: false });
+  assert.equal(A.takeServerItem({ ...offer, id: "https offer" }), null);
+});

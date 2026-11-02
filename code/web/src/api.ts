@@ -2152,7 +2152,7 @@ export function normPreviewInfo(o: Record<string, unknown>): PreviewInfo {
     setup: o.available !== true && o.setup === 'remote-preview' ? 'remote-preview' : '' };
 }
 
-/** A preview link only when it is one: http, a host p<port>-<capability>.<domain> for this port, no credentials — or,
+/** A preview link only when it is one: http (https while the portal is), a host p<port>-<capability>.<domain> for this port, no credentials — or,
  *  over remote access, the hand-off for this port: https, the preview host's /.bn/preview-callback with a token. */
 export function previewLinkOk(v: unknown, port: number): PreviewLink | null {
   const o = obj(v);
@@ -2170,7 +2170,8 @@ export function previewLinkOk(v: unknown, port: number): PreviewLink | null {
     if (!/^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$/.test(u.hostname) || u.port) return null;
     return { url: u.href, origin: u.origin, port, expires, handoff: true };
   }
-  if (u.protocol !== 'http:') return null;
+  // (this computer's previews are served the way this page is: http, or https while the portal is, PORTAL_HTTPS)
+  if (u.protocol !== (typeof location !== 'undefined' && location.protocol === 'https:' ? 'https:' : 'http:')) return null;
   if (!new RegExp(`^p${port}-[a-z2-7]{33}\\.[a-z0-9.-]{1,200}$`).test(u.hostname)) return null;
   return { url: u.href, origin: u.origin, port, expires, handoff: false };
 }

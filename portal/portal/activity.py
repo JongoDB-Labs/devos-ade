@@ -7,6 +7,8 @@ hostfiles.read_json (size caps, no symlinks) and every field type-checked, as Ho
   STATUS_DIR/terminal-job.json    the last ./stack command typed in a terminal that changed the stack (lib/lock.sh)
   STATUS_DIR/code-default.json    an update nobody watched turned the Code page on (lib/code.sh; code.py)
   STATUS_DIR/stt-notice.json      Bedrock speech-to-text was turned off: Bedrock refuses its audio (lib/stt.sh; summary.py)
+  STATUS_DIR/https-switched.json  the portal's address changed between http:// and https:// (lib/tls.sh); PORTAL_HTTPS itself (the
+                                  environment) decides the one-time offer of HTTPS to an install that never chose
   STATUS_DIR/container-health.json  restarts, unhealthy turns and failed exits of the stack's containers, recorded
                                   on this computer only (lib/health.sh; JON-440 G4)
   UPDATE_DIR/latest.json          the release check: an update is available (updates.py)
@@ -182,6 +184,41 @@ def stt_notice_item(s: Settings) -> dict | None:
     return _item(f"stt-notice:{at}", "voice", "warn", title, text[:1].upper() + text[1:], at, "#settings/STT_PROVIDER")
 
 
+HTTPS_DAYS = 14   # the notice that the address changed is listed for two weeks
+
+
+def https_items(s: Settings, now: float) -> list[dict]:
+    """HTTPS for the portal on this computer (JON-976): the one-time offer to an install that never chose (PORTAL_HTTPS blank,
+    so served over http://; dismissing it is the answer, Settings has the switch), and, after ./stack https on or off, one
+    notice that the address changed: sign in again, and an installed app must be installed again from the new address (an
+    installed app, the cookies and this browser's notification marks all belong to the old origin; Home's layouts, widgets
+    and everything else are the server's)."""
+    out: list[dict] = []
+    if not s.https_raw and not s.https:
+        it = _item("https-offer", "https", "info", "Serve the portal over HTTPS",
+                   "Browsers call this address not secure. A certificate that can only vouch for this install's own addresses "
+                   f"fixes that: macOS asks for your password once to trust it. The address becomes https://{s.host}:{s.port}; "
+                   "you sign in again there and install the app again from it.", None, "#settings/PORTAL_HTTPS", False,
+                   data={"offer": True})
+        if it:
+            out.append(it)
+    d = hostfiles.read_json(s.status_dir / "https-switched.json", 1024)
+    at, now_https = d.get("at"), d.get("https")
+    if isinstance(at, int) and not isinstance(at, bool) and 0 < at <= now + 300 and now - at <= HTTPS_DAYS * 86400 and isinstance(now_https, bool) \
+            and now_https == s.https:
+        where = s.origin() + "/"
+        text = (f"The portal is now at {where} — sign in again there. An installed app belongs to the old address: remove it and "
+                "install it again from the new one. This browser's read and dismissed marks in the notification centre start over; "
+                "your layouts, widgets and settings are kept on this computer and come with you."
+                if s.https else
+                f"The portal is plain HTTP again at {where} — sign in again there, and install the app again from it if you had installed "
+                "the https:// one.")
+        it = _item(f"https-switched:{at}", "https", "good", "The portal's address changed", text, at, "#home", data={"offer": False})
+        if it:
+            out.append(it)
+    return out
+
+
 def models_item(s: Settings, now: float) -> dict | None:
     """The last model check could not check some models (a timeout, throttling, an error answer): they keep their old
     state until the next check."""
@@ -272,7 +309,7 @@ def items(s: Settings, rem: bool, now: float | None = None) -> list[dict]:
     now = time.time() if now is None else now
     out: list[dict] = []
     for fn in (lambda: [update_item(s)], lambda: job_items(s.status_dir, now), lambda: [code_default_item(s, rem)],
-               lambda: [models_item(s, now)], lambda: [stt_notice_item(s)], lambda: health_items(s.status_dir, now),
+               lambda: [models_item(s, now)], lambda: [stt_notice_item(s)], lambda: https_items(s, now), lambda: health_items(s.status_dir, now),
                lambda: runtime_items(s.status_dir, now)):
         try:
             out += [x for x in fn() if x]

@@ -2347,6 +2347,12 @@
     $("#set-confirm-password").focus();
   }
 
+  // Home's offer of HTTPS (activity.js, the "Turn on" of the notification): the switch's own confirmation, the same password dialog
+  window.bnHttpsOn = async () => {
+    if (!data) await load();
+    const k = keys.PORTAL_HTTPS;
+    if (k && (k.value || "") !== "true") confirmApply({ PORTAL_HTTPS: "true" }, `${k.label}: On`, k.note, ["PORTAL_HTTPS"]);
+  };
   window.bnAskPassword = askPassword;   // (localmodels.js, on Browse models: a save, a removal or a download asks here too)
   function confirmApply(values, title, note, keyNames, form, confirm = []) {
     askPassword({ kind: "apply", values, form, confirm, keys: keyNames, label: title.replace(/^Save |\?$/g, "") }, title,

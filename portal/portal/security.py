@@ -266,12 +266,13 @@ def is_remote(headers, settings: Settings) -> bool:
 
 def cookie_params(settings: Settings, remote: bool, carry: bool = False) -> dict:
     """The session cookie of a site. Local: bn_session for PORTAL_HOST and its subdomains (a .localhost name
-    nobody else can serve), not Secure (plain HTTP on 127.0.0.1). Remote: __Host-bn_session, host-only and
+    nobody else can serve), Secure only while the portal is served over HTTPS (PORTAL_HTTPS: lib/tls.sh; otherwise plain
+    HTTP on 127.0.0.1, where a Secure cookie would not be sent at all). Remote: __Host-bn_session, host-only and
     Secure, on the portal host; each app host gets its own through the hand-off (Handoff below).
     carry: the carry-over cookie of a password change, with the same scope (bn_session_next)."""
     if remote:
         return {"key": REMOTE_NEXT_COOKIE if carry else REMOTE_COOKIE, "domain": None, "secure": True}
-    return {"key": NEXT_COOKIE if carry else COOKIE, "domain": settings.host, "secure": False}
+    return {"key": NEXT_COOKIE if carry else COOKIE, "domain": settings.host, "secure": settings.https}
 
 
 def tailscale_login(headers) -> str | None:
@@ -378,13 +379,13 @@ TERMINAL_MAX_AGE = 12 * 3600
 UNLOCK_COOKIES = {TERMINAL: (TERMINAL_COOKIE, REMOTE_TERMINAL_COOKIE), CODE: (CODE_COOKIE, REMOTE_CODE_COOKIE)}
 
 
-def unlock_cookie_params(app: str, remote: bool) -> dict:
+def unlock_cookie_params(app: str, remote: bool, https: bool = False) -> dict:
     local, rem = UNLOCK_COOKIES[app]
-    return {"key": rem if remote else local, "domain": None, "secure": remote}
+    return {"key": rem if remote else local, "domain": None, "secure": remote or https}
 
 
-def terminal_cookie_params(remote: bool) -> dict:
-    return unlock_cookie_params(TERMINAL, remote)
+def terminal_cookie_params(remote: bool, https: bool = False) -> dict:
+    return unlock_cookie_params(TERMINAL, remote, https)
 
 
 class TerminalUnlocks:
