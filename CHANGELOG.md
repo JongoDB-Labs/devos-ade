@@ -18,6 +18,14 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 - **Reloading a page with a terminal in it no longer trips ttyd's leave prompt.** ttyd asks "Close terminal?" before a page
   is left until the server tells it not to (it always does here); a reload of the portal or the Code page in that first
   moment had Chrome block the prompt and log an error. The terminal's page now turns the prompt off from the start.
+- **Codex opens in the Terminal again.** From 0.164.0 its screen would not start from the program alone: signed in with
+  **open**, it stopped at "this CLI has no complete local package … --no-daemon". The sandbox now has OpenAI's whole
+  release package (pinned by its sum), and `codex` runs with its background server and its own updates off, in the process
+  you start, from the image, as before. Claude Code, Gemini, Copilot, Cursor and Grok were checked and were not affected.
+- **An update's move check no longer passes a runtime that failed.** After the move to devos-ade, the check that each
+  local runtime's program still runs from the moved folder took the shell's `wait` as the program's answer; under load,
+  bash 3.2 once answered 0 for a program that exited 3, and the old copy was removed. The check now reads the status the
+  program's own subshell writes down; nothing written in time is a failure.
 
 ### Tests
 - **The Code page's cost-and-state check** reads the page's errors before it deletes its test folders: the page, still
