@@ -6,6 +6,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.52.0] - 2026-11-02
+
 ### Added
 - **A Git page for the local git server, and Git in the search (JON-979).** The sidebar has a **Git** tab after Files (on a
   phone under **More**, with an arrow to open it in its own window): the built-in git server's web UI, signed in as its
@@ -4273,7 +4275,8 @@ Initial public release.
 - `bin/claude-bedrock`: runs Claude Code against Bedrock through LiteLLM without touching plain `claude`.
 - Cost transparency: Bedrock prices in `./stack costs` and the Open WebUI model picker, spend per key.
 
-[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.51.1...HEAD
+[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.52.0...HEAD
+[0.52.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.51.1...v0.52.0
 [0.51.1]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.51.0...v0.51.1
 [0.51.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.50.0...v0.51.0
 [0.50.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.49.0...v0.50.0
