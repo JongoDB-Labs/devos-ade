@@ -67,12 +67,21 @@ def tidy(ctx):
         made.clear()
 
 
+def open_search(page):
+    """The search, open: by the sidebar's button, only while it is closed (Ctrl+K toggles it, and after a result opens the focus
+    can be in the Git frame, whose page does not pass the keys on)."""
+    if not page.locator("#search[open]").count():
+        page.click("#search-btn")
+        page.wait_for_selector("#search[open]")
+
+
 def ask(page, text: str) -> list[str]:
-    """Search for TEXT: the Git group's option texts once the group has stopped searching."""
-    page.keyboard.press("Control+K")
-    page.wait_for_selector("#search[open]")
-    page.fill("#search-input", text)
-    page.wait_for_function("() => !document.querySelector('#sg-git ~ .search-busy') && document.querySelector('#sg-git')", timeout=30000)
+    """Search for TEXT: the Git group's option texts once the portal's Git answer for TEXT is in and drawn (the search keeps its
+    last answer while it is closed, so until then the group can show an older one; no group: nothing found)."""
+    open_search(page)
+    with page.expect_response(lambda r: f"/api/search/git?q={quote(text, safe='')}" in r.url, timeout=30000):
+        page.fill("#search-input", text)
+    page.wait_for_function("() => !document.querySelector('#sg-git ~ .search-busy')", timeout=15000)
     return page.locator("#search-list [role=group][aria-labelledby=sg-git] .search-opt").all_inner_texts()
 
 
@@ -169,17 +178,18 @@ def search(ctx):
     joined = " | ".join(got)
     expect(ISSUE in joined and PR in joined and "Pull request #" in joined and "Issue #1" in joined, f"issue and pull request: {got}")
     shot(page, "git-4-search")
-    # Enter opens the first; a click opens the others: the repository, the issue, the pull request
+    # a click opens each: the repository (titled owner/name), the issue, the pull request
     for want_path, text in ((f"/{OWNER}/{REPO}", REPO), (f"/{OWNER}/{REPO}/issues/1", ISSUE), (f"/{OWNER}/{REPO}/pulls/{made['pr']}", PR)):
         page.keyboard.press("Escape")
         opts = ask(page, text if text == REPO else f"zebra crossing {STAMP}")
-        idx = next(i for i, o in enumerate(opts) if (text == REPO and o.startswith(REPO)) or (text != REPO and text in o))
+        idx = next((i for i, o in enumerate(opts) if (text == REPO and o.startswith(f"{OWNER}/{REPO}")) or (text != REPO and text in o)), None)
+        expect(idx is not None, f"no option for {text!r}: {opts}")
         page.locator("#search-list [role=group][aria-labelledby=sg-git] .search-opt").nth(idx).click()
         f = frame_of(page, "git")
         f.wait_for_url(re.compile(re.escape(want_path) + r"$"), timeout=30000)
         expect(page.locator(".tab[data-tab=git]").get_attribute("aria-current") == "page", "the Git tab is not the one shown")
     # one character is not searched; nothing typed leaves no Git group
-    page.keyboard.press("Control+K")
+    open_search(page)
     page.fill("#search-input", "z")
     page.wait_for_timeout(800)
     expect(page.locator("#sg-git").count() == 0, "a one-character search asked the git server")
