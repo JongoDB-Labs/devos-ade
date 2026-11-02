@@ -2,7 +2,7 @@
 // subscriptions signed in now; Claude only with Settings' switch), an answer streamed the OpenAI way from the agent in
 // the sandbox (a stand-in: fake-agents.mjs), a conversation kept as one of the agent's sessions, a regenerate starting
 // anew with the conversation as its preface, no tool ever allowed, and the sandbox's words kept as plain text.
-import test from 'node:test';
+import test, { mock } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -73,6 +73,101 @@ test('the lists are read once and kept (Open WebUI asks /models often); a read t
     assert.deepEqual(spawned.map((o) => o.tool).sort(), ['codex', 'copilot']);   // (one read of each, three asks)
     assert.ok(spawned.every((o) => o.mode === 'chat' && /^0{32}$/.test(o.chat)));
   } finally { k.s.closeAgents(); k.s.close(); }
+});
+
+// a stand-in Claude Code for the plan's models: the read of the list (the folder of no conversation) takes `delay` ms and
+// gives `list`, or fails; a turn answers
+function listingQuery(state) {
+  return (a) => {
+    if (!a.options.cwd.endsWith('0'.repeat(32))) {
+      state.turns.push(a.options.model);
+      return (async function* () {
+        yield { type: 'system', subtype: 'init', session_id: '11111111-2222-3333-4444-555555555555' };
+        yield { type: 'assistant', message: { content: [{ type: 'text', text: 'Hi!' }] } };
+        yield { type: 'result', usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0 } };
+      })();
+    }
+    state.reads++;
+    return { close() {}, async supportedModels() {
+      await new Promise((r) => setTimeout(r, state.delay));
+      if (state.fail) throw new Error('no list');
+      return state.list.map((value) => ({ value, displayName: value.toUpperCase() }));
+    } };
+  };
+}
+const CLAUDE_ONLY = { claude: { installed: true, signed: 'yes' } };
+const ids = async (url) => (await (await call(url, '/v1/models')).json()).data.map((x) => x.id);
+
+test('a slow read of the models does not hold /models: it answers within the budget with plan-<tool> and the fallback, the read fills the cache for the next ask', async () => {
+  const st = { reads: 0, turns: [], delay: 3000, list: ['zeta', 'eta'] };
+  const { s, url } = await server({ plan: true, tools: CLAUDE_ONLY, query: listingQuery(st) });
+  try {
+    const t0 = Date.now();
+    assert.deepEqual(await ids(url), ['plan-claude', 'plan-claude--opus', 'plan-claude--sonnet', 'plan-claude--haiku']);
+    assert.ok(Date.now() - t0 < 2800, `took ${Date.now() - t0} ms`);
+    // asked again while the read goes on (1 s left of it): no second read, and it ends within this ask's budget
+    assert.deepEqual(await ids(url), ['plan-claude', 'plan-claude--zeta', 'plan-claude--eta']);
+    assert.equal(st.reads, 1);
+    assert.deepEqual(await ids(url), ['plan-claude', 'plan-claude--zeta', 'plan-claude--eta']);
+    assert.equal(st.reads, 1);
+  } finally { s.closeAgents(); s.close(); }
+});
+
+test('concurrent /models asks start one read per tool', async () => {
+  const st = { reads: 0, turns: [], delay: 300, list: ['zeta'] };
+  spawned.length = 0;
+  const { s, url } = await server({ plan: true, query: listingQuery(st) });
+  try {
+    const all = await Promise.all([1, 2, 3, 4, 5].map(() => ids(url)));
+    assert.equal(st.reads, 1);
+    assert.deepEqual(spawned.map((o) => o.tool).sort(), ['codex', 'copilot']);
+    for (const a of all) assert.deepEqual(a, all[0]);
+    assert.ok(all[0].includes('plan-claude--zeta') && all[0].includes('plan-codex--gpt-x'));
+  } finally { s.closeAgents(); s.close(); }
+});
+
+test('a read that fails keeps the last good list; a turn is checked against it while a refresh is in flight', async () => {
+  const st = { reads: 0, turns: [], delay: 0, list: ['zeta', 'eta'] };
+  mock.timers.enable({ apis: ['Date'], now: Date.now() });
+  const { s, url } = await server({ plan: true, tools: CLAUDE_ONLY, query: listingQuery(st) });
+  try {
+    assert.deepEqual(await ids(url), ['plan-claude', 'plan-claude--zeta', 'plan-claude--eta']);
+    // the list is old: the next ask reads again, and that read fails — the list stays
+    mock.timers.tick(11 * 60000);
+    st.fail = true;
+    assert.deepEqual(await ids(url), ['plan-claude', 'plan-claude--zeta', 'plan-claude--eta']);
+    assert.equal(st.reads, 2);
+    // (not tried again at once)
+    assert.deepEqual(await ids(url), ['plan-claude', 'plan-claude--zeta', 'plan-claude--eta']);
+    assert.equal(st.reads, 2);
+    // old again, and the read now slow: /models starts it and answers at once with the list it has; a turn on a model of
+    // that list is not refused for the read in flight
+    mock.timers.tick(31 * 1000);
+    st.fail = false; st.delay = 2500; st.list = ['theta'];
+    const asking = ids(url);
+    await new Promise((r) => setTimeout(r, 50));
+    assert.equal(st.reads, 3);
+    const r = await call(url, '/v1/chat/completions', { model: 'plan-claude--eta', messages: [{ role: 'user', content: 'hi' }] });
+    assert.equal(r.status, 200);
+    assert.equal((await r.json()).choices[0].message.content, 'Hi!');
+    assert.deepEqual(st.turns, ['eta']);
+    assert.equal(st.reads, 3);
+    // (a model the refresh brings is there once it has ended)
+    await asking;
+    await new Promise((r2) => setTimeout(r2, 800));
+    assert.deepEqual(await ids(url), ['plan-claude', 'plan-claude--theta']);
+  } finally { mock.timers.reset(); s.closeAgents(); s.close(); }
+});
+
+test('a turn on a model id before any list has been read waits for the read in flight (up to its timeout)', async () => {
+  const st = { reads: 0, turns: [], delay: 1200, list: ['zeta'] };
+  const { s, url } = await server({ plan: true, tools: CLAUDE_ONLY, query: listingQuery(st) });
+  try {
+    const r = await call(url, '/v1/chat/completions', { model: 'plan-claude--zeta', messages: [{ role: 'user', content: 'hi' }] });
+    assert.equal(r.status, 200);
+    assert.deepEqual(st.turns, ['zeta']);
+    assert.equal(st.reads, 1);
+  } finally { s.closeAgents(); s.close(); }
 });
 
 test('a model of the list is set before the prompt; plan-<tool> asks for the tool\'s own default again', async () => {

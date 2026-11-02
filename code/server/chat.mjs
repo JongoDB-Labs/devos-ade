@@ -43,6 +43,8 @@ const MAX_RECORDS = 500;
 const LIST_TTL = 10 * 60000;         // a subscription's list of models is read again after this long (Open WebUI asks /models often)
 const LIST_RETRY = 30000;            // ... or this long after a read that failed (the last good list stays meanwhile)
 const LIST_TIMEOUT = 30000;          // one read: an agent started, asked, and stopped
+const LIST_BUDGET = 2000;            // /models waits this long for a read, then answers with what it has (Open WebUI gives up on a
+                                     // slow list after about 10 s and would then drop even plan-<tool>); the read goes on and fills the cache
 const LIST_FOLDER = '0'.repeat(32);  // the folder those agents start in (no conversation's: an empty folder, as theirs are)
 // What Claude is told in a Chat conversation (its own system prompt, recorded with the conversation)
 export const CHAT_SYSTEM = 'You are Claude, made by Anthropic, answering in a chat app (Open WebUI) on the user\'s own Claude plan. Reply to the conversation in Markdown. You have no tools, files or web access here.';
@@ -198,20 +200,36 @@ export function createChatServer({ key, status, planAllowed = false, egressOff =
     } finally { clearTimeout(timer); agent.close(); }
   }
   const encodeable = (m) => encodeModelId(m) !== null;
-  const lists = new Map();   // tool -> {at, ok, models, p (a read in flight)}
+  const lists = new Map();   // tool -> {at, ok (the last read), good (a read has worked), models, p (a read in flight)}
   // planModels(tool) -> [{id, name}]: the list kept LIST_TTL (a read that failed: LIST_RETRY, the last good list or
-  // Claude's aliases or none meanwhile — the tool's default, plan-<tool>, is always there); one read at a time per tool
+  // Claude's aliases or none meanwhile — the tool's default, plan-<tool>, is always there); one read at a time per tool.
+  // It resolves when the read has: /models and the turns below do not wait for it longer than they must
   function planModels(tool) {
     const c = lists.get(tool);
     if (c?.p) return c.p;
     if (c && Date.now() - c.at < (c.ok ? LIST_TTL : LIST_RETRY)) return Promise.resolve(c.models);
     const kept = c?.models ?? (tool === 'claude' ? CLAUDE_PLAN_FALLBACK : []);
-    const p = readModels(tool).then((models) => ({ at: Date.now(), ok: true, models }), (e) => {
+    const p = readModels(tool).then((models) => ({ at: Date.now(), ok: true, good: true, models }), (e) => {
       log(`chat ${tool}: no list of models (${said(e?.message || String(e), 200)})`);
-      return { at: Date.now(), ok: false, models: kept };
+      return { at: Date.now(), ok: false, good: c?.good ?? false, models: kept };
     }).then((r) => { lists.set(tool, r); return r.models; });
-    lists.set(tool, { at: c?.at ?? 0, ok: c?.ok ?? false, models: kept, p });
+    lists.set(tool, { at: c?.at ?? 0, ok: c?.ok ?? false, good: c?.good ?? false, models: kept, p });
     return p;
+  }
+  // (a failed read keeps the last good list: `good` stays true once a read has worked)
+  const listNow = (tool) => lists.get(tool)?.models ?? (tool === 'claude' ? CLAUDE_PLAN_FALLBACK : []);
+  // for /models: the read if it is done within LIST_BUDGET, else what there is now (the read goes on for the next ask)
+  async function listWithin(tool) {
+    let timer;
+    const late = new Promise((resolve) => { timer = setTimeout(() => resolve(listNow(tool)), LIST_BUDGET); });
+    try { return await Promise.race([planModels(tool), late]); } finally { clearTimeout(timer); }
+  }
+  // for a turn's model id: the last good list (a refresh in flight is no reason to refuse a model), and with none yet the
+  // read in flight, which ends within LIST_TIMEOUT
+  function listForTurn(tool) {
+    const c = lists.get(tool);
+    const p = planModels(tool);
+    return c?.good ? Promise.resolve(c.models) : p;
   }
 
   // which models Open WebUI lists: the subscriptions whose tool is here and says it is signed in (Copilot cannot say:
@@ -225,7 +243,7 @@ export function createChatServer({ key, status, planAllowed = false, egressOff =
       if (h.noChat || !t?.installed || t.signed === 'no') return false;
       return !(h.id === 'claude' && (planAllowed !== true || t.signed !== 'yes'));
     });
-    const offered = await Promise.all(here.map((h) => planModels(h.id)));
+    const offered = await Promise.all(here.map((h) => listWithin(h.id)));
     return here.flatMap((h, i) => [{ id: chatModelId(h.id), object: 'model', created: 0, owned_by: h.plan, name: `${h.name} · ${h.plan}` },
       ...offered[i].map((m) => ({ id: chatModelId(h.id, m.id), object: 'model', created: 0, owned_by: h.plan, name: `${h.name} · ${m.name}` }))]);
   }
@@ -348,7 +366,7 @@ export function createChatServer({ key, status, planAllowed = false, egressOff =
     // (plan-<tool>--<model>: one the tool offers now — the same list /models gave — else refused, with what it offers)
     let model = null;
     if (asked.model !== null) {
-      const offered = await planModels(tool);
+      const offered = await listForTurn(tool);
       model = offered.find((m) => m.id === asked.model)?.id ?? null;
       if (model === null) return fail(res, 404, `${h.name} does not offer the model ${said(asked.model, 80)} on your plan now${offered.length ? ` (it offers: ${offered.slice(0, 12).map((m) => m.id).join(', ')}${offered.length > 12 ? ', …' : ''})` : ''}: choose another from the list, or ${chatModelId(tool)} for its default`);
     }
