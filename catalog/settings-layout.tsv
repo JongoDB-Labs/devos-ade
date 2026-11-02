@@ -23,7 +23,7 @@ OPENWEBUI_ADMIN_EMAIL	account	main	-	Your account in Chat, and your sign-in name
 LITELLM_UI_USER	account	with	OPENWEBUI_ADMIN_EMAIL	-
 LITELLM_UI_PASSWORD	account	main	-	Admin's own password: the portal signs you in to the Admin tab with it.
 PORTAL_SESSION_DAYS	account	main	-	How long a sign-in lasts on each browser and device.
-PORTAL_HTTPS	account	main	-	HTTPS on this computer: a certificate only this install's own addresses can use, trusted by your keychain; the address becomes https://.
+PORTAL_HTTPS	account	main	-	Serves the portal at https:// with a certificate that can only vouch for this install's own addresses.
 +devices	account	main	-	Every browser, phone and installed app that signed in with the portal password.
 LITELLM_STORE_PROMPTS	account	main	-	Keep the text of every prompt and answer in the model gateway's logs (90 days, and in backups).
 
