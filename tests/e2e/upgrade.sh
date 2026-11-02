@@ -687,19 +687,23 @@ check home-card-steps "$?" "$(tail -n 1 "$OUT/steps.check")"
 # JON-978: the update recorded its steps as the next update's plan (label, seconds or skipped, in order), and Home's card, given the
 # job's final status, is at 100 % at "Updated to" — the portal's own arithmetic (static/updatecheck.js progress) run by node when the
 # host has it, the status' fields checked by hand when not. A helper of an older version writes no plan: the card then counts the steps.
-python3 - "$STACK/.state/update/last-steps.tsv" "$LOGS/helper-status.json" > "$OUT/progress.check" 2>&1 <<'PY'
+# (the backup and the code are the release updated FROM's own steps, before it runs the new code: they are in the recorded plan
+# only when that release has a plan of its own, lib/plan.sh)
+FROM_PLANS=0; git -C "$STACK" cat-file -e "$FROM:lib/plan.sh" 2>/dev/null && FROM_PLANS=1
+python3 - "$STACK/.state/update/last-steps.tsv" "$LOGS/helper-status.json" "$FROM_PLANS" > "$OUT/progress.check" 2>&1 <<'PY'
 import json, re, sys
 rows = [l.rstrip("\n").split("\t") for l in open(sys.argv[1], encoding="utf-8") if l.strip()]
 assert rows, "the update recorded no steps (.state/update/last-steps.tsv)"
 bad = [r for r in rows if len(r) != 2 or not re.fullmatch(r"[0-9]+|skipped", r[1]) or " (" in r[0]]
 assert not bad, f"unusable lines in the recorded plan: {bad[:3]}"
-assert rows[0][0] == "Backup", f"the plan starts with {rows[0][0]!r}"
+if sys.argv[3] == "1":   # (from a release without a plan, the record starts at the new code's first step)
+    assert rows[0][0] == "Backup", f"the plan starts with {rows[0][0]!r}"
 st = json.load(open(sys.argv[2]))
 assert st.get("phase") == "done" and str(st.get("message", "")).startswith("Updated to"), f"not at 'Updated to': {st.get('phase')} {st.get('message')!r}"
 assert not st.get("step"), f"a step left running: {st.get('step')}"
 plan = st.get("plan")
 assert plan is None or (isinstance(plan, list) and all(isinstance(p.get("label"), str) and isinstance(p.get("secs"), int) for p in plan)), f"plan: {plan!r}"
-print(f"{len(rows)} steps recorded as the next plan; the status is done at {st['message']!r}, " + ("its plan has %d steps" % len(plan) if plan else "no plan (an older helper)"))
+print(f"{len(rows)} steps recorded as the next plan, from {rows[0][0]!r}; the status is done at {st['message']!r}, " + ("its plan has %d steps" % len(plan) if plan else "no plan (an older helper)"))
 PY
 check progress-plan-recorded "$?" "$(tail -n 1 "$OUT/progress.check")"
 if command -v node >/dev/null 2>&1 && [ -f "$STACK/portal/portal/static/updatecheck.js" ]; then
