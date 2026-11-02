@@ -401,6 +401,76 @@ def update_card(ctx):
     return "; ".join(states)
 
 
+@check("browser", "home-update-now-after-a-failed-update")
+def update_now_after_a_failed_update(ctx):
+    """JON-975: after a failed, unfinished update (a rollback offered) with a newer release out, Update now is in sight,
+    enabled and clickable (not inert, nothing over it) and opens its confirmation; and after the helper was late, Update
+    now comes back within seconds of its next heartbeat, without a reload."""
+    if real_helper_running():
+        raise Skip("a real update helper is running: this check fakes its heartbeat and its job")
+    up = STATE / "update-check" / "latest.json"
+    files = {n: STATE / "status" / n for n in ("helper.json", "helper-status.json")}
+    saved = {p: p.read_bytes() for p in (up, *files.values()) if p.exists()}
+    page, rec = ctx.page("update-now-after-failed")
+    login(page)
+    states = []
+
+    def beat(age=0):
+        _write_json(files["helper.json"], {"heartbeat": int(time.time()) - age, "version": "e2e",
+                                           "rollback": {"available": True, "to": "v0.4.1", "unfinished": True}})
+    try:
+        now = int(time.time())
+        iso = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        rel = {"tag": "v99.0.0", "name": "v99.0.0 — a fake release", "headline": "a fake release", "notes": "## v99.0.0\n- fake",
+               "url": "https://github.com/JongoDB-Labs/devos-ade/releases/tag/v99.0.0", "published_at": iso}
+        _write_json(up, {"tag": "v99.0.0", "name": "v99.0.0 (e2e)", "notes": rel["notes"], "url": rel["url"], "published_at": iso,
+                         "checked_at": iso, "error": None, "releases": [rel]})
+        # 1. the owner's state on 2026-11-01: the last update failed at setup's smoke test, unfinished, a rollback offered
+        _write_json(files["helper-status.json"], {"id": "a" * 32, "action": "update", "phase": "failed",
+                                                  "message": "The smoke test failed (e2e)", "started_at": now - 900,
+                                                  "updated_at": now - 600, "finished_at": now - 600, "version": "v98.0.0",
+                                                  "trigger": "request"})
+        beat()
+        page.reload()
+        page.wait_for_selector("#update-now:not([hidden])", timeout=15000)
+        btn = page.locator("#update-now")
+        expect(btn.is_enabled(), f"Update now disabled after a failed update; hint {page.inner_text('#update-hint')!r}")
+        expect(not page.evaluate("() => Boolean(document.querySelector('#update-now').closest('[inert]'))"),
+               "Update now is inside an inert element")
+        btn.click(trial=True, timeout=5000)   # actionable: in sight, enabled, stable, and nothing over it takes the click
+        btn.click()
+        page.wait_for_selector("#confirm[open]", timeout=5000)
+        expect(page.inner_text("#confirm-text").startswith("Update to v99.0.0"), f"confirm: {page.inner_text('#confirm-text')!r}")
+        shot(page, "05c-home-update-now-after-a-failed-update", mask=["#confirm-password"])
+        page.click("#confirm-cancel")
+        page.locator("#confirm").wait_for(state="hidden", timeout=5000)
+        states.append("after a failed, unfinished update: Update now enabled, clickable, confirms")
+        # 2. the helper late (its heartbeat 4 min old), then answering again: no reload, Update now back within seconds
+        beat(240)
+        page.reload()
+        page.wait_for_selector("#update-now:not([hidden])", timeout=15000)
+        expect(btn.is_disabled(), "Update now enabled while the helper is late")
+        beat()
+        t0 = time.time()
+        try:
+            page.wait_for_function("() => !document.querySelector('#update-now').disabled", timeout=30000)
+        except PwError:
+            pass
+        took = time.time() - t0
+        expect(btn.is_enabled() and took <= 10, f"Update now came back {took:.1f} s after the helper's heartbeat (at most 10 s)")
+        states.append(f"helper late, then answering: Update now back in {took:.1f} s without a reload")
+    finally:
+        for p in (up, *files.values()):
+            if p in saved:
+                p.write_bytes(saved[p])
+            else:
+                p.unlink(missing_ok=True)
+        for f in (STATE / "requests").glob("req-*.json"):
+            f.unlink()
+    rec.save()
+    return "; ".join(states)
+
+
 @check("browser", "home-update-check-button")
 def update_check_button(ctx):
     """Check for updates (static/updatecheck.js, POST /api/update/check): the line in Home's header and in Settings ›
