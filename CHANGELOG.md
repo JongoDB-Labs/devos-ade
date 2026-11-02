@@ -29,6 +29,10 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   non-interactive setup never enables it, setup asks only after writing the password and goes on when turning it on fails,
   a keychain prompt nobody answers ends. Portal tests (origin, `Secure` cookie, a sign-in that comes back over https, the Home card and notice). End-to-end check
   `https/https-local-portal` (`tests/e2e/https.sh`).
+- **Update now after a failed update (JON-975).** End-to-end check `browser/home-update-now-after-a-failed-update`: after a
+  failed, unfinished update (a rollback offered) with a newer release out, Update now is in sight, enabled, not inert and
+  clickable, and opens its confirmation; after the update helper was late, it is back within 10 seconds of the helper's
+  next heartbeat, without a reload.
 
 ## [0.53.0] - 2026-11-02
 
