@@ -525,7 +525,7 @@ test_costs_and_test_show_the_terminal_key_once_it_exists() {
   body="$(sed -n '/^cmd_costs() {/,/^}/p' "$STACK_DIR/lib/commands.sh")"
   assert_contains "$body" 'echo terminal); do'
   assert_contains "$body" 'terminal) envk=LITELLM_KEY_TERMINAL'
-  assert_contains "$(sed -n '/^cmd_test() {/,/^}/p' "$STACK_DIR/lib/commands.sh")" 'claude-code-terminal) envk=LITELLM_KEY_TERMINAL'
+  assert_contains "$(sed -n '/^_test_checks() {/,/^}/p' "$STACK_DIR/lib/commands.sh")" 'claude-code-terminal) envk=LITELLM_KEY_TERMINAL'
   assert_contains "$(cat "$STACK_DIR/.env.example")" "BUDGET_TERMINAL=50"
 }
 

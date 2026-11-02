@@ -934,7 +934,7 @@ test_setup_and_recheck_run_the_bedrock_steps_in_order() {
   rc="$(sed -n '/^models_recheck() {/,/^}/p' "$STACK_DIR/lib/commands.sh")"
   assert_contains "$rc" "stt_after_probe"
   assert_contains "$rc" "stt_setup_service"
-  assert_contains "$(sed -n '/^cmd_test() {/,/^}/p' "$STACK_DIR/lib/commands.sh")" "stt_test_checks"
+  assert_contains "$(sed -n '/^_test_checks() {/,/^}/p' "$STACK_DIR/lib/commands.sh")" "stt_test_checks"
   assert_contains "$(sed -n '/^cmd_up() {/,/^}/p' "$STACK_DIR/lib/commands.sh")" "stt_before_up"
   assert_contains "$(cmd_help)" "set bedrock [small|mini]"
 }

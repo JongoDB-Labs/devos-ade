@@ -339,3 +339,76 @@ test_setup_stopped_while_turning_the_code_page_on_by_default_undoes_it() {
   assert_contains "$c" 'SETUP_CODE_DEFAULT="$CODE_DEFAULT_ON"'
   assert_contains "$c" "SETUP_CODE_DEFAULT=0"
 }
+
+# --- JON-996: a smoke check that only timed out is tried once more, with a longer limit, before it fails ---
+# cmd_test with every check group stubbed: the one probe group answers "ok" (or hangs, per $TMP/mode), nothing else fails.
+_smoke_stubs() {
+  printf 'LITELLM_PORT=9\nSHARED_MCP_PORT=9\nLITELLM_KEY_CLAUDE_CODE=sk-a\nLITELLM_KEY_OPENWEBUI=sk-b\nLITELLM_KEY_SETUP=sk-c\n' > "$ENV_FILE"
+  curl() { case "$*" in *healthz*|*liveliness*) echo 200 ;; *) echo 401 ;; esac; }
+  curl_auth() { echo '"search_knowledge"'; }
+  litellm_key_status() { echo 200; }
+  _test_portal() { :; }; stt_test_checks() { :; }; terminal_test_checks() { :; }; code_test_checks() { :; }
+  : > "$TMP/calls"
+  # the probe: hangs on the calls listed in $TMP/hang (first | always | never), else answers ok
+  _sandbox_says() {
+    local n; n=$(( $(cat "$TMP/calls" | wc -l) + 1 )); echo x >> "$TMP/calls"
+    case "$(cat "$TMP/hang")" in always) sleep 20 ;; first) [ "$n" -ne 1 ] || sleep 20 ;; esac
+    echo ok
+  }
+  projects_test_checks() { _check "the sandbox answers" "$(_probe _sandbox_says)" ok; }
+  PROBE_DEADLINE_S=1; PROBE_RETRY_MIN_S=3
+}
+_smoke_run() { set +e; (set -eo pipefail; cmd_test) > "$TMP/o" 2>&1; rc=$?; set -e; out="$(cat "$TMP/o")"; }
+
+test_cmd_test_tries_a_check_that_only_timed_out_once_more() {
+  _smoke_stubs; echo first > "$TMP/hang"
+  _smoke_run
+  [ "$rc" -eq 0 ] || { echo "should pass: $out" >&2; return 1; }
+  assert_contains "$out" "  slow  the sandbox answers (couldn't check within 1 s; tried again below)"
+  assert_contains "$out" "the computer was busy: 1 check(s) could not run in time — trying them once more with a longer limit"
+  assert_contains "$out" "  ok    the sandbox answers"
+  assert_contains "$out" "all checks passed"
+  assert_eq "$(printf '%s\n' "$out" | grep -c '^  FAIL')" 0
+}
+
+test_cmd_test_fails_when_the_retry_times_out_too() {
+  _smoke_stubs; echo always > "$TMP/hang"
+  _smoke_run
+  [ "$rc" -ne 0 ] || { echo "should fail" >&2; return 1; }
+  assert_contains "$out" "  slow  the sandbox answers"
+  assert_contains "$out" "trying them once more"
+  assert_contains "$out" "  FAIL  the sandbox answers (got «couldn't check (timed out after 3 s)», want ok)"
+  assert_contains "$out" "1 check(s) failed"
+  assert_eq "$(printf '%s\n' "$out" | grep -c '^  FAIL')" 1
+  assert_eq "$(wc -l < "$TMP/calls" | tr -d ' ')" 2   # (once more, never twice)
+}
+
+test_cmd_test_does_not_retry_when_something_really_failed() {
+  _smoke_stubs; echo always > "$TMP/hang"
+  litellm_key_status() { echo 500; }   # a wrong answer: three keys
+  _smoke_run
+  [ "$rc" -ne 0 ] || { echo "should fail" >&2; return 1; }
+  assert_not_contains "$out" "trying them once more"
+  assert_eq "$(wc -l < "$TMP/calls" | tr -d ' ')" 1
+  assert_eq "$(printf '%s\n' "$out" | grep -c '^  FAIL')" 4   # (3 keys + the timed-out one, now a FAIL line the helper counts)
+  assert_contains "$out" "  FAIL  the sandbox answers (got «couldn't check (timed out after 1 s)», want ok)"
+  assert_contains "$out" "4 check(s) failed"
+}
+
+test_cmd_test_says_nothing_of_a_retry_when_nothing_timed_out() {
+  _smoke_stubs; echo never > "$TMP/hang"
+  _smoke_run
+  [ "$rc" -eq 0 ] || { echo "should pass: $out" >&2; return 1; }
+  assert_not_contains "$out" "once more"
+  assert_not_contains "$out" "  slow "
+  assert_eq "$(wc -l < "$TMP/calls" | tr -d ' ')" 1
+}
+
+test_probe_deadline_is_longer_on_the_retry() {
+  PROBE_DEADLINE_S=1 PROBE_RETRY_MIN_S=3 PROBE_LONGER=1
+  assert_eq "$(_probe sh -c 'sleep 4')" "couldn't check (timed out after 3 s)"
+  PROBE_DEADLINE_S=90 PROBE_RETRY_MIN_S=3
+  assert_eq "$(_probe_deadline)" 180
+  PROBE_DEADLINE_S=30 PROBE_RETRY_MIN_S=90
+  assert_eq "$(_probe_deadline)" 90
+}

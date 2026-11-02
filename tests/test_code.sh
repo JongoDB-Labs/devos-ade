@@ -464,7 +464,7 @@ test_hooks_of_up_setup_test_summary_uninstall_are_called() {
   c="$(cat "$STACK_DIR/lib/commands.sh")"
   assert_contains "$(sed -n '/^cmd_up() {/,/^}/p' "$STACK_DIR/lib/commands.sh")" "code_up_hook"
   assert_contains "$c" "code_setup_hook"
-  assert_contains "$(sed -n '/^cmd_test() {/,/^}/p' "$STACK_DIR/lib/commands.sh")" "code_test_checks"
+  assert_contains "$(sed -n '/^_test_checks() {/,/^}/p' "$STACK_DIR/lib/commands.sh")" "code_test_checks"
   assert_contains "$c" "code_summary_line"
   assert_contains "$(sed -n '/^cmd_uninstall() {/,/^}/p' "$STACK_DIR/lib/commands.sh")" "code_uninstall_cleanup"
   # setup: the terminal's hook first (the sandbox), then the Code page's

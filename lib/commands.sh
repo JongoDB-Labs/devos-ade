@@ -1658,6 +1658,16 @@ _check() { # _check LABEL GOT WANT — uses the caller's `fails` counter. GOT is
   # apart («…»), never as this computer's own words or controls; the helper's job message takes the label alone
   local got
   if [ "$2" = "$3" ]; then printf '  ok    %s\n' "$1"; return 0; fi
+  # (cmd_test's first pass, JON-996: a probe that only ran out of time is not a verdict — said as `slow`, and tried
+  # again by cmd_test with a longer limit; on that second pass, or if anything really failed, it is a FAIL as ever)
+  case "$2" in "couldn't check (timed out"*)
+    if [ -n "${smoke_slow_ok:-}" ]; then
+      got="${2#*after }"; got="${got%% s*}"
+      printf "  slow  %s (couldn't check within %s s; tried again below)\n" "$1" "$got"
+      slow=$((slow + 1)); slow_list="${slow_list}${1}"$'\t'"${2}"$'\t'"${3}"$'\n'
+      return 0
+    fi ;;
+  esac
   got="$(printf '%s' "${2:-nothing}" | LC_ALL=C tr -c ' -~' ' ' | cut -c1-160)"
   printf '  FAIL  %s (got «%s», want %s)\n' "$1" "$got" "$3"; fails=$((fails + 1))
 }
@@ -1728,8 +1738,31 @@ _test_portal() {
 # Every probe below is `|| true` inside its substitution: under set -e/pipefail a transport error or a
 # grep without match must turn into a FAIL line, not silently end the test run.
 cmd_test() {
-  local fails=0 tmp lp mp code haiku opus sk alias envk k
+  # JON-996: on a busy computer a probe into a container can run out of time without having answered wrongly. The
+  # first pass says those as `slow` (not FAIL); if nothing really failed, every check runs once more with a longer
+  # limit, where a timeout is a FAIL. Failing closed stays: a check that never answers never passes.
+  local fails=0 slow=0 slow_list='' smoke_slow_ok=1 PROBE_LONGER='' l g w
   [ -f "$ENV_FILE" ] || die "run ./stack setup first"
+  _test_checks
+  if [ "$slow" -gt 0 ]; then
+    if [ "$fails" -eq 0 ]; then
+      printf '  (the computer was busy: %s check(s) could not run in time — trying them once more with a longer limit)\n' "$slow"
+      smoke_slow_ok=''; PROBE_LONGER=1; slow=0
+      _test_checks
+    else
+      # (something really failed: no retry, and the checks that timed out count as failures — FAIL lines, as the helper counts)
+      while IFS=$'\t' read -r l g w; do
+        [ -z "$l" ] || { smoke_slow_ok=''; _check "$l" "$g" "$w"; }
+      done <<< "$slow_list"
+    fi
+  fi
+  [ "$fails" -eq 0 ] || die "$fails check(s) failed — see ./stack logs"
+  log "all checks passed"
+}
+
+# _test_checks — one pass of every smoke check, on cmd_test's `fails`, `slow` and `slow_list`
+_test_checks() {
+  local tmp lp mp code haiku opus sk alias envk k
   tmp="$(mktemp)"; lp="$(get_env LITELLM_PORT)"; mp="$(get_env SHARED_MCP_PORT)"
   haiku="$(get_env CLAUDE_BEDROCK_HAIKU_MODEL)"; opus="$(get_env CLAUDE_BEDROCK_OPUS_MODEL)"
   sk="$(get_env LITELLM_KEY_SETUP)"
@@ -1777,8 +1810,6 @@ cmd_test() {
   projects_test_checks   # lib/projects.sh: the sandbox sees each project folder, read-only where chosen
   code_test_checks       # lib/code.sh: the Code page's checks, when on (no Bedrock calls)
   rm -f "$tmp"
-  [ "$fails" -eq 0 ] || die "$fails check(s) failed — see ./stack logs"
-  log "all checks passed"
 }
 
 # --- backup / restore / update / rotate-aws / uninstall ---

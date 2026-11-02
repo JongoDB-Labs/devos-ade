@@ -147,10 +147,18 @@ PROBE_DEADLINE_S="${PROBE_DEADLINE_S:-30}"
 # _probe CMD… -> CMD's output, under _with_deadline PROBE_DEADLINE_S; after the deadline its output is "couldn't check
 # (timed out after N s)" — never what a check passes on. Always 0.
 _probe() {
-  local rc=0 out
-  out="$(_with_deadline "$PROBE_DEADLINE_S" "$@")" || rc=$?
-  if [ "$rc" = 124 ]; then printf "couldn't check (timed out after %s s)" "$PROBE_DEADLINE_S"; else printf '%s' "$out"; fi
+  local rc=0 out d
+  d="$(_probe_deadline)"
+  out="$(_with_deadline "$d" "$@")" || rc=$?
+  if [ "$rc" = 124 ]; then printf "couldn't check (timed out after %s s)" "$d"; else printf '%s' "$out"; fi
   return 0
+}
+# _probe_deadline -> the seconds one probe may take now: PROBE_DEADLINE_S (a caller may set its own, 90 for some), and
+# on the smoke test's one retry (PROBE_LONGER set, JON-996) twice that, at least PROBE_RETRY_MIN_S (90)
+_probe_deadline() {
+  local d="$PROBE_DEADLINE_S" m="${PROBE_RETRY_MIN_S:-90}"
+  if [ -n "${PROBE_LONGER:-}" ]; then d=$((d * 2)); [ "$d" -ge "$m" ] || d="$m"; fi
+  printf '%s' "$d"
 }
 
 # --- .env access. Never `source` the file: values can contain $, quotes, etc. ---
