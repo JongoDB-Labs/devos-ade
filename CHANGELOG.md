@@ -6,6 +6,17 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Added
+- **A Git page for the local git server, and Git in the search (JON-979).** The sidebar has a **Git** tab after Files (on a
+  phone under **More**, with an arrow to open it in its own window): the built-in git server's web UI, signed in as its
+  owner, so you can look through repositories, branches, issues and pull requests without a separate address. An address
+  like `#git/<owner>/<repo>/issues/12` opens that place. While the local git server is off the tab stays, muted, and links to
+  **Settings › Claude Code › Local git server**. The search (**Ctrl+K**) has a **Git** group: repositories by name and
+  description, and issues and pull requests by title; Enter opens the one you choose in the Git tab. The portal asks the git
+  server for them with a read-only token (`read:repository` and `read:issue`) that only the portal container holds. Code is
+  not searched: the git server's code indexer is off by default (`LOCALGIT_INDEXER=true` turns it on, and the search then offers
+  the server's own code search). If the git server does not answer, one **Search in Git** entry opens the tab.
+
 ## [0.51.1] - 2026-11-02
 
 ### Fixed
@@ -26,15 +37,6 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   tool does not offer (now) is refused with what it offers. Gemini and Cursor are still not in Chat or the Code page.
 - **Tests: one list of models everywhere.** The file the Code page reads, LiteLLM's `bn_id` keys and devos-claude's rows
   hold the same models (all, and the ones `CODE_MODELS` lists); the Code page's and Chat's tools are the catalog's.
-- **A Git page for the local git server, and Git in the search (JON-979).** The sidebar has a **Git** tab after Files (on a
-  phone under **More**, with an arrow to open it in its own window): the built-in git server's web UI, signed in as its
-  owner, so you can look through repositories, branches, issues and pull requests without a separate address. An address
-  like `#git/<owner>/<repo>/issues/12` opens that place. While the local git server is off the tab stays, muted, and links to
-  **Settings › Claude Code › Local git server**. The search (**Ctrl+K**) has a **Git** group: repositories by name and
-  description, and issues and pull requests by title; Enter opens the one you choose in the Git tab. The portal asks the git
-  server for them with a read-only token (`read:repository` and `read:issue`) that only the portal container holds. Code is
-  not searched: the git server's code indexer is off by default (`LOCALGIT_INDEXER=true` turns it on, and the search then offers
-  the server's own code search). If the git server does not answer, one **Search in Git** entry opens the tab.
 
 ### Changed
 - **The Code page lists the models Claude Code reports for your plan,** not four fixed names (default, Opus, Sonnet,
