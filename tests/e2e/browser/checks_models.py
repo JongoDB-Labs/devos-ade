@@ -223,10 +223,17 @@ def ui_models(ctx):
 
 
 def _terminal_models(page, f, arg: str) -> list[str]:
-    """The ids devos-claude --models [all] prints in a shell window of the browser terminal (rows: a marker, the id, …)."""
-    type_line(page, f, f"clear; devos-claude --models {arg}".rstrip())
-    out = wait_text(f, r"devos-claude --model <id or name>", 30)
-    return [m.group(1) for m in (re.match(r"^[ *] (\S+)\s", ln) for ln in out.splitlines()) if m and m.group(1) != "MODEL"]
+    """The ids devos-claude --models [all] prints in a shell window of the browser terminal: its table's rows only (from the
+    MODEL header to the blank line after them, so not "* Default for new sessions"), sorted and folded onto a few short lines
+    between markers of this call's own — tmux shows one screen, so a long table would scroll its first rows away, and the
+    screen before `clear` still holds the previous call's output."""
+    tag = f"models-{arg or 'listed'}"
+    rows = "awk '/^  MODEL /{t=1; next} t && /^$/{exit} t {print ($1 == \"*\" ? $2 : $1)}'"
+    type_line(page, f, f"clear; echo BEGIN-{tag}; devos-claude --models {arg} | {rows} | LC_ALL=C sort | paste -sd' ' - | fold -s -w 80; echo END-{tag}")
+    out = wait_text(f, rf"^END-{tag}$", 30)
+    m = re.search(rf"^BEGIN-{tag}$\n(.*?)^END-{tag}$", out, re.M | re.S)
+    expect(m, f"no BEGIN-{tag} … END-{tag} on the screen: {out[-600:]!r}")
+    return m.group(1).split()
 
 
 @check("browser", "models-same-on-all-surfaces")
