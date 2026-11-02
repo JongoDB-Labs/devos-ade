@@ -111,3 +111,65 @@ test("where a setting is changed comes first: a word match in Settings goes abov
   assert.equal(S.wordHit("Nobudget here", "budget"), false);
   assert.equal(S.wordHit("Chat budget", "chat budg"), true);
 });
+
+// --- the Git group (JON-979): the built-in git server's repositories, issues and pull requests, from the portal server ---
+
+const GIT = {
+  repos: [{ repo: "devos/notes", description: "Meeting notes", private: true, archived: false },
+    { repo: "devos/old", description: "", private: false, archived: true },
+    { repo: "../etc/passwd", description: "x" }, { repo: "devos/..", description: "x" }, { repo: "devos/a b", description: "x" }, null, { repo: 5 }],
+  issues: [{ repo: "devos/notes", number: 12, title: "Fix the ‮notes", pr: false, state: "open" },
+    { repo: "devos/notes", number: 13, title: "Add search", pr: true, state: "closed" },
+    { repo: "devos/notes", number: 0, title: "x" }, { repo: "devos/notes", number: 1.5, title: "x" }, { repo: "devos/notes", number: "7", title: "x" },
+    { repo: "evil", number: 3, title: "x" }, { repo: "devos/notes", number: 14, title: "" }],
+};
+
+test("Git: the group sits after Chat conversations and is asked from two characters on", () => {
+  const ids = plain(S.GROUPS).map(([g]) => g);
+  assert.deepEqual(plain(S.GROUPS)[ids.indexOf("git")], ["git", "Git"]);
+  assert.ok(ids.indexOf("git") === ids.indexOf("chats") + 1 && ids.indexOf("git") < ids.indexOf("tour"));
+  assert.equal(S.PER_GROUP.git, 6);
+  assert.equal(S.MIN_ASYNC, 2);
+});
+
+test("Git: repositories and issues / pull requests become entries that open #git places; odd rows dropped", () => {
+  const e = plain(S.gitEntries(GIT));
+  assert.deepEqual(e.map((x) => x.place), ["devos/notes", "devos/old", "devos/notes/issues/12", "devos/notes/pulls/13", "devos/notes/issues/14"]);
+  assert.ok(e.every((x) => x.group === "git" && x.prefiltered === true), "the git server matched them, not fuzzy");
+  assert.equal(e[0].title, "devos/notes");
+  assert.equal(e[0].sub, "Repository · private · Meeting notes");
+  assert.equal(e[1].sub, "Repository · archived");
+  assert.equal(e[2].sub, "devos/notes · Issue #12");
+  assert.equal(e[3].sub, "devos/notes · Pull request #13 · closed");
+  assert.equal(e[4].title, "#14", "an empty title shows its number");
+  assert.equal(new Set(e.map((x) => x.key)).size, e.length);
+  assert.deepEqual(plain(S.gitEntries(null)), []);
+  assert.deepEqual(plain(S.gitEntries({ repos: "x", issues: {} })), []);
+});
+
+test("Git: titles and descriptions are untrusted text: direction characters made visible, capped", () => {
+  const e = plain(S.gitEntries(GIT));
+  assert.equal(e[2].title, "Fix the ⟨U+202E⟩notes");
+  const long = plain(S.gitEntries({ repos: [{ repo: "a/b", description: "d".repeat(1000) }], issues: [{ repo: "a/b", number: 1, title: "t".repeat(1000) }] }));
+  assert.ok(long[0].sub.length <= "Repository · ".length + 160);
+  assert.equal(long[1].title.length, 200);
+  // a place is built from the checked name and number, never taken from the answer
+  const sneaky = plain(S.gitEntries({ repos: [{ repo: "a/b", place: "admin/settings" }], issues: [{ repo: "a/b", number: 2, place: "x/y" }] }));
+  assert.deepEqual(sneaky.map((x) => x.place), ["a/b", "a/b/issues/2"]);
+});
+
+test("Git: at most 8 repositories and 8 issues are taken from an answer; the group shows PER_GROUP of them", () => {
+  const many = { repos: Array.from({ length: 30 }, (_, i) => ({ repo: `o/r${i}` })), issues: Array.from({ length: 30 }, (_, i) => ({ repo: "o/r", number: i + 1, title: `Issue ${i}` })) };
+  const e = plain(S.gitEntries(many));
+  assert.equal(e.length, 16);
+  const g = plain(S.searchEntries(e, "r"));
+  assert.equal(g.git.shown.length, 6);
+  assert.equal(g.git.more, 10);
+});
+
+test("Git: the group is ranked with the others, and what the git server matched stays even when fuzzy finds nothing in the title", () => {
+  const e = plain(S.gitEntries({ repos: [{ repo: "devos/notes", description: "budget meetings" }], issues: [] }));
+  const g = plain(S.searchEntries([...e, { group: "settings", key: "s", title: "Budget", sub: "", alt: "" }], "budget"));
+  assert.deepEqual(Object.keys(g).sort(), ["git", "settings"]);
+  assert.equal(g.git.shown[0].entry.place, "devos/notes");
+});

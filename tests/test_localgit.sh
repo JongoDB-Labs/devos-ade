@@ -440,7 +440,11 @@ test_the_web_site_signs_the_owner_in_only_after_the_portal_and_the_sandboxs_path
   assert_contains "$mirrors" "path /api/v1/repos/migrate"
   assert_contains "$mirrors" 'push_mirrors(/[A-Za-z0-9._-]+)?|push_mirrors-sync|mirror-sync'
   assert_not_contains "$mirrors" "admin"
-  assert_eq "$(printf '%s\n' "$mirrors" | grep -c 'reverse_proxy')" 3
+  # (and, for the portal's Git search, the two GET searches — a matcher of their own, GET and those paths only)
+  assert_eq "$(printf '%s\n' "$mirrors" | grep -c 'reverse_proxy')" 4
+  assert_contains "$(printf '%s\n' "$mirrors" | sed -n '/@search {/,/}/p')" "method GET"
+  assert_contains "$(printf '%s\n' "$mirrors" | sed -n '/@search {/,/}/p')" "path /api/v1/repos/search /api/v1/repos/issues/search"
+  assert_contains "$mirrors" "reverse_proxy @search forgejo:3000"
   y="$(sed -n '/^  forgejo:/,/^  portal:/p' "$T_ROOT/compose.yaml")"
   assert_contains "$y" 'FORGEJO__service__ENABLE_REVERSE_PROXY_AUTHENTICATION: ${LOCALGIT_SSO_ON:-false}'
   assert_contains "$y" 'FORGEJO__service__ENABLE_REVERSE_PROXY_AUTO_REGISTRATION: "false"'
@@ -484,4 +488,118 @@ test_the_sign_in_header_has_a_secret_name_only_caddy_and_forgejo_know() {
   out="$(PATH="$TMP/bin:$PATH" LOCALGIT_SSO_ON=true dc ps)"
   assert_contains "$out" "LOCALGIT_SSO_ON=false"
   assert_eq "$(get_env LOCALGIT_SSO_HEADER)" ""
+}
+
+# --- the portal's Git search token (JON-979): read-only, in .env, in the portal container alone ---
+
+test_the_search_token_is_made_with_the_narrowest_scopes_kept_in_env_mode_600_and_never_on_a_command_line() {
+  printf 'X=1\n' > "$ENV_FILE"; chmod 644 "$ENV_FILE"
+  TOK="gt$(printf 'q%.0s' $(seq 1 38))"
+  : > "$TMP/calls"
+  dc() {
+    echo "dc $*" >> "$TMP/calls"
+    case "$*" in
+      *"generate-access-token"*) echo "$TOK" ;;
+      *"curl"*) cat >> "$TMP/stdin" ;;
+    esac
+  }
+  assert_eq "$LOCALGIT_READ_SCOPES" "read:repository,read:issue"
+  localgit_read_token_ensure || { echo "no token made" >&2; return 1; }
+  assert_contains "$(cat "$TMP/calls")" "generate-access-token --username devos --token-name devos-ade-search-"
+  assert_contains "$(cat "$TMP/calls")" "--scopes read:repository,read:issue --raw"
+  assert_not_contains "$(cat "$TMP/calls")" "write:"                       # (nothing that changes a repository)
+  assert_not_contains "$(cat "$TMP/calls")" "$TOK"                         # (never on a command line)
+  assert_eq "$(get_env LOCALGIT_READ_TOKEN)" "$TOK"
+  assert_eq "$(perm_of "$ENV_FILE")" 600
+  assert_eq "$_LG_READ_TOKEN_NEW" 1
+}
+
+test_the_search_token_is_kept_while_the_server_accepts_it_and_made_again_when_it_does_not() {
+  TOK="gt$(printf 'q%.0s' $(seq 1 38))"; NEW="gt$(printf 'n%.0s' $(seq 1 38))"
+  printf 'LOCALGIT_READ_TOKEN=%s\n' "$TOK" > "$ENV_FILE"
+  : > "$TMP/calls"; : > "$TMP/stdin"; ACCEPT=1
+  dc() {
+    echo "dc $*" >> "$TMP/calls"
+    case "$*" in
+      *"generate-access-token"*) echo "$NEW" ;;
+      *"curl"*) cat >> "$TMP/stdin"; [ "$ACCEPT" = 1 ] ;;
+    esac
+  }
+  localgit_read_token_ensure || return 1
+  assert_not_contains "$(cat "$TMP/calls")" "generate-access-token"           # (kept)
+  assert_eq "$_LG_READ_TOKEN_NEW" ""
+  assert_eq "$(get_env LOCALGIT_READ_TOKEN)" "$TOK"
+  # the check puts the token on curl's stdin as a header line: not in the arguments
+  assert_contains "$(cat "$TMP/stdin")" "Authorization: token $TOK"
+  assert_not_contains "$(cat "$TMP/calls")" "$TOK"
+  assert_contains "$(cat "$TMP/calls")" "curl -fsS -o /dev/null -K - http://127.0.0.1:3000/api/v1/repos/search?limit=1"
+  # a token the server refuses (the volume was removed and made again): a new one
+  ACCEPT=0; localgit_read_token_ensure || return 1
+  assert_eq "$(get_env LOCALGIT_READ_TOKEN)" "$NEW"
+  assert_eq "$_LG_READ_TOKEN_NEW" 1
+  # the command printing nothing: .env keeps what it had, and it is said by the failure
+  printf 'LOCALGIT_READ_TOKEN=%s\n' "$TOK" > "$ENV_FILE"; ACCEPT=0
+  dc() { case "$*" in *"curl"*) cat >/dev/null; return 1 ;; *"generate-access-token"*) return 1 ;; esac; }
+  ! localgit_read_token_ensure || { echo "a failed token counted as made" >&2; return 1; }
+  assert_eq "$(get_env LOCALGIT_READ_TOKEN)" "$TOK"
+}
+
+test_after_up_recreates_the_portal_only_for_a_new_token_and_says_when_there_is_none() {
+  printf 'X=1\n' > "$ENV_FILE"
+  _lg_running() { return 0; }; localgit_ensure_admin() { return 0; }; localgit_register_host() { return 0; }
+  : > "$TMP/calls"
+  up_services() { echo "up_services $*" >> "$TMP/calls"; }
+  localgit_read_token_ensure() { _LG_READ_TOKEN_NEW=1; return 0; }
+  localgit_after_up
+  assert_contains "$(cat "$TMP/calls")" "up_services --no-deps portal"
+  : > "$TMP/calls"; localgit_read_token_ensure() { _LG_READ_TOKEN_NEW=''; return 0; }
+  localgit_after_up; assert_eq "$(cat "$TMP/calls")" ""                        # (a token that stands: nothing restarts)
+  localgit_read_token_ensure() { return 1; }
+  out="$(localgit_after_up 2>&1)"; rc=$?
+  assert_eq "$rc" 0
+  assert_contains "$out" "could not make the token the portal's Git search uses"
+  printf 'LOCALGIT=off\n' > "$ENV_FILE"; : > "$TMP/calls"; localgit_read_token_ensure() { echo ensure >> "$TMP/calls"; }
+  localgit_after_up; assert_eq "$(cat "$TMP/calls")" ""                        # (off: nothing)
+}
+
+test_the_search_token_reaches_the_portal_container_and_no_other_service() {
+  # the portal's environment holds it (and the mode and the API address to use it with) ...
+  p="$(sed -n '/^  portal:/,/^  caddy:/p' "$T_ROOT/compose.yaml")"
+  assert_contains "$p" 'LOCALGIT_READ_TOKEN: ${LOCALGIT_READ_TOKEN:-}'
+  assert_contains "$p" 'LOCALGIT_MODE: ${BN_LOCALGIT_MODE:-off}'
+  assert_contains "$p" 'LOCALGIT_API_URL: http://caddy:8099'
+  # ... and no other service of compose.yaml or any overlay does: not the terminal, the Code page, the sandbox's gateway, Forgejo
+  # itself (it makes the token, the stack hands it over), Caddy, Chat or the rest
+  n="$(grep -c 'LOCALGIT_READ_TOKEN' "$T_ROOT/compose.yaml")"
+  assert_eq "$n" 1
+  for f in "$T_ROOT"/compose.*.yaml; do assert_not_contains "$(cat "$f")" "LOCALGIT_READ_TOKEN" || { echo "$f holds the token" >&2; return 1; }; done
+  for f in terminal code terminal-gateway forgejo caddy litellm open-webui shared-mcp postgres rustfs searxng stt; do
+    assert_not_contains "$(sed -n "/^  $f:/,/^  [a-z-]*:\$/p" "$T_ROOT/compose.yaml")" "LOCALGIT_READ_TOKEN" || { echo "$f holds the token" >&2; return 1; }
+  done
+  # no env_file anywhere: .env is not handed to a container whole
+  assert_not_contains "$(cat "$T_ROOT"/compose*.yaml)" "env_file"
+  # nothing in the code, terminal or sandbox sources names it
+  assert_not_contains "$(cat "$T_ROOT"/terminal/*.sh 2>/dev/null; cat "$T_ROOT"/code/server/*.mjs 2>/dev/null)" "LOCALGIT_READ_TOKEN"
+}
+
+test_the_search_token_is_not_taken_from_the_shell_and_not_printed() {
+  printf 'LOCALGIT_READ_TOKEN=fromenv\n' > "$ENV_FILE"; mkdir -p "$TMP/bin"
+  printf '#!/bin/sh\nenv | grep -E "^LOCALGIT_(READ_TOKEN|CODE_INDEXER)=" | sort || true\n' > "$TMP/bin/docker"; chmod +x "$TMP/bin/docker"
+  # compose reads .env itself (--env-file); a shell's value never beats it
+  out="$(PATH="$TMP/bin:$PATH" LOCALGIT_READ_TOKEN=evil LOCALGIT_INDEXER=true dc ps)"
+  assert_not_contains "$out" "evil"
+  assert_not_contains "$out" "LOCALGIT_INDEXER"
+  # setup's and status's output name the key, never the value
+  TOK="gt$(printf 'q%.0s' $(seq 1 38))"; printf 'LOCALGIT_READ_TOKEN=%s\nLOCALGIT_ADMIN_PASSWORD=Lg9-0123456789abcdef0123456789ab\n' "$TOK" > "$ENV_FILE"
+  assert_not_contains "$(localgit_status_line; localgit_summary_line)" "$TOK"
+  # the catalog and .env.example know the key as a secret, read-only
+  grep -qE '^LOCALGIT_READ_TOKEN	advanced	S	ro	' "$T_ROOT/catalog/settings.tsv" || { echo "settings.tsv: not a read-only secret" >&2; return 1; }
+  grep -q '^LOCALGIT_READ_TOKEN=' "$T_ROOT/.env.example" || { echo ".env.example lacks the key" >&2; return 1; }
+}
+
+test_code_search_follows_the_indexer_switch_in_forgejo_and_the_portal() {
+  y="$(sed -n '/^  forgejo:/,/^  portal:/p' "$T_ROOT/compose.yaml")"
+  assert_contains "$y" 'FORGEJO__indexer__REPO_INDEXER_ENABLED: ${LOCALGIT_INDEXER:-false}'   # (off unless asked for)
+  assert_contains "$(sed -n '/^  portal:/,/^  caddy:/p' "$T_ROOT/compose.yaml")" 'LOCALGIT_INDEXER: ${LOCALGIT_INDEXER:-false}'
+  grep -q '^LOCALGIT_INDEXER=' "$T_ROOT/.env.example" || { echo ".env.example lacks the key" >&2; return 1; }
 }

@@ -386,6 +386,10 @@ you type into the search travels from your device to the portal, as every reques
   (a UUID), its title and Open WebUI's snippet go to the page, as text (capped, control characters dropped, at most
   20). The query is at most 64 characters; a few searches a second at most. If it fails, the page offers Chat's own
   search box instead.
+- **Git** (repositories, issues and pull requests of the built-in git server) comes from Forgejo's search API, asked by the
+  portal server (`GET /api/search/git`) with a read-only token that only the portal container has; [The built-in git
+  server](#the-built-in-git-server-forgejo) says how it gets there and what is searched. If it fails, the page offers
+  one *Search in Git* entry, which opens the Git tab.
 - **Settings and docs.** `GET /api/search/index` returns the Settings page's sections and settings (titles and
   one-line summaries from `catalog/settings-layout.tsv` and `catalog/settings.tsv`: never a value of `.env`) and an
   index of README.md and `docs/*.md` (headings, GitHub's anchors, a line of text each) built when the portal's image
@@ -2444,7 +2448,7 @@ requests or a backup file. Its owner account `devos` is a site admin whose passw
 one command that sets it, never on a command line).
 
 - **No way out.** Its one network, `localgit`, is **internal** (no internet) and shared with Caddy and the terminal's gateway
-  alone. The portal, Open WebUI, LiteLLM, the databases and the sandbox are not on it. (A mirror's way out to GitHub or
+  alone. The portal (which reaches it only through Caddy's internal `:8099` site, below), Open WebUI, LiteLLM, the databases and the sandbox are not on it. (A mirror's way out to GitHub or
   GitLab will be a network of its own, added only while one is set up.)
 - **The web UI** is a site of the main Caddy (`git.<portal host>`) behind the same portal check and same-site guard as
   Admin and Files, framed by the portal only; its session cookie is never given to Forgejo. **The portal signs you in**
@@ -2481,11 +2485,29 @@ one command that sets it, never on a command line).
   runs it, never the page). From there it follows the Git hosts rules above: the sandbox gets it for one operation,
   through the fd-3 channel, only for the host of the URL you confirmed, at most three times, and it is in no `.git/config`,
   environment, event or answer.
+- **The Git page and its search** (`static/git.js`, `portal/gitsearch.py`). The portal's **Git** tab frames the web UI above
+  (the portal's CSP names the git host in `frame-src`; the git host's own `frame_by_portal_only` allows only the portal to
+  frame it) and opens a place from an address (`#git/…`) only in the shapes `<owner>/<repo>`, `/issues[/N]`, `/pulls[/N]`
+  and `/src/(branch|tag|commit)/…` (no `.`/`..`, no encoded separator, none of Forgejo's own first segments such as `admin`
+  or `user`). The global search's **Git** group is asked by the portal *server*, not the browser: `GET /api/search/git?q=` (a
+  session, `X-Requested-With`, a few a second) calls Forgejo's `GET /api/v1/repos/search` and `/api/v1/repos/issues/search`
+  with a **second token** of the owner account scoped to `read:repository` and `read:issue` — the narrowest that works
+  (`LOCALGIT_READ_TOKEN`: made by `forgejo admin user generate-access-token` in `./stack up`, written to `.env` with mode 600
+  like the other generated secrets, checked against the server at each `./stack up` and made again if refused). It is passed
+  to the **portal container's environment alone** (no other service, overlay or `env_file`; `dc()` ignores a shell's value),
+  is sent only in the `Authorization` header of those two requests and is in no answer, error text, log, page or static
+  file. The portal is not on the `localgit` network and does not join it: it reaches Forgejo through Caddy's internal `:8099`
+  site, which passes those two GET paths in addition to the mirroring ones (that site's other peers on Caddy's networks can
+  call them too, but get nothing without a token, since the server requires sign-in). Results are untrusted text (titles
+  and descriptions are other people's, or Claude's): capped, control characters dropped on the server, direction-changing
+  and invisible characters shown as `⟨U+…⟩` and nodes built with `textContent` in the page; at most 8 repositories and 8
+  issues and pull requests; the place a result opens is built in the page from a checked `owner/name` and a number. Code is
+  not searched: Forgejo has no API for it, and its repository indexer stays off unless `LOCALGIT_INDEXER=true`.
 - **Mirroring** (`./stack git-server mirror …`; Forgejo's own push and pull mirrors) runs server-side, made from this
   computer only, by the code container — the holder of the connected hosts' credentials — through a second internal Caddy site
   (`:8099`, not published; reachable on Caddy's container networks) that passes a handful of API paths of the one service
   (the owner's repository list and one repository's record as reads, a migration, a repository's push mirrors and their
-  sync) and nothing else: no delete of a repository, no admin or account API, no web UI, no cookies, no sign-in headers.
+  sync) and, for the portal's Git search, two GET searches, and nothing else: no delete of a repository, no admin or account API, no web UI, no cookies, no sign-in headers.
   Forgejo needs the owner's own repository-scoped token for each (`write:repository`; creating a repository for a mirror is
   a push or a migration, so `write:user` is not needed). The remote credential is a connected host's **access token** —
   never a sign-in's, whose token lasts hours and cannot be renewed inside Forgejo — handed to Forgejo, which keeps it

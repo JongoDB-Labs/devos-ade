@@ -77,6 +77,17 @@ check "it is a site admin named devos" "$(_lg_forgejo admin user list 2>/dev/nul
 localgit_ensure_admin && pass "made again: idempotent (the password set again)" || fail "made again"
 tok="$(_lg_forgejo admin user generate-access-token --username devos --token-name e2e --scopes "$LOCALGIT_TOKEN_SCOPES" --raw 2>/dev/null | tail -n 1 | tr -d '\r')"
 check "a repository-scoped token is made (40 characters)" "${#tok}" 40
+# the portal's Git search token (JON-979): ./stack's own function makes it, read-only; the server accepts it for the two searches
+# and refuses it for a change (the token goes to curl on stdin as a header line, never on a command line)
+localgit_read_token_ensure && pass "the read-only search token is made" || fail "the read-only search token is made"
+readtok="$(get_env LOCALGIT_READ_TOKEN)"
+check "it is 40 characters, in .env (mode 600)" "${#readtok}/$(stat -c %a "$ENV_FILE" 2>/dev/null || stat -f %Lp "$ENV_FILE")" "40/600"
+lg_code() { printf 'header = "Authorization: token %s"\n' "$readtok" | dc exec -T forgejo curl -s -o /dev/null -w '%{http_code}' -K - "$@" 2>/dev/null; }
+check "it searches repositories" "$(lg_code "http://127.0.0.1:3000/api/v1/repos/search?q=x")" 200
+check "it searches issues and pull requests" "$(lg_code "http://127.0.0.1:3000/api/v1/repos/issues/search?q=x&state=all")" 200
+check "it cannot make a repository" "$(lg_code -X POST -H 'Content-Type: application/json' -d '{"name":"nope"}' "http://127.0.0.1:3000/api/v1/user/repos")" 403
+check "it cannot read the account" "$(lg_code "http://127.0.0.1:3000/api/v1/user")" 403
+localgit_read_token_ensure; check "kept while the server accepts it" "$(get_env LOCALGIT_READ_TOKEN)/$_LG_READ_TOKEN_NEW" "$readtok/"
 ini="$(dc exec -T forgejo sh -c 'cat /var/lib/gitea/app.ini' 2>/dev/null)"
 for kv in 'DISABLE_SSH = true' 'START_SSH_SERVER = false' 'DISABLE_REGISTRATION = true' 'REQUIRE_SIGNIN_VIEW = true' 'DEFAULT_PRIVATE = private' 'ENABLE_PUSH_CREATE_USER = true'; do
   printf '%s\n' "$ini" | grep -q "^$kv\$" && pass "forgejo: $kv" || fail "forgejo: $kv"

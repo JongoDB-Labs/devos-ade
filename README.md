@@ -176,6 +176,7 @@ your browser.
 | **Code** | On by default: Claude Code with a chat and your files, at `code.devos-ade.localhost` ([The Code page](#the-code-page)); while it is off the tab stays, muted, and says how to turn it on | the portal, then the portal password again (12 hours) |
 | **Admin** | LiteLLM's UI at `admin.devos-ade.localhost/ui`: keys, spend by model and day, logs | automatic |
 | **Files** | The RustFS console at `files.devos-ade.localhost`: the shared object store | automatic |
+| **Git** | While the local git server is on (by default): its web UI at `git.devos-ade.localhost`, signed in as its owner — repositories, branches, issues and pull requests ([The built-in git server](#the-built-in-git-server-forgejo)); while it is off the tab stays, muted, and links to **Settings › Claude Code › Local git server** | automatic |
 | **Terminal** | While it is on (by default, as the Code page's sandbox): Claude Code in a sandbox, at `terminal.devos-ade.localhost` ([Claude Code in the browser](#claude-code-in-the-browser)) | the portal, then the portal password again (12 hours) |
 | **Settings** | Every setting of `.env`, secrets masked; change passwords, the owner email, the AWS key, budgets, voice, OpenRouter, the Code page, Claude Code's models, the sandbox's internet and updates; backups and diagnostics ([Settings](#settings); changes need the update helper) | the portal (each change asks for the password again) |
 
@@ -328,10 +329,10 @@ with **Answer**.
 you type: the portal's pages and **Check for updates**, every Settings section and setting by name or key (Enter opens
 it, lit up), Code
 sessions and **workspace file names** (asked from the Code tab while this browser has it open; Enter opens the file in
-its editor), **Chat conversations** (Open WebUI's own search), the walkthrough's steps, and the sections of this README
+its editor), **Chat conversations** (Open WebUI's own search), the local git server's **Git** repositories (name, description), issues and pull requests (titles; Enter opens it in the Git tab, `#git/<owner>/<repo>/issues/<number>`), the walkthrough's steps, and the sections of this README
 and `docs/` (on GitHub, as of your release; indexed when the portal's image is built). Where a setting is changed
 comes first: when the words you type start words of a Settings section's or setting's title, Settings is listed above
-the walkthrough and the docs, its sections first (*budget* → **Spending & budgets**). ↑ ↓ choose, Enter opens, Esc closes. Ctrl/⌘+K works while the focus is in the portal itself: inside the Chat
+the walkthrough and the docs, its sections first (*budget* → **Spending & budgets**). The Git group does not search code: the git server's code indexer is off unless `LOCALGIT_INDEXER=true` is in `.env` (then the search offers the server's own code search); if the git server does not answer, one **Search in Git** entry opens the Git tab. ↑ ↓ choose, Enter opens, Esc closes. Ctrl/⌘+K works while the focus is in the portal itself: inside the Chat
 or Code tab the key goes to that app (Open WebUI and the Code page have a Ctrl+K of their own) — click the sidebar's
 search box there. Nothing typed there is sent outside your stack (over remote access it goes from your device to the
 portal, like everything else); [docs/security.md](docs/security.md#activity-and-search) says what each part reads.
@@ -1512,7 +1513,11 @@ SQLite, no SSH, no registration, no mail) with its repositories in a Docker volu
 uninstall` removes it, turning the server off keeps it).
 
 - **Its web UI** is at `git.<your portal host>` (`http://git.devos-ade.localhost`), behind the portal's sign-in like Admin
-  and Files. Sign in as `devos` — a site admin made by setup — with the password in `.env` (`LOCALGIT_ADMIN_PASSWORD`;
+  and Files, and it is the portal's **Git** tab: in the sidebar after Files (on a phone under **More**), with an arrow to open
+  it in its own window. The tab opens a place with an address `#git/<owner>/<repo>`, `…/issues`, `…/issues/<number>`, `…/pulls`,
+  `…/pulls/<number>` or `…/src/branch/<name>/…` (the search uses these; other places are not opened from an address). Local
+  access only: the remote site has no git host, so there the tab says so. With the server off the tab stays, muted, and
+  links to **Settings › Claude Code › Local git server**. Sign in as `devos` — a site admin made by setup — with the password in `.env` (`LOCALGIT_ADMIN_PASSWORD`;
   `./stack status` says so). Repositories are private by default.
 - **From the Code page** it is a Git host called *Local git server*, connected by setup with a token scoped to repositories
   only (never shown, never in `.env`): clone `https://gateway:8093/devos/REPO.git`, fetch, pull, push and **Publish** exactly
@@ -1521,6 +1526,11 @@ uninstall` removes it, turning the server off keeps it).
   the terminal's gateway on a TLS listener that forwards only git's paths of a repository (never the web UI, the API or
   anything else), with a certificate `./stack` made for the name `gateway` and the Code page hands to git as the one CA it
   trusts for that host. Claude's own `git` in the terminal is not wired to it yet (the Code page's operations are).
+- **Search.** The global search's **Git** group lists repositories (name, description) and issues and pull requests
+  (titles). The portal server asks Forgejo's API for them with a **read-only token** of the owner account (`read:repository`,
+  `read:issue`; `LOCALGIT_READ_TOKEN` in `.env`, made by `./stack up` and made again if the server stops accepting it): only
+  the portal container has it, never your browser, the terminal or the Code page. Code is not searched unless you turn
+  Forgejo's repository indexer on (`LOCALGIT_INDEXER=true`, then `./stack up`).
 - **Signed in by the portal.** Opening the web UI with your portal session signs you in as `devos` — no password
   (Caddy adds Forgejo's reverse-proxy sign-in header after the portal's check, on that site only; the header's name is a
   random secret (`LOCALGIT_SSO_HEADER`) known only to Caddy and Forgejo, so no other container can forge it; the sandbox's
