@@ -490,6 +490,15 @@ test_one_list_of_tools_everywhere() {
   # bn-session's words and the portal's (answers.TERMINAL_TOOLS): the same
   assert_contains "$(cat "$STACK_DIR/terminal/bin/bn-session")" 'case "$tool" in bedrock | claude | codex | gemini | copilot | cursor | grok | shell) ;;'
   assert_contains "$(cat "$STACK_DIR/portal/portal/answers.py")" 'TERMINAL_TOOLS = ("bedrock", "claude", "codex", "gemini", "copilot", "cursor", "grok", "shell")'
+  # the Code page's and Chat's (code/server/agents/tools.mjs): the catalog's tools but Gemini (Google's plans stopped working in
+  # its CLI; follow-up), Chat's the catalog's chat_model column — each with the models its tool offers (plan-<tool>--<model>)
+  local code_ids chat_ids
+  code_ids="$(cd "$STACK_DIR/code" && node --input-type=module -e "import { HARNESSES } from './server/agents/tools.mjs'; console.log(Object.keys(HARNESSES).join(' '))")"
+  chat_ids="$(cd "$STACK_DIR/code" && node --input-type=module -e "import { HARNESSES } from './server/agents/tools.mjs'; console.log(Object.values(HARNESSES).filter((h) => !h.noChat).map((h) => h.id).join(' '))")"
+  assert_eq "$code_ids" "$(printf '%s' "$cat_ids" | tr ' ' '\n' | grep -vx gemini | tr '\n' ' ' | sed 's/ $//')"
+  assert_eq "$chat_ids" "$(awk -F'\t' '!/^#/ && $1 != "id" && $7 == "yes" { print $1 }' "$STACK_DIR/catalog/ai-tools.tsv" | tr '\n' ' ' | sed 's/ $//')"
+  assert_eq "$(cd "$STACK_DIR/code" && node --input-type=module -e "import { chatModelId, parseChatModel } from './server/agents/tools.mjs'; const i = chatModelId('copilot', 'gpt-5.1'); console.log(i, JSON.stringify(parseChatModel(i)))")" \
+    'plan-copilot--gpt-5.1 {"tool":"copilot","model":"gpt-5.1"}'
 }
 
 test_the_image_pins_every_tool_it_downloads() {

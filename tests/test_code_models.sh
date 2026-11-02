@@ -171,6 +171,42 @@ test_render_config_writes_the_file_and_litellm_gets_the_bn_keys_and_the_hook() {
   assert_not_contains "$(cat "$TMP/litellm/config.yaml")" callbacks   # no hook source, no hook (LiteLLM would not start)
 }
 
+# The same models in the three places that list them: the file the Code page reads (litellm/code-models.tsv), LiteLLM's
+# /model/info bn_id keys (here: the generated config's model_info, as /model/info shows it) and devos-claude's /model
+# rows (its own model_rows, run on that /model/info) — all of them, and the listed ones (CODE_MODELS) alone.
+test_the_code_page_litellm_and_devos_claude_list_the_same_models() {
+  local dc="$STACK_DIR/terminal/bin/devos-claude"   # (before _cm_env moves STACK_DIR)
+  _cm_env 'CODE_MODELS=anthropic
+'
+  _or_cache
+  printf 'AWS_REGION_NAME=us-east-1\n' >> "$ENV_FILE"
+  printf 'claude-big\nclaude-small\nllama-x\nmistral-y\n' > "$TMP/en"
+  render_config "$TMP/en"
+  local cfg="$TMP/litellm/config.yaml" page_all page_listed lite_all lite_listed cli_all cli_listed info
+  page_all="$(_code_rows "$TMP/litellm/code-models.tsv" | cut -f1 | sort)"
+  page_listed="$(_code_rows "$TMP/litellm/code-models.tsv" | awk -F'\t' '$11 == 1 { print $1 }' | sort)"
+  # /model/info as LiteLLM answers it: a model_name, and the model_info the config gave it (the bn_* keys)
+  info="$(awk '/^  - model_name: "/ { n = $0; sub(/^  - model_name: "/, "", n); sub(/".*$/, "", n); id = ""; cp = ""; cd = "" }
+    /^      bn_id: "/ { id = $0; sub(/^      bn_id: "/, "", id); sub(/".*$/, "", id) }
+    /^      bn_compat: "/ { cp = $0; sub(/^      bn_compat: "/, "", cp); sub(/".*$/, "", cp) }
+    /^      bn_code: / { cd = $2; print n "\t" id "\t" cp "\t" cd }' "$cfg" |
+    jq -Rn '{data: [inputs | split("\t") | {model_name: .[0], model_info: {mode: "chat", bn_id: .[1], bn_compat: .[2], bn_code: (.[3] == "true")}}]}')"
+  lite_all="$(printf '%s' "$info" | jq -r '.data[] | .model_info.bn_id' | sort)"
+  lite_listed="$(printf '%s' "$info" | jq -r '.data[] | select(.model_info.bn_code) | .model_info.bn_id' | sort)"
+  # devos-claude's own functions, as the script defines them
+  eval "$(sed -n '/^model_info_json()/p; /^model_rows() {/,/^}/p' "$dc")"
+  info_json="$info"
+  cli_all="$(model_rows all | cut -f1 | sort)"
+  cli_listed="$(model_rows | cut -f1 | sort)"
+  [ -n "$page_all" ] && [ "$(printf '%s\n' "$page_all" | wc -l)" -ge 5 ] || { echo "too few models to compare: $page_all" >&2; return 1; }
+  assert_contains "$page_all" "or/anthropic/claude-haiku-5.5"
+  assert_eq "$lite_all" "$page_all"
+  assert_eq "$cli_all" "$page_all"
+  assert_eq "$lite_listed" "$page_listed"
+  assert_eq "$cli_listed" "$page_listed"
+  [ "$page_listed" != "$page_all" ] || { echo "CODE_MODELS=anthropic listed everything: the check compares nothing" >&2; return 1; }
+}
+
 test_validators_for_the_settings() {
   for v in '' all anthropic claude-big 'claude-big,or/google/gemma-4-31b-it:free' 'llama-x,mistral-y'; do valid_code_models "$v" || { echo "refused: $v" >&2; return 1; }; done
   for v in ',a' 'a,' 'a,,b' 'a b' 'a;b' 'a"b'; do ! valid_code_models "$v" || { echo "taken: $v" >&2; return 1; }; done
