@@ -267,9 +267,9 @@ EOF
 
 test_the_other_launchers_keep_updates_off_and_say_when_a_tool_is_left_out() {
   local b="$TMP/tools" out t
-  for t in codex copilot cursor gemini grok; do mkdir -p "$b/$t"; done
+  for t in codex/bin copilot cursor gemini grok; do mkdir -p "$b/$t"; done
   mkdir -p "$b/gemini/node_modules/.bin"
-  for f in codex/codex copilot/copilot cursor/cursor-agent gemini/node_modules/.bin/gemini grok/grok; do
+  for f in codex/bin/codex copilot/copilot cursor/cursor-agent gemini/node_modules/.bin/gemini grok/grok; do
     printf '#!/bin/sh\necho "ARGS: $*"\nenv | grep -E "^(COPILOT_[A-Z_]*|NO_BROWSER|NO_OPEN_BROWSER|NODE_DISABLE_COMPILE_CACHE|GROK_DISABLE_AUTOUPDATER|GH_TOKEN|ANTHROPIC_[A-Z_]*|CLAUDE_CODE_[A-Z_]*|CLAUDE_BEDROCK_[A-Z_]*|CLAUDE_CONFIG_DIR|SHARED_MCP_TOKEN|BN_MCP_URL|AWS_[A-Z_]*)=" | sort\necho "umask $(umask)"\n' > "$b/$f"; chmod +x "$b/$f"
   done
   export BN_TOOLS_DIR="$b"
@@ -295,7 +295,7 @@ umask 0077"
   assert_eq "$(env "${stack_env[@]}" bash "$STACK_DIR/terminal/bin/gemini" --version)" "ARGS: --version
 NO_BROWSER=true
 umask 0077"
-  assert_eq "$(env "${stack_env[@]}" bash "$STACK_DIR/terminal/bin/codex" login --device-auth)" "ARGS: login --device-auth
+  assert_eq "$(env "${stack_env[@]}" bash "$STACK_DIR/terminal/bin/codex" login --device-auth)" "ARGS: --disable daemon_auto_start --disable in_app_updates login --device-auth
 umask 0077"
   # in tmux, each marks its pane as one of your subscriptions' tools (the Code page's @terminal leaves it alone) —
   # except while `subscriptions status` asks them (BN_SUB_NOMARK)
@@ -306,7 +306,7 @@ umask 0077"
   : > "$TMP/tmux.log"
   TMUX=/tmp/t,1,0 TMUX_PANE=%7 BN_SUB_NOMARK=1 bash "$STACK_DIR/terminal/bin/codex" x >/dev/null
   [ ! -s "$TMP/tmux.log" ] || return 1
-  rm "$b/codex/codex"
+  rm "$b/codex/bin/codex"
   out="$(bash "$STACK_DIR/terminal/bin/codex" 2>&1)" && return 1
   assert_contains "$out" "not in this sandbox (left out by TERMINAL_AI_TOOLS in .env"
   assert_contains "$out" "or its download failed when the image was built: $b/SKIPPED"

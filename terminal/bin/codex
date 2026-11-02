@@ -1,14 +1,17 @@
 #!/bin/bash
-# codex in the DevOS ADE sandbox: OpenAI's Codex CLI as OpenAI ships it (/usr/local/lib/bn-tools/codex/codex, pinned
-# and checked when the image was built; terminal/Dockerfile's ai-tools stage). On your ChatGPT plan: sign in with
-# `codex login --device-auth` (a link and a one-time code for your browser — first turn on "device code login" in
-# ChatGPT's Settings › Security), or `subscriptions login codex`. Its default sign-in waits on localhost:1455 inside
-# the sandbox, which your browser cannot reach. Codex keeps the login in ~/.codex/auth.json (the terminal-home volume),
-# its own file: DevOS ADE never opens it. Nothing is changed or added here; this file only says where it is. Codex
-# still looks for a newer version and may say one is out: it cannot replace itself here (the image is read-only), and
-# ./stack update brings the version this stack pins.
+# codex in the DevOS ADE sandbox: OpenAI's Codex CLI as OpenAI ships it (its package in /usr/local/lib/bn-tools/codex,
+# the program bin/codex; pinned and checked when the image was built: terminal/Dockerfile's ai-tools stage). On your
+# ChatGPT plan: sign in with `codex login --device-auth` (a link and a one-time code for your browser — first turn on
+# "device code login" in ChatGPT's Settings › Security), or `subscriptions login codex`. Its default sign-in waits on
+# localhost:1455 inside the sandbox, which your browser cannot reach. Codex keeps the login in ~/.codex/auth.json (the
+# terminal-home volume), its own file: DevOS ADE never opens it. Nothing is changed or added here; this file only says
+# where it is, and turns off, with Codex's own switches, the two things that would run code from the home instead of
+# the image: its shared background server (daemon_auto_start: it copies the package into ~/.codex/packages and runs it
+# from there) and its updates (in_app_updates). Codex then runs as before 0.164.0, in the process you start (the error
+# "this CLI has no complete local package … --no-daemon" was that server). ./stack update brings the version this
+# stack pins.
 set -euo pipefail
-bin="${BN_TOOLS_DIR:-/usr/local/lib/bn-tools}/codex/codex"
+bin="${BN_TOOLS_DIR:-/usr/local/lib/bn-tools}/codex/bin/codex"
 [ -x "$bin" ] || { echo "codex: not in this sandbox (left out by TERMINAL_AI_TOOLS in .env — Settings › Claude Code › More — or its download failed when the image was built: ${BN_TOOLS_DIR:-/usr/local/lib/bn-tools}/SKIPPED)" >&2; exit 127; }
 umask 077
 # The stack's own variables are not this tool's — the gateway and the terminal's LiteLLM key, Bedrock's models and
@@ -23,4 +26,4 @@ done
 if [ -n "${TMUX:-}" ] && [ -n "${TMUX_PANE:-}" ] && [ "${BN_SUB_NOMARK:-0}" != 1 ] && [ -x "${BN_TMUX_BIN:-/usr/bin/tmux}" ]; then
   "${BN_TMUX_BIN:-/usr/bin/tmux}" set-option -p -t "$TMUX_PANE" @bn-sub 1 >/dev/null 2>&1 || true
 fi
-exec "$bin" "$@"
+exec "$bin" --disable daemon_auto_start --disable in_app_updates "$@"

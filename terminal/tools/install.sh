@@ -41,14 +41,17 @@ npm_tool() {
 
 # One tool each (run in a subshell that stops at its first failure: the tool is then left out, the others stay)
 tool_codex() {
-  # OpenAI's Codex CLI: the static (musl) binary of the release, renamed to codex as its README says
+  # OpenAI's Codex CLI: the release's package, as is — the static (musl) program in bin/ with what it runs beside it
+  # (codex-resources: bwrap, the voice host; codex-path: ripgrep), laid out as its codex-package.json says. From 0.164.0
+  # its screen will not start from the program alone ("this CLI has no complete local package")
   v="$CODEX_VERSION"
   if [ "$arch" = amd64 ]; then a=x86_64; sum="$CODEX_SHA256_AMD64"; else a=aarch64; sum="$CODEX_SHA256_ARM64"; fi
-  fetch "https://github.com/openai/codex/releases/download/rust-v$v/codex-$a-unknown-linux-musl.tar.gz" "$sum" /tmp/codex.tgz
-  mkdir -p /out/codex /tmp/codex
-  tar --no-same-owner -xzf /tmp/codex.tgz -C /tmp/codex "codex-$a-unknown-linux-musl"
-  install -m 755 "/tmp/codex/codex-$a-unknown-linux-musl" /out/codex/codex
-  /out/codex/codex --version | grep -qx "codex-cli $v"
+  fetch "https://github.com/openai/codex/releases/download/rust-v$v/codex-package-$a-unknown-linux-musl.tar.gz" "$sum" /tmp/codex.tgz
+  mkdir -p /out/codex
+  tar --no-same-owner -xzf /tmp/codex.tgz -C /out/codex
+  grep -q "\"version\": \"$v\"" /out/codex/codex-package.json
+  grep -q "\"target\": \"$a-unknown-linux-musl\"" /out/codex/codex-package.json
+  /out/codex/bin/codex --version | grep -qx "codex-cli $v"
   echo "codex $v" > "$RES/codex.version"
 }
 tool_copilot() {
