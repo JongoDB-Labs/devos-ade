@@ -777,6 +777,17 @@ same rules (public addresses only; never this computer's services or your networ
 models whatever the terminal's way out is; with none (`off`) they are greyed, saying why. Usage counts against each
 plan's own limits: DevOS ADE bills none of it and shows no $ for it.
 
+**Each signed-in subscription offers the models its own tool offers**, in the Terminal (the tool's own picker), the Code
+page (Claude Code's list for your plan, Codex's `model/list`, the models Copilot's and Grok's agents report) and Chat.
+In Chat's model picker a subscription is its default (`plan-codex`, the tool's own choice) and one entry for each model
+(`plan-codex--gpt-5.1-codex`): the model's id, with any character other than letters, digits and `. _ : + -` written as
+`~` and two hex digits (`plan-claude--sonnet~5b1m~5d` is `sonnet[1m]`). The list is read from the tool, in Chat's
+sandbox with Chat's own sign-in, when the picker is first asked for and then at most every 10 minutes (30 seconds after a
+read that failed, keeping the last list; Claude's then falls back to `opus`, `sonnet` and `haiku`); a conversation on one
+model can switch to another or back to the default, and the answer says "… does not offer the model … on your plan now"
+for an id the tool no longer offers. Not yet: Gemini CLI (Google's plans stopped working in it; use your own key) and
+Cursor (no switch that turns its tools off) in Chat and the Code page.
+
 **Greyed out means "set it up here".** Anything greyed because of a setting or a sign-in says where it is turned on,
 and takes you there: in a menu — the Terminal's *Open*, Chat's *Who answers*, the Code page's terminal panel's
 *Open…* — choosing it shows a button beside the menu (*Go to Settings*, named for where it goes; nothing moves until
@@ -1302,7 +1313,7 @@ Llama 3.3 70B on Bedrock, an OpenRouter model and Experiential Labs' models as o
 **Settings › Claude Code › Models for Claude Code** picks which models the picker and devos-claude's `/model`
 menu list (`CODE_MODELS`): **All enabled** (the default), **Anthropic only** (Claude, Bedrock's and OpenRouter's), or
 **Pick…** — a checklist in the same groups, with a filter. A list for convenience, not a limit: the terminal's key may
-use every model either way, and *Show all models* in the picker shows the rest. **Default model for new sessions**
+use every model either way, and *Show all models* in the picker shows the rest. It narrows the Code page and the terminal only: Chat lists every enabled model (hide some in Settings' hidden models), and your subscriptions are not narrowed by it anywhere — each lists the models its own tool offers. **Default model for new sessions**
 (`CODE_DEFAULT_MODEL`): the model a new Code page session starts on and devos-claude starts with, here and in the
 browser terminal; blank (or a model that is not enabled) = Claude Sonnet (the Sonnet slot, `CLAUDE_MODEL_SONNET`: the
 stack's current Sonnet; the main model only when no Sonnet is enabled) — never Opus by default, whose first turn costs
