@@ -15,7 +15,8 @@
 # The capability in the host name (the portal mints it on the code host, /.bn/preview, from the Code page's unlock)
 # replaces cookies: the portal checks it on every request (/auth/verify?app=preview: the signature, the port, the
 # unlock's 12 hours, Sign out, the password; and no Origin but this preview's own) and answers with the port.
-http://*.{$PREVIEW_DOMAIN} {
+{$LOCAL_SCHEME:http}://*.{$PREVIEW_DOMAIN} {
+	import local_tls
 	route {
 		import local_request
 		# (only the portal's answer below may name the port: client copies go first, in a step of their own)
@@ -25,7 +26,7 @@ http://*.{$PREVIEW_DOMAIN} {
 			copy_headers X-Bn-Preview-Port
 		}
 		reverse_proxy terminal-upstream:7682 {
-			import preview_upstream "{$CODE_ORIGIN} {$PORTAL_ORIGIN}" "http://*.{$PREVIEW_DOMAIN}:*"
+			import preview_upstream "{$CODE_ORIGIN} {$PORTAL_ORIGIN}" "{$LOCAL_SCHEME:http}://*.{$PREVIEW_DOMAIN}:*"
 		}
 	}
 }

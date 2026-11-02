@@ -1,0 +1,23 @@
+# The portal over HTTPS on this computer (PORTAL_HTTPS=true; lib/tls.sh): lib/common.sh adds this file to every docker compose
+# call while it is on and the certificate is there. Caddy serves the local sites with the site certificate ./stack made on the
+# host (caddy/tls-on.caddy) on the same container port, 8080: that port is https_port now, a plain-HTTP request on it is
+# redirected, and http_port moves to 8089 — the health check's plain port, which is not published.
+# Only site.pem and site.key are mounted, read-only, from their own folder (.state/tls/serve): the CA's key (.state/tls/ca.key)
+# stays on the host and is in no container. Remote access (REMOTE_MODE) keeps its own certificates and listeners.
+services:
+  caddy:
+    environment:
+      LOCAL_TLS: "on"        # caddy/tls-on.caddy (tls-off.caddy otherwise)
+      LOCAL_SCHEME: https
+      HTTP_PORT: "8089"
+      HTTPS_PORT: "8080"
+      BN_TLS_SUM: ${BN_TLS_SUM:-}   # (the site certificate's checksum, from ./stack: a new certificate recreates Caddy)
+    volumes:
+      # Never created by Docker: ./stack makes it before compose reads this file
+      - type: bind
+        source: ${BN_TLS_SERVE:?run ./stack up}
+        target: /etc/bn-tls
+        read_only: true
+        bind: { create_host_path: false, selinux: z }
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8089/caddy-health"]

@@ -1,0 +1,8 @@
+#!/bin/sh
+# Test shim (tests/run.sh puts tests/shims first on PATH): this program never runs for real in tests — it changes the
+# keychain, the browsers' certificate database or the system's trust. A test that needs one puts a fake earlier on PATH
+# (tests/test_tls.sh does); reaching this file is a bug, logged for the suite to fail.
+n="${0##*/}"
+printf 'real %s called by test %s: %s\n' "$n" "${T_NAME:-?}" "$*" >> "${BN_SHIM_LOG:-/dev/null}"
+echo "real $n called by test" >&2
+exit 97

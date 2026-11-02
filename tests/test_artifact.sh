@@ -11,10 +11,10 @@ test_the_artifact_site_comes_with_the_previews() {
   assert_contains "$(cat "$STACK_DIR/caddy/Caddyfile")" 'import artifact-{$PREVIEW_MODE:off}.caddy'
   assert_eq "$(grep -cv '^#' "$STACK_DIR/caddy/artifact-off.caddy")" 0
   on="$(_site)"
-  assert_eq "$(printf '%s\n' "$on" | grep -c '^http')" 1
-  site="$(printf '%s\n' "$on" | awk '/^http:\/\/\*\.artifact\.\{\$PREVIEW_DOMAIN\} \{/,/^}/' | tr -d '\t')"
+  assert_eq "$(printf '%s\n' "$on" | grep -c '^{\$LOCAL_SCHEME:http}://')" 1
+  site="$(printf '%s\n' "$on" | awk '/^\{\$LOCAL_SCHEME:http\}:\/\/\*\.artifact\.\{\$PREVIEW_DOMAIN\} \{/,/^}/' | tr -d '\t')"
   # the local rules, client copies of the headers only Caddy sets gone, the portal's check, then only GET/HEAD of /artifact/*
-  assert_eq "$(printf '%s\n' "$site" | sed -n 3,12p | tr '\n' '|')" \
+  assert_eq "$(printf '%s\n' "$site" | sed -n 4,13p | tr '\n' '|')" \
     "import local_request|request_header -X-Bn-Artifact|request_header -X-Bn-Code-Proxy|request_header -X-Bn-Csp-Nonce|request_header -X-Bn-Portal-Origin|request_header -X-Bn-Terminal-Host|request_header -X-Bn-Remote|forward_auth portal:8000 {|uri /auth/verify?app=artifact|}|"
   assert_eq "$(printf '%s\n' "$site" | grep -c '^method GET HEAD$')" 3
   assert_contains "$site" 'path /artifact/html.html'
@@ -63,12 +63,12 @@ EOF
   # an HTML file first shows without its scripts: the static page runs one script file, the runner, and nothing inline
   static="$(_site | awk '/^\t*@static \{/,/^\t*\}$/' ; _site | grep -A3 'reverse_proxy @static' | grep Content-Security-Policy)"
   assert_contains "$static" 'path /artifact/static.html'
-  assert_contains "$static" "script-src http://*.artifact.{\$PREVIEW_DOMAIN}:{\$PORTAL_PORT:80}/artifact/static.js;"
+  assert_contains "$static" "script-src {\$LOCAL_SCHEME:http}://*.artifact.{\$PREVIEW_DOMAIN}:{\$PORTAL_PORT:80}/artifact/static.js;"
   assert_not_contains "$static" "unsafe-inline' 'unsafe"
   assert_not_contains "$static" "script-src 'self'"
   # the Code page frames the previews' site (which the artifact hosts are under) and nothing new
   # on the portal's port only: a framed page of sandbox content cannot navigate its frame to another port of loopback
-  assert_contains "$(cat "$STACK_DIR/caddy/code-on.caddy")" 'import code_page {$PORTAL_ORIGIN} {$TERMINAL_HOST} http://*.{$PREVIEW_DOMAIN:preview.invalid}:{$PORTAL_PORT:80}'
+  assert_contains "$(cat "$STACK_DIR/caddy/code-on.caddy")" 'import code_page {$PORTAL_ORIGIN} {$TERMINAL_HOST} {$LOCAL_SCHEME:http}://*.{$PREVIEW_DOMAIN:preview.invalid}:{$PORTAL_PORT:80}'
   assert_contains "$(awk '/^\(code_page\)/,/^}/' "$STACK_DIR/caddy/Caddyfile")" 'http://{args[1]}:{$PORTAL_PORT:80} https://{args[1]}:* {args[2]};'
   assert_not_contains "$(awk '/^\(code_page\)/,/^}/' "$STACK_DIR/caddy/Caddyfile")" 'http://{args[1]}:*'
   assert_contains "$(grep -A3 'CODE_ORIGIN:' "$STACK_DIR/compose.code.yaml")" 'PORTAL_PORT: ${PORTAL_PORT:-80}'

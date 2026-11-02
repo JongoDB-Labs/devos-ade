@@ -3,7 +3,8 @@
 # portal session first — and then it is signed in to Forgejo as the owner (header_up below); Forgejo's own form (the
 # owner's password, ./stack status says where) stays as the fallback. The sandbox does not come this way: its git reaches Forgejo through the terminal's gateway
 # (caddy/localgit-gateway-on.caddy), which shares only the internal "localgit" network with it.
-http://{$GIT_HOST} {
+{$LOCAL_SCHEME:http}://{$GIT_HOST} {
+	import local_tls
 	route {
 		import local_request
 		import not_from_preview

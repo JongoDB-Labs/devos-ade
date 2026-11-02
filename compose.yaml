@@ -445,6 +445,7 @@ services:
       PORTAL_PROXY_SECRET: ${PORTAL_PROXY_SECRET:-}
       PORTAL_HOST: ${PORTAL_HOST:-devos-ade.localhost}
       PORTAL_PORT: ${PORTAL_PORT:-80}
+      PORTAL_HTTPS: ${PORTAL_HTTPS:-}   # true: the local sites are https (lib/tls.sh): the origins, the session cookie's Secure flag
       # Where the password lives, for the login page (set by ./stack; blank = the generic wording).
       PORTAL_ENV_FILE: ${DEVOS_ADE_ENV_DISPLAY:-}
       PORTAL_PROJECT: ${COMPOSE_PROJECT_NAME:-}
@@ -527,7 +528,7 @@ services:
     tmpfs: ["/data:uid=65534,gid=65534,mode=0700", "/config:uid=65534,gid=65534,mode=0700"]
     environment:
       PORTAL_HOST: ${PORTAL_HOST:-devos-ade.localhost}
-      PORTAL_ORIGIN: ${PORTAL_ORIGIN:-http://devos-ade.localhost}   # written by setup: http://HOST[:PORT]
+      PORTAL_ORIGIN: ${PORTAL_ORIGIN:-http://devos-ade.localhost}   # written by setup: http(s)://HOST[:PORT]
       CHAT_HOST: ${CHAT_HOST:-chat.${PORTAL_HOST:-devos-ade.localhost}}
       ADMIN_HOST: ${ADMIN_HOST:-admin.${PORTAL_HOST:-devos-ade.localhost}}
       FILES_HOST: ${FILES_HOST:-files.${PORTAL_HOST:-devos-ade.localhost}}

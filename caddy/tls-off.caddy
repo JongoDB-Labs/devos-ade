@@ -1,0 +1,8 @@
+# The portal over plain HTTP on this computer (the default; tls-on.caddy while PORTAL_HTTPS=true: lib/tls.sh). Imported
+# first by Caddyfile. Its snippets are empty here, so every site below is what it was before HTTPS existed.
+(local_tls) {
+}
+(local_listener) {
+}
+(local_health) {
+}

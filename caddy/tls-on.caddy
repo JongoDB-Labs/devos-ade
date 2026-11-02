@@ -1,0 +1,29 @@
+# The portal over HTTPS on this computer (PORTAL_HTTPS=true; compose.https.yaml sets LOCAL_SCHEME=https, HTTP_PORT and
+# HTTPS_PORT; lib/tls.sh makes the certificates; README "HTTPS for the portal", docs/security.md). Imported first by Caddyfile.
+#
+# The local sites (portal, Chat, Admin, Files, git, terminal, Code, previews) are https:// sites on the container's one
+# listener (8080, the port compose publishes on 127.0.0.1:PORTAL_PORT), each with the certificate ./stack made on the host
+# for this install's names (the CA that signed it can vouch for no others). Caddy makes no certificate (auto_https stays
+# off) and the CA's key is not mounted here: only site.pem and site.key are, read-only.
+#   - http_redirect: a plain-HTTP request on that same port is answered with a redirect to https, so old bookmarks work;
+#   - http_port moves away from 8080 (legacy-on.caddy's old-address redirects and the like stay plain HTTP, on a port that is
+#     not published); https_port is 8080, which is what the sites above resolve their https:// to.
+# Remote access (remote-*.caddy: Tailscale's listener on 8081, own-domain's on 8443) is not touched: it keeps its own
+# certificates and listeners.
+(local_tls) {
+	tls /etc/bn-tls/site.pem /etc/bn-tls/site.key
+}
+(local_listener) {
+	servers :8080 {
+		listener_wrappers {
+			http_redirect
+			tls
+		}
+	}
+}
+# Docker's health check: a plain-HTTP port of its own (8080 redirects every plain-HTTP request).
+(local_health) {
+	http://:8089 {
+		respond /caddy-health 200
+	}
+}

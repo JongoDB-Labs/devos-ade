@@ -372,7 +372,7 @@ dc() {
       LOCALGIT LOCALGIT_ADMIN_PASSWORD LOCALGIT_READ_TOKEN LOCALGIT_INDEXER LOCALGIT_SSO_HEADER LOCALGIT_SSO_ON LOCALGIT_MIRROR_EGRESS LOCALGIT_MIRROR_HOSTS GIT_HOST GIT_ORIGIN BN_LOCALGIT_MODE BN_LOCALGIT_TLS BN_LEGACY_HOSTS \
       OWUI_STT_BASE_URL STT_BEDROCK_MODEL COMPOSE_PROFILES \
       AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_REGION_NAME \
-      TERMINAL_ENABLED TERMINAL_WORKSPACE TERMINAL_EGRESS TERMINAL_EGRESS_ALLOW TERMINAL_EGRESS_DENY TERMINAL_HOST TERMINAL_UID TERMINAL_GID TERMINAL_MEM_LIMIT \
+      PORTAL_HTTPS TERMINAL_ENABLED TERMINAL_WORKSPACE TERMINAL_EGRESS TERMINAL_EGRESS_ALLOW TERMINAL_EGRESS_DENY TERMINAL_HOST TERMINAL_UID TERMINAL_GID TERMINAL_MEM_LIMIT \
       REMOTE_TERMINAL REMOTE_TERMINAL_HOST CODE_ENABLED CODE_HOST CODE_PROXY_SECRET REMOTE_CODE_HOST PREVIEW_DOMAIN PREVIEW_PROXY_SECRET CODE_ALLOW_BYPASS \
       CODE_AUTO_MODE TERMINAL_AUTO_MODE GIT_GITHUB_CLIENT_ID GIT_GITHUB_APP_SLUG GIT_GITLAB_CLIENT_ID CODE_CLAUDE_PLAN CODE_CHAT_KEY
     # (and the BN_*_SUM of config_sums: only ./stack sets them, never this shell)
@@ -385,6 +385,7 @@ SUMS
     # which of terminal/managed/*.json the sandbox gets as Claude Code's managed settings (read-only): from .env alone
     TERMINAL_CLAUDE_POLICY="$policy" BN_PROJECTS_PUBLIC="$STATE_DIR/projects/public" \
     LOCALGIT_SSO_HEADER="$(get_env LOCALGIT_SSO_HEADER)" LOCALGIT_SSO_ON="$([ -n "$(get_env LOCALGIT_SSO_HEADER)" ] && echo true || echo false)" \
+    BN_TLS_SERVE="$STATE_DIR/tls/serve" BN_LOCAL_SCHEME="$(flag_on "$(get_env PORTAL_HTTPS)" && echo https || echo http)" \
     BN_LOCALGIT_TLS="$STATE_DIR/localgit/tls" BN_LOCALGIT_MODE="$(flag_off "$(get_env LOCALGIT)" && echo off || echo on)" BN_LEGACY_HOSTS="$(legacy_hosts_mode)" \
     BN_LLAMACPP_DIR="$STATE_DIR/runtimes/llamacpp" BN_LLAMACPP_USER="$(cat "$STATE_DIR/runtimes/llamacpp/user" 2>/dev/null || echo 65534:65534)" \
     BN_VLLM_DIR="$STATE_DIR/runtimes/vllm" BN_VLLM_USER="$(cat "$STATE_DIR/runtimes/vllm/user" 2>/dev/null || echo 65534:65534)" \
@@ -481,6 +482,7 @@ config_sums() {
   [ -n "$policy" ] || policy="$(claude_policy)"
   for g in "$STACK_DIR"/caddy/*.caddy; do case "${g##*/}" in terminal-gateway.caddy | localgit-gateway-*.caddy | ollama-gate.caddy) ;; *) c+=("${g##*/}") ;; esac; done
   printf 'BN_LITELLM_CONFIG_SUM=%s\n' "$(litellm_compose_sum)"
+  printf 'BN_TLS_SUM=%s\n' "$(files_sum "$STATE_DIR/tls/serve" site.pem)"
   printf 'BN_CADDY_CONFIG_SUM=%s\n' "$(files_sum "$STACK_DIR/caddy" Caddyfile ${c[@]+"${c[@]}"})"
   printf 'BN_GATEWAY_CONFIG_SUM=%s\n' "$(files_sum "$STACK_DIR/caddy" terminal-gateway.caddy localgit-gateway-on.caddy localgit-gateway-off.caddy)"
   printf 'BN_OLLAMA_GATE_CONFIG_SUM=%s\n' "$(files_sum "$STACK_DIR/caddy" ollama-gate.caddy)"
@@ -768,6 +770,8 @@ compose_overlays() {
       esac
     fi
   fi
+  # the portal over HTTPS (lib/tls.sh): Caddy's certificate, once ./stack https on made it
+  ! declare -F https_overlay_wanted >/dev/null || ! https_overlay_wanted || echo compose.https.yaml
   # (independent of the terminal: the git server alone, while it has a mirror)
   ! localgit_mirror_wanted || echo compose.localgit-mirror.yaml
   # the runtimes' GPUs (lib/runtimes.sh: Ollama's, llama.cpp's and vLLM's containers with the NVIDIA runtime)

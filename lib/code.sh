@@ -92,13 +92,17 @@ code_secrets() {
 # (DEVOS_ADE_ALLOW_PUBLIC_HOST) gets <project>-preview.localhost: this computer's previews are on *.localhost, this computer in every browser
 # (over remote access they have a host of their own: code_remote_sync).
 code_preview_domain() {
-  local h d
+  local d; d="$(code_preview_domain_name)"
+  [ "$(get_env PREVIEW_DOMAIN)" = "$d" ] || set_env PREVIEW_DOMAIN "$d"
+}
+# code_preview_domain_name -> that name, for this PORTAL_HOST (lib/tls.sh names the previews' certificate before the Code page is on)
+code_preview_domain_name() {
+  local h
   h="$(portal_host)"
   case "$h" in
-    *.localhost) h="${h%.localhost}"; d="${h##*.}-preview.localhost" ;;
-    *) d="$(project_name | tr '_' '-' | sed 's/-*$//')-preview.localhost" ;;
+    *.localhost) h="${h%.localhost}"; printf '%s-preview.localhost\n' "${h##*.}" ;;
+    *) printf '%s-preview.localhost\n' "$(project_name | tr '_' '-' | sed 's/-*$//')" ;;
   esac
-  [ "$(get_env PREVIEW_DOMAIN)" = "$d" ] || set_env PREVIEW_DOMAIN "$d"
 }
 
 # (its sources must be readable: fix_checkout_modes)

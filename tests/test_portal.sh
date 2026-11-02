@@ -216,7 +216,7 @@ test_caddy_unknown_host_is_the_portals_page_and_public_files_only() {
   assert_contains "$(sed -n '/^(unknown_host_down) {/,/^}/p' "$f")" 'respond @bn_unknown_down "unknown host" 404'
   assert_contains "$(sed -n '/^(unknown_host_down) {/,/^}/p' "$f")" "@bn_unknown_down vars bn_unknown_host 1"
   assert_eq "$(grep -c 'handle_errors' "$f" "$STACK_DIR"/caddy/remote-*.caddy | awk -F: '{ s += $2 } END { print s }')" 1
-  assert_contains "$(sed -n '/^http:\/\/ {/,/^}/p' "$f")" "import unknown_host local"
+  assert_contains "$(sed -n '/^{\$LOCAL_SCHEME:http}:\/\/ {/,/^}/p' "$f")" "import unknown_host local"
   assert_contains "$(cat "$STACK_DIR/caddy/remote-tailscale.caddy")" "import unknown_host remote"
   assert_contains "$(cat "$STACK_DIR/caddy/remote-domain.caddy")" "import unknown_host remote"
 }
@@ -228,13 +228,13 @@ test_caddy_public_paths_have_one_definition_in_a_snippet() {
   assert_eq "$(grep -c '@public path' "$f" | tr -d ' ')" 1
   assert_eq "$(sed -n '/^(public_paths) {/,/^}/p' "$f" | grep -c '@public path')" 1
   # every site block that serves @public imports the snippet first
-  awk '/^http:\/\// || /^\(/ { blk = $0; imp = 0 } /import public_paths/ { imp = 1 }
+  awk '/^(\{\$LOCAL_SCHEME:http\}|http):\/\// || /^\(/ { blk = $0; imp = 0 } /import public_paths/ { imp = 1 }
        /reverse_proxy @public/ && !imp { print "no import public_paths before @public in " blk; bad = 1 }
        END { exit bad }' "$f"
   # every portal site block — the local one and the remote ones (caddy/remote-*.caddy) — goes through
   # (portal_routes), which imports the list; the remote files never define or serve @public themselves
   assert_contains "$(sed -n '/^(portal_routes) {/,/^}/p' "$f")" "import public_paths"
-  assert_contains "$(sed -n '/^http:\/\/{\$PORTAL_HOST} {/,/^}/p' "$f")" "import portal_routes"
+  assert_contains "$(sed -n '/^{\$LOCAL_SCHEME:http}:\/\/{\$PORTAL_HOST} {/,/^}/p' "$f")" "import portal_routes"
   local r
   for r in "$STACK_DIR"/caddy/remote-tailscale.caddy "$STACK_DIR"/caddy/remote-domain.caddy; do
     assert_eq "$(grep -c '@public' "$r" | tr -d ' ')" 0
@@ -264,8 +264,8 @@ test_caddy_app_sso_only_on_admin_and_files_after_the_session_check() {
   assert_contains "$(sed -n '/^(app_sso) {/,/^}/p' "$f")" "@bn_sso path /.bn/sso"
   # their page loads are never taken from the browser's cache without Caddy's check (LiteLLM sends no Cache-Control)
   assert_contains "$(sed -n '/^(app_sso) {/,/^}/p' "$f")" 'header @bn_page ?Cache-Control "no-cache"'
-  _sso_block_ok "$(sed -n '/^http:\/\/{\$ADMIN_HOST} {/,/^}/p' "$f")" litellm:4000
-  _sso_block_ok "$(sed -n '/^http:\/\/{\$FILES_HOST} {/,/^}/p' "$f")" rustfs:9001
+  _sso_block_ok "$(sed -n '/^{\$LOCAL_SCHEME:http}:\/\/{\$ADMIN_HOST} {/,/^}/p' "$f")" litellm:4000
+  _sso_block_ok "$(sed -n '/^{\$LOCAL_SCHEME:http}:\/\/{\$FILES_HOST} {/,/^}/p' "$f")" rustfs:9001
   _sso_block_ok "$(sed -n '/^http:\/\/{\$REMOTE_ADMIN_HOST}:8081 {/,/^}/p' "$t")" litellm:4000
   _sso_block_ok "$(sed -n '/^http:\/\/{\$REMOTE_FILES_HOST}:8081 {/,/^}/p' "$t")" rustfs:9001
   _sso_block_ok "$(sed -n '/@admin host {\$REMOTE_ADMIN_HOST}/,/^	}/p' "$d")" litellm:4000
@@ -286,7 +286,7 @@ test_caddy_keeps_litellms_cookie_from_litellm_and_files_objects_inert() {
   # Authorization), on every admin block, never elsewhere (Open WebUI's own `token` cookie stays).
   local f="$STACK_DIR/caddy/Caddyfile" t="$STACK_DIR/caddy/remote-tailscale.caddy" d="$STACK_DIR/caddy/remote-domain.caddy" r b
   assert_contains "$(sed -n '/^(litellm_upstream) {/,/^}/p' "$f")" 'header_up Cookie "(^|;\s*)token=[^;]*" ""'
-  for b in "$(sed -n '/^http:\/\/{\$ADMIN_HOST} {/,/^}/p' "$f")" "$(sed -n '/^http:\/\/{\$REMOTE_ADMIN_HOST}:8081 {/,/^}/p' "$t")" \
+  for b in "$(sed -n '/^{\$LOCAL_SCHEME:http}:\/\/{\$ADMIN_HOST} {/,/^}/p' "$f")" "$(sed -n '/^http:\/\/{\$REMOTE_ADMIN_HOST}:8081 {/,/^}/p' "$t")" \
            "$(sed -n '/@admin host {\$REMOTE_ADMIN_HOST}/,/^	}/p' "$d")"; do
     assert_contains "$(printf '%s\n' "$b" | sed -n '/reverse_proxy litellm:4000 {/,/}/p')" "import litellm_upstream"
   done
@@ -300,7 +300,7 @@ test_caddy_keeps_litellms_cookie_from_litellm_and_files_objects_inert() {
   assert_contains "$inert" "Content-Security-Policy \"sandbox; default-src 'none'; frame-ancestors {args[0]}\""
   assert_contains "$inert" "X-Content-Type-Options nosniff"
   assert_contains "$inert" "defer"
-  assert_contains "$(sed -n '/^http:\/\/{\$FILES_HOST} {/,/^}/p' "$f")" 'import files_inert {$PORTAL_ORIGIN}'
+  assert_contains "$(sed -n '/^{\$LOCAL_SCHEME:http}:\/\/{\$FILES_HOST} {/,/^}/p' "$f")" 'import files_inert {$PORTAL_ORIGIN}'
   assert_contains "$(sed -n '/^http:\/\/{\$REMOTE_FILES_HOST}:8081 {/,/^}/p' "$t")" 'import files_inert {$REMOTE_ORIGIN}'
   assert_contains "$(sed -n '/@files host {\$REMOTE_FILES_HOST}/,/^	}/p' "$d")" 'import files_inert {$REMOTE_ORIGIN}'
   for r in "$f" "$t" "$d"; do assert_eq "$(grep -c 'import files_inert' "$r" | tr -d ' ')" 1; done
@@ -320,7 +320,7 @@ test_caddy_chat_policy_one_definition_local_and_remote() {
               "script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob:" "style-src 'self' 'unsafe-inline'" "default-src 'self' data: blob:"; do
     assert_contains "$line" "$want"
   done
-  assert_contains "$(sed -n '/^http:\/\/{\$CHAT_HOST} {/,/^}/p' "$f")" 'import chat_csp {$PORTAL_ORIGIN}'
+  assert_contains "$(sed -n '/^{\$LOCAL_SCHEME:http}:\/\/{\$CHAT_HOST} {/,/^}/p' "$f")" 'import chat_csp {$PORTAL_ORIGIN}'
   assert_contains "$(sed -n '/^http:\/\/{\$REMOTE_CHAT_HOST}:8081 {/,/^}/p' "$t")" 'import chat_csp {$REMOTE_ORIGIN}'
   assert_contains "$(sed -n '/@chat host {\$REMOTE_CHAT_HOST}/,/^	}/p' "$d")" 'import chat_csp {$REMOTE_ORIGIN}'
   # (once on each Chat site, and once in chat_runtime — Pyodide's static files get the same policy)
@@ -372,7 +372,7 @@ test_caddy_chat_runtime_is_one_exact_public_route_before_the_guard() {
     if grep -qE "$re" <<< "$p"; then echo "should stay behind the guard and the session: $p" >&2; return 1; fi
   done
   # on every Chat site: right after the request's own headers, before the guard and the session check
-  site="$(sed -n '/^http:\/\/{\$CHAT_HOST} {/,/^}/p' "$f")"
+  site="$(sed -n '/^{\$LOCAL_SCHEME:http}:\/\/{\$CHAT_HOST} {/,/^}/p' "$f")"
   assert_eq "$(printf '%s\n' "$site" | grep -oE 'import (local_request|chat_runtime \{\$PORTAL_ORIGIN\}|not_from_preview|portal_auth)' | tr '\n' '|')" \
     'import local_request|import chat_runtime {$PORTAL_ORIGIN}|import not_from_preview|import portal_auth|'
   site="$(sed -n '/^http:\/\/{\$REMOTE_CHAT_HOST}:8081 {/,/^}/p' "$t")"

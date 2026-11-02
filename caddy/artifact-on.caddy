@@ -40,7 +40,8 @@
 	header_down Referrer-Policy no-referrer
 }
 
-http://*.artifact.{$PREVIEW_DOMAIN} {
+{$LOCAL_SCHEME:http}://*.artifact.{$PREVIEW_DOMAIN} {
+	import local_tls
 	route {
 		import local_request
 		request_header -X-Bn-Artifact
@@ -66,7 +67,7 @@ http://*.artifact.{$PREVIEW_DOMAIN} {
 		}
 		reverse_proxy @static code-upstream:8095 {
 			import artifact_upstream
-			header_down Content-Security-Policy "sandbox allow-scripts; default-src 'none'; script-src http://*.artifact.{$PREVIEW_DOMAIN}:{$PORTAL_PORT:80}/artifact/static.js; style-src 'unsafe-inline' data: blob:; img-src data: blob:; font-src data: blob:; media-src data: blob:; connect-src 'none'; frame-src 'none'; worker-src 'none'; manifest-src 'none'; object-src 'none'; form-action 'none'; base-uri 'none'; webrtc 'block'; frame-ancestors {$CODE_ORIGIN} {$PORTAL_ORIGIN}"
+			header_down Content-Security-Policy "sandbox allow-scripts; default-src 'none'; script-src {$LOCAL_SCHEME:http}://*.artifact.{$PREVIEW_DOMAIN}:{$PORTAL_PORT:80}/artifact/static.js; style-src 'unsafe-inline' data: blob:; img-src data: blob:; font-src data: blob:; media-src data: blob:; connect-src 'none'; frame-src 'none'; worker-src 'none'; manifest-src 'none'; object-src 'none'; form-action 'none'; base-uri 'none'; webrtc 'block'; frame-ancestors {$CODE_ORIGIN} {$PORTAL_ORIGIN}"
 		}
 		@viewer {
 			method GET HEAD

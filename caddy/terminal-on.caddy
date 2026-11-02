@@ -4,7 +4,8 @@
 # (terminal-upstream:7681, caddy/terminal-gateway.caddy).
 
 # terminal.PORTAL_HOST (TERMINAL_HOST): ttyd, framed by the portal's Terminal tab — or full screen on a phone.
-http://{$TERMINAL_HOST} {
+{$LOCAL_SCHEME:http}://{$TERMINAL_HOST} {
+	import local_tls
 	route {
 		import local_request
 		import not_from_preview

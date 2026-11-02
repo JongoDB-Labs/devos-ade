@@ -306,7 +306,7 @@ test_missing_images_skips_the_local_caddy_build() {
 
 test_caddy_local_blocks_delete_the_remote_marker() {
   f="$STACK_DIR/caddy/Caddyfile"
-  sites="$(grep -c '^http://{\$[A-Z_]*}' "$f")"
+  sites="$(grep -c '^{\$LOCAL_SCHEME:http}://{\$[A-Z_]*}' "$f")"
   assert_eq "$sites" 4
   assert_eq "$(grep -c 'import local_request' "$f")" 4
   snippet="$(awk '/^\(local_request\)/,/^}/' "$f")"

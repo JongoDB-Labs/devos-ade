@@ -79,12 +79,12 @@ test_the_preview_site_checks_every_request_and_rewrites_for_the_dev_server() {
   assert_contains "$f" 'import preview-{$PREVIEW_MODE:off}.caddy'
   assert_eq "$(grep -cv '^#' "$STACK_DIR/caddy/preview-off.caddy")" 0
   on="$(grep -v '^[[:space:]]*#' "$STACK_DIR/caddy/preview-on.caddy")"
-  assert_eq "$(printf '%s\n' "$on" | grep -c '^http')" 1
-  site="$(printf '%s\n' "$on" | awk '/^http:\/\/\*\.\{\$PREVIEW_DOMAIN\} \{/,/^}/' | tr -d '\t')"
+  assert_eq "$(printf '%s\n' "$on" | grep -c '^{\$LOCAL_SCHEME:http}://')" 1
+  site="$(printf '%s\n' "$on" | awk '/^\{\$LOCAL_SCHEME:http\}:\/\/\*\.\{\$PREVIEW_DOMAIN\} \{/,/^}/' | tr -d '\t')"
   # the local rules; client copies of the port header gone; the portal's check (it names the port); then the gateway,
   # framed by the Code page and the portal only, framing the previews' own hosts
-  assert_eq "$(printf '%s\n' "$site" | sed -n 3,10p | tr '\n' '|')" \
-    "import local_request|request_header -X-Bn-Preview-*|forward_auth portal:8000 {|uri /auth/verify?app=preview|copy_headers X-Bn-Preview-Port|}|reverse_proxy terminal-upstream:7682 {|import preview_upstream \"{\$CODE_ORIGIN} {\$PORTAL_ORIGIN}\" \"http://*.{\$PREVIEW_DOMAIN}:*\"|"
+  assert_eq "$(printf '%s\n' "$site" | sed -n 4,11p | tr '\n' '|')" \
+    "import local_request|request_header -X-Bn-Preview-*|forward_auth portal:8000 {|uri /auth/verify?app=preview|copy_headers X-Bn-Preview-Port|}|reverse_proxy terminal-upstream:7682 {|import preview_upstream \"{\$CODE_ORIGIN} {\$PORTAL_ORIGIN}\" \"{\$LOCAL_SCHEME:http}://*.{\$PREVIEW_DOMAIN}:*\"|"
   # (the snippet is the main Caddyfile's: the remote preview host uses it too)
   up="$(awk '/^\(preview_upstream\)/,/^}/' "$STACK_DIR/caddy/Caddyfile")"
   for want in "header_up -X-Portal-Proxy" "header_up -X-Portal-User" "header_up -Referer" \
@@ -104,7 +104,7 @@ test_the_preview_site_checks_every_request_and_rewrites_for_the_dev_server() {
   # the Code page may frame the previews' hosts (one source added to its frame-src: this site's — locally on the
   # portal's port only, since those names resolve to this computer's loopback), and asks the portal for links
   assert_contains "$(awk '/^\(code_page\)/,/^}/' "$STACK_DIR/caddy/Caddyfile")" 'https://{args[1]}:* {args[2]};'
-  assert_contains "$(cat "$STACK_DIR/caddy/code-on.caddy")" 'import code_page {$PORTAL_ORIGIN} {$TERMINAL_HOST} http://*.{$PREVIEW_DOMAIN:preview.invalid}:{$PORTAL_PORT:80}'
+  assert_contains "$(cat "$STACK_DIR/caddy/code-on.caddy")" 'import code_page {$PORTAL_ORIGIN} {$TERMINAL_HOST} {$LOCAL_SCHEME:http}://*.{$PREVIEW_DOMAIN:preview.invalid}:{$PORTAL_PORT:80}'
   for m in tailscale domain; do
     assert_contains "$(cat "$STACK_DIR/caddy/remote-$m.caddy")" 'import code_page {$REMOTE_ORIGIN} {$REMOTE_TERMINAL_HOST:terminal.remote.invalid} https://{$REMOTE_PREVIEW_HOST:preview.remote.invalid}'
   done

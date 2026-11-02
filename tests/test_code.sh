@@ -746,12 +746,12 @@ test_caddy_code_site_snippets_and_remote_blocks() {
   f="$(cat "$STACK_DIR/caddy/Caddyfile")"
   assert_contains "$f" 'import code-{$CODE_MODE:off}.caddy'
   assert_eq "$(grep -cv '^#' "$STACK_DIR/caddy/code-off.caddy")" 0
-  site="$(awk '/^http:\/\/\{\$CODE_HOST\}/,/^}/' "$STACK_DIR/caddy/code-on.caddy")"
+  site="$(awk '/^\{\$LOCAL_SCHEME:http\}:\/\/\{\$CODE_HOST\}/,/^}/' "$STACK_DIR/caddy/code-on.caddy")"
   # the local rules, the unlock form, the check, the portal's /.bn/ answers — only then the code container
   assert_eq "$(printf '%s\n' "$site" | grep -o 'import [a-z_]*' | tr '\n' ' ')" \
-    "import local_request import not_from_preview import code_unlock import code_auth import code_portal import code_upstream import code_page "
+    "import local_tls import local_request import not_from_preview import code_unlock import code_auth import code_portal import code_upstream import code_page "
   assert_contains "$site" 'import code_upstream {$PORTAL_ORIGIN} {$TERMINAL_HOST} 0'
-  assert_contains "$site" 'import code_page {$PORTAL_ORIGIN} {$TERMINAL_HOST} http://*.{$PREVIEW_DOMAIN:preview.invalid}:{$PORTAL_PORT:80}'
+  assert_contains "$site" 'import code_page {$PORTAL_ORIGIN} {$TERMINAL_HOST} {$LOCAL_SCHEME:http}://*.{$PREVIEW_DOMAIN:preview.invalid}:{$PORTAL_PORT:80}'
   assert_contains "$site" "reverse_proxy code-upstream:8095"
   auth="$(awk '/^\(code_auth\)/,/^}/' "$STACK_DIR/caddy/Caddyfile")"
   assert_eq "$(printf '%s\n' "$auth" | sed -n 2,6p | tr -d '\t' | tr '\n' '|')" "request_header -X-Bn-Code-Proxy|request_header -X-Bn-Csp-Nonce|request_header -X-Bn-Portal-Origin|request_header -X-Bn-Terminal-Host|request_header -X-Bn-Remote|"

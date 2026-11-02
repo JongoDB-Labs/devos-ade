@@ -76,6 +76,8 @@ Usage: ./stack <command> [--yes]
   code         Claude Code in the browser with a chat: a Code tab with permission prompts, models and
                your files, in the terminal's sandbox (on by default with the terminal; disable keeps it off)
                status | enable [--workspace DIR] | disable   (asks for the portal password again)
+  https        The portal over HTTPS on this computer, from a CA that can only vouch for this install's own addresses:
+               status | on | off   (on adds the CA to your login keychain: macOS asks for your password)
   project      Folders of this computer as projects of the Code page, mounted into its sandbox:
                list | add DIR [--read-only] [--hide-path] [--name N] | remove NAME | mode NAME ro|rw | apply
                (each change restarts the sandbox: --now, --when-idle or --later)
@@ -684,6 +686,8 @@ _setup_settings() {
   setup_ports
   setup_done "ports chosen (the portal: $(portal_url))"; setup_step "asking about remote access"
   setup_remote_choice   # lib/remote.sh: asks once — this computer only (default), or your devices too
+  setup_step "asking about HTTPS"
+  https_setup_question  # lib/tls.sh: asks once (an interactive setup only: --yes, no terminal and updates leave PORTAL_HTTPS as it is)
   remote_net_preflight  # remote access on: its Docker network usable? else this run goes on without it
   setup_step "writing passwords and settings into .env"
   setup_secrets
@@ -739,6 +743,7 @@ cmd_setup() {
   # Safe to skip: it only writes .env (ports, generated secrets, the optional services' settings) from .env itself; with every
   # .env key it reads unchanged (and remote access off, which it checks the network for) it would write what is there.
   upd_gate settings "Ports and settings in .env" "no setting changed since the last setup" _setup_settings
+  https_guard   # lib/tls.sh: the site certificate made again when due, and the HTTPS this computer no longer trusts turned off
   UPD_SETTINGS_SKIPPED="$UPD_SKIPPED"
   setup_done "passwords and settings in .env"
   setup_bringup_and_probe --sandboxes   # (the terminal's and the Code page's images too, in the background meanwhile)
@@ -1432,6 +1437,7 @@ cmd_up() {
   terminal_up_hook     # lib/terminal.sh: its remote name, and a missing workspace folder said out loud
   code_up_hook         # lib/code.sh: its remote name and secret; left out (said) while the terminal is
   projects_up_hook     # lib/projects.sh: the project folders' mounts, each folder checked again (one left out: said)
+  https_guard          # lib/tls.sh: as at setup and update
   save_portal_origin   # Caddy's frame-ancestors follows PORTAL_HOST / PORTAL_PORT edited by hand in .env
   ensure_portal_password_hash   # lib/settings.sh: PORTAL_PASSWORD edited by hand gets a new hash
   owner_email_lowercase         # lib/settings.sh: as Chat keeps it
@@ -2550,6 +2556,8 @@ cmd_uninstall() {
 . "$STACK_DIR/lib/remote.sh"
 # The browser terminal (./stack terminal; Claude Code in a sandbox container, the portal's Terminal tab; on by default).
 . "$STACK_DIR/lib/terminal.sh"
+# The portal over HTTPS on this computer (./stack https; JON-976): the install's own CA, the site certificate, the trust.
+. "$STACK_DIR/lib/tls.sh"
 # The Code page (./stack code; Claude Code with a chat and files, in the terminal's sandbox; the Code tab; on by default).
 . "$STACK_DIR/lib/code.sh"
 # Folders of this computer as Code page projects (./stack project): their mounts into the sandbox.

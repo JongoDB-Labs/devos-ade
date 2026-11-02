@@ -264,7 +264,7 @@ test_the_gateways_listener_forwards_git_smart_http_only() {
 
 test_the_web_site_is_behind_the_portal_and_framed_by_it_only() {
   s="$(cat "$T_ROOT/caddy/localgit-on.caddy")"
-  assert_contains "$s" 'http://{$GIT_HOST} {'
+  assert_contains "$s" '{$LOCAL_SCHEME:http}://{$GIT_HOST} {'
   for i in local_request not_from_preview portal_auth drop_session_cookie frame_by_portal_only; do assert_contains "$s" "import $i"; done
   assert_contains "$s" "reverse_proxy forgejo:3000"
   assert_contains "$(cat "$T_ROOT/caddy/Caddyfile")" 'import localgit-{$LOCALGIT_MODE:off}.caddy'
@@ -423,7 +423,7 @@ test_the_web_site_signs_the_owner_in_only_after_the_portal_and_the_sandboxs_path
   s="$(cat "$T_ROOT/caddy/localgit-on.caddy")"
   # the header is set in the proxy block of the site that imports portal_auth, after it (route order), and nowhere else
   assert_eq "$(printf '%s\n' "$s" | grep -c 'header_up {$LOCALGIT_SSO_HEADER} devos')" 1
-  site="$(printf '%s\n' "$s" | sed -n '/^http:\/\/{\$GIT_HOST} {/,/^}/p')"
+  site="$(printf '%s\n' "$s" | sed -n '/^{\$LOCAL_SCHEME:http}:\/\/{\$GIT_HOST} {/,/^}/p')"
   assert_contains "$site" 'header_up {$LOCALGIT_SSO_HEADER} devos'
   [ "$(printf '%s\n' "$site" | grep -n 'import portal_auth' | cut -d: -f1)" -lt "$(printf '%s\n' "$site" | grep -n 'header_up {$LOCALGIT_SSO_HEADER}' | cut -d: -f1)" ] || { echo "the header is set before the portal's check" >&2; return 1; }
   # the other ways to Forgejo remove one a client sent

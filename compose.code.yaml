@@ -174,7 +174,7 @@ services:
       CODE_MODE: "on"   # caddy/code-on.caddy (code-off.caddy otherwise: no code site)
       CODE_HOST: ${CODE_HOST:-code.${PORTAL_HOST:-devos-ade.localhost}}
       # the terminal host may be framed by this origin (the Code page's terminal panel; :80 matches the default port)
-      CODE_ORIGIN: http://${CODE_HOST:-code.${PORTAL_HOST:-devos-ade.localhost}}:${PORTAL_PORT:-80}
+      CODE_ORIGIN: ${BN_LOCAL_SCHEME:-http}://${CODE_HOST:-code.${PORTAL_HOST:-devos-ade.localhost}}:${PORTAL_PORT:-80}
       # the Code page frames the terminal, previews and the artifact viewer on this port only (its CSP's frame-src)
       PORTAL_PORT: ${PORTAL_PORT:-80}
       CODE_PROXY_SECRET: ${CODE_PROXY_SECRET:-}

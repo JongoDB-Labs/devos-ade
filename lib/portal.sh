@@ -64,7 +64,7 @@ ensure_portal_reachable() {
   PORTAL_FORWARD_BROKEN=0
   [ -n "$(dc ps -q --status running caddy 2>/dev/null)" ] || return 0
   _portal_port_answers && return 0   # (Caddy's catch-all site answers /caddy-health for any host name)
-  dc exec -T caddy wget -q -O /dev/null http://127.0.0.1:8080/caddy-health >/dev/null 2>&1 || return 0
+  dc exec -T caddy wget -q -O /dev/null "http://127.0.0.1:$(https_on && echo 8089 || echo 8080)/caddy-health" >/dev/null 2>&1 || return 0
   warn "port $(portal_port) on this computer does not reach Caddy, although Caddy answers in its container (Docker's port forward): recreating Caddy"
   dc up -d --no-deps --force-recreate --wait caddy >/dev/null 2>&1 || true
   if _portal_port_answers; then
@@ -137,11 +137,13 @@ $served
 SERVED
 }
 
-# portal_url [SUB] -> http://<app_host SUB>[:PORTAL_PORT] — ":80" is left out
-portal_url() {
-  local h p; h="$(app_host "${1:-}")"; p="$(portal_port)"
-  if [ "$p" = 80 ]; then printf 'http://%s\n' "$h"; else printf 'http://%s:%s\n' "$h" "$p"; fi
-}
+# https_on -> 0 while the portal is served over HTTPS (PORTAL_HTTPS=true; lib/tls.sh; empty and false: plain HTTP)
+https_on() { flag_on "$(get_env PORTAL_HTTPS)"; }
+# portal_scheme -> https while the portal is served over HTTPS, else http
+portal_scheme() { if https_on; then echo https; else echo http; fi; }
+
+# portal_url [SUB] -> <scheme>://<app_host SUB>[:PORTAL_PORT] — ":80" is left out of an http address, never from an https one
+portal_url() { _portal_url_at "$(portal_port)" "${1:-}"; }
 
 # portal_app_name [NAME] -> the installed web app's name: "DevOS ADE" (PRODUCT_NAME) for the default address, else
 # "DevOS ADE (<project>[, port N])" (no ":" or "/": the name becomes a file name). Same rule as app_name in portal/portal/webapp.py (the manifest).
@@ -232,8 +234,11 @@ resolve_portal_port() {
   warn "$why → using $port for the portal (PORTAL_PORT): $(portal_url)"
 }
 
-# _portal_url_at PORT -> the portal's address on PORT
-_portal_url_at() { if [ "$1" = 80 ]; then printf 'http://%s\n' "$(portal_host)"; else printf 'http://%s:%s\n' "$(portal_host)" "$1"; fi; }
+# _portal_url_at PORT [SUB] -> the portal's (or an app's) address on PORT
+_portal_url_at() {
+  local h; h="$(app_host "${2:-}")"
+  if [ "$1" = 80 ] && ! https_on; then printf 'http://%s\n' "$h"; else printf '%s://%s:%s\n' "$(portal_scheme)" "$h" "$1"; fi
+}
 
 # migrate_direct_ports — v0.1.x published Open WebUI and the RustFS console on their own ports; both are now
 # reached only through the portal, so those keys are dropped from .env (they would only confuse port checks).
@@ -254,6 +259,7 @@ portal_curl() {
   local sub="$1" path="$2" h p jar=(); shift 2
   h="$(app_host "$sub")"; p="$(portal_port)"
   [ -z "${PORTAL_JAR:-}" ] || jar=(-b "$PORTAL_JAR")
+  ! https_on || jar+=(--cacert "$(tls_dir)/ca.pem")   # (the install's own CA: lib/tls.sh)
   curl --resolve "$h:$p:127.0.0.1" ${jar[@]+"${jar[@]}"} "$@" "$(portal_url "$sub")$path"
 }
 
@@ -262,6 +268,7 @@ portal_curl_auth() {
   local token="$1" sub="$2" path="$3" h p jar=(); shift 3
   h="$(app_host "$sub")"; p="$(portal_port)"
   [ -z "${PORTAL_JAR:-}" ] || jar=(-b "$PORTAL_JAR")
+  ! https_on || jar+=(--cacert "$(tls_dir)/ca.pem")
   curl_auth "$token" --resolve "$h:$p:127.0.0.1" ${jar[@]+"${jar[@]}"} "$@" "$(portal_url "$sub")$path"
 }
 
