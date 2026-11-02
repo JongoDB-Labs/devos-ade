@@ -39,6 +39,29 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   as a hash change and then reloaded; when the portal had already cut the address to `#git`, the reload loaded the git
   server's front page and the check timed out (once in the v0.54.0 run). It now loads the deep link from `about:blank`.
 
+### Fixed
+- **A smoke test that only ran out of time no longer fails the update (JON-996).** On a busy computer a check that asks a
+  container something (the sandbox's isolation checks among them) could pass the 30 second limit without having answered
+  wrongly, and the whole update was recorded as failed with Roll back offered. The smoke test now says such a check as `slow`,
+  not `FAIL`; if nothing really failed, it runs every check once more with a longer limit (twice the limit, at least 90 s)
+  and says why. A check that times out again is a failure, as is any wrong answer, and if anything failed on the first pass
+  there is no second one. Nothing is ever passed without an answer.
+  Home's card for a failed update now names the step that failed, as the last step, marked failed, with how long it ran (it
+  listed only the finished ones, so the smoke test was missing). The message leads with the failed checks, "Smoke test: 4
+  check(s) failed: …", and says when every one only ran out of time ("they could not run in time — this computer was busy");
+  the way out follows. "(see the messages above)" is left out there, as Home has none. The message is kept up to 800
+  characters (it was cut at 300, in the middle of the way out).
+- **Finish the update, on Home (JON-996).** After a failed update that moved the code, Home offered only Roll back, and once
+  its card was dismissed, nothing: Update now shows only for a newer release, and with one out it would only have finished
+  this update (the update helper finishes an unfinished update first, at the code in place, as `./stack update` does). The
+  failed update's card now offers **Finish the update** next to Roll back. Dismissed, the update card offers both in its
+  place: it says the update did not finish, which version and backup Roll back goes back to, and that Update now installs
+  the newer release afterwards. Finishing takes no new backup and no longer prepares the newer release first; the card then
+  says **Finished the update to vX**. With automatic updates on, the update card's line says Finish the update finishes it.
+  The end-to-end check `browser/home-update-now-after-a-failed-update` now checks Finish the update on both cards, its
+  confirmation, that no Update now shows beside the failed card, and that it is back within 10 seconds of a late helper's
+  next heartbeat.
+
 ## [0.53.0] - 2026-11-02
 
 ### Added
