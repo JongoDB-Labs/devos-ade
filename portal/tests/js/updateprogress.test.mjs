@@ -122,3 +122,15 @@ test("the card's markup: a progressbar with its range, its words hidden from the
   assert.match(css, /\.job-bar-fill[^}]*var\(--accent\)/);   // the tokens, so dark mode follows
   assert.match(css, /prefers-reduced-motion[^}]*\.job-bar-fill/);
 });
+
+test("a step that failed is the last one listed, marked failed, with how long it ran (JON-996)", () => {
+  assert.deepEqual(plain(U.stepItem({ label: "Smoke test", took: "2m45s", failed: true })), { cls: "failed", text: "Smoke test · 2m45s · failed" });
+  assert.deepEqual(plain(U.stepItem({ label: "Smoke test", took: "", failed: true })), { cls: "failed", text: "Smoke test · failed" });
+  assert.deepEqual(plain(U.stepItem({ label: "Images", took: "9s" })), { cls: "", text: "Images · 9s" });
+  assert.deepEqual(plain(U.stepItem({ label: "Images", took: "skipped", why: "no change" })), { cls: "skipped", text: "Images · skipped (no change)" });
+});
+
+test("Home's card uses it, and styles a failed step", () => {
+  assert.match(source("app.js"), /U\.stepItem|bnUpdateCheck\._pure\.stepItem/);
+  assert.match(source("app.css"), /\.job-done li\.failed/);
+});

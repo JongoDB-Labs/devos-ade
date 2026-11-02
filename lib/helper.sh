@@ -852,6 +852,42 @@ _last_error() {
   printf '%s\n' "$l"
 }
 
+# _job_mark_failed_step — a job that failed: the step that ran when it did goes last in JOB_STEPS_JSON, {"failed": true}
+# and how long it ran (JOB_STEP_AT to JOB_FINISHED); Home shows it marked failed. Nothing when no step was running.
+_job_mark_failed_step() {
+  local s took item
+  [ -n "$JOB_STEP" ] || return 0
+  s=$(( ${JOB_FINISHED:-$(date +%s)} - ${JOB_STEP_AT:-0} )); [ "$s" -ge 0 ] && [ "$s" -lt 360000 ] || s=0
+  if [ "$s" -lt 60 ]; then took="${s}s"; else took="$((s / 60))m$(printf '%02d' $((s % 60)))s"; fi
+  item="{\"label\": \"$(_json_str "$JOB_STEP")\", \"took\": \"$took\", \"failed\": true}"
+  if [ "${JOB_STEPS_JSON:-[]}" = '[]' ]; then JOB_STEPS_JSON="[$item]"; else JOB_STEPS_JSON="${JOB_STEPS_JSON%]}, $item]"; fi
+}
+
+# _job_failure_message STEP LOG -> why a job failed, for Home. When the log has `  FAIL` lines (the smoke test's checks)
+# it leads with them: "Smoke test: 4 check(s) failed: <label>, <label>, <label> and 1 more", and when every one only ran
+# out of time, says so; then the last error line ("xx …", without "(see the messages above)": Home has no messages above).
+_job_failure_message() {
+  local l UNSTAMPED total=0 slow=0 shown=0 labels='' lead='' err
+  while IFS= read -r l; do
+    _job_unstamp "$l"; l="$UNSTAMPED"
+    case "$l" in '  FAIL  '*) ;; *) continue ;; esac
+    total=$((total + 1))
+    case "$l" in *"got «couldn't check (timed out"*) slow=$((slow + 1)) ;; esac
+    if [ "$shown" -lt 3 ]; then
+      l="${l#  FAIL  }"; l="${l%% (got *}"; l="$(printf '%s' "$l" | LC_ALL=C tr -cd ' -~' | cut -c1-100)"
+      labels="$labels${labels:+, }$l"; shown=$((shown + 1))
+    fi
+  done < <(grep -E "^($JOB_STAMP_RE )?  FAIL  " "$2" 2>/dev/null | tail -n 200)
+  err="$(_last_error "$2")"; err="${err// (see the messages above)/}"
+  if [ "$total" -gt 0 ]; then
+    lead="${1:+$1: }$total check(s) failed: $labels"
+    [ "$total" -le "$shown" ] || lead="$lead and $((total - shown)) more"
+    [ "$slow" -ne "$total" ] || lead="$lead. They could not run in time — this computer was busy"
+    err="$lead. $err"
+  fi
+  printf '%s\n' "$err"
+}
+
 # _job_refusal ACTION -> why this job must not start now (empty: go ahead)
 _job_refusal() {
   local holder br
@@ -901,7 +937,7 @@ _job_run() {
 # helper_run_job ACTION ID [auto] — runs ./stack ACTION --yes in this checkout and reports progress. "auto": the
 # automatic update of JOB_TARGET (its own record and wording; one that cannot start is "skipped", not "failed")
 helper_run_job() {
-  local action="$1" logf pid rc=0 ph at freed summary why msg
+  local action="$1" logf pid rc=0 ph at freed summary why msg failstep
   _status_tick_stop   # (an automatic update comes here without a request: helper_auto_tick)
   _prepare_stop       # (a prepare in the background ends first: the job's own steps prepare what is left)
   JOB_ID="$2"; JOB_ACTION="$action"; JOB_TRIGGER="${3:-}"; JOB_STARTED="$(date +%s)"; JOB_FINISHED=''; JOB_FREED=''; JOB_VERSION=''
@@ -945,7 +981,13 @@ helper_run_job() {
   done
   wait "$pid" || rc=$?
   # (its steps as the log ended: the done or failed status keeps how long each took; nothing runs any more)
-  if [ "$action" != clean ]; then JOB_STEPS_SIZE=''; _job_steps "$logf"; JOB_STEP=''; JOB_STEP_AT=''; fi
+  failstep=''
+  if [ "$action" != clean ]; then
+    JOB_STEPS_SIZE=''; _job_steps "$logf"
+    # (it failed in this step: the card keeps it, marked failed, and the message names it)
+    if [ "$rc" -ne 0 ]; then failstep="$JOB_STEP"; JOB_FINISHED="$(date +%s)"; _job_mark_failed_step; fi
+    JOB_STEP=''; JOB_STEP_AT=''
+  fi
   helper_facts force; AUTO_FRESH=0   # what the heartbeats saw during the job is out of date now
   JOB_FINISHED="$(date +%s)"; JOB_VERSION="$HF_VERSION"
   at="$(sed -n 's/^at=//p' "$STATE_DIR/images/last-clean" 2>/dev/null || true)"   # none yet (e.g. nothing to update)
@@ -956,7 +998,7 @@ helper_run_job() {
   fi
   if [ "$rc" -ne 0 ]; then
     JOB_RESULT=failed
-    msg="$(_last_error "$logf") (full log: .state/helper/last-$action.log$(_rollback_hint "$action"))"
+    msg="$(_job_failure_message "$failstep" "$logf") (full log: .state/helper/last-$action.log$(_rollback_hint "$action"))"
     [ "$JOB_TRIGGER" != auto ] || msg="Automatic update to $JOB_TARGET failed at $(date +%H:%M): $msg"
     helper_write_status failed "$msg"
     return 0

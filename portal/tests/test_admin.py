@@ -712,3 +712,19 @@ def test_status_reports_what_the_helper_prepared_with_types_checked(make_client,
     job(st, "preparing", action="update", step="Prepare: build portal", steps=[{"label": "Prepare: fetch v0.4.0", "took": "2s"}])
     j = c.get("/api/admin/status", headers=API).json()["job"]
     assert j["phase"] == "preparing" and j["steps"] == [{"label": "Prepare: fetch v0.4.0", "took": "2s"}]
+
+
+def test_a_failed_step_and_a_long_failure_message_pass_through(make_client, dirs):
+    """JON-996: Home shows the step that failed (steps[-1].failed) and the start of a message that names the failed checks."""
+    st, rq = dirs
+    c = make_client()
+    beat(st)
+    now = int(time.time())
+    msg = "Smoke test: 4 check(s) failed: " + "x" * 400 + ". They could not run in time — this computer was busy. update: setup failed — ./stack update finishes it, or ./stack rollback goes back (full log: .state/helper/last-update.log; ./stack rollback goes back)"
+    (st / "helper-status.json").write_text(json.dumps({"id": "j", "action": "update", "phase": "failed", "message": msg, "started_at": now - 600, "updated_at": now,
+                                                         "finished_at": now, "steps": [{"label": "Git server account", "took": "2m40s"},
+                                                                                       {"label": "Smoke test", "took": "2m45s", "failed": True},
+                                                                                       {"label": "Other", "took": "1s", "failed": "yes"}]}))
+    j = c.get("/api/admin/status", headers=API).json()["job"]
+    assert j["steps"] == [{"label": "Git server account", "took": "2m40s"}, {"label": "Smoke test", "took": "2m45s", "failed": True}, {"label": "Other", "took": "1s"}]
+    assert j["message"] == msg and j["message"].endswith("goes back)")

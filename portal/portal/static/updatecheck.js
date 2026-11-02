@@ -170,7 +170,14 @@
     return { key, say: key === prevKey ? "" : p.valuetext };
   }
 
-  root.bnUpdateCheck = { _pure: { describe, ago, clock, fresher, statusKey, prepareLine, preparedFirst, progress, announce, leftWords, normLabel } };
+  // stepItem(step) -> {cls, text}: one finished step on Home's card; the one a failed job stopped in is marked failed (JON-996)
+  function stepItem(x) {
+    const took = x && x.took ? x.took : "", label = (x && x.label) || "";
+    if (x && x.failed === true) return { cls: "failed", text: `${label}${took ? ` · ${took}` : ""} · failed` };
+    if (took === "skipped") return { cls: "skipped", text: `${label} · skipped${x.why ? ` (${x.why})` : ""}` };
+    return { cls: "", text: took ? `${label} · ${took}` : label };
+  }
+  root.bnUpdateCheck = { _pure: { stepItem, describe, ago, clock, fresher, statusKey, prepareLine, preparedFirst, progress, announce, leftWords, normLabel } };
   if (typeof document === "undefined") return;
 
   let last = null;          // the last update status seen (Home's summary, or a click's answer)

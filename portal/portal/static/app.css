@@ -328,6 +328,8 @@ a.form-link:not([href]) { display: none; }
 /* a step the update left out, and the ones still to come: grey, no tick */
 .job-done li.skipped, .job-todo li { color: var(--muted); }
 .job-done li.skipped::before { content: "– "; color: var(--muted); }
+.job-done li.failed { color: var(--bad); font-weight: 500; }
+.job-done li.failed::before { content: "✗ "; color: var(--bad); }
 .job-todo li::before { content: "○ "; color: var(--muted); }
 .job-todo-box { margin: 0 0 8px; font-size: 13px; color: var(--muted); }
 .job-todo-box summary { cursor: pointer; margin-bottom: 4px; }

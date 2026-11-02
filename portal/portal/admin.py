@@ -142,6 +142,9 @@ COMMAND = re.compile(r"[a-z][a-z-]{0,23}(?: [a-z][a-z-]{0,23})?")
 TOOK = re.compile(r"[0-9]{1,4}m[0-9]{2}s|[0-9]{1,4}(?:\.[0-9])?s|skipped")   # "1m50s", "12s", "0.4s" (a settings change's steps), "skipped" (an update's)
 
 
+JOB_MESSAGE_MAX = 800   # (a failed job's message: the failed checks first, then the reason and the way out; the start is what stays)
+
+
 STEPS_MAX = 80   # (lib/helper.sh JOB_STEPS_MAX: an update's every step, from the backup to what's new)
 
 
@@ -155,6 +158,8 @@ def _steps(v) -> list:
             step = {"label": x["label"][:120], "took": took if isinstance(took, str) and TOOK.fullmatch(took) else ""}
             if step["took"] == "skipped" and isinstance(x.get("why"), str) and x["why"].strip():
                 step["why"] = x["why"][:200]
+            if x.get("failed") is True:   # the step that ran when the job failed (lib/helper.sh _job_mark_failed_step)
+                step["failed"] = True
             out.append(step)
         if len(out) == STEPS_MAX:
             break
@@ -178,7 +183,7 @@ def _job(raw: dict, origin: str) -> dict | None:
         return None
     job = {
         "id": _str(raw.get("id"), 64), "action": _str(raw.get("action"), 32),
-        "phase": _str(raw.get("phase"), 32), "message": _str(raw.get("message")),
+        "phase": _str(raw.get("phase"), 32), "message": _str(raw.get("message"), JOB_MESSAGE_MAX),
         "started_at": _int(raw.get("started_at")), "updated_at": _int(raw.get("updated_at")),
         "finished_at": _int(raw.get("finished_at")), "freed_bytes": _int(raw.get("freed_bytes")),
         "version": _str(raw.get("version"), 80),

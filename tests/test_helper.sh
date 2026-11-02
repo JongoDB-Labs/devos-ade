@@ -711,3 +711,43 @@ test_job_steps_show_a_skipped_step_with_skipped_as_its_time() {
   assert_eq "$JOB_STEP" "Services (8)"
   assert_eq "$(_phase_of "$TMP/log" | cut -f1)" "restarting"
 }
+
+# JON-996: a failed update's card says the step that failed, and leads with the checks that failed
+_smoke_log() { # the log of an update whose smoke test had $1 checks fail, each $2 (a timeout) or a wrong answer
+  local i
+  { printf '%s\n' '20:02:40 ==> update: 4/4 setup' '20:02:41 ==> Git server account ready (2m40s)' '20:02:42 ==> Smoke test: starting…' '20:03:50 ok    litellm alive'
+    for i in $(seq 1 "$1"); do
+      if [ "$2" = timeout ]; then printf '20:03:5%s   FAIL  sandbox check %s (got «couldn'"'"'t check (timed out after 30 s)», want ok)\n' "$i" "$i"
+      else printf '20:03:5%s   FAIL  sandbox check %s (got «500», want ok)\n' "$i" "$i"; fi
+    done
+    printf '%s\n' '20:04:00 xx  update: setup failed (see the messages above) — ./stack update finishes it, or ./stack rollback goes back'; } > "$TMP/log"
+}
+
+test_a_failed_job_names_the_step_that_failed_with_how_long_it_ran() {
+  JOB_ID=f1; JOB_STEPS_ID=''; JOB_STEPS_SIZE=''; JOB_ACTION=update; _smoke_log 4 timeout
+  _job_steps "$TMP/log"
+  assert_eq "$JOB_STEP" "Smoke test"
+  JOB_STEP_AT=1000; JOB_FINISHED=1165
+  _job_mark_failed_step
+  assert_eq "$JOB_STEPS_JSON" '[{"label": "Git server account", "took": "2m40s"}, {"label": "Smoke test", "took": "2m45s", "failed": true}]'
+  # (written into the status the card reads)
+  JOB_STEP=''; JOB_STEP_AT=''; helper_write_status failed x
+  assert_contains "$(_status)" '"label": "Smoke test", "took": "2m45s", "failed": true'
+  # no step running: nothing marked
+  JOB_STEPS_JSON='[]'; JOB_STEP=''; _job_mark_failed_step; assert_eq "$JOB_STEPS_JSON" '[]'
+}
+
+test_a_failed_jobs_message_leads_with_its_failed_checks() {
+  _smoke_log 4 timeout
+  local m; m="$(_job_failure_message "Smoke test" "$TMP/log")"
+  assert_eq "$m" "Smoke test: 4 check(s) failed: sandbox check 1, sandbox check 2, sandbox check 3 and 1 more. They could not run in time — this computer was busy. update: setup failed — ./stack update finishes it, or ./stack rollback goes back"
+  _smoke_log 2 wrong
+  m="$(_job_failure_message "Smoke test" "$TMP/log")"
+  assert_eq "$m" "Smoke test: 2 check(s) failed: sandbox check 1, sandbox check 2. update: setup failed — ./stack update finishes it, or ./stack rollback goes back"
+  # (a mix: no claim that the computer was busy)
+  { cat "$TMP/log"; printf '%s\n' "20:03:59   FAIL  other (got «couldn't check (timed out after 30 s)», want ok)"; } > "$TMP/log2"
+  assert_not_contains "$(_job_failure_message "Smoke test" "$TMP/log2")" "busy"
+  # no FAIL lines: the last error as before
+  printf '%s\n' '20:02:52 xx  image download failed (network/registry?): litellm' > "$TMP/log"
+  assert_eq "$(_job_failure_message "Terminal" "$TMP/log")" "image download failed (network/registry?): litellm"
+}

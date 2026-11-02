@@ -639,9 +639,9 @@ function renderSteps(job, inProgress) {
   now.textContent = mine && inProgress ? stepText(job) : "";
   now.hidden = !now.textContent;
   // (a step the update left out is greyed, with its reason)
-  done.replaceChildren(...(mine ? steps : []).map((x) => x.took === "skipped"
-    ? el("li", { class: "skipped", text: `${x.label} · skipped${x.why ? ` (${x.why})` : ""}` })
-    : el("li", { text: x.took ? `${x.label} · ${x.took}` : x.label })));
+  // (the step a failed job stopped in is the last, marked failed)
+  const U = window.bnUpdateCheck && window.bnUpdateCheck._pure;
+  done.replaceChildren(...(mine ? steps : []).map((x) => { const it = U ? U.stepItem(x) : { cls: "", text: x.took ? `${x.label} · ${x.took}` : x.label }; return el("li", { class: it.cls, text: it.text }); }));
   done.hidden = !done.children.length;
   renderProgress(job, inProgress);
 }
