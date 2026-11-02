@@ -38,6 +38,12 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 - **Tests: one list of models everywhere.** The file the Code page reads, LiteLLM's `bn_id` keys and devos-claude's rows
   hold the same models (all, and the ones `CODE_MODELS` lists); the Code page's and Chat's tools are the catalog's.
 
+### Changed
+- **The Code page lists the models Claude Code reports for your plan,** not four fixed names (default, Opus, Sonnet,
+  Haiku), once the session runs; the four stay for a session that has not started and for a list that cannot be read.
+- **`CODE_MODELS` narrows the Code page and the terminal only,** as before; its setting now says that Chat lists every
+  enabled model (Settings' hidden models narrow Chat) and that your subscriptions' models are not narrowed by it.
+
 ### Tests
 - **Preparing a release ahead (JON-972).** Shell tests (`tests/test_prepare.sh`, a real git origin and a stubbed Docker): the
   decision (off, branch, nothing newer, rolled back, prepared already, failed within the hour, lock held, load too high,
@@ -83,10 +89,6 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   - **`./stack update --force` runs every step, and so does `./stack setup`** by itself. The first update after this one has
     no earlier setup to compare with, so it still runs every step once. A setup that stops halfway leaves nothing to compare
     with, so the next update runs every step. Rollback, restore and uninstall also start from every step.
-- **The Code page lists the models Claude Code reports for your plan,** not four fixed names (default, Opus, Sonnet,
-  Haiku), once the session runs; the four stay for a session that has not started and for a list that cannot be read.
-- **`CODE_MODELS` narrows the Code page and the terminal only,** as before; its setting now says that Chat lists every
-  enabled model (Settings' hidden models narrow Chat) and that your subscriptions' models are not narrowed by it.
 
 ### Fixed
 - **An image that did not change keeps its ID, so its service is not restarted.** With Docker's containerd image store
