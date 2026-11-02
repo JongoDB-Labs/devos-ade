@@ -36,11 +36,12 @@ function recalled() { try { return localStorage.getItem("bn.tab"); } catch (_) {
 // the portal's own pages (each a section with that id); everything else is an app in a frame. code.js adds "code" while
 // the Code page is off on this site: its tab then shows what the Code page is and how to turn it on, with no frame.
 const PAGES = ["home", "settings", "modelbrowser"];   // modelbrowser: Browse models (models.js), reached by link, no sidebar tab
+const FRAME_TITLES = { git: "Git — your local git server" };   // (a frame's name for assistive technology; git.js)
 // appFrame TAB -> its frame: created (hidden) on first need and kept, so switching tabs never reloads an app
 function appFrame(tab) {
   let f = $(`#frames iframe[data-app="${tab}"]`);
   if (!f) {
-    f = el("iframe", { src: appUrl(tab), "data-app": tab, title: tab[0].toUpperCase() + tab.slice(1),
+    f = el("iframe", { src: appUrl(tab), "data-app": tab, title: FRAME_TITLES[tab] || tab[0].toUpperCase() + tab.slice(1),
       allow: "clipboard-read; clipboard-write; microphone; screen-wake-lock" });
     f.hidden = true;
     $("#frames").append(f);
@@ -52,8 +53,8 @@ function showTab(tab) {
   const [name, ...place] = String(tab || "").split("/");
   tab = name;
   // not "constructor" etc.; the terminal and the Code page only where the server offers them (APP_URLS: ./stack
-  // terminal / ./stack code; terminal.js, code.js)
-  if (!PAGES.includes(tab) && !Object.prototype.hasOwnProperty.call(APPS, tab) && !(["terminal", "code"].includes(tab) && APP_URLS[tab])) tab = "home";
+  // terminal / ./stack code; terminal.js, code.js) and the Git page (the local git server: git.js; PAGES has it while it is off)
+  if (!PAGES.includes(tab) && !Object.prototype.hasOwnProperty.call(APPS, tab) && !(["terminal", "code", "git"].includes(tab) && APP_URLS[tab])) tab = "home";
   if (window.bnMobile) tab = window.bnMobile.allowTab(tab);  // phones: no desktop apps in the page (mobile.js)
   for (const b of document.querySelectorAll(".tab")) {
     if (b.dataset.tab === tab) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");

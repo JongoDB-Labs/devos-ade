@@ -135,10 +135,10 @@
     border-right: 0; border-top: 1px solid var(--line); overflow: visible; }
   .sidebar .brand, .sidebar > .logout, .sidebar > .install-btn, .popout { display: none; }
   .sidebar .version-label { display: none; } .home-version { display: inline-flex; min-height: 24px; margin-right: 6px; }
-  /* Home · Chat · Code · More (Code: framed like Chat, code.js; off here: its page of the portal). Admin, Files and the
-     Terminal are under More; Settings too. */
+  /* Home · Chat · Code · More (Code: framed like Chat, code.js; off here: its page of the portal). Admin, Files, the Terminal
+     and Git are under More; Settings too. */
   .tabs { flex: 1; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 0; }
-  .tabs li:has(> [data-tab="admin"]), .tabs li:has(> [data-tab="files"]), .tabs .terminal-item { display: none; }
+  .tabs li:has(> [data-tab="admin"]), .tabs li:has(> [data-tab="files"]), .tabs .terminal-item, .tabs .git-item { display: none; }
   .tabs li { border-radius: 0; }
   /* the Code tab's badge (permission prompts waiting) and its "off" pill: at the icon's corner */
   .tabs .tab { position: relative; }

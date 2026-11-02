@@ -37,6 +37,7 @@
 <script src="/static/terminal.js" defer></script>
 <script src="/static/answers.js" defer></script>
 <script src="/static/code.js" defer></script>
+<script src="/static/git.js" defer></script>
 <script src="/static/home.js" defer></script>
 <script src="/static/feedback.js" defer></script>
 <script src="/static/widgets.js" defer></script>
@@ -95,7 +96,7 @@
     <ul class="sheet-tools">
       <li><button type="button" class="sheet-link" data-page="settings">Settings <span>Passwords, keys, budgets, voice, backups</span></button></li>
       <li><button type="button" class="sheet-link" id="more-activity" aria-haspopup="dialog" aria-controls="activity" aria-expanded="false" hidden>Activity <span>Budgets, updates, jobs, Code sessions that need you</span><b class="sheet-count" id="more-activity-count" hidden></b></button></li>
-      <li><button type="button" class="sheet-link" id="more-search" aria-haspopup="dialog" aria-controls="search" hidden>Search <span>Settings, Code sessions, chats, the walkthrough, docs</span></button></li>
+      <li><button type="button" class="sheet-link" id="more-search" aria-haspopup="dialog" aria-controls="search" hidden>Search <span>Settings, Code sessions, chats, Git, the walkthrough, docs</span></button></li>
     </ul>
     <button type="button" class="sheet-tour" id="more-tour" hidden>Walkthrough <span id="more-tour-note">Set up, Chat, Code, your own tools</span></button>
     <h3 class="sheet-sub" id="more-newtab">In a new tab</h3>
@@ -325,7 +326,7 @@
     <div class="search-box">
       <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5"/><path d="m12.3 12.3 4.2 4.2"/></svg>
       <input id="search-input" type="text" role="combobox" aria-expanded="true" aria-controls="search-list" aria-autocomplete="list" aria-label="Search the portal"
-        autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="64" placeholder="Settings, sessions, files, chats, docs…">
+        autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="64" placeholder="Settings, sessions, files, chats, Git, docs…">
       <button type="button" class="search-close" id="search-close" aria-label="Close search"><kbd>Esc</kbd></button>
     </div>
     <div id="search-list" class="search-list" role="listbox" aria-label="Results"></div>

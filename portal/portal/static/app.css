@@ -436,7 +436,7 @@ a.install-btn, .install-actions a.action { text-decoration: none; cursor: pointe
 .models-more[open] > summary { margin-bottom: 12px; }
 
 /* The Code tab while the Code page is off here (code.js): muted, an "off" pill; its page is the portal's own. */
-.code-item.off .tab svg { opacity: 0.55; }
+.code-item.off .tab svg, .git-item.off .tab svg { opacity: 0.55; }
 .tab-off { margin-left: auto; padding: 0 6px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted);
   font-size: 11px; font-weight: 500; line-height: 16px; }
 /* (on the teal pill of the page shown: the pill's own ink, as a badge on a coloured button) */
