@@ -552,10 +552,10 @@ up_services() {
 #     these same arguments went through with (_up_converged). A network compose made again since has a new ID.
 # Anything else, or anything it cannot read: 1, and compose decides. It leaves _UP_MODEL for _up_converged.
 _up_unchanged() {
-  local a nodeps='' listed=' ' key="$*" rec="$STATE_DIR/up-converged" p rows ids t hashes imgs now
+  local a nodeps='' listed=' ' key="$*" rec="$STATE_DIR/up-converged" p rows ids t hashes imgs now odd
   _UP_MODEL=''
-  for a in "$@"; do case "$a" in --no-deps) nodeps=1 ;; -*) return 1 ;; *) listed="$listed$a " ;; esac; done
-  [ "$listed" != ' ' ] && grep -qxF -- "$key" "$rec" 2>/dev/null || return 1
+  for a in "$@"; do case "$a" in --no-deps) nodeps=1 ;; -*) _up_why "$key" "an option it does not read: $a"; return 1 ;; *) listed="$listed$a " ;; esac; done
+  [ "$listed" != ' ' ] && grep -qxF -- "$key" "$rec" 2>/dev/null || { _up_why "$key" "no up of these arguments since the configuration or the networks changed"; return 1; }
   p="$(project_name)"
   rows="$(docker ps -a --no-trunc --filter "label=com.docker.compose.project=$p" --filter label=com.docker.compose.oneoff=False \
     --format '{{.Label "com.docker.compose.service"}}|{{.ID}}|{{.State}}|{{.Status}}|{{.Label "com.docker.compose.config-hash"}}')" || return 1
@@ -572,14 +572,14 @@ _up_unchanged() {
     }
     n = split(ENVIRON["LISTED"], l, " ")
     for (i = 1; i <= n; i++) if (count[l[i]] != 1) exit 1
-  }')" || return 1
+  }')" || { _up_why "$key" "a container not running, not healthy yet, missing or doubled"; return 1; }
   # the configuration: its services' hashes, and the rest of it, side by side (each reads every compose file)
   t="$(mktemp "${TMPDIR:-/tmp}/bn-up.XXXXXX")" || return 1
   _up_model > "$t" 2>/dev/null & a=$!
   hashes="$(dc config --hash '*' 2>/dev/null)" || hashes=''
   if wait "$a"; then _UP_MODEL="$(cat "$t")"; fi
   rm -f "$t"
-  [ -n "$hashes" ] && [ -n "$_UP_MODEL" ] || return 1
+  [ -n "$hashes" ] && [ -n "$_UP_MODEL" ] || { _up_why "$key" "compose's configuration could not be read"; return 1; }
   HASHES="$hashes" ROWS="$rows" LISTED="$listed" NODEPS="$nodeps" awk 'BEGIN {
     n = split(ENVIRON["HASHES"], h, "\n")
     for (i = 1; i <= n; i++) if (split(h[i], f, " ") == 2) want[f[1]] = f[2]
@@ -588,18 +588,26 @@ _up_unchanged() {
     n = split(ENVIRON["LISTED"], l, " ")
     for (i = 1; i <= n; i++) if (!(l[i] in want) || want[l[i]] != have[l[i]]) exit 1
     if (ENVIRON["NODEPS"] == "") for (s in want) if (count[s] != 1 || want[s] != have[s]) exit 1
-  }' || return 1
-  [ "$(head -n 1 "$rec")" = "$_UP_MODEL $(_up_nets "$p")" ] || return 1
+  }' || { _up_why "$key" "a service's configuration hash is not its container's"; return 1; }
+  [ "$(head -n 1 "$rec")" = "$_UP_MODEL $(_up_nets "$p")" ] || { _up_why "$key" "the configuration besides the services, or the networks, changed"; return 1; }
   # the images: each container's, and the one its image's name gives now
   # shellcheck disable=SC2086  # (IDs: a word each)
-  imgs="$(docker container inspect --format '{{.Image}} {{.Config.Image}}' $ids)" && [ -n "$imgs" ] || return 1
+  imgs="$(docker container inspect --format '{{.Image}} {{.Config.Image}}' $ids)" && [ -n "$imgs" ] || { _up_why "$key" "the containers could not be read"; return 1; }
   # shellcheck disable=SC2046  # (image names: a word each)
-  now="$(docker image inspect --format '{{.Id}}' $(printf '%s\n' "$imgs" | awk '!seen[$2]++ { print $2 }'))" || return 1
-  IMGS="$imgs" NOW="$now" awk 'BEGIN {
+  now="$(docker image inspect --format '{{.Id}}' $(printf '%s\n' "$imgs" | awk '!seen[$2]++ { print $2 }'))" || { _up_why "$key" "an image could not be read"; return 1; }
+  # (the first container whose image is not the one its image's name gives now: its image name and both IDs, for the trace)
+  odd="$(IMGS="$imgs" NOW="$now" awk 'BEGIN {
     n = split(ENVIRON["IMGS"], c, "\n"); split(ENVIRON["NOW"], d, "\n"); k = 0
     for (i = 1; i <= n; i++) { split(c[i], f, " "); if (!(f[2] in id)) id[f[2]] = d[++k] }
-    for (i = 1; i <= n; i++) { split(c[i], f, " "); if (f[1] == "" || f[1] != id[f[2]]) exit 1 }
-  }'
+    for (i = 1; i <= n; i++) { split(c[i], f, " "); if (f[1] == "" || f[1] != id[f[2]]) { print f[2] " runs " substr(f[1], 8, 12) ", the name gives " substr(id[f[2]], 8, 12); exit } }
+  }')" || odd="the images could not be compared"
+  [ -z "$odd" ] || { _up_why "$key" "a container's image is not the one its name gives now: $odd"; return 1; }
+}
+# _up_why KEY REASON — with the update's trace on (lib/steps.sh upd_prof_begin), why up_services made its compose call after all:
+# a line in trace/calls.tsv ("0  up-changed  KEY: REASON"). Service and image names and IDs only, never a value.
+_up_why() {
+  [ -n "${_UPD_PROF:-}" ] || return 0
+  printf '0\tup-changed\t%s: %s\t%s\n' "$1" "$(printf '%s' "$2" | LC_ALL=C tr -c ' -~' ' ' | cut -c1-200)" "$(( $(_ms_now) - ${_UPD_PROF_T0:-0} ))" >> "$_UPD_PROF" 2>/dev/null || true
 }
 # _up_model -> a checksum of the stack's compose configuration other than its services (networks, volumes…: what a
 # service's hash leaves out), as `dc config` gives it

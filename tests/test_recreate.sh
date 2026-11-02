@@ -197,6 +197,23 @@ $ROWS"
   DEVOS_ADE_UP_ALWAYS=1; assert_eq "$(_ups --no-deps portal caddy)" 1; unset DEVOS_ADE_UP_ALWAYS
 }
 
+test_with_the_update_trace_on_the_reason_for_a_compose_call_is_traced() {
+  # (JON-972: an update's setup with nothing changed still made five compose calls; the trace says which check sent each)
+  _up_stack
+  _ms_now() { echo 5000; }; _UPD_PROF_T0=1000; _UPD_PROF="$TMP/calls.tsv"; : > "$_UPD_PROF"
+  assert_eq "$(_ups --no-deps portal caddy)" 1
+  assert_contains "$(cat "$_UPD_PROF")" "$(printf '0\tup-changed\t--no-deps portal caddy: no up of these arguments since the configuration or the networks changed\t4000')"
+  assert_eq "$(_ups --no-deps portal caddy)" 0
+  II="${II/sha256:i1/sha256:i1b}"; assert_eq "$(_ups --no-deps portal caddy)" 1
+  assert_contains "$(tail -n 1 "$_UPD_PROF")" "a container's image is not the one its name gives now: p/portal:local runs i1, the name gives i1b"
+  ROWS="${ROWS/Up 2 minutes (healthy)|hp/Up 2 seconds (health: starting)|hp}"; assert_eq "$(_ups --no-deps portal caddy)" 1
+  assert_contains "$(tail -n 1 "$_UPD_PROF")" "a container not running, not healthy yet, missing or doubled"
+  assert_eq "$(wc -l < "$_UPD_PROF" | tr -d ' ')" 3
+  # without the trace: nothing written
+  _UPD_PROF=''; II="${II/sha256:i1b/sha256:i1c}"; assert_eq "$(_ups --no-deps portal caddy)" 1
+  assert_eq "$(wc -l < "$TMP/calls.tsv" | tr -d ' ')" 3
+}
+
 test_up_services_without_no_deps_needs_the_whole_stack_unchanged() {
   _up_stack
   assert_eq "$(_ups caddy)" 1; assert_eq "$(_ups caddy)" 0

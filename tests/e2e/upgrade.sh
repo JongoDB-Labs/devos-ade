@@ -864,6 +864,8 @@ if [ "$MIGRATE" = 0 ] && [ "$FAST_CHECK" = 1 ]; then
       { for (l in open) if (open[l]) spent[l] += $1 }' "$OUT/calls.tsv" | sort -rn > "$OUT/calls-steps.tsv"
     head -n 8 "$OUT/calls-steps.tsv" | while IFS= read -r l; do say "fast apply step time outside calls (ms, step ms, step): $l"; done
     head -n 15 "$OUT/calls-summary.tsv" | while IFS= read -r l; do say "fast apply calls (ms, count, what, callers): $l"; done
+    # (each compose up the apply made although nothing changed: why, from lib/common.sh _up_why)
+    awk -F'\t' '$2 == "up-changed" { print $3 }' "$OUT/calls.tsv" | while IFS= read -r l; do say "fast apply compose up, because: $l"; done
   fi
   check fast-apply-one-up "$([ "$(grep -c '^==> Services ([0-9]*).*ready' "$LOGS/fast-apply.log")" = 1 ] && echo 0 || echo 1)" "the services started in one phase"
   # the backup through docker exec: seconds, the same files
