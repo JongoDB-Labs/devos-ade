@@ -29,13 +29,24 @@
     try { d = decodeURIComponent(s); } catch (_) { return false; }
     return !dotted(d) && !/[/\\\u0000-\u001f\u007f]/.test(d);
   }
+  // A code search's query, escaped: decoded, it is text with no control characters (a "/" or ".." in it is the query's text,
+  // not the path's)
+  function queryOk(s) {
+    let d;
+    try { d = decodeURIComponent(s); } catch (_) { return false; }
+    return d.trim() !== "" && !/[\u0000-\u001f\u007f]/.test(d);
+  }
+  // The place of the git server's code search for Q: every character but letters, digits and - . _ ~ escaped
+  // (encodeURIComponent leaves ! ' ( ) * as they are)
+  const codePlace = (q) => `explore/code?q=${encodeURIComponent(String(q)).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)}`;
   // The path of the git server a place names ("" = its front page), or null when it is not one of the shapes above.
   function gitPath(place) {
     const p = place == null ? "" : String(place);
     if (p === "") return "";
+    // (a search's 64 characters escaped: up to 12 characters each)
+    const m = /^explore\/code\?q=((?:[A-Za-z0-9._~-]|%[0-9A-Fa-f]{2}){1,800})$/.exec(p);
+    if (m) return queryOk(m[1]) ? `/explore/code?q=${m[1]}` : null;
     if (p.length > 600) return null;
-    const m = /^explore\/code\?q=([A-Za-z0-9%._~+-]{1,200})$/.exec(p);
-    if (m) return segmentOk(m[1]) ? `/explore/code?q=${m[1]}` : null;
     const parts = p.split("/");
     if (parts.length < 2 || parts.length > 16 || !OWNER.test(parts[0]) || !OWNER.test(parts[1]) || dotted(parts[0]) || dotted(parts[1])
       || RESERVED.has(parts[0].toLowerCase()) || parts[1].toLowerCase().endsWith(".git")) return null;
@@ -69,7 +80,7 @@
   const NAV = Object.freeze({ tab: "git", label: "Git", item: "git-item", title: TITLE, popout: "Open Git in its own window",
     note: "Your local git server: repositories, branches, pull requests" });
 
-  root.bnGit = { _pure: { TITLE, SWITCH, NAV, gitPath, gitUrl, placeOf, segmentOk } };
+  root.bnGit = { codePlace, _pure: { TITLE, SWITCH, NAV, gitPath, gitUrl, placeOf, segmentOk, codePlace } };
   if (typeof document === "undefined" || typeof document.querySelector !== "function") return;
 
   const state = (() => {

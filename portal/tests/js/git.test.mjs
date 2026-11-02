@@ -25,10 +25,24 @@ test("places: anything else is refused, not loaded", () => {
     "devos/notes/issues/12345678901", "devos/notes/settings", "devos/notes/src", "devos/notes/src/branch", "devos/notes/src/other/main",
     "devos/notes/src/branch/../x", "devos/notes/src/branch/%2e%2e/x", "devos/notes/src/branch/a%2Fb", "devos/notes/src/branch/a%5Cb", "devos/notes/src/branch/a%00",
     "devos/notes/raw/branch/main/x", "devos/notes.git", "admin/settings", "user/settings", "explore/repos", "api/v1", "-/admin", "devos/notes?x=1", "devos/notes#top",
-    "devos/no tes", "devos/notes/src/branch/" + "a/".repeat(20), "x".repeat(700), "explore/code?q=a b", "explore/code?q=", "explore/code?q=%2e%2e%2f",
+    "devos/no tes", "devos/notes/src/branch/" + "a/".repeat(20), "x".repeat(700), "explore/code?q=a b", "explore/code?q=", "explore/code?q=%20",
+    "explore/code?q=a&x=1", "explore/code?q=a#b", "explore/code?q=a?b", "explore/code?q=a/b", "explore/code?q=a+b", "explore/code?q=%zz", "explore/code?q=%",
+    "explore/code?q=a%0Ab", "explore/code?q=a%00", "explore/code?q=" + "a".repeat(801),
     "http://evil.example/x", "javascript:alert(1)", "devos\\notes"]) {
     assert.equal(G.gitPath(p), null, p);
   }
+});
+
+test("a code search opens for whatever was typed: every character but - . _ ~ escaped, none refused but controls", () => {
+  for (const q of ["budget", "isn't (it)!", "a*b", "foo/bar", "../etc", "a+b & c#d?e=f", "100% done", "naïve ✓ 日本", "🙂".repeat(64)]) {
+    const place = G.codePlace(q);
+    assert.match(place, /^explore\/code\?q=(?:[A-Za-z0-9._~-]|%[0-9A-F]{2})+$/, q);
+    const path = G.gitPath(place);
+    assert.notEqual(path, null, q);
+    assert.equal(decodeURIComponent(path.slice("/explore/code?q=".length)), q);
+  }
+  assert.equal(G.codePlace("isn't (it)!*"), "explore/code?q=isn%27t%20%28it%29%21%2A");
+  assert.equal(G.gitUrl(G.codePlace("foo/bar"), "http://git.devos-ade.localhost/"), "http://git.devos-ade.localhost/explore/code?q=foo%2Fbar");
 });
 
 test("addresses: the git server's own origin only, whatever BASE's path", () => {

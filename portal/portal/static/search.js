@@ -344,7 +344,7 @@
       const grp = groups.git = groups.git || { shown: [], more: 0 };
       if (git.error) grp.shown.push({ entry: { group: "git", key: "git:open", title: "Search in Git", sub: "Opens the Git tab: its own search box", alt: "", run: () => window.bnGit.open("") }, hits: [] });
       // (code only where the git server's indexer is on: its own search page shows the results)
-      else if (gitState.code_search === true) grp.shown.push({ entry: { group: "git", key: "git:code", title: `Search code for "${shownText(q, 40)}" in Git`, sub: "Opens the git server's code search", alt: "", run: () => window.bnGit.open(`explore/code?q=${encodeURIComponent(q)}`) }, hits: [] });
+      else if (gitState.code_search === true) grp.shown.push({ entry: { group: "git", key: "git:code", title: `Search code for "${shownText(q, 40)}" in Git`, sub: "Opens the git server's code search", alt: "", run: () => window.bnGit.open(window.bnGit.codePlace(q)) }, hits: [] });
     }
     const keep = active >= 0 && options[active] ? options[active].key : null;
     options = [];
