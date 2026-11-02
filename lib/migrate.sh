@@ -850,12 +850,25 @@ mg_rt_bin() {
     mlx) [ ! -e "$2/venv/bin/python" ] || printf '%s\n' "$2/venv/bin/python" ;;
   esac
 }
-# mg_run_limited SECONDS CMD… — a version command must not hang the update
+# mg_run_limited SECONDS CMD… — a version command must not hang the update. Its status is the one its own subshell writes
+# down, never wait's answer: under load bash 3.2 once answered 0 for a program that exited 3, and that 0 let the old copy
+# go. Nothing written in time (it hung, or could not start) is a failure; one that hangs is stopped, with its subshell.
 mg_run_limited() {
-  local t="$1" pid i=0; shift
-  "$@" >/dev/null 2>&1 & pid=$!
-  while mg_alive "$pid"; do [ "$i" -lt "$((t * 5))" ] || { kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null; return 1; }; sleep 0.2; i=$((i + 1)); done
-  wait "$pid"
+  local t="$1" pid i=0 f st was; shift
+  was="$(set +u; printf '%s' "$!")"   # (bash 3.2's set -u stops on a $! with no job before it)
+  f="$(mktemp "${TMPDIR:-/tmp}/mg-run.XXXXXX")" || return 1
+  ( "$@" >/dev/null 2>&1; echo "$?" > "$f" ) & pid=$!
+  [ "$pid" != "$was" ] || { rm -f "$f"; return 1; }   # (no new process: $! is still the last one's)
+  while [ ! -s "$f" ] && mg_alive "$pid"; do
+    [ "$i" -lt "$((t * 5))" ] || {
+      # shellcheck disable=SC2046  # (the subshell's children, one pid a word)
+      kill $(ps -A -o pid= -o ppid= | awk -v p="$pid" '$2 == p { print $1 }') "$pid" 2>/dev/null
+      wait "$pid" 2>/dev/null; rm -f "$f"; return 1
+    }
+    sleep 0.2; i=$((i + 1))
+  done
+  wait "$pid" 2>/dev/null; st="$(cat "$f" 2>/dev/null)"; rm -f "$f"
+  [ "$st" = 0 ]
 }
 # mg_rt_ok ID DIR -> 0 when the runtime's program runs from DIR (its version command; MLX: mlx_lm imports), 1 when not
 # (MG_RT_WHY says why), 2 when there is nothing to run (no program found)

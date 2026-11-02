@@ -727,12 +727,28 @@ test_each_failed_check_keeps_the_old_copy_and_says_why() {
     esac
     [ "$case" != gone ] || continue
     migrate_update_finish > "$TMP/out" 2>&1
-    assert_contains "$(cat "$TMP/out")" "KEPT"; assert_contains "$(cat "$TMP/out")" "$why"
+    { assert_contains "$(cat "$TMP/out")" "KEPT" && assert_contains "$(cat "$TMP/out")" "$why"; } || { echo "$case: the old copy was not kept for it" >&2; return 1; }
     [ -d "$DK/vol/${OLDP}_pgdata" ] && [ -d "$DK/vol/${OLDP}_owui" ] && grep -q "^$OLDP/portal:local" "$DK/images" || { echo "$case: the old copy was touched" >&2; return 1; }
     assert_eq "$(_get old_copy)" kept
     ! grep -E "^volume rm ${OLDP}_|^rmi " "$DK/log" || { echo "$case: something was deleted" >&2; return 1; }
     assert_contains "$(migrate_backup_line)" "KEPT"
   done
+}
+test_a_runtimes_check_takes_the_programs_own_status_never_waits_answer() {
+  # (under load bash 3.2 once answered 0 for a program that exited 3, and the old copy went: a wait that answers 0 for
+  # anything is the stand-in for that)
+  wait() { return 0; }
+  ! mg_run_limited 5 sh -c 'exit 3' || { unset -f wait; echo "a program that exited 3 passed" >&2; return 1; }
+  ! mg_run_limited 5 "$TMP/not-there" || { unset -f wait; echo "a program that is not there passed" >&2; return 1; }
+  mg_run_limited 5 sh -c 'exit 0' || { unset -f wait; echo "a program that exited 0 failed" >&2; return 1; }
+  unset -f wait
+  # one that hangs is stopped, itself too, and fails
+  local t0=$SECONDS p i
+  ! mg_run_limited 1 sh -c 'echo $$ > "$1"; exec sleep 30' sh "$TMP/hung" || { echo "a hung program passed" >&2; return 1; }
+  [ $((SECONDS - t0)) -le 5 ] || { echo "it waited $((SECONDS - t0)) s for a 1 s limit" >&2; return 1; }
+  p="$(cat "$TMP/hung")"; i=0
+  while mg_alive "$p" && [ "$i" -lt 20 ]; do sleep 0.1; i=$((i + 1)); done
+  ! mg_alive "$p" || { kill "$p" 2>/dev/null; echo "the hung program was left running" >&2; return 1; }
 }
 test_verify_tries_again_and_removes_the_old_copy_once_the_check_passes() {
   _mg_env; _mg_pg_setup; _mg_run 2>/dev/null; printf 'd1 %s postgres\n' "$NEWP" >> "$DK/containers"; echo d1 > "$DK/unhealthy"
