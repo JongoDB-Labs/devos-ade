@@ -6,6 +6,12 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Fixed
+- **Home no longer promises a half-minute update for a prepared release.** The update card's *Ready* line, Update now's
+  confirmation and the *Prepare updates ahead* setting said Update now then takes about half a minute; on the Linux test
+  host it took 89 s (137 s without preparing): the first update to new code still runs setup's steps. They now say a minute
+  or two, and that Chat, Admin and Files are down for about a minute.
+
 ## [0.51.0] - 2026-11-02
 
 ### Added

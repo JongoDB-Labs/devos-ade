@@ -102,7 +102,7 @@
     const step = typeof p.step === "string" ? p.step.replace(/^Prepare: /, "") : "";
     const why = typeof p.reason === "string" ? p.reason.replace(/[\s.]+$/, "") : "";
     switch (p.state) {
-      case "ready": return `Ready: ${v} is downloaded and built. Update now takes about half a minute.`;
+      case "ready": return `Ready: ${v} is downloaded and built. Update now takes a minute or two.`;
       case "preparing": return `Preparing ${v} in the background${step ? `: ${step}` : ""}. Nothing changes on your install until you update.`;
       case "failed": return `Preparing ${v} failed${why ? `: ${why}` : ""}. Update now still works; it does that work itself.`;
       // (no step: it has not started, as when the computer is busy)

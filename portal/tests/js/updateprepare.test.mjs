@@ -8,8 +8,8 @@ const U = load("updatecheck.js").bnUpdateCheck._pure;
 const P = (over = {}) => ({ supported: true, enabled: true, state: "ready", version: "v0.5.0", step: "", reason: "", at: 1800000000, ...over });
 
 test("ready: says the release is downloaded and built, and that Update now is quick", () => {
-  assert.equal(U.prepareLine(P(), "v0.5.0"), "Ready: v0.5.0 is downloaded and built. Update now takes about half a minute.");
-  assert.equal(U.prepareLine(P(), ""), "Ready: v0.5.0 is downloaded and built. Update now takes about half a minute.");
+  assert.equal(U.prepareLine(P(), "v0.5.0"), "Ready: v0.5.0 is downloaded and built. Update now takes a minute or two.");
+  assert.equal(U.prepareLine(P(), ""), "Ready: v0.5.0 is downloaded and built. Update now takes a minute or two.");
 });
 
 test("preparing: names the step and says nothing changes on this install yet", () => {
@@ -58,5 +58,5 @@ test("Home's card uses them: the hint line, the confirmation's wording and the P
   assert.match(app, /bnUpdateCheck\._pure\.prepareLine\(a\.prepare/);
   assert.match(app, /its images are already downloaded and built/);
   assert.match(app, /\["preparing", "Prepare \(download and build\)"\]/);
-  assert.match(app, /about half a minute/);
+  assert.match(app, /const down = ready \? "about a minute" : "a few minutes";/);
 });

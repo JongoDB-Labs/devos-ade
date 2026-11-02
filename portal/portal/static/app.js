@@ -592,7 +592,7 @@ const ACTION_TEXT = {
       : u.latest ? `${u.latest}${u.checked_at ? ` (the newest release at the last check, ${checked(u.checked_at)})` : ""}` : "the newest release";
     const p = a.prepare || {}, ready = !onBranch && p.state === "ready" && p.version && (!u.latest || p.version === u.latest);
     const what = ready ? "the new code (its images are already downloaded and built)" : "the new code and images";
-    const down = ready ? "about half a minute" : "a few minutes";
+    const down = ready ? "about a minute" : "a few minutes";
     return `Update to ${target}: a backup first, then ${what}; Chat, Admin and Files are down for ${down} while the services restart.${endsNote()} This page reconnects by itself.`;
   },
   rollback: (a) => `Go back to ${a.rollback.to ? (/-\d+-g[0-9a-f]+$/.test(a.rollback.to) ? `${a.rollback.to} (a commit after the release ${a.rollback.to.replace(/-\d+-g[0-9a-f]+$/, "")})` : a.rollback.to) : "the previous version"}: its code, its images and the data from ${a.rollback.backup || "the pre-update backup"}. Chats, files and spend recorded since the update are replaced (a backup of the current state is taken first).${endsNote()} This page reconnects by itself.`,
