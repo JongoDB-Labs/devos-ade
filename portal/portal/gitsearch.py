@@ -17,7 +17,7 @@ at most MAX_REPOS repositories and MAX_ISSUES issues and pull requests.
 
 The query: at most chatsearch.MAX_QUERY characters, control characters dropped; a few requests a second at most (the page
 waits for typing to pause). Code is not searched: Forgejo has no API for it, and its repository indexer is off unless
-LOCALGIT_CODE_INDEXER=true (then the page offers the git server's own code search, which shows its results itself)."""
+LOCALGIT_INDEXER=true (then the page offers the git server's own code search, which shows its results itself)."""
 
 from __future__ import annotations
 

@@ -145,7 +145,7 @@ class Settings:
     git: bool = False
     git_api_url: str = "http://caddy:8099"
     git_token: str = field(default="", repr=False)
-    git_code_indexer: bool = False   # LOCALGIT_CODE_INDEXER=true: Forgejo's repository indexer (code search) is on
+    git_code_indexer: bool = False   # LOCALGIT_INDEXER=true: Forgejo's repository indexer (code search) is on
 
     def install_folder(self) -> str:
         """The install's folder, where ./stack runs: "~/bn" for an env file ~/bn/.env; "" when ./stack did not say (or
@@ -346,7 +346,7 @@ def from_env(env: dict | None = None) -> Settings:
         git=git,
         git_api_url=(env.get("LOCALGIT_API_URL") or "http://caddy:8099").strip().rstrip("/"),
         git_token=(env.get("LOCALGIT_READ_TOKEN") or "").strip() if git else "",
-        git_code_indexer=git and _on(env.get("LOCALGIT_CODE_INDEXER")),
+        git_code_indexer=git and _on(env.get("LOCALGIT_INDEXER")),
         tailscale_allowed_login=(env.get("TAILSCALE_ALLOWED_LOGIN") or "").strip().lower(),
         proxy_secret=env.get("PORTAL_PROXY_SECRET", ""),
         env_file=(env.get("PORTAL_ENV_FILE") or "").strip(),
