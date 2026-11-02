@@ -25,8 +25,13 @@ test("failed: said plainly, with the reason, and that Update now still works", (
 });
 
 test("paused: a ./stack command took the lock or the computer is busy; it goes on by itself", () => {
-  const t = U.prepareLine(P({ state: "yielded", reason: "./stack update started" }), "v0.5.0");
+  const t = U.prepareLine(P({ state: "yielded", step: "Prepare: build portal", reason: "./stack update started" }), "v0.5.0");
   assert.equal(t, "Preparing v0.5.0 is paused (./stack update started). It goes on by itself; Update now also does it.");
+});
+
+test("not started yet: the computer is busy; it starts by itself", () => {
+  const t = U.prepareLine(P({ state: "yielded", reason: "the computer is busy: its processors are 93% in use" }), "v0.5.0");
+  assert.equal(t, "Preparing v0.5.0 has not started (the computer is busy: its processors are 93% in use). It starts by itself; Update now also does it.");
 });
 
 test("nothing is said for: turned off, a helper without it, no record, another release than the newest, nonsense", () => {

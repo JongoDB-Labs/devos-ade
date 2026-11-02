@@ -974,7 +974,8 @@ request says beyond the three fields, or run as root.
   what the update does). It never creates, moves or removes a `<project>/…:local` or `:previous` name, starts or stops a
   container, writes `.env` or the update record, or takes the stack lock; it ends when another `./stack` command takes it.
   Clean-up removes only names of `<project>-prep` and downloads it made that no container, other checkout or snapshot uses
-  (never forced). One release at a time, one image at a time, only while the load is not above twice the CPU count.
+  (never forced). One release at a time, one image at a time, only while the processors are less than 80% in use (paused
+  between steps from 90%; the time spent waiting for the disk counts as idle).
 - [x] **Automatic updates: off by default, releases only, once each.** The switch on Home is a request like the
   others (password again, `REMOTE_ADMIN_ACTIONS`, both sets of rate limits, refused while `.state/lock/` is held,
   since setup writes `.env` too); its result is reported with the switch and never replaces the last job on Home.

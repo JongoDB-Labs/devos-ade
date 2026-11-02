@@ -105,7 +105,9 @@
       case "ready": return `Ready: ${v} is downloaded and built. Update now takes about half a minute.`;
       case "preparing": return `Preparing ${v} in the background${step ? `: ${step}` : ""}. Nothing changes on your install until you update.`;
       case "failed": return `Preparing ${v} failed${why ? `: ${why}` : ""}. Update now still works; it does that work itself.`;
-      case "yielded": return `Preparing ${v} is paused${why ? ` (${why})` : ""}. It goes on by itself; Update now also does it.`;
+      // (no step: it has not started, as when the computer is busy)
+      case "yielded": return step ? `Preparing ${v} is paused${why ? ` (${why})` : ""}. It goes on by itself; Update now also does it.`
+        : `Preparing ${v} has not started${why ? ` (${why})` : ""}. It starts by itself; Update now also does it.`;
       default: return "";
     }
   }

@@ -29,7 +29,7 @@ _pw() {
   IMGS="$TMP/imgs"; DLOG="$TMP/dlog"; HOLDER="$TMP/holder"; : > "$DLOG"
   printf 'bn-t/portal:local OLDPORTAL\nghcr.io/berriai/litellm:1.0@%s OLDLITELLM\n' "$DIG_OLD" > "$IMGS"
   _seen v0.4.0
-  prepare_load() { echo 0.5; }; prepare_cpus() { echo 4; }; prepare_free_mb() { echo 50000; }
+  prepare_cpu_busy() { echo 10; }; prepare_free_mb() { echo 50000; }
   stack_lock_holder() { cat "$HOLDER" 2>/dev/null || true; }
   docker() {
     printf '%s docker %s\n' "${COMPOSE_PROJECT_NAME:-}" "$*" >> "$DLOG"
@@ -96,7 +96,7 @@ test_decision_table() {
   assert_eq "$(d on v0.4.0 v0.3.0 '' '' failed v0.4.0 50 4000 '' 0)" "run v0.4.0"     # an hour later: again
   assert_eq "$(d on v0.4.0 v0.3.0 '' '' failed v0.3.9 50 100 '' 0)" "run v0.4.0"      # (another release's failure)
   assert_eq "$(d on v0.4.0 v0.3.0 '' '' '' '' 0 100 './stack update is running' 0)" "busy v0.4.0"   # the stack lock held
-  assert_eq "$(d on v0.4.0 v0.3.0 '' '' '' '' 0 100 '' 1)" "load v0.4.0"              # the computer is busy
+  assert_eq "$(d on v0.4.0 v0.3.0 '' '' '' '' 0 100 '' 1)" "load v0.4.0"              # the processors are busy
   assert_eq "$(d on v0.4.0 v0.3.0 '' '' yielded v0.4.0 50 100 '' 0)" "run v0.4.0"     # stopped before: goes on
   assert_eq "$(d on v0.4.0 v0.3.0 '' '' '' '' 0 100 '' 0)" "run v0.4.0"
 }
@@ -111,14 +111,41 @@ test_stale_records_are_turned_off_applied_or_superseded() {
   ! prepare_stale on v0.3.0 v0.4.0 ''                    # (no record)
 }
 
-test_the_load_is_compared_with_the_cpu_count() {
-  prepare_load() { echo 7.9; }; prepare_cpus() { echo 4; }
-  _prep_load_high 2 && return 1                           # 7.9 <= 4 x 2
-  prepare_load() { echo 8.1; }
-  _prep_load_high 2
-  prepare_load() { echo 30; }; prepare_cpus() { echo 12; }
-  _prep_load_high 2                                       # 30 > 12 x 2
-  _prep_load_high 3 && return 1; true
+# The processors' use, not the load average: Linux counts the tasks waiting for the disk in it, and the Linux test host's
+# load stayed above twice its 4 CPUs with the processors nearly idle, so the release was never prepared (jfast10).
+test_processor_use_is_read_from_proc_stat_without_the_time_spent_waiting_for_the_disk() {
+  # cpu  user nice system idle iowait irq softirq steal guest guest_nice (guest is counted in user already)
+  printf 'cpu  100 0 100 700 100 0 0 0 50 0\ncpu0 1 1 1 1 1 1 1 1 0 0\n' > "$TMP/stat1"
+  assert_eq "$(PREPARE_PROC_STAT="$TMP/stat1" _prep_cpu_ticks)" "1000 800"        # total without guest; idle + iowait
+  # a second later: 60 of 100 ticks in use, 30 idle, 10 waiting for the disk
+  printf 'cpu  150 0 110 730 110 0 0 0 99 0\n' > "$TMP/stat2"
+  assert_eq "$(PREPARE_PROC_STAT="$TMP/stat2" _prep_cpu_ticks)" "1100 840"
+  assert_eq "$(_prep_busy_pct "1000 800" "1100 840")" "60"
+  # all waiting for the disk: not in use
+  assert_eq "$(_prep_busy_pct "1000 800" "1100 900")" "0"
+  # nothing to compare (the same reading, or none): 0, never a division by zero
+  assert_eq "$(_prep_busy_pct "1000 800" "1000 800")" "0"
+  assert_eq "$(_prep_busy_pct "" "")" "0"
+}
+
+test_processor_use_on_a_mac_is_iostats_second_sample() {
+  # iostat -n 0 -c 2 -w 1: the first line counts since the Mac started, the second is the last second
+  out='      cpu    load average
+ us sy id   1m   5m   15m
+  3  2 95  33.03 43.50 43.55
+ 61 21 18  32.54 43.23 43.46'
+  assert_eq "$(printf '%s\n' "$out" | _prep_iostat_busy)" "82"
+  assert_eq "$(printf 'no such line\n' | _prep_iostat_busy)" "0"
+}
+
+test_the_processors_count_as_busy_from_a_percentage() {
+  prepare_cpu_busy() { echo 79; }
+  _prep_cpu_high 80 && return 1
+  assert_eq "$PREP_CPU" "79"
+  prepare_cpu_busy() { echo 80; }
+  _prep_cpu_high 80
+  prepare_cpu_busy() { echo 'n/a'; }                        # unreadable: not busy
+  _prep_cpu_high 80 && return 1; true
 }
 
 # --- the run ---
@@ -275,9 +302,23 @@ test_tick_waits_while_a_stack_command_holds_the_lock_and_while_the_computer_is_b
   _pw
   echo "4242 update" > "$HOLDER"; _tick
   [ ! -f "$(prepare_state_file)" ] || return 1; ! grep -q ' build ' "$DLOG" || return 1
-  rm -f "$HOLDER"; prepare_load() { echo 30; }; _tick                          # load 30 on 4 CPUs
-  [ ! -f "$(prepare_state_file)" ] || return 1; ! grep -q ' build ' "$DLOG" || return 1
-  prepare_load() { echo 3; }; _tick
+  # processors 93% in use: not started, and the record says why (Home's card and ./stack helper status show it)
+  rm -f "$HOLDER"; prepare_cpu_busy() { echo 93; }; _tick
+  ! grep -q ' build ' "$DLOG" || return 1
+  _prep_read; assert_eq "$PS_state $PS_version" "yielded v0.4.0"; assert_eq "$PS_step" ""
+  assert_eq "$PS_reason" "the computer is busy: its processors are 93% in use"
+  prepare_cpu_busy() { echo 20; }; _tick
+  _prep_read; assert_eq "$PS_state" "ready"
+}
+
+test_a_busy_computer_pauses_the_prepare_between_steps_and_it_goes_on_later() {
+  _pw
+  # in use: 10% when it starts and before the first build, 95% before the second
+  prepare_cpu_busy() { local n; n=$(( $(cat "$TMP/n" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$TMP/n"; [ "$n" -le 2 ] && echo 10 || echo 95; }
+  _tick
+  _prep_read; assert_eq "$PS_state" "yielded"; assert_eq "$PS_reason" "the computer is busy: its processors are 95% in use"
+  assert_eq "$(grep -c ' build ' "$DLOG")" "1"
+  prepare_cpu_busy() { echo 10; }; _tick
   _prep_read; assert_eq "$PS_state" "ready"
 }
 

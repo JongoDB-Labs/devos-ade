@@ -24,8 +24,9 @@
 #     digest-pinned, and the clean-up removes names of <project>-prep only (and images it pulled itself, when nothing uses them)
 #   - the running stack is not touched (no container starts or stops), and it runs only while no ./stack command holds
 #     the lock (lib/lock.sh); it takes no lock itself, and ends the moment one is taken (yields), to go on later
-#   - gentle on a busy computer: one image at a time, not started while the load is far above the CPU count, a release
-#     only once (the record below), and at most PREPARE_MAX_MB of images and never below PREPARE_MIN_FREE_MB of free disk
+#   - gentle on a busy computer: one image at a time, not started while the processors are PREPARE_START_CPU_PCT (80) % in
+#     use or more and paused between steps from PREPARE_STOP_CPU_PCT (90) %, a release only once (the record below), and at
+#     most PREPARE_MAX_MB of images and never below PREPARE_MIN_FREE_MB of free disk
 #
 # .state/update/prepare/state   KEY=value: version, commit, state (preparing | ready | failed | yielded), step, reason, at
 #                  images.tsv   ID<TAB>REF of the builds (<project>-prep/…:local)
@@ -65,30 +66,47 @@ prepare_recover() {
 
 # --- facts for the decision (tests replace them) ---
 
-prepare_cpus() {
-  local n; n="$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 1)"
-  case "$n" in '' | *[!0-9]* | 0) n=1 ;; esac
-  echo "$n"
+# prepare_cpu_busy -> how much of the processors' time was in use over about PREPARE_CPU_SAMPLE_S (1) second, in percent of
+# all of them: the time spent waiting for the disk counts as idle. (Not the load average: Linux counts the tasks waiting for
+# the disk in it, and a Mac's runs high with many programs open, so both looked busy for good with the processors far from
+# full.) 0 when it cannot be read.
+prepare_cpu_busy() {
+  local a s
+  s="${PREPARE_CPU_SAMPLE_S:-1}"; case "$s" in '' | *[!0-9]*) s=1 ;; esac
+  if [ -r "${PREPARE_PROC_STAT:-/proc/stat}" ]; then
+    a="$(_prep_cpu_ticks)"; sleep "$s"; _prep_busy_pct "$a" "$(_prep_cpu_ticks)"
+  elif command -v iostat >/dev/null 2>&1; then
+    iostat -n 0 -c 2 -w "$s" 2>/dev/null | _prep_iostat_busy
+  else echo 0; fi
 }
-# prepare_load -> the 1-minute load average (a decimal), 0 when it cannot be read
-prepare_load() {
-  local l
-  if [ -r /proc/loadavg ]; then l="$(cut -d' ' -f1 /proc/loadavg 2>/dev/null)"
-  else l="$(sysctl -n vm.loadavg 2>/dev/null | tr -d '{}' | awk '{ print $1 }')"; fi
-  [ -n "$l" ] || l="$(uptime 2>/dev/null | sed 's/.*load averages*: *//' | awk '{ print $1 }' | tr -d ',')"
-  case "$l" in '' | *[!0-9.]*) l=0 ;; esac
-  echo "$l"
+# _prep_cpu_ticks -> "TOTAL IDLE" of /proc/stat's cpu line: user..steal (guest is counted in user already), idle + iowait
+_prep_cpu_ticks() { awk '$1 == "cpu" { t = 0; for (i = 2; i <= 9 && i <= NF; i++) t += $i; print t, $5 + $6; exit }' "${PREPARE_PROC_STAT:-/proc/stat}" 2>/dev/null; }
+# _prep_busy_pct "TOTAL IDLE" "TOTAL IDLE" -> the percent in use between the two readings (0 without a difference)
+_prep_busy_pct() {
+  awk -v a="$1" -v b="$2" 'BEGIN { split(a, x, " "); split(b, y, " "); t = y[1] - x[1]; i = y[2] - x[2]
+    if (t <= 0) { print 0; exit } p = int((t - i) * 100 / t + 0.5); print (p < 0 ? 0 : (p > 100 ? 100 : p)) }'
+}
+# _prep_iostat_busy -> the percent in use of a Mac's iostat -n 0 -c 2 on stdin: 100 - the "id" column of its last line (the
+# first counts since the Mac started). (top -l 2 says the same in about 5 s, iostat in 1.)
+_prep_iostat_busy() {
+  awk '{ for (i = 1; i <= NF; i++) if ($i == "id" && c == 0) c = i } c && $1 ~ /^[0-9]+$/ { v = $c } END { if (c && v != "") { p = 100 - v; print (p < 0 ? 0 : (p > 100 ? 100 : p)) } else print 0 }'
 }
 # prepare_free_mb -> free space (MB) where .state lives
 prepare_free_mb() { df -Pk "$STATE_DIR" 2>/dev/null | awk 'NR == 2 { printf "%d\n", $4 / 1024 }'; }
-# _prep_load_high FACTOR -> 0 when the load is above FACTOR × the CPU count
-_prep_load_high() { awk -v l="$(prepare_load)" -v c="$(prepare_cpus)" -v f="$1" 'BEGIN { exit !(l + 0 > c * f) }'; }
+# _prep_cpu_high PERCENT -> 0 when the processors are PERCENT % in use or more; PREP_CPU: the reading (for the reason)
+PREP_CPU=0
+_prep_cpu_high() {
+  local p="$1"; case "$p" in '' | *[!0-9]*) p=80 ;; esac
+  PREP_CPU="$(prepare_cpu_busy)"; case "$PREP_CPU" in '' | *[!0-9]*) PREP_CPU=0 ;; esac
+  [ "$PREP_CPU" -ge "$p" ]
+}
+_prep_cpu_why() { printf 'the computer is busy: its processors are %s%% in use' "$PREP_CPU"; }
 
-# prepare_decision ON LATEST INSTALLED BRANCH ROLLED_BACK STATE VERSION AT NOW BUSY LOADHIGH -> "STATE [VERSION]": what the
+# prepare_decision ON LATEST INSTALLED BRANCH ROLLED_BACK STATE VERSION AT NOW BUSY CPUHIGH -> "STATE [VERSION]": what the
 # helper does about the release LATEST names (no clock, file or git access of its own: tests/test_prepare.sh). First match:
 #   off | branch | not-release (only a release install prepares) | none (nothing newer) | rolled-back V (you went back from it)
 #   | ready V (prepared already) | failed V (it failed within the last PREPARE_RETRY_S, 1 h) | busy V (BUSY says why)
-#   | load V (the computer is busy) | run V (a different V than a record's: that one is superseded and removed first)
+#   | load V (the processors are busy) | run V (a different V than a record's: that one is superseded and removed first)
 prepare_decision() {
   local on="$1" latest="$2" inst="$3" br="$4" rb="$5" st="$6" pv="$7" pat="${8:-0}" now="$9" busy="${10:-}" high="${11:-0}" retry
   retry="${PREPARE_RETRY_S:-3600}"; case "$retry" in '' | *[!0-9]*) retry=3600 ;; esac
@@ -248,8 +266,8 @@ _prep_build_one() {
 _prep_pull() { docker pull "$1"; }
 
 # prepare_run HINT — prepares the newest release (HINT: the one latest.txt names). 0 ready, 1 failed, 2 stopped (the lock was
-# taken, or the computer is busy: it goes on later). PREP_FOREGROUND=1: Update now's own first step (no load check). The
-# record says which; the log lines are the steps.
+# taken, or the computer is busy: it goes on later). PREP_FOREGROUND=1: Update now's own first step (no processor check).
+# The record says which; the log lines are the steps.
 prepare_run() {
   local rc=0
   PREP_WHY=''; PREP_STEP=''; PREP_STARTED="$(date +%s)"
@@ -300,7 +318,7 @@ _prepare_run_inner() {
   chmod 600 "$PREP_ENV" 2>/dev/null || true
   # --- the builds, one at a time ---
   for svc in $(_prep_ctx _prep_services 2>/dev/null); do
-    if [ "${PREP_FOREGROUND:-0}" != 1 ] && _prep_load_high "${PREPARE_STOP_LOAD_X:-4}"; then PREP_WHY="the computer is busy (load $(prepare_load))"; return 2; fi
+    if [ "${PREP_FOREGROUND:-0}" != 1 ] && _prep_cpu_high "${PREPARE_STOP_CPU_PCT:-90}"; then PREP_WHY="$(_prep_cpu_why)"; return 2; fi
     _prep_step "Prepare: build $svc" _prep_ctx _prep_build_one "$svc" || return $?
     id="$(_image_id "$pp/$svc:local")"
     [ -n "$id" ] || { PREP_WHY="the build of $svc left no image"; return 1; }
@@ -313,7 +331,7 @@ _prepare_run_inner() {
   for ref in $(_prep_ctx update_pull_refs 2>/dev/null); do
     case "$ref" in *@sha256:*) ;; *) printf 'prepare: %s is not pinned by a digest: left for the update\n' "$ref"; continue ;; esac
     pull_needed "$ref" || continue
-    if [ "${PREP_FOREGROUND:-0}" != 1 ] && _prep_load_high "${PREPARE_STOP_LOAD_X:-4}"; then PREP_WHY="the computer is busy (load $(prepare_load))"; return 2; fi
+    if [ "${PREP_FOREGROUND:-0}" != 1 ] && _prep_cpu_high "${PREPARE_STOP_CPU_PCT:-90}"; then PREP_WHY="$(_prep_cpu_why)"; return 2; fi
     _prep_step "Prepare: download $(image_short "$ref")" _prep_pull "$ref" || return $?
     id="$(_image_id "$ref")"
     [ -z "$id" ] || { printf '%s\t%s\n' "$id" "$ref" >> "$d/pulled.tsv"; LC_ALL=C sort -u "$d/pulled.tsv" > "$d/pulled.tsv.n" && mv "$d/pulled.tsv.n" "$d/pulled.tsv"; }
@@ -344,11 +362,19 @@ prepare_tick() {
     prepare_cleanup "$d"; _prep_read
   fi
   [ "$on" = on ] || return 0
-  high=0; ! _prep_load_high "${PREPARE_START_LOAD_X:-2}" || high=1
+  high=0; ! _prep_cpu_high "${PREPARE_START_CPU_PCT:-80}" || high=1
   d="$(prepare_decision "$on" "$latest" "$inst" "$br" "$rb" "$PS_state" "$PS_version" "$PS_at" "$now" '' "$high")"
   if [ "${d%% *}" = run ]; then
     busy="$(_prepare_busy)"
     d="$(prepare_decision "$on" "$latest" "$inst" "$br" "$rb" "$PS_state" "$PS_version" "$PS_at" "$now" "$busy" "$high")"
+  fi
+  if [ "${d%% *}" = load ]; then
+    # not started: the record says why (Home's card, ./stack helper status), as a stopped run's does; one of the same
+    # release keeps its commit and step (what it built is kept)
+    PREP_VERSION="${d#* }"; PREP_COMMIT=''; PREP_STARTED=''
+    [ "$PS_version" != "$PREP_VERSION" ] || PREP_COMMIT="$PS_commit"
+    _prep_state yielded "$([ "$PS_version" = "$PREP_VERSION" ] && printf '%s' "$PS_step")" "$(_prep_cpu_why)"
+    return 0
   fi
   [ "${d%% *}" = run ] || return 0
   log="$(prepare_log_file)"

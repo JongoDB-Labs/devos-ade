@@ -2733,9 +2733,10 @@ builds its images and downloads the ones it pins, in the background, so Update n
 minute). Home's update card says *Preparing v0.x.y in the background: build portal*, then *Ready: v0.x.y is downloaded and
 built*, or why it failed (Update now then does that work itself, as before). The images are built as `<project>-prep/<service>`,
 never as the names your running version or **Roll back** uses; no container, `.env` or file of the checkout changes, and no
-script of the new release runs. It builds one image at a time, not while the computer's load is above twice its CPU count,
-stops the moment an update, setup, rollback or restore starts, and uses up to about 8 GB until you update (or a newer release
-replaces it). Update now on a release that is not prepared yet prepares it first, its steps shown with their times.
+script of the new release runs. It builds one image at a time, does not start while the processors are 80% in use or more
+(it pauses between steps from 90%, and the card says so), stops the moment an update, setup, rollback or restore starts, and
+uses up to about 8 GB until you update (or a newer release replaces it). Update now on a release that is not prepared yet
+prepares it first, its steps shown with their times.
 Settings › Updates & backups › More settings › *Prepare updates ahead* (`UPDATE_PREPARE=false`) turns it off. A checkout that
 follows a branch is not prepared.
 

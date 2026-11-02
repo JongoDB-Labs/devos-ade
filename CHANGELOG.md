@@ -20,8 +20,9 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
     `UPDATE_REQUIRE_SIGNED_TAGS`, and runs no script of the new release: building its Dockerfiles is what the update does.
     Only images pinned by a digest are downloaded ahead.
   - **It waits for you and for a busy computer.** It stops the moment an update, setup, rollback or restore starts and goes on
-    later from Docker's cache, builds one image at a time, does not start while the computer's load is more than twice its
-    CPU count, prepares a release once, and stays under about 8 GB of images and 10 GB of free disk. A prepared release's
+    later from Docker's cache, builds one image at a time, does not start while the processors are 80% in use or more (and
+    pauses between steps from 90%; Home's card then says it has not started, or is paused, and why), prepares a release
+    once, and stays under about 8 GB of images and 10 GB of free disk. A prepared release's
     builds go when it is installed or a newer release replaces it; its downloads go too when nothing uses them.
   - **On by default.** Settings › Updates & backups › More settings › **Prepare updates ahead** (`UPDATE_PREPARE=false`)
     turns it off. A checkout that follows a branch is not prepared.
