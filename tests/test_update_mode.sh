@@ -81,6 +81,15 @@ test_each_input_changing_runs_exactly_its_steps() {
   assert_contains "$(_um_run update)" "voice"
 }
 
+# The git server's search token (JON-979) is written by the git account step, after the steps before it kept .env: as an
+# input of theirs it ran each of them again on the next update (jfast10: settings, keys, sign-in and syncs, and the services
+# then started in phases). The account step makes it again when the server refuses it, and recreates the portal itself.
+test_the_git_search_token_setup_writes_late_runs_no_step_again() {
+  _um_setup; _um_run > /dev/null
+  printf 'LOCALGIT_READ_TOKEN=tok-1\n' >> "$ENV_FILE"; assert_eq "$(_um_run update)" ""
+  sed -i.bak 's/^LOCALGIT_READ_TOKEN=.*/LOCALGIT_READ_TOKEN=tok-2/' "$ENV_FILE"; assert_eq "$(_um_run update)" ""
+}
+
 test_a_failed_setup_leaves_no_state_and_the_next_update_runs_every_step() {
   _um_setup; _um_run > /dev/null
   upd_begin   # a setup that begins and does not get to the end

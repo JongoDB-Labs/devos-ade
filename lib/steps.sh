@@ -282,7 +282,11 @@ _upd_fn() { local n; for n in "$@"; do declare -f "$n" 2>/dev/null || printf 'no
 # the .env keys setup itself writes after the ports and settings step (keys, the models' defaults, voice, the Open WebUI
 # marks): never an input of a step before them
 UPD_ENV_DERIVED='^(LITELLM_KEY_[A-Z_]*|OPENWEBUI_API_KEY|LITELLM_UI_USER|LITELLM_DB_ADMIN_READY|OWUI_[A-Z_]*|STT_BEDROCK_MODEL|CLAUDE_BEDROCK_[A-Z_]*|PORTAL_GID|REMOTE_SIDECAR_IP)='
-_upd_env() { grep -vE "${1:-$UPD_ENV_DERIVED}" "$ENV_FILE" 2>/dev/null | LC_ALL=C sort; }   # (hashed with the rest, never printed)
+# the keys the last steps write (the git server's search token, by the git account step, which recreates the portal itself
+# when it is new): an input of no step, whatever else a step leaves out. As one, they ran every step that reads .env again on
+# the next update (tests/test_update_mode.sh).
+UPD_ENV_LATE='^(LOCALGIT_READ_TOKEN)='
+_upd_env() { grep -vE "${1:-$UPD_ENV_DERIVED}" "$ENV_FILE" 2>/dev/null | grep -vE "$UPD_ENV_LATE" | LC_ALL=C sort; }   # (hashed with the rest, never printed)
 _upd_env_settings() { _upd_env '^(LITELLM_KEY_[A-Z_]*|OPENWEBUI_API_KEY|LITELLM_UI_USER|LITELLM_DB_ADMIN_READY|OWUI_[A-Z_]*|STT_PROVIDER|STT_MODEL|STT_BEDROCK_MODEL|CLAUDE_BEDROCK_[A-Z_]*|PORTAL_GID|REMOTE_SIDECAR_IP)='; }
 _upd_keys() { local k; for k in LITELLM_KEY_CLAUDE_CODE LITELLM_KEY_OPENWEBUI LITELLM_KEY_SETUP OPENWEBUI_API_KEY LITELLM_DB_ADMIN_READY; do printf '%s=%s\n' "$k" "$(get_env "$k")"; done; }
 _upd_compose() { { cat "$STACK_DIR"/compose*.yaml 2>/dev/null; compose_overlays 2>/dev/null; project_name; } | cksum; }
