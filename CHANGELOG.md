@@ -33,6 +33,16 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   address). The site certificate renews at setup/update with 30 days left or when host names change. `./stack https off`
   undoes all of it. Remote access is unchanged. See docs/security.md and docs/advanced.md.
 
+### Tests
+- **The portal over HTTPS (JON-976).** Shell tests (`tests/test_tls.sh`, `security`, `certutil`, `sudo` and the system-store
+  tools stubbed on PATH, each refusing and failing the suite when bypassed): CA and site certificate fields (critical
+  constraints, pathlen 0, SANs), key modes, the CA key in no compose volume, the CA accepts the site certificate and refuses
+  `evil.example`, `other.localhost` and `evil-devos-ade.localhost` (LibreSSL and OpenSSL 3), renewal under 30 days and on a host change, the exact trust
+  and removal commands, a failed check turns HTTPS off, `https off` restores http, Caddy snippets on and off, a
+  non-interactive setup never enables it, setup asks only after writing the password and goes on when turning it on fails,
+  a keychain prompt nobody answers ends. Portal tests (origin, `Secure` cookie, the Home card and notice). End-to-end check
+  `https/https-local-portal` (`tests/e2e/https.sh`).
+
 ## [0.52.0] - 2026-11-02
 
 ### Added
@@ -106,14 +116,6 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   removes only the `-prep` names; clean-up never removes a name outside the prep project or an image a container uses;
   Update now prepares first with its steps in the job's log, and goes on when the prepare fails. Portal and JS tests for the
   status and the card's states.
-- **The portal over HTTPS (JON-976).** Shell tests (`tests/test_tls.sh`, `security`, `certutil`, `sudo` and the system-store
-  tools stubbed on PATH, each refusing and failing the suite when bypassed): CA and site certificate fields (critical
-  constraints, pathlen 0, SANs), key modes, the CA key in no compose volume, the CA accepts the site certificate and refuses
-  `evil.example`, `other.localhost` and `evil-devos-ade.localhost` (LibreSSL and OpenSSL 3), renewal under 30 days and on a host change, the exact trust
-  and removal commands, a failed check turns HTTPS off, `https off` restores http, Caddy snippets on and off, a
-  non-interactive setup never enables it, setup asks only after writing the password and goes on when turning it on fails,
-  a keychain prompt nobody answers ends. Portal tests (origin, `Secure` cookie, the Home card and notice). End-to-end check
-  `https/https-local-portal` (`tests/e2e/https.sh`).
 
 ## [0.49.0] - 2026-11-02
 
