@@ -177,7 +177,32 @@
     if (took === "skipped") return { cls: "skipped", text: `${label} · skipped${x.why ? ` (${x.why})` : ""}` };
     return { cls: "", text: took ? `${label} · ${took}` : label };
   }
-  root.bnUpdateCheck = { _pure: { stepItem, describe, ago, clock, fresher, statusKey, prepareLine, preparedFirst, progress, announce, leftWords, normLabel } };
+  // --- an update that moved the code and did not finish (the heartbeat's rollback.unfinished; JON-996) ---
+  // The helper's update action finishes it (./stack update's finishing path: the images and setup, no new backup); it does
+  // not install a newer release, so while it is unfinished the update card's Update now would only finish it too.
+  // finishMode(a, onJob) -> "" (the update card as usual) | "job" (the failed update's card offers Finish the update and
+  // Roll back: onJob; the update card stays hidden) | "card" (that card was dismissed: the update card offers them instead)
+  function finishMode(a, onJob) {
+    const rb = a && a.rollback;
+    if (!rb || !rb.available || !rb.unfinished || a.in_progress) return "";
+    return onJob ? "job" : "card";
+  }
+  // finishCard(a, u) -> the update card's words for Finish the update: {title, meta, steps}; u: the release check
+  // (/api/summary's update), for a release newer than the code in place
+  function finishCard(a, u) {
+    const rb = (a && a.rollback) || {}, v = (a && a.version) || "the new version";
+    const steps = ["The steps it did not finish run again: the images, then setup, which restarts the services and checks them.",
+      `No new backup: Roll back still goes back to ${rb.to || "the previous version"} with ${rb.backup || "the backup taken before the update"}.`];
+    if (u && u.available && u.latest) steps.push(`Then Update now installs ${u.latest}.`);
+    return { title: "The last update did not finish", meta: `You have ${v}'s code; the update${rb.to ? ` from ${rb.to}` : ""} did not finish.`, steps };
+  }
+  // finishConfirm(a) -> the confirmation's words (app.js adds what else the restart ends)
+  function finishConfirm(a) {
+    const rb = (a && a.rollback) || {};
+    return `Finish the update to ${(a && a.version) || "the new version"}: the steps it did not finish run again (the images, then setup), with no new backup, so Roll back still goes back to ${rb.to || "the previous version"}. Chat, Admin and Files may be down for a minute or two while the services restart.`;
+  }
+  root.bnUpdateCheck = { _pure: { stepItem, describe, ago, clock, fresher, statusKey, prepareLine, preparedFirst, progress, announce, leftWords, normLabel,
+    finishMode, finishCard, finishConfirm } };
   if (typeof document === "undefined") return;
 
   let last = null;          // the last update status seen (Home's summary, or a click's answer)

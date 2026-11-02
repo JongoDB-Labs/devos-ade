@@ -403,9 +403,12 @@ def update_card(ctx):
 
 @check("browser", "home-update-now-after-a-failed-update")
 def update_now_after_a_failed_update(ctx):
-    """JON-975: after a failed, unfinished update (a rollback offered) with a newer release out, Update now is in sight,
-    enabled and clickable (not inert, nothing over it) and opens its confirmation; and after the helper was late, Update
-    now comes back within seconds of its next heartbeat, without a reload."""
+    """JON-975, JON-996: after a failed, unfinished update (a rollback offered) with a newer release out, the failed update's
+    card offers Finish the update and Roll back, in sight, enabled and clickable (not inert, nothing over it), and Finish
+    the update confirms as a finish (no new backup; Roll back still goes back). The update card, whose Update now would
+    only finish it too, stays hidden meanwhile. Dismissed, that card leaves both to the update card, which says the update
+    did not finish and that Update now installs the newer release afterwards. After the helper was late, Finish the update
+    comes back within seconds of its next heartbeat, without a reload."""
     if real_helper_running():
         raise Skip("a real update helper is running: this check fakes its heartbeat and its job")
     up = STATE / "update-check" / "latest.json"
@@ -416,8 +419,9 @@ def update_now_after_a_failed_update(ctx):
     states = []
 
     def beat(age=0):
-        _write_json(files["helper.json"], {"heartbeat": int(time.time()) - age, "version": "e2e",
-                                           "rollback": {"available": True, "to": "v0.4.1", "unfinished": True}})
+        _write_json(files["helper.json"], {"heartbeat": int(time.time()) - age, "version": "v98.0.0",
+                                           "rollback": {"available": True, "to": "v0.4.1", "backup": "backups/20261101-000000-auto",
+                                                        "unfinished": True}})
     try:
         now = int(time.time())
         iso = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -425,31 +429,55 @@ def update_now_after_a_failed_update(ctx):
                "url": "https://github.com/JongoDB-Labs/devos-ade/releases/tag/v99.0.0", "published_at": iso}
         _write_json(up, {"tag": "v99.0.0", "name": "v99.0.0 (e2e)", "notes": rel["notes"], "url": rel["url"], "published_at": iso,
                          "checked_at": iso, "error": None, "releases": [rel]})
-        # 1. the owner's state on 2026-11-01: the last update failed at setup's smoke test, unfinished, a rollback offered
+        # 1. the owner's state on 2026-11-01/02: the last update failed at setup's smoke test, unfinished, a rollback offered
         _write_json(files["helper-status.json"], {"id": "a" * 32, "action": "update", "phase": "failed",
                                                   "message": "The smoke test failed (e2e)", "started_at": now - 900,
                                                   "updated_at": now - 600, "finished_at": now - 600, "version": "v98.0.0",
                                                   "trigger": "request"})
         beat()
+        page.evaluate("() => { try { localStorage.removeItem('bn.job.dismissed'); } catch (_) { /* fine */ } }")   # (an earlier run's)
         page.reload()
-        page.wait_for_selector("#update-now:not([hidden])", timeout=15000)
-        btn = page.locator("#update-now")
-        expect(btn.is_enabled(), f"Update now disabled after a failed update; hint {page.inner_text('#update-hint')!r}")
-        expect(not page.evaluate("() => Boolean(document.querySelector('#update-now').closest('[inert]'))"),
-               "Update now is inside an inert element")
+        page.wait_for_selector("#job-finish:visible", timeout=15000)
+        btn = page.locator("#job-finish")
+        expect(btn.is_enabled(), f"Finish the update disabled after a failed update; hint {page.inner_text('#update-hint')!r}")
+        expect(not page.evaluate("() => Boolean(document.querySelector('#job-finish').closest('[inert]'))"),
+               "Finish the update is inside an inert element")
+        expect(page.locator("#job-rollback").is_visible() and page.inner_text("#job-rollback") == "Roll back to v0.4.1",
+               f"Roll back beside it: {page.inner_text('#job-rollback')!r}")
+        expect(page.locator("#update-card").is_hidden(), "the update card (its Update now would only finish) beside the failed update's card")
         btn.click(trial=True, timeout=5000)   # actionable: in sight, enabled, stable, and nothing over it takes the click
         btn.click()
         page.wait_for_selector("#confirm[open]", timeout=5000)
-        expect(page.inner_text("#confirm-text").startswith("Update to v99.0.0"), f"confirm: {page.inner_text('#confirm-text')!r}")
+        text = page.inner_text("#confirm-text")
+        expect(page.inner_text("#confirm-title") == "Finish the update?" and page.inner_text("#confirm-ok") == "Finish",
+               f"confirm: {page.inner_text('#confirm-title')!r} / {page.inner_text('#confirm-ok')!r}")
+        expect(text.startswith("Finish the update to v98.0.0: the steps it did not finish run again")
+               and "with no new backup, so Roll back still goes back to v0.4.1" in text, f"confirm: {text!r}")
         shot(page, "05c-home-update-now-after-a-failed-update", mask=["#confirm-password"])
         page.click("#confirm-cancel")
         page.locator("#confirm").wait_for(state="hidden", timeout=5000)
-        states.append("after a failed, unfinished update: Update now enabled, clickable, confirms")
-        # 2. the helper late (its heartbeat 4 min old), then answering again: no reload, Update now back within seconds
+        states.append("after a failed, unfinished update: Finish the update and Roll back on its card, enabled, clickable, confirms as a finish")
+        # 2. that card dismissed: both in the update card's place, which says what is left and what comes after
+        page.click("#job-dismiss")
+        page.wait_for_selector("#update-now:visible", timeout=5000)
+        card = {k: page.inner_text(sel) for k, sel in (("title", "#update-title"), ("meta", "#update-meta"), ("now", "#update-now"),
+                                                        ("back", "#update-rollback"), ("steps", "#update-steps"))}
+        expect(card["title"] == "The last update did not finish" and card["now"] == "Finish the update" and card["back"] == "Roll back to v0.4.1",
+               f"the update card after the dismiss: {card}")
+        expect(card["meta"] == "You have v98.0.0's code; the update from v0.4.1 did not finish.", f"meta: {card['meta']!r}")
+        expect("backups/20261101-000000-auto" in card["steps"] and "Then Update now installs v99.0.0." in card["steps"], f"steps: {card['steps']!r}")
+        expect(page.locator(".update-notes").is_hidden() and page.locator("#update-releases").is_hidden(), "the release notes shown in the finish card")
+        now_btn = page.locator("#update-now")
+        expect(now_btn.is_enabled(), "Finish the update on the update card disabled")
+        now_btn.click(trial=True, timeout=5000)
+        shot(page, "05d-home-finish-the-update-after-a-dismiss")
+        states.append("dismissed: Finish the update and Roll back on the update card")
+        # 3. the helper late (its heartbeat 4 min old), then answering again: no reload, Finish the update back within seconds
         beat(240)
         page.reload()
         page.wait_for_selector("#update-now:not([hidden])", timeout=15000)
-        expect(btn.is_disabled(), "Update now enabled while the helper is late")
+        expect(now_btn.is_disabled() and page.inner_text("#update-now") == "Finish the update",
+               f"{page.inner_text('#update-now')!r} enabled while the helper is late")
         beat()
         t0 = time.time()
         try:
@@ -457,8 +485,8 @@ def update_now_after_a_failed_update(ctx):
         except PwError:
             pass
         took = time.time() - t0
-        expect(btn.is_enabled() and took <= 10, f"Update now came back {took:.1f} s after the helper's heartbeat (at most 10 s)")
-        states.append(f"helper late, then answering: Update now back in {took:.1f} s without a reload")
+        expect(now_btn.is_enabled() and took <= 10, f"Finish the update came back {took:.1f} s after the helper's heartbeat (at most 10 s)")
+        states.append(f"helper late, then answering: Finish the update back in {took:.1f} s without a reload")
     finally:
         for p in (up, *files.values()):
             if p in saved:

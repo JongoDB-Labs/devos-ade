@@ -289,6 +289,7 @@ a.form-link:not([href]) { display: none; }
 /* Update now first; the terminal command under it, folded (app.js placeUpdateCli) */
 #update-card .update-go { margin: 4px 0 0; }
 #update-card .update-go .action { margin-left: 0; }
+#update-card .update-go .action + .action { margin-left: 8px; }   /* (Finish the update, then Roll back) */
 #update-card .update-cli { margin-top: 10px; }
 #update-card .update-cli summary { cursor: pointer; color: var(--muted); font-size: 14px; }
 #update-card .update-cli[open] summary { margin-bottom: 8px; }

@@ -182,7 +182,8 @@
       <ol id="update-steps" class="update-steps"></ol>
       <!-- With the update helper: Update now first, the terminal command folded under it; without it: the command
            (app.js placeUpdateCli moves #update-cli-line between the two places) -->
-      <p class="cmdline update-go" id="update-go" hidden><button type="button" class="action primary" id="update-now" data-action="update" aria-describedby="update-hint" hidden>Update now</button></p>
+      <p class="cmdline update-go" id="update-go" hidden><button type="button" class="action primary" id="update-now" data-action="update" aria-describedby="update-hint" hidden>Update now</button>
+        <button type="button" class="action" data-action="rollback" id="update-rollback" hidden>Roll back</button></p>
       <div id="update-cli-plain"><p class="cmdline" id="update-cli-line"><code id="update-cmd">./stack update</code> <button type="button" class="copy" id="copy-update">Copy</button></p></div>
       <p class="note" id="update-hint">Run it in your DevOS ADE folder.</p>
       <details class="update-cli" id="update-cli" hidden>
@@ -210,7 +211,8 @@
       <p id="job-reconnect" class="reconnect" role="status" hidden><span class="spinner" aria-hidden="true"></span>
         <span id="job-reconnect-text">Restarting — reconnecting…</span> <span id="job-reconnect-time" class="elapsed"></span></p>
       <p id="job-note" class="note"></p>
-      <p class="job-actions" id="job-actions" hidden><button type="button" class="action" data-action="rollback" id="job-rollback">Roll back</button></p>
+      <p class="job-actions" id="job-actions" hidden><button type="button" class="action primary" data-action="update" id="job-finish">Finish the update</button>
+        <button type="button" class="action" data-action="rollback" id="job-rollback">Roll back</button></p>
     </section>
 
     <div class="grid">

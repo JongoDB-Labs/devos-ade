@@ -534,9 +534,35 @@ function renderUpdate(u) {
   // Home opened with an old release check, and the portal is running a new one: its answer in a few seconds
   clearTimeout(renderUpdate.again);
   if (u && u.checking) renderUpdate.again = setTimeout(refresh, 6000);
-  const card = $("#update-card");
-  card.hidden = !(u && u.available);
+  renderUpdateCard();
+}
+
+// The update card: a newer release, or, after an update that did not finish and whose failed card was dismissed, Finish the
+// update and Roll back in its place (updatecheck.js finishMode; JON-996)
+function renderUpdateCard() {
+  const u = lastUpdate, card = $("#update-card");
+  const P = window.bnUpdateCheck && window.bnUpdateCheck._pure;
+  const fin = P ? P.finishMode(adminState, !$("#job").hidden && !$("#job-actions").hidden) : "";
+  const entering = fin === "card" && renderUpdateCard.mode !== "card";
+  renderUpdateCard.mode = fin;
+  card.hidden = fin === "job" || (!fin && !(u && u.available));
+  $("#update-now").textContent = fin ? "Finish the update" : "Update now";
+  $("#update-rollback").hidden = fin !== "card";
+  $(".update-notes").hidden = Boolean(fin);
   if (card.hidden) { placeHelperOff(); return; }
+  if (fin) {
+    const f = P.finishCard(adminState, u);
+    $("#update-title").textContent = f.title;
+    $("#update-meta").textContent = f.meta;
+    for (const id of ["#update-releases-title", "#update-releases", "#update-services"]) $(id).hidden = true;
+    lastNotes = null;   // (back to a release later: renderReleases shows its list again)
+    $("#update-steps").replaceChildren(...f.steps.map((t) => el("li", { text: t })));
+    $("#update-cmd").textContent = "./stack update";
+    // (a card the person hid is shown for now: it is the one place left to finish from)
+    if (entering && window.bnWidgets && window.bnWidgets.peek) window.bnWidgets.peek("update-card");
+    placeHelperOff();
+    return;
+  }
   $("#update-title").textContent = `${u.latest} available`;
   const bits = [`You have ${u.installed}.`];
   if (u.published_at) bits.push(`${u.latest} came out ${day(u.published_at)}.`);
@@ -585,6 +611,8 @@ function endsNote() {
 }
 const ACTION_TEXT = {
   update: (a) => {
+    // an update that did not finish: the helper's update finishes it, at the code in place (updatecheck.js)
+    if (finishing(a)) return `${window.bnUpdateCheck._pure.finishConfirm(a)}${endsNote()} This page reconnects by itself.`;
     // A checkout on a branch (vX.Y.Z-N-g… versions) updates to whatever that branch has now, not to the release.
     const onBranch = (a.branch || (lastUpdate && lastUpdate.branch)) && /-\d+-g[0-9a-f]+$/.test(a.version || "");
     const u = lastUpdate || {};
@@ -605,6 +633,7 @@ const CONFIRM = {
   update: ["Update now?", "Update"], rollback: ["Roll back?", "Roll back"], clean: ["Clean up old images?", "Clean up"],
   "auto-on": ["Turn on automatic updates?", "Turn on"], "auto-off": ["Turn off automatic updates?", "Turn off"],
 };
+const finishing = (a) => Boolean(window.bnUpdateCheck && window.bnUpdateCheck._pure.finishMode(a, false));
 let adminState = null, lastUpdate = null, adminTimer = null, pendingAction = null, reconnecting = false;
 // The Code page's frame reports its state to the portal ({type: "bn-code-status", busy, …}; code.js shows its badge):
 // busy = a turn is running. Only from the Code tab's own frame on the code host.
@@ -755,7 +784,8 @@ function renderAuto(a, usable) {
 // window, so Home combines what the helper says (switch, state, what it tried) with the release this card shows.
 function updateHint(a, usable) {
   const base = updateHintBase(a, usable);
-  const line = usable && window.bnUpdateCheck && window.bnUpdateCheck._pure ? window.bnUpdateCheck._pure.prepareLine(a.prepare, lastUpdate && lastUpdate.latest) : "";
+  // (not while an update is unfinished: Finish the update does not install the release prepared ahead)
+  const line = usable && !finishing(a) && window.bnUpdateCheck && window.bnUpdateCheck._pure ? window.bnUpdateCheck._pure.prepareLine(a.prepare, lastUpdate && lastUpdate.latest) : "";
   return line ? `${line} ${base}` : base;
 }
 function updateHintBase(a, usable) {
@@ -767,7 +797,7 @@ function updateHintBase(a, usable) {
   if (auto.supported && auto.on && !(a.in_progress && auto.state === "unfinished")) {
     const [from, to] = autoWindow(a), h = autoHour(a);
     if (["branch", "not-release", "unfinished", "run", "running", "busy"].includes(auto.state)) {
-      return /Update now/.test(auto.reason || "") || auto.state === "run" || auto.state === "running" ? auto.reason : `${auto.reason} Or click Update now.`;
+      return /Update now|Finish the update/.test(auto.reason || "") || auto.state === "run" || auto.state === "running" ? auto.reason : `${auto.reason} Or click Update now.`;
     }
     if (latest && auto.rolled_back === latest) return `You rolled back ${latest}, so it is not installed automatically: Update now installs it.`;
     if (latest && last.version === latest && last.result && last.result !== "done") {
@@ -807,13 +837,14 @@ function renderAdmin(a) {
   const rb = $("#rollback-now");
   rb.hidden = !(a.rollback && a.rollback.available);
   rb.textContent = a.rollback && a.rollback.to ? `Roll back to ${a.rollback.to}` : "Roll back";
-  $("#job-rollback").textContent = rb.textContent;
+  $("#job-rollback").textContent = $("#update-rollback").textContent = rb.textContent;
   $("#update-now").hidden = !(usable || late);
   placeUpdateCli(usable, late);
   renderAuto(a, usable);
   placeHelperOff();
   $("#update-hint").textContent = updateHint(a, usable);
   renderJob(a.job, a.in_progress);
+  renderUpdateCard();   // (after the job card: Finish the update is on one of the two)
   document.dispatchEvent(new CustomEvent("bn:admin", { detail: a }));  // mobile.js: phone wording
 }
 
@@ -900,11 +931,12 @@ function nextAdmin(ms) { clearTimeout(adminTimer); adminTimer = setTimeout(pollA
 function openConfirm(action) {
   if (!adminState) return;
   pendingAction = action;
-  $("#confirm-title").textContent = CONFIRM[action][0];
+  const [title, ok] = action === "update" && finishing(adminState) ? ["Finish the update?", "Finish"] : CONFIRM[action];
+  $("#confirm-title").textContent = title;
   $("#confirm-text").textContent = ACTION_TEXT[action](adminState);
   $("#confirm-error").hidden = true;
   $("#confirm-password").value = "";
-  $("#confirm-ok").textContent = CONFIRM[action][1];
+  $("#confirm-ok").textContent = ok;
   $("#confirm").showModal();
   $("#confirm-password").focus();
 }
@@ -1016,6 +1048,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const j = adminState && adminState.job;
     if (j) { try { localStorage.setItem("bn.job.dismissed", j.id || String(j.finished_at)); } catch (_) { /* fine */ } }
     $("#job").hidden = true;
+    renderUpdateCard();   // (an update that did not finish: Finish the update moves to the update card)
   });
   pollAdmin();
   for (const b of document.querySelectorAll(".copy[data-login]")) {

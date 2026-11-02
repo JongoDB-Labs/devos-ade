@@ -15,6 +15,7 @@ _checkout() { # a clean git checkout with a fake ./stack that logs its arguments
 echo "$*" >> "$CALLS"
 case "$1" in
   update) [ -z "${FAKE_NOOP:-}" ] || { echo "==> already on v0.3.0 — nothing to update (./stack update --force re-runs setup)"; exit 0; }
+    [ -z "${FAKE_FINISH:-}" ] || echo "==> update: the last update (from v0.2.0) did not finish — finishing it; no new backup: ./stack rollback still goes back with backups/b"
     echo "==> update: 1/4 backup"; echo "==> update: 2/4 code (git)"; echo "==> update: 3/4 images"; echo "==> update: 4/4 setup"
     echo "==> doing: starting Postgres + RustFS"; echo "==> Postgres + RustFS: starting…"; echo "==> Postgres + RustFS ready (1m50s)"
     echo "==> Terminal: starting…"; echo "==> Terminal ready (3m11s)"
@@ -259,6 +260,19 @@ test_failed_job_reports_the_error_and_the_way_back() {
   assert_eq "$(ls -l "$(helper_dir)/last-update.log" | cut -c1-10)" "-rw-------"
   helper_heartbeat
   assert_contains "$(cat "$(helper_beat_file)")" '"unfinished": true}'
+}
+
+test_finish_the_update_prepares_nothing_and_says_finished() {
+  # an update that moved the code and did not finish: Home's Finish the update is the update action, and ./stack update
+  # finishes it at the code in place, so no newer release is prepared first; the card says Finished (JON-996)
+  _checkout; _req update
+  git -C "$STACK_DIR" commit -q --allow-empty -m two   # the code the unfinished update moved to
+  update_record_write "$(git -C "$STACK_DIR" rev-parse HEAD~1)" "" backups/b
+  update_unfinished || { echo "the fixture is not an unfinished update" >&2; return 1; }
+  prepare_update_now_phase() { echo prepared >> "$CALLS"; }
+  FAKE_FINISH=1 helper_poll_once 2>/dev/null
+  assert_eq "$(cat "$CALLS")" "update --yes"
+  assert_contains "$(_status)" '"phase": "done", "message": "Finished the update to v0.3.0-1-g'
 }
 
 test_update_that_failed_before_moving_the_code_does_not_suggest_rollback() {

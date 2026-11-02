@@ -271,7 +271,7 @@ test_a_failure_after_the_code_moved_is_unfinished_not_up_to_date() {   # review 
   _at 3 1
   helper_auto_state
   assert_eq "$AUTO_STATE" unfinished
-  assert_contains "$AUTO_REASON" "the last update did not finish: Update now finishes it, or Roll back goes back"
+  assert_contains "$AUTO_REASON" "the last update did not finish: Finish the update finishes it, or Roll back goes back"
   b="$(_beat)"
   assert_contains "$b" '"rollback": {"available": true, "to": "v0.3.0", "backup": "backups/x-auto", "unfinished": true}'
   assert_contains "$b" '"unfinished": true, "skipped"'

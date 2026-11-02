@@ -421,7 +421,7 @@ helper_auto_state() {
     off) AUTO_REASON="Off: new releases wait for you (Update now on Home, or ./stack update)." ;;
     branch) AUTO_REASON="On, but this checkout follows branch $HF_BRANCH: automatic updates install releases only (./stack update --to vX.Y.Z puts it on one)." ;;
     not-release) AUTO_REASON="On, but this checkout is not on a release ($HF_VERSION): automatic updates install releases only." ;;
-    unfinished) AUTO_REASON="On, but the last update did not finish: Update now finishes it, or Roll back goes back. Automatic updates wait until then." ;;
+    unfinished) AUTO_REASON="On, but the last update did not finish: Finish the update finishes it, or Roll back goes back. Automatic updates wait until then." ;;
     wait)
       if [ -n "$AUTO_TARGET" ]; then AUTO_REASON="$AUTO_TARGET installs automatically $w (this computer's time), after a backup."
       else AUTO_REASON="On: a new release installs $w (this computer's time), after a backup."; fi
@@ -927,8 +927,9 @@ _job_run() {
   set +e
   {
     # Update now on a release not prepared ahead yet prepares it first, its steps in this log (lib/prepare.sh); one that
-    # is prepared, or any other job, starts at once
-    if [ "$1" = update ] && declare -F prepare_update_now_phase >/dev/null; then prepare_update_now_phase; fi
+    # is prepared, or any other job, starts at once. Finish the update (an update that did not finish: ./stack update
+    # finishes it at the code in place) prepares nothing: it does not install that release.
+    if [ "$1" = update ] && ! update_unfinished && declare -F prepare_update_now_phase >/dev/null; then prepare_update_now_phase; fi
     ( cd "$STACK_DIR" && exec env DEVOS_ADE_JOB_ORIGIN=helper DEVOS_ADE_NO_OPEN=1 NO_COLOR=1 "$STACK_DIR/stack" "$1" --yes ) </dev/null
   } 2>&1 | _job_stamp
   return "${PIPESTATUS[0]}"
@@ -966,7 +967,8 @@ helper_run_job() {
     clean) helper_write_status cleaning "Removing old images" ;;
     rollback) helper_write_status restoring "Going back to the previous version" ;;
     update)
-      if declare -F prepare_update_now_target >/dev/null && prepare_update_now_target >/dev/null 2>&1; then
+      if update_unfinished; then helper_write_status downloading "Finishing the last update (no new backup)"
+      elif declare -F prepare_update_now_target >/dev/null && prepare_update_now_target >/dev/null 2>&1; then
         helper_write_status preparing "Preparing the new release first (it was not prepared ahead): downloading and building it"
       else helper_write_status backing-up "Backing up your data"; fi ;;
   esac
@@ -1007,6 +1009,8 @@ helper_run_job() {
   case "$action" in
     update)
       msg="Updated to $JOB_VERSION"; [ "$JOB_TRIGGER" != auto ] || msg="Updated automatically to $JOB_VERSION at $(date +%H:%M)"
+      # (./stack update finished an update that had not: lib/commands.sh cmd_update says so first)
+      ! grep -q -- 'did not finish — finishing it' "$logf" 2>/dev/null || msg="Finished the update to $JOB_VERSION"
       # nothing new: ./stack update said so and stopped before the backup (exit 0)
       if grep -q -- '— nothing to update' "$logf" 2>/dev/null; then JOB_RESULT=nothing; helper_write_status "done" "Already up to date ($JOB_VERSION): nothing to update"
       elif [ "${JOB_FREED:-0}" -gt 0 ]; then helper_write_status "done" "$msg · freed $(fmt_bytes "$JOB_FREED")"

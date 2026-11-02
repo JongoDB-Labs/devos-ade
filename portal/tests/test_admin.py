@@ -533,9 +533,12 @@ def test_home_has_the_switch_and_the_helper_missing_hint():
     assert p["copy-helper"][0] == "button" and p["copy-helper"][2] == "Copy"
     assert p["helper-off-why"][2].startswith("The portal cannot install software on your computer (by design), so this one step runs in a terminal")
     assert "update-helper-slot" in p and "maint-helper-slot" in p   # the hint moves into the update card when one is available
-    # Roll back right in the progress card after a failed update
+    # Roll back right in the progress card after a failed update, and Finish the update first when it did not finish; once
+    # that card is dismissed, both in the update card (JON-996)
     assert p["job-rollback"][0] == "button" and p["job-rollback"][1]["data-action"] == "rollback"
     assert "hidden" in p["job-actions"][1]
+    assert p["job-finish"][0] == "button" and p["job-finish"][1]["data-action"] == "update" and p["job-finish"][2] == "Finish the update"
+    assert p["update-rollback"][1]["data-action"] == "rollback" and "hidden" in p["update-rollback"][1]
 
 
 def test_home_scripts_say_what_the_helper_reports():
@@ -543,6 +546,7 @@ def test_home_scripts_say_what_the_helper_reports():
     # (no JavaScript runtime in this image: the wording Home builds is checked as text)
     assert "Will install automatically ${" in js and "(this computer's time) — or Update now." in js
     assert '"auto-on": ["Turn on automatic updates?", "Turn on"]' in js
+    assert '["Finish the update?", "Finish"]' in js and '$("#update-now").textContent = fin ? "Finish the update" : "Update now";' in js
     assert '{ failed: " failed", done: " finished", skipped: " skipped" }' in js   # a skipped automatic update is no failure
     assert "awaiting.toggle ? sw.id === awaiting.id" in js   # a switch change answers in the heartbeat, not the job status
     # while a job runs, the helper sees its own update as "unfinished": Home does not say so then
@@ -618,10 +622,11 @@ def test_home_names_where_a_job_ran():
 def test_home_says_what_an_update_ends_and_reconnects_calmly():
     js = (Path(__file__).parent.parent / "portal" / "static" / "app.js").read_text()
     html = _page().by_id
-    # Update and Roll back: the terminal's container is recreated, Code page sessions resume, a running turn is named
+    # Update, Finish the update and Roll back: the terminal's container is recreated, Code page sessions resume, a running
+    # turn is named
     assert "The Terminal's container is recreated: its tmux windows close" in js
     assert "Code page sessions resume from their transcripts" in js and "A Code page turn is running right now." in js
-    assert js.count("${endsNote()} This page reconnects by itself.") == 2
+    assert js.count("${endsNote()} This page reconnects by itself.") == 3
     assert 'e.data.type !== "bn-code-status"' in js and "e.source !== f.contentWindow" in js
     # the gap while the portal restarts: a line with a spinner and the time so far, not an error banner
     assert html["job-reconnect"][1].get("role") == "status" and "hidden" in html["job-reconnect"][1]
