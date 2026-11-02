@@ -22,6 +22,10 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   **open**, it stopped at "this CLI has no complete local package … --no-daemon". The sandbox now has OpenAI's whole
   release package (pinned by its sum), and `codex` runs with its background server and its own updates off, in the process
   you start, from the image, as before. Claude Code, Gemini, Copilot, Cursor and Grok were checked and were not affected.
+- **Update now comes back within seconds when the update helper answers again (JON-975).** While the helper is late
+  (the computer or Docker busy), Update now is disabled until it answers. Home asked again only every 30 seconds, and
+  not when you came back to the page, so the button could stay disabled well after the helper was back. Home now asks
+  every 5 seconds while the helper is late, and at once when the page is shown or focused.
 - **An update's move check no longer passes a runtime that failed.** After the move to devos-ade, the check that each
   local runtime's program still runs from the moved folder took the shell's `wait` as the program's answer; under load,
   bash 3.2 once answered 0 for a program that exited 3, and the old copy was removed. The check now reads the status the

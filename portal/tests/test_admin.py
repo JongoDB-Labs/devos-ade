@@ -601,6 +601,19 @@ def test_home_says_what_an_update_ends_and_reconnects_calmly():
     assert "if (adminState && adminState.in_progress) { pollAdmin(); }" in js
 
 
+def test_update_now_comes_back_within_seconds_once_the_helper_answers_again():
+    # JON-975: a late helper disables Update now; the page asked again only every 30 s (and not when shown again), so
+    # the button could stay disabled well after the helper answered
+    js = (Path(__file__).parent.parent / "portal" / "static" / "app.js").read_text()
+    assert "const ADMIN_LATE_MS = 5000;" in js
+    assert "nextAdmin(a.in_progress || awaiting ? 2500 : a.late ? ADMIN_LATE_MS : REFRESH_MS);" in js
+    # shown or focused: asked at once; one timer whichever ask ends last
+    assert 'if (!document.hidden) { pollAdmin(); if (!$("#home").hidden) refresh(); }' in js
+    assert 'window.addEventListener("focus", () => pollAdmin());' in js
+    assert "function nextAdmin(ms) { clearTimeout(adminTimer); adminTimer = setTimeout(pollAdmin, ms); }" in js
+    assert "adminTimer = setTimeout(" not in js.replace("function nextAdmin(ms) { clearTimeout(adminTimer); adminTimer = setTimeout(", "")
+
+
 def test_the_helpers_finished_jobs_are_listed_newest_first_type_checked_and_bounded(dirs):
     st, rq = dirs
     d = st / "helper-finished"

@@ -5,6 +5,9 @@
 const APPS = { chat: "/", admin: "/ui/api-keys/", files: "/rustfs/console/" };   // (portal/config.py APPS)
 const API_HEADERS = { "X-Requested-With": "devos-ade" };
 const REFRESH_MS = 30000;
+// The update helper late (JON-975): Update now is disabled until it answers again, so its state is asked this often
+// then, and at once when the page is shown or focused, not up to REFRESH_MS later
+const ADMIN_LATE_MS = 5000;
 let logins = null;
 let timer = null;
 let lastSummary = null;
@@ -837,7 +840,7 @@ async function pollAdmin() {
     }
     if (awaiting && !awaiting.toggle && adminState) { a.in_progress = true; a.job = adminState.job; }
     renderAdmin(a);
-    adminTimer = setTimeout(pollAdmin, a.in_progress || awaiting ? 2500 : REFRESH_MS);
+    nextAdmin(a.in_progress || awaiting ? 2500 : a.late ? ADMIN_LATE_MS : REFRESH_MS);
   } catch (e) {
     if (e.message === "signed out") return;
     // The portal restarts during an update or rollback: keep asking (every 2 s), show where things stood and how long
@@ -845,9 +848,11 @@ async function pollAdmin() {
     reconnecting = !!(adminState && adminState.in_progress);
     if (reconnecting) showReconnect(true);
     if (adminState) renderJob(adminState.job, adminState.in_progress);
-    adminTimer = setTimeout(pollAdmin, 2000);
+    nextAdmin(2000);
   }
 }
+// (one timer, whichever ask ends last sets it: a page shown or focused asks again while another ask is still out)
+function nextAdmin(ms) { clearTimeout(adminTimer); adminTimer = setTimeout(pollAdmin, ms); }
 
 function openConfirm(action) {
   if (!adminState) return;
@@ -977,7 +982,8 @@ document.addEventListener("DOMContentLoaded", () => {
       if (v) copy(v, b.textContent.replace(/^Copy /, "")); else toast("Not available yet: run ./stack setup");
     });
   }
-  document.addEventListener("visibilitychange", () => { if (!document.hidden && !$("#home").hidden) refresh(); });
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) { pollAdmin(); if (!$("#home").hidden) refresh(); } });
+  window.addEventListener("focus", () => pollAdmin());
   window.addEventListener("hashchange", () => showTab(location.hash.slice(1)));
   loadLogins();
   showTab(location.hash.slice(1) || recalled() || (window.bnMobile ? window.bnMobile.defaultTab() : "home"));
