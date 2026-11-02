@@ -317,10 +317,14 @@ With `PORTAL_HTTPS` on (`./stack https on`, or Settings), the portal is served o
 made for this install ([advanced](advanced.md#https-for-the-portal-stack-https) has the commands).
 
 - **The CA can only vouch for your install.** It is an EC P-256 CA with `CA:TRUE, pathlen:0` and a critical *name
-  constraint* that permits only `PORTAL_HOST`, its subdomains, the preview domain's subdomains and any other local host
-  you configured. A browser or `openssl` refuses a certificate it signs for any other name (`evil.example`,
-  `other.localhost`); `tests/test_tls.sh` and the end-to-end check `https-local-portal` assert this. Even so, it is only
-  added to a trust store with your own action: the macOS password prompt, or your yes to `sudo` on Linux.
+  constraint* that permits only `PORTAL_HOST`, the preview domain, the names under each, and any other local host you
+  configured (RFC 5280's form, without a leading dot, which every verifier reads). Chrome, Firefox and `openssl` refuse a
+  certificate it signs for any other name (`evil.example`, `other.localhost`, `evil-devos-ade.localhost`);
+  `tests/test_tls.sh` and the end-to-end check `https-local-portal` assert this. Older reports say macOS' own TLS (Safari,
+  `curl`) did not enforce name constraints on a root you added, so the constraint is a second guard, not the only one: the
+  CA's key never leaves the host (below), and the CA is only added to a trust store with your own action: the macOS
+  password prompt, or your yes to `sudo` on Linux. The prompt shows on the Mac's own screen; from Settings on another
+  device nobody may see it, so it is given up after 3 minutes (`TLS_TRUST_WAIT`) and HTTPS stays off.
 - **Its key never leaves the host.** `.state/tls/ca.key` is mode 600, is not mounted in any container, and is used only by
   `./stack` to sign the site certificate. Caddy gets the site certificate and its key only: a copy in `.state/tls/serve`
   (mode 644 in a folder under `.state`, which is 700, as the built-in git server's certificate is), mounted read-only.

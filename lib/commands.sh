@@ -686,11 +686,11 @@ _setup_settings() {
   setup_ports
   setup_done "ports chosen (the portal: $(portal_url))"; setup_step "asking about remote access"
   setup_remote_choice   # lib/remote.sh: asks once — this computer only (default), or your devices too
-  setup_step "asking about HTTPS"
-  https_setup_question  # lib/tls.sh: asks once (an interactive setup only: --yes, no terminal and updates leave PORTAL_HTTPS as it is)
   remote_net_preflight  # remote access on: its Docker network usable? else this run goes on without it
   setup_step "writing passwords and settings into .env"
   setup_secrets
+  setup_step "asking about HTTPS"
+  https_setup_question  # lib/tls.sh: asks once (an interactive setup only: --yes, no terminal and updates leave PORTAL_HTTPS as it is); after setup_secrets: turning it on needs the portal's password in .env
   setup_step "asking about OpenRouter and voice"
   setup_openrouter   # optional; lib/openrouter.sh
   setup_explabs      # optional; lib/explabs.sh (no question: Settings or ./stack config set EXPLABS_API_KEY)

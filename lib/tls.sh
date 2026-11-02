@@ -59,14 +59,15 @@ tls_local_hosts() {
   { for s in '' chat admin files git terminal code; do app_host "$s"; done; } | awk '!seen[$0]++'
 }
 
-# tls_constraints -> what the CA may vouch for (DNS names, one per line): the portal host, its subdomains, the previews' site,
-# and each configured local host outside those
+# tls_constraints -> what the CA may vouch for (DNS names, one per line): the portal host, the previews' site, and each
+# configured local host outside those. RFC 5280's form, without a leading dot: "x" is x and every name under it, for every
+# verifier (Chrome's, macOS', NSS, OpenSSL); the leading-dot form is not in the RFC for DNS names, and not every one reads it.
 tls_constraints() {
   local h pd base
   h="$(portal_host)"; pd="$(tls_preview_domain)"
-  printf '%s\n.%s\n.%s\n' "$h" "$h" "$pd"
+  printf '%s\n%s\n' "$h" "$pd"
   while IFS= read -r base; do
-    tls_permitted "$base" "$h" ".$h" ".$pd" || printf '%s\n' "$base"
+    tls_permitted "$base" "$h" "$pd" || printf '%s\n' "$base"
   done <<EOF
 $(tls_local_hosts)
 EOF
@@ -78,7 +79,7 @@ tls_sans() {
   h="$(portal_host)"; pd="$(tls_preview_domain)"
   printf '%s\n*.%s\n*.%s\n*.artifact.%s\n' "$h" "$h" "$pd" "$pd"
   while IFS= read -r base; do
-    tls_permitted "$base" "$h" ".$h" ".$pd" || printf '%s\n' "$base"
+    tls_permitted "$base" "$h" "$pd" || printf '%s\n' "$base"
   done <<EOF
 $(tls_local_hosts)
 EOF
@@ -218,9 +219,15 @@ tls_trust_add() {
   local ca db nick cmd sysf
   ca="$(tls_dir)/ca.pem"
   if [ "$(uname -s)" = Darwin ]; then
-    log "adding the certificate authority to your login keychain — macOS asks for your password"
-    security add-trusted-cert -r trustRoot -p ssl -k "$(tls_login_keychain)" "$ca"
-    return
+    # macOS' prompt is on this Mac's screen: from Settings on a phone, nobody may answer it. Not answered in
+    # TLS_TRUST_WAIT seconds (180), security is ended (the alarm outlives exec) and HTTPS stays off.
+    log "adding the certificate authority to your login keychain — macOS asks for your password, on this Mac's screen"
+    perl -e 'alarm shift; exec @ARGV or exit 127' "${TLS_TRUST_WAIT:-180}" security add-trusted-cert -r trustRoot -p ssl -k "$(tls_login_keychain)" "$ca"
+    case $? in
+      0) return 0 ;;
+      142) warn "macOS' password prompt was not answered within ${TLS_TRUST_WAIT:-180} seconds (it shows on this Mac's screen)"; return 1 ;;
+      *) return 1 ;;
+    esac
   fi
   db="$(tls_nss_db)"; nick="$(tls_ca_nick)"
   if command -v certutil >/dev/null 2>&1; then
@@ -384,8 +391,14 @@ https_setup_question() {
   [ -z "$(get_env PORTAL_HTTPS)" ] && [ "${UPD_MODE:-0}" != 1 ] || return 0
   [ "${ASSUME_YES:-0}" != 1 ] && _have_tty || return 0
   if https_unsupported >/dev/null; then return 0; fi
-  if confirm "Serve the portal over HTTPS? This adds a certificate that can only vouch for this install's own addresses to your login keychain; macOS asks for your password."; then
-    https_enable || true
+  local where="your login keychain; macOS asks for your password."
+  [ "$(uname -s)" = Darwin ] || where="your browsers' certificate database (NSS); the system store only if you say yes."
+  if confirm "Serve the portal over HTTPS? This adds a certificate that can only vouch for this install's own addresses to $where"; then
+    # (in a subshell: whatever stops it — a refused prompt, openssl — leaves setup going, on plain HTTP)
+    if ! ( https_enable ); then
+      if https_on; then warn "HTTPS is on, but its restart failed; setup goes on — ./stack https off turns it off"
+      else set_env PORTAL_HTTPS false; warn "the portal stays plain HTTP (the messages above say why); ./stack https on tries again"; fi
+    fi
   else
     set_env PORTAL_HTTPS false
     log "the portal stays plain HTTP; ./stack https on turns HTTPS on later"

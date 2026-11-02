@@ -17,8 +17,9 @@ _tls_env() {
   for n in security update-ca-certificates update-ca-trust; do
     printf '#!/bin/sh\necho "%s $*" >> "%s/calls"\n[ -n "${STUB_%s_RC:-}" ] && exit "$STUB_%s_RC"\nexit 0\n' "$n" "$TMP" "$(echo "$n" | tr 'a-z-' 'A-Z_')" "$(echo "$n" | tr 'a-z-' 'A-Z_')" > "$TMP/bin/$n"
   done
-  # security verify-cert answers STUB_VERIFY_RC (default 0)
-  printf '#!/bin/sh\necho "security $*" >> "%s/calls"\ncase "$1" in verify-cert) exit "${STUB_VERIFY_RC:-0}" ;; esac\nexit 0\n' "$TMP" > "$TMP/bin/security"
+  # security verify-cert answers STUB_VERIFY_RC (default 0); add-trusted-cert STUB_ADD_RC, or waits STUB_ADD_SLEEP seconds (a
+  # prompt nobody answers)
+  printf '#!/bin/sh\necho "security $*" >> "%s/calls"\ncase "$1" in\n  verify-cert) exit "${STUB_VERIFY_RC:-0}" ;;\n  add-trusted-cert) [ -z "${STUB_ADD_SLEEP:-}" ] || exec sleep "$STUB_ADD_SLEEP"; exit "${STUB_ADD_RC:-0}" ;;\nesac\nexit 0\n' "$TMP" > "$TMP/bin/security"
   printf '#!/bin/sh\necho "sudo $*" >> "%s/calls"\nexit 0\n' "$TMP" > "$TMP/bin/sudo"
   # certutil keeps a database marker: -N makes cert9.db, -A records the nickname, -L -n finds it, -D forgets it
   cat > "$TMP/bin/certutil" <<EOF
@@ -70,8 +71,9 @@ test_ca_is_name_constrained_and_critical() {
   printf '%s\n' "$t" | grep -qE "X509v3 Key Usage: critical" || { echo "key usage not critical" >&2; return 1; }
   assert_contains "$t" "Certificate Sign, CRL Sign"
   assert_contains "$t" "DNS:devos-ade.localhost"
-  assert_contains "$t" "DNS:.devos-ade.localhost"
-  assert_contains "$t" "DNS:.devos-ade-preview.localhost"
+  assert_contains "$t" "DNS:devos-ade-preview.localhost"
+  # (RFC 5280's form: no leading dot, which not every verifier reads)
+  case "$t" in *"DNS:."*) echo "a constraint in the leading-dot form" >&2; return 1 ;; esac
   assert_contains "$t" "DNS:chat.elsewhere.example"   # a configured host outside those
   assert_contains "$t" "CN=DevOS ADE local CA for devos-ade.localhost $(date +%Y-%m-%d)"
   # ten years
@@ -130,7 +132,7 @@ test_the_ca_vouches_for_this_install_and_refuses_other_names() {
   _tls_sign p5173-abc.devos-ade-preview.localhost
   openssl verify -CAfile "$d/ca.pem" -purpose sslserver "$TMP/p5173-abc.devos-ade-preview.localhost.pem" >/dev/null 2>&1 || { echo "a preview does not verify" >&2; return 1; }
   # ... a name outside them is refused although the same CA signed it
-  for n in evil.example other.localhost devos-ade-preview.localhost.evil.example; do
+  for n in evil.example other.localhost devos-ade-preview.localhost.evil.example evil-devos-ade.localhost xdevos-ade-preview.localhost; do
     _tls_sign "$n"
     if openssl verify -CAfile "$d/ca.pem" -purpose sslserver "$TMP/$n.pem" >/dev/null 2>&1; then echo "$n was accepted" >&2; return 1; fi
   done
@@ -257,9 +259,45 @@ test_a_failed_trust_check_turns_https_back_off() {
   assert_eq "$(get_env PORTAL_ORIGIN)" "http://devos-ade.localhost:8800"
   if compose_overlays | grep -q https; then return 1; fi
   # the keychain refused (the password prompt cancelled): the same
-  security() { echo "security $*" >> "$TMP/calls"; case "$1" in add-trusted-cert | verify-cert) return 1 ;; esac; }
+  export STUB_ADD_RC=1
   out="$(https_enable 2>&1)" && return 1
   assert_contains "$out" "HTTPS is off again: the certificate authority was not added"
+  assert_eq "$(get_env PORTAL_HTTPS)" false
+}
+
+test_a_keychain_prompt_nobody_answers_ends_and_https_stays_off() {
+  # (Settings from a phone: macOS' prompt is on the Mac's screen)
+  _tls_env; _darwin
+  export STUB_VERIFY_RC=1 STUB_ADD_SLEEP=20 TLS_TRUST_WAIT=1
+  t0=$SECONDS
+  out="$(https_enable 2>&1)" && { echo "enable succeeded" >&2; return 1; }
+  [ $((SECONDS - t0)) -lt 10 ] || { echo "waited for the prompt past TLS_TRUST_WAIT" >&2; return 1; }
+  assert_contains "$out" "macOS' password prompt was not answered within 1 seconds (it shows on this Mac's screen)"
+  assert_contains "$out" "HTTPS is off again: the certificate authority was not added"
+  assert_eq "$(get_env PORTAL_HTTPS)" false
+}
+
+test_setup_asks_about_https_after_writing_the_password() {
+  # (turning it on needs PORTAL_PASSWORD or PORTAL_SECRET in .env: a new install has neither before setup_secrets)
+  local f
+  for f in setup_ports setup_done setup_step setup_remote_choice remote_net_preflight setup_secrets https_setup_question \
+    setup_openrouter setup_explabs setup_stt; do
+    eval "$f() { echo $f >> \"\$TMP/order\"; }"
+  done
+  portal_url() { echo http://x; }
+  _setup_settings
+  s="$(grep -n '^setup_secrets$' "$TMP/order" | cut -d: -f1)"; q="$(grep -n '^https_setup_question$' "$TMP/order" | cut -d: -f1)"
+  [ -n "$s" ] && [ -n "$q" ] && [ "$s" -lt "$q" ] || { echo "https_setup_question ($q) before setup_secrets ($s)" >&2; return 1; }
+}
+
+test_setup_goes_on_when_turning_https_on_fails() {
+  _tls_env; _darwin
+  ASSUME_YES=0; _have_tty() { return 0; }; confirm() { return 0; }
+  # a new install: no password in .env yet, so the real https_enable dies — setup must not
+  printf 'PORTAL_HOST=devos-ade.localhost\nPORTAL_PORT=8800\n' > "$ENV_FILE"
+  out="$(https_setup_question 2>&1; echo "still here")"
+  assert_contains "$out" "still here"
+  assert_contains "$out" "the portal stays plain HTTP"
   assert_eq "$(get_env PORTAL_HTTPS)" false
 }
 

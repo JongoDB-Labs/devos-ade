@@ -25,7 +25,7 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   leave it as it is; Home shows existing installs a one-time card). The certificates are made on the host by `lib/tls.sh`
   from a per-install CA (EC P-256) whose critical name constraints permit only this install's own addresses, so it cannot
   vouch for any other site. The CA's key stays in `.state/tls` (mode 600) and is mounted in no container; Caddy gets the
-  site certificate only. Trust is added only through your own action (macOS login keychain with its password prompt; Linux
+  site certificate only. Trust is added only through your own action (macOS login keychain with its password prompt, given up after 3 minutes; Linux
   user NSS database; the system store only after a yes with `sudo`) and checked afterwards: if the certificate is not
   accepted, HTTPS turns itself off again and says why. The scheme then follows everywhere: the portal's origin, the session
   cookie (`Secure`), CSP and CORS origins, Forgejo's root URL, `wss://`, and printed addresses; plain http on the same port
@@ -109,9 +109,10 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 - **The portal over HTTPS (JON-976).** Shell tests (`tests/test_tls.sh`, `security`, `certutil`, `sudo` and the system-store
   tools stubbed on PATH, each refusing and failing the suite when bypassed): CA and site certificate fields (critical
   constraints, pathlen 0, SANs), key modes, the CA key in no compose volume, the CA accepts the site certificate and refuses
-  `evil.example` and `other.localhost` (LibreSSL and OpenSSL 3), renewal under 30 days and on a host change, the exact trust
+  `evil.example`, `other.localhost` and `evil-devos-ade.localhost` (LibreSSL and OpenSSL 3), renewal under 30 days and on a host change, the exact trust
   and removal commands, a failed check turns HTTPS off, `https off` restores http, Caddy snippets on and off, a
-  non-interactive setup never enables it. Portal tests (origin, `Secure` cookie, the Home card and notice). End-to-end check
+  non-interactive setup never enables it, setup asks only after writing the password and goes on when turning it on fails,
+  a keychain prompt nobody answers ends. Portal tests (origin, `Secure` cookie, the Home card and notice). End-to-end check
   `https/https-local-portal` (`tests/e2e/https.sh`).
 
 ## [0.49.0] - 2026-11-02
