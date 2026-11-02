@@ -300,7 +300,7 @@ def terminal_models(ctx):
     out = wait_text(f, r"devos-claude --model <id or name>", 10)
     expect(re.search(r"^\* claude-", out, re.M) or re.search(r"^\* \S+", out, re.M), f"no default marked: {out[-600:]!r}")
     shot(page, "72-terminal-devos-claude-models")
-    listed = [ln.split()[0] for ln in out.splitlines() if re.match(r"^[ *] [a-z]", ln)]
+    listed = [ln[2:].split()[0] for ln in out.splitlines() if re.match(r"^[ *] [a-z]", ln)]   # (the default's row starts "* ")
     # Claude Code's /model menu: our rows (replaceBuiltInOptions), no aliases
     type_line(page, f, "clear; devos-claude")
     t0, steps = time.time(), []
