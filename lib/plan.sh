@@ -8,6 +8,8 @@
 #                                  computer has recorded one of its own.
 #   .state/update/run-plan.tsv     the plan this run started with (it does not change while the run goes on)
 #   .state/update/run-steps.tsv    the steps this run finished so far: LABEL, SECONDS (or skipped), and why it was skipped
+#   .state/update/run-plan.json, run-steps.json   the same as JSON, made once (the plan at the start, a step as it ends), so
+#                                  the record a terminal update rewrites after each step is put together without a process
 #   .state/update/run-step         the step running now: LABEL, when it started
 # A label is compared without its trailing parenthesised part and what follows it ("Services (9) (http://…)" is
 # "Services": counts and addresses differ from run to run). Whether a step will be skipped is not known up front (its
@@ -16,7 +18,8 @@
 # While ./stack update runs (DEVOS_ADE_PLAN_RUN=1, set by plan_run_start, kept by its children and its re-exec), phase_start,
 # phase_line and upd_gate leave the run files; in a terminal they also put them into the record Home reads
 # (lib/lock.sh _terminal_job_progress), and a terminal that is a TTY gets a one-line bar after each step (plan_bar).
-# Everything here is cheap (a few small files, no docker) and never fatal.
+# Everything here is cheap (a few small files, no docker, and per step no process but the clock's) and never fatal: a terminal
+# update rewrites its record twice a step, and escaping every label each time cost 35 s over 40 steps.
 
 plan_dir() { printf '%s/update\n' "$STATE_DIR"; }
 plan_last_file() { printf '%s/last-steps.tsv\n' "$(plan_dir)"; }
@@ -36,13 +39,23 @@ plan_load() {
   return 0
 }
 
+# _plan_jstr VAR TEXT — VAR is TEXT safe inside a JSON string, the way _job_json_str makes it (no quotes, backslashes or
+# control characters, at most 300 characters), in the shell itself: no process
+_plan_jstr() {
+  local t="$2"
+  t="${t//\\/}"; t="${t//\"/}"; t="${t//[[:cntrl:]]/}"
+  [ "${#t}" -le 300 ] || t="${t:0:300}"
+  printf -v "$1" '%s' "$t"
+}
+
 # _plan_json -> the plan lines on stdin as [{"label": "Backup", "secs": 4}, …] (a skipped step: 0 s)
 _plan_json() {
-  local out='' l s
+  local out='' l s j
   while IFS=$'\t' read -r l s; do
     [ -n "$l" ] || continue
     case "$s" in '' | *[!0-9]*) s=0 ;; esac
-    out="$out${out:+, }{\"label\": \"$(_job_json_str "$l")\", \"secs\": $s}"
+    _plan_jstr j "$l"
+    out="$out${out:+, }{\"label\": \"$j\", \"secs\": $s}"
   done
   printf '[%s]' "$out"
 }
@@ -50,25 +63,41 @@ plan_json() { plan_load | _plan_json; }
 
 # plan_run_start — a new update run: its plan is fixed now, the run's files start empty and the record Home reads shows the plan
 plan_run_start() {
-  local d; d="$(plan_dir)"
+  local d="$STATE_DIR/update"
   mkdir -p "$d" 2>/dev/null || return 0
-  rm -f "$d/run-steps.tsv" "$d/run-step" 2>/dev/null || true
+  rm -f "$d/run-steps.tsv" "$d/run-steps.json" "$d/run-step" 2>/dev/null || true
   plan_load > "$d/run-plan.tsv" 2>/dev/null || true
+  _plan_json < "$d/run-plan.tsv" > "$d/run-plan.json" 2>/dev/null || true
   DEVOS_ADE_PLAN_RUN=1; export DEVOS_ADE_PLAN_RUN
   _plan_publish
   return 0
 }
 
+# _plan_now — PLAN_NOW is the clock's seconds: date once in a process, then the shell's own SECONDS from there (no process)
+_plan_now() {
+  [ -n "${_PLAN_T0:-}" ] || { _PLAN_T0="$(date +%s)"; _PLAN_S0=$SECONDS; }
+  PLAN_NOW=$((_PLAN_T0 + SECONDS - _PLAN_S0))
+}
+
 plan_step_begin() { # plan_step_begin LABEL — phase_start's
   [ "${DEVOS_ADE_PLAN_RUN:-}" = 1 ] || return 0
-  printf '%s\t%s\n' "$1" "$(_now)" > "$(plan_dir)/run-step" 2>/dev/null || return 0
+  _plan_now
+  printf '%s\t%s\n' "$1" "$PLAN_NOW" > "$STATE_DIR/update/run-step" 2>/dev/null || return 0
   _plan_publish
 }
 plan_step_end() { # plan_step_end LABEL SECONDS|skipped [WHY] — phase_line's, and upd_gate's for a step it skipped
-  local d cur
+  local d cur why="${3:-}" secs="$2" took jl jw
   [ "${DEVOS_ADE_PLAN_RUN:-}" = 1 ] || return 0
-  d="$(plan_dir)"
-  printf '%s\t%s\t%s\n' "$1" "$2" "$(printf '%s' "${3:-}" | tr -d '\t\n')" >> "$d/run-steps.tsv" 2>/dev/null || return 0
+  d="$STATE_DIR/update"
+  why="${why//[[:cntrl:]]/}"
+  printf '%s\t%s\t%s\n' "$1" "$secs" "$why" >> "$d/run-steps.tsv" 2>/dev/null || return 0
+  # (its JSON, made once: _plan_fields only joins these)
+  if [ "$secs" = skipped ]; then took=skipped
+  else case "$secs" in '' | *[!0-9]*) secs=0 ;; esac
+    if [ "$secs" -lt 60 ]; then took="${secs}s"; else printf -v took '%dm%02ds' $((secs / 60)) $((secs % 60)); fi
+  fi
+  _plan_jstr jl "$1"; _plan_jstr jw "$why"
+  printf '{"label": "%s", "took": "%s"%s}\n' "$jl" "$took" "${jw:+, \"why\": \"$jw\"}" >> "$d/run-steps.json" 2>/dev/null || true
   cur=''; if [ -f "$d/run-step" ]; then IFS=$'\t' read -r cur _ < "$d/run-step" || cur=''; fi
   [ "$cur" != "$1" ] || rm -f "$d/run-step" 2>/dev/null || true
   _plan_publish
@@ -77,32 +106,38 @@ plan_step_end() { # plan_step_end LABEL SECONDS|skipped [WHY] — phase_line's, 
 # _plan_publish — Home's record of this terminal update gets the new step (lib/lock.sh)
 _plan_publish() { ! declare -F _terminal_job_progress >/dev/null || _terminal_job_progress || true; return 0; }
 
-# plan_status_fields -> the record's step fields: "step": "Images", "step_started_at": 1700000000, "steps": [{"label", "took",
-# "why"}], "plan": [{"label", "secs"}] — what the helper's status has too (lib/helper.sh). Nothing outside an update run.
-plan_status_fields() {
-  local d cur='' at='' steps='' n=0 label secs why took
+# _plan_fields — PLAN_FIELDS is the record's step fields: "step": "Images", "step_started_at": 1700000000, "steps": [{"label",
+# "took", "why"}], "plan": [{"label", "secs"}] — what the helper's status has too (lib/helper.sh). Empty outside an update run.
+# Shell builtins only (the JSON was made as each piece came: plan_run_start, plan_step_end). plan_status_fields prints them.
+PLAN_FIELDS=''
+_plan_fields() {
+  local d cur='' at='' steps='' n=0 line plan='[]' jc
+  PLAN_FIELDS=''
   [ "${DEVOS_ADE_PLAN_RUN:-}" = 1 ] || return 0
-  d="$(plan_dir)"; [ -f "$d/run-plan.tsv" ] || return 0
+  d="$STATE_DIR/update"; [ -f "$d/run-plan.tsv" ] || return 0
   if [ -f "$d/run-step" ]; then IFS=$'\t' read -r cur at < "$d/run-step" 2>/dev/null || true; fi
   case "$at" in '' | *[!0-9]*) at=null ;; esac
-  if [ -f "$d/run-steps.tsv" ]; then
-    while IFS=$'\t' read -r label secs why; do
-      [ -n "$label" ] || continue
-      n=$((n + 1)); [ "$n" -le 80 ] || break
-      if [ "$secs" = skipped ]; then took=skipped; else case "$secs" in '' | *[!0-9]*) secs=0 ;; esac; took="$(fmt_elapsed "$secs")"; fi
-      steps="$steps${steps:+, }{\"label\": \"$(_job_json_str "$label")\", \"took\": \"$took\"${why:+, \"why\": \"$(_job_json_str "$why")\"}}"
-    done < "$d/run-steps.tsv"
-  fi
   [ -n "$cur" ] || at=null
-  printf '"step": "%s", "step_started_at": %s, "steps": [%s], "plan": %s' "$(_job_json_str "$cur")" "$at" "$steps" "$(_plan_json < "$d/run-plan.tsv")"
+  if [ -f "$d/run-steps.json" ]; then
+    while IFS= read -r line; do
+      [ -n "$line" ] || continue
+      n=$((n + 1)); [ "$n" -le 80 ] || break
+      steps="$steps${steps:+, }$line"
+    done < "$d/run-steps.json"
+  fi
+  if [ -s "$d/run-plan.json" ]; then IFS= read -r plan < "$d/run-plan.json" || true; fi
+  [ -n "$plan" ] || plan='[]'
+  _plan_jstr jc "$cur"
+  PLAN_FIELDS="\"step\": \"$jc\", \"step_started_at\": $at, \"steps\": [$steps], \"plan\": $plan"
 }
+plan_status_fields() { _plan_fields; printf '%s' "$PLAN_FIELDS"; }
 
 # plan_run_record — the update ended well: its steps are the next update's plan (only then: a failed or stopped one is not a
 # plan). Download steps are left out: one per image, named by version and side by side, they are not a stretch of time.
 plan_run_record() {
   local d tmp
   [ "${DEVOS_ADE_PLAN_RUN:-}" = 1 ] || return 0
-  d="$(plan_dir)"; [ -s "$d/run-steps.tsv" ] || return 0
+  d="$STATE_DIR/update"; [ -s "$d/run-steps.tsv" ] || return 0
   tmp="$d/.last-steps.$$"
   if awk -F'\t' '$1 != "" && $1 !~ /^Download / { l = $1; sub(/ \(.*$/, "", l); print l "\t" $2 }' "$d/run-steps.tsv" > "$tmp" 2>/dev/null &&
      [ -s "$tmp" ] && mv -f "$tmp" "$(plan_last_file)" 2>/dev/null; then :; else rm -f "$tmp" 2>/dev/null || true; fi
@@ -148,7 +183,7 @@ plan_bar() {
   local d out nd total left label full i bar=''
   [ "${DEVOS_ADE_PLAN_RUN:-}" = 1 ] || return 0
   _plan_tty || return 0
-  d="$(plan_dir)"; [ -f "$d/run-plan.tsv" ] && [ -s "$d/run-steps.tsv" ] || return 0
+  d="$STATE_DIR/update"; [ -f "$d/run-plan.tsv" ] && [ -s "$d/run-steps.tsv" ] || return 0
   label="$(tail -n 1 "$d/run-steps.tsv" | cut -f1)"
   out="$(plan_math "$d/run-plan.tsv" "$d/run-steps.tsv")" || return 0
   # shellcheck disable=SC2086  # three numbers

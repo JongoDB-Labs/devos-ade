@@ -128,7 +128,7 @@ test_a_terminal_update_puts_its_steps_and_plan_into_the_record_home_reads() {
     DEVOS_ADE_JOB_CMD="update"; stack_lock update
     plan_run_start
     cp "$(terminal_job_file)" "$TMP/at-start"
-    _now() { echo 1700000100; }
+    _now() { echo 1700000100; }; _plan_now() { PLAN_NOW=1700000100; }   # (the plan's clock: lib/plan.sh _plan_now)
     phase_start Backup
     cp "$(terminal_job_file)" "$TMP/during"
     log "$(phase_line Backup 5)" 2>/dev/null
@@ -211,4 +211,24 @@ test_the_bar_is_cheap_a_step_costs_milliseconds() {
   for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do phase_start "Step $i"; phase_line "Step $i" 1 >/dev/null; done
   t1="$(date +%s)"
   [ $((t1 - t0)) -le 3 ] || { echo "20 steps took $((t1 - t0)) s" >&2; return 1; }
+}
+
+test_a_terminal_updates_record_costs_milliseconds_a_step_and_stays_readable_to_the_portal() {
+  # a terminal update rewrites its record twice a step: escaping every label each time once cost 35 s over 40 steps
+  mkdir -p "$STATE_DIR/status"; installed_version() { echo v0.9.0; }
+  local t0 t1 i
+  (
+    umask 077   # (yours may be: the record is still the portal's to read)
+    DEVOS_ADE_JOB_CMD="update"; stack_lock update
+    plan_run_start
+    t0="$(date +%s)"
+    for i in $(seq 1 40); do phase_start "Step number $i"; log "$(phase_line "Step number $i" 1)" 2>/dev/null; done
+    t1="$(date +%s)"
+    [ $((t1 - t0)) -le 8 ] || { echo "40 steps with the record took $((t1 - t0)) s" >&2; exit 1; }
+    _BN_CMD_DONE=1
+  ) || return 1
+  _json_ok "$(terminal_job_file)" || return 1
+  assert_contains "$(cat "$(terminal_job_file)")" '{"label": "Step number 40", "took": "1s"}'
+  assert_eq "$(ls -l "$(terminal_job_file)" | cut -c1-10)" "-rw-r--r--"
+  assert_eq "$(find "$STATE_DIR/status" -name '.terminal-job.*' | wc -l | tr -d ' ')" 0   # (no temporary file left)
 }

@@ -109,7 +109,7 @@ _terminal_job_wanted() {
 _terminal_job_write() {
   local d f tmp now fin=null prog=''
   d="$STATE_DIR/status"; f="$(terminal_job_file)"; now="$(date +%s)"
-  ! declare -F plan_status_fields >/dev/null || prog="$(plan_status_fields)"
+  ! declare -F _plan_fields >/dev/null || { _plan_fields; prog="$PLAN_FIELDS"; }
   [ -z "$prog" ] || prog=", $prog"
   case "$1" in done | failed) fin="$now" ;; esac
   tmp="$(mktemp "$d/.terminal-job.XXXXXX" 2>/dev/null)" || return 0
@@ -126,18 +126,19 @@ _terminal_job_write() {
 _terminal_job_progress() {
   local d f line hd pre post pid tmp prog
   [ -n "${TERMINAL_JOB:-}${DEVOS_ADE_TERMINAL_JOB:-}" ] || return 0
-  d="$STATE_DIR/status"; f="$(terminal_job_file)"
+  d="$STATE_DIR/status"; f="$d/terminal-job.json"   # (terminal_job_file, without a subshell: this runs twice a step)
   [ -f "$f" ] || return 0
-  prog="$(plan_status_fields)"; [ -n "$prog" ] || return 0
+  _plan_fields; prog="$PLAN_FIELDS"; [ -n "$prog" ] || return 0
   IFS= read -r line < "$f" 2>/dev/null || return 0
   case "$line" in *'"phase": "running"'*) ;; *) return 0 ;; esac
   pid="${line##*\"pid\": }"; pid="${pid%%\}*}"
   case "$pid" in '' | *[!0-9]*) return 0 ;; esac
   hd="${line%%, \"step\": *}"; [ "$hd" != "$line" ] || hd="${line%, \"pid\": *}"
   pre="${hd%%\"updated_at\": *}"; post="${hd#*\"updated_at\": }"; post="${post#*,}"
-  hd="${pre}\"updated_at\": $(date +%s),${post}"
-  tmp="$(mktemp "$d/.terminal-job.XXXXXX" 2>/dev/null)" || return 0
-  if printf '%s, %s, "pid": %s}\n' "$hd" "$prog" "$pid" > "$tmp" && chmod 644 "$tmp" && mv -f "$tmp" "$f"; then return 0; fi
+  _plan_now; hd="${pre}\"updated_at\": $PLAN_NOW,${post}"
+  # (twice a step: no mktemp or chmod, the file made readable for the portal by the umask of its own subshell)
+  tmp="$d/.terminal-job.$$.$RANDOM"
+  if ( umask 022; printf '%s, %s, "pid": %s}\n' "$hd" "$prog" "$pid" > "$tmp" ) 2>/dev/null && mv -f "$tmp" "$f"; then return 0; fi
   rm -f "$tmp" 2>/dev/null || true
   return 0
 }

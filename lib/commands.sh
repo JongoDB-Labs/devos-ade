@@ -2234,7 +2234,9 @@ cmd_update() {
     fi
   fi
   stack_lock update   # lib/lock.sh: one update/rollback/clean/restore/setup at a time (kept across the re-exec)
-  [ "$reexec" = 1 ] || plan_run_start   # lib/plan.sh: this run's plan and its steps so far (the re-exec goes on with them)
+  # lib/plan.sh: this run's plan and its steps so far. The re-exec goes on with them, unless the code it came from had no
+  # plan (the first update to this release): then the plan starts here, with the steps still to come.
+  [ "$reexec" = 1 ] && [ "${DEVOS_ADE_PLAN_RUN:-}" = 1 ] || plan_run_start
   ! declare -F xl_bg_stop >/dev/null || xl_bg_stop   # (lib/explabs.sh: a background read of the model details)
   [ "${ASSUME_YES:-0}" != 1 ] || yes=(--yes)
   if [ "$reexec" = 0 ] && update_unfinished; then
