@@ -206,6 +206,32 @@ test_update_job_status_carries_its_steps_and_only_its_own() {
   assert_contains "$(_status)" '"step": "", "step_started_at": null, "steps": []}'
 }
 
+# Home's progress bar (JON-978): the update job's status carries the plan, and a step the update left out says why
+test_update_job_status_carries_the_plan_and_the_reasons_for_skipped_steps() {
+  local s
+  _checkout; _req update
+  printf 'Backup\t4\nPostgres + RustFS\t100\nVoice\tskipped\n' > "$STACK_DIR/lib/update-steps.tsv"
+  helper_poll_once 2>/dev/null
+  s="$(_status)"
+  assert_contains "$s" '"steps": [{"label": "Postgres + RustFS", "took": "1m50s"}, {"label": "Terminal", "took": "3m11s"}], "plan": [{"label": "Backup", "secs": 4}, {"label": "Postgres + RustFS", "secs": 100}, {"label": "Voice", "secs": 0}]}'
+  printf '%s\n' "$s" | python3 -c 'import json,sys; json.load(sys.stdin)' || { echo "not JSON: $s" >&2; return 1; }
+  # this computer's last update comes before the shipped list
+  mkdir -p "$STATE_DIR/update"; printf 'Backup\t7\n' > "$STATE_DIR/update/last-steps.tsv"
+  _req update 0 fedcba9876543210fedcba9876543210; HELPER_MIN_INTERVAL_S=0 helper_poll_once 2>/dev/null
+  assert_contains "$(_status)" '"plan": [{"label": "Backup", "secs": 7}]}'
+  # another job has no plan
+  JOB_ID=other; JOB_ACTION=clean; helper_write_status cleaning "Removing old images"
+  assert_not_contains "$(_status)" '"plan"'
+}
+
+test_job_steps_keep_the_reason_a_step_was_not_run() {
+  JOB_ID=j9; JOB_STEPS_ID=''; JOB_STEPS_SIZE=''
+  printf '%s\n' '==> AWS key check: not run — the same AWS key and region were checked in the last 24 hours' '==> AWS key check ready (skipped)' \
+    '==> Images: starting…' '==> Images ready (1s)' '==> Voice: not run — the models found and the voice settings did not change' '==> Voice ready (skipped)' > "$TMP/log"
+  _job_steps "$TMP/log"
+  assert_eq "$JOB_STEPS_JSON" '[{"label": "AWS key check", "took": "skipped", "why": "the same AWS key and region were checked in the last 24 hours"}, {"label": "Images", "took": "1s"}, {"label": "Voice", "took": "skipped", "why": "the models found and the voice settings did not change"}]'
+}
+
 test_update_with_nothing_new_is_done_and_says_so() {
   # ./stack update exits 0 without a backup or setup when nothing is new: done, not failed, and not "Updated to"
   _checkout; _req update
@@ -681,7 +707,7 @@ test_job_steps_show_a_skipped_step_with_skipped_as_its_time() {
     '==> Prices: not run — the prices were checked in the last 12 hours and the portal image did not change' '==> Prices ready (skipped)' \
     '==> Services (8): starting…' > "$TMP/log"
   _job_steps "$TMP/log"
-  assert_eq "$JOB_STEPS_JSON" '[{"label": "Prices", "took": "skipped"}]'
+  assert_eq "$JOB_STEPS_JSON" '[{"label": "Prices", "took": "skipped", "why": "the prices were checked in the last 12 hours and the portal image did not change"}]'
   assert_eq "$JOB_STEP" "Services (8)"
   assert_eq "$(_phase_of "$TMP/log" | cut -f1)" "restarting"
 }

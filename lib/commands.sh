@@ -168,13 +168,13 @@ fmt_elapsed() { # fmt_elapsed SECONDS -> "16s" / "2m05s"
   local s="${1:-0}"
   if [ "$s" -lt 60 ]; then printf '%ss\n' "$s"; else printf '%dm%02ds\n' $((s / 60)) $((s % 60)); fi
 }
-phase_line() { [ -z "${_UPD_PROF:-}" ] || upd_prof_mark end "$1"; printf '%s ready (%s)\n' "$1" "$(fmt_elapsed "$2")"; }   # phase_line LABEL SECONDS
+phase_line() { [ -z "${_UPD_PROF:-}" ] || upd_prof_mark end "$1"; plan_step_end "$1" "$2"; printf '%s ready (%s)\n' "$1" "$(fmt_elapsed "$2")"; }   # phase_line LABEL SECONDS
 # helper_job — this command runs as a job of the update helper (Home's Update now, the nightly update): its log is what
 # Home's progress card reads (lib/helper.sh _job_steps)
 helper_job() { [ "${DEVOS_ADE_JOB_ORIGIN:-}" = helper ] && [ ! -t 2 ]; }
 # phase_start LABEL — in a helper job's log, "==> LABEL: starting…" before a phase whose "LABEL ready (…)" line follows:
 # Home shows the step that runs and for how long (a terminal shows it on its own line instead; run_phase)
-phase_start() { [ -z "${_UPD_PROF:-}" ] || upd_prof_mark begin "$1"; ! helper_job || is_verbose || log "$1: starting…"; }
+phase_start() { [ -z "${_UPD_PROF:-}" ] || upd_prof_mark begin "$1"; plan_step_begin "$1"; ! helper_job || is_verbose || log "$1: starting…"; }
 _now() { date +%s; }
 is_verbose() { [ "${DEVOS_ADE_VERBOSE:-0}" = 1 ]; }
 
@@ -2234,6 +2234,7 @@ cmd_update() {
     fi
   fi
   stack_lock update   # lib/lock.sh: one update/rollback/clean/restore/setup at a time (kept across the re-exec)
+  [ "$reexec" = 1 ] || plan_run_start   # lib/plan.sh: this run's plan and its steps so far (the re-exec goes on with them)
   ! declare -F xl_bg_stop >/dev/null || xl_bg_stop   # (lib/explabs.sh: a background read of the model details)
   [ "${ASSUME_YES:-0}" != 1 ] || yes=(--yes)
   if [ "$reexec" = 0 ] && update_unfinished; then
@@ -2327,6 +2328,7 @@ cmd_update() {
   if [ "$moved" != 1 ]; then
     migrate_update_finish   # lib/migrate.sh: a move made without a new version (./stack migrate --now, then this update) ends here too
     log "update: done (no new version; ./stack rollback still goes back to the version before the last real update)"
+    [ "$finishing" = 1 ] || plan_run_record   # (a finished update has not taken every step: it is no plan)
     offer_helper --after-update; return 0
   fi
   update_record_done
@@ -2336,6 +2338,7 @@ cmd_update() {
   [ -z "$from" ] || log "updated to $(installed_version). Something wrong? ./stack rollback goes back (code, data and images)"
   migrate_update_finish   # lib/migrate.sh: the end of the name change, if this update made it
   timed_step "What's new" update_whats_new "$from"
+  [ "$finishing" = 1 ] || plan_run_record   # lib/plan.sh: these steps and times are the next update's plan
   offer_helper --after-update   # lib/helper.sh: asks (default yes) unless declined before
 }
 # cmd_update's own steps, each timed as one
@@ -2518,6 +2521,8 @@ cmd_uninstall() {
 . "$STACK_DIR/lib/images.sh"
 # The core services' versions (./stack versions, status, Settings) and the digest check at the end of ./stack update.
 . "$STACK_DIR/lib/versions.sh"
+# The plan of an update (its steps and their usual times), for Home's progress bar and a terminal's.
+. "$STACK_DIR/lib/plan.sh"
 # The slow parts of setup and an update, side by side and timed: image downloads, builds, the sandboxes' images.
 . "$STACK_DIR/lib/steps.sh"
 # The next release prepared ahead of Update now: built as <project>-prep, its images downloaded (JON-972 phase B).

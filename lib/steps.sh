@@ -544,7 +544,7 @@ upd_gate() {
   name="$1"; label="$2"; why="$3"; shift 3
   UPD_SKIPPED=0
   if upd_same "$name"; then
-    log "$label: not run — $why"; log "$label ready (skipped)"
+    log "$label: not run — $why"; plan_step_end "$label" skipped "$why"; log "$label ready (skipped)"
     upd_note "$name" "$UPD_H"; UPD_SKIPPED=1; return 0
   fi
   if [ "$self" = 1 ]; then "$@"; rc=$?; else timed_step "$label" "$@"; rc=$?; fi

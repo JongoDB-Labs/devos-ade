@@ -621,14 +621,15 @@ helper_write_status() {
   d="$(status_dir)"; f="$(helper_status_file)"; mkdir -p "$d" 2>/dev/null || true
   tmp="$(mktemp "$d/.helper-status.XXXXXX" 2>/dev/null)" || { printf '%s could not write %s\n' "$(date '+%F %T')" "$f" >&2; return 0; }
   # (the steps of this job only: _job_steps read them from its own log)
-  local step='' step_at=null steps='[]'
+  local step='' step_at=null steps='[]' plan=''
+  [ "$JOB_ACTION" != update ] || [ -z "${JOB_PLAN_JSON:-}" ] || plan=", \"plan\": $JOB_PLAN_JSON"
   if [ -n "$JOB_ID" ] && [ "${JOB_STEPS_ID:-}" = "$JOB_ID" ]; then
     step="$JOB_STEP"; step_at="${JOB_STEP_AT:-null}"; steps="${JOB_STEPS_JSON:-[]}"
   fi
-  if printf '{"id": "%s", "action": "%s", "phase": "%s", "message": "%s", "started_at": %s, "updated_at": %s, "finished_at": %s, "freed_bytes": %s, "version": "%s", "trigger": "%s", "step": "%s", "step_started_at": %s, "steps": %s}\n' \
+  if printf '{"id": "%s", "action": "%s", "phase": "%s", "message": "%s", "started_at": %s, "updated_at": %s, "finished_at": %s, "freed_bytes": %s, "version": "%s", "trigger": "%s", "step": "%s", "step_started_at": %s, "steps": %s%s}\n' \
     "$(_json_str "$JOB_ID")" "$(_json_str "$JOB_ACTION")" "$(_json_str "$1")" "$(_json_str "$2")" "${JOB_STARTED:-null}" "$(date +%s)" \
     "${JOB_FINISHED:-null}" "${JOB_FREED:-null}" "$(_json_str "$JOB_VERSION")" "$(_json_str "${JOB_TRIGGER:-request}")" \
-    "$(_json_str "$step")" "$step_at" "$steps" > "$tmp" &&
+    "$(_json_str "$step")" "$step_at" "$steps" "$plan" > "$tmp" &&
     chmod 644 "$tmp" && mv "$tmp" "$f"; then
     case "$1" in done | failed | skipped) _helper_keep_finished "$f" ;; esac
     return 0
@@ -812,10 +813,12 @@ _job_unstamp() {
 #   JOB_STEPS_JSON  the phases ready so far, in order: [{"label": "Postgres + RustFS", "took": "1m50s"}, …] (at most
 #                   JOB_STEPS_MAX)
 #   JOB_STEP_AT     when JOB_STEP was first seen (the poll's clock; empty with no step)
+#   JOB_PLAN_JSON   an update's plan, [{"label", "secs"}] (lib/plan.sh): what Home's bar measures the steps against
+# A step the update left out: {"label": …, "took": "skipped", "why": "no setting changed since the last setup"}.
 # Read again only when the log has grown. Labels and times as JSON-safe text. Its lines with or without _job_stamp's time.
-JOB_STEP=''; JOB_STEP_AT=''; JOB_STEPS_JSON='[]'; JOB_STEPS_ID=''; JOB_STEPS_SIZE=''; JOB_STEPS_MAX=80
+JOB_STEP=''; JOB_STEP_AT=''; JOB_STEPS_JSON='[]'; JOB_PLAN_JSON=''; JOB_STEPS_ID=''; JOB_STEPS_SIZE=''; JOB_STEPS_MAX=80
 _job_steps() {
-  local size line label took cur='' arr='' n=0 UNSTAMPED
+  local size line label took why cur='' arr='' n=0 UNSTAMPED skip_label='' skip_why=''
   size="$(wc -c < "$1" 2>/dev/null | tr -d ' ')"
   [ "$JOB_STEPS_ID" != "$JOB_ID" ] || [ "$size" != "$JOB_STEPS_SIZE" ] || return 0
   [ "$JOB_STEPS_ID" = "$JOB_ID" ] || { JOB_STEP=''; JOB_STEP_AT=''; }
@@ -825,10 +828,12 @@ _job_steps() {
     case "$line" in
       '==> '*': starting…') cur="${line#==> }"; cur="${cur%: starting…}" ;;
       '==> doing: '*) cur="${line#==> doing: }" ;;
+      '==> '*': not run — '*) skip_label="${line#==> }"; skip_label="${skip_label%%: not run — *}"; skip_why="${line#*: not run — }" ;;   # (a skipped step's reason: its "ready (skipped)" line follows)
       '==> '*' ready ('*')')
         label="${line#==> }"; took="${label##* ready (}"; took="${took%)}"; label="${label% ready (*}"
+        why=''; [ "$took" != skipped ] || [ "$label" != "$skip_label" ] || why=", \"why\": \"$(_json_str "$skip_why")\""
         if [ "$n" -lt "$JOB_STEPS_MAX" ]; then
-          arr="$arr${arr:+, }{\"label\": \"$(_json_str "$label")\", \"took\": \"$(_json_str "$took")\"}"; n=$((n + 1))
+          arr="$arr${arr:+, }{\"label\": \"$(_json_str "$label")\", \"took\": \"$(_json_str "$took")\"$why}"; n=$((n + 1))
         fi
         [ "$cur" != "$label" ] || cur='' ;;
     esac
@@ -901,6 +906,9 @@ helper_run_job() {
   _prepare_stop       # (a prepare in the background ends first: the job's own steps prepare what is left)
   JOB_ID="$2"; JOB_ACTION="$action"; JOB_TRIGGER="${3:-}"; JOB_STARTED="$(date +%s)"; JOB_FINISHED=''; JOB_FREED=''; JOB_VERSION=''
   JOB_RESULT=''; JOB_MESSAGE=''
+  # an update's plan (lib/plan.sh): the steps the last one took and their seconds, for Home's bar; fixed for this job
+  JOB_PLAN_JSON=''; [ "$action" != update ] || ! declare -F plan_json >/dev/null || JOB_PLAN_JSON="$(plan_json 2>/dev/null || true)"
+  [ "$JOB_PLAN_JSON" != '[]' ] || JOB_PLAN_JSON=''   # (no plan: the status has none)
   why="$(_job_refusal "$action")"
   # from here on it counts as tried: an automatic update whose record cannot be written does not start at all
   if [ -z "$why" ] && [ "$JOB_TRIGGER" = auto ] && ! _auto_record "$JOB_TARGET" running; then

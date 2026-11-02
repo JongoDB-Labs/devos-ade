@@ -89,6 +89,8 @@ stack_lock_ours() { _shell_level; [ "${_LOCK_LEVEL:-x}" = "$_LEVEL" ] && [ "$(he
 # .state/status/terminal-job.json (read-only in the portal, like the helper's helper-status.json):
 #   {"id", "action": the lock's WHAT, "command": "code enable" (the command and its first word; never a value),
 #    "phase": running | done | failed, "message", "started_at", "updated_at", "finished_at", "version", "pid"}
+# An update also has "step", "step_started_at", "steps" (the helper's shape) and "plan" before "pid" (lib/plan.sh): what runs,
+# what is done, and the steps and seconds the last update took, for Home's progress bar. "pid" stays last (the sweep reads it).
 # Only commands that change the stack, and only when you ran them: the update helper's jobs (DEVOS_ADE_JOB_ORIGIN=
 # helper, or any ./stack command started while its status shows a job: an older helper does not say so) report in
 # helper-status.json. A record still "running" whose pid is gone was stopped hard: the helper marks it (_terminal_job_sweep).
@@ -105,13 +107,37 @@ _terminal_job_wanted() {
 
 # _terminal_job_write PHASE MESSAGE — atomic; never fatal
 _terminal_job_write() {
-  local d f tmp now fin=null
+  local d f tmp now fin=null prog=''
   d="$STATE_DIR/status"; f="$(terminal_job_file)"; now="$(date +%s)"
+  ! declare -F plan_status_fields >/dev/null || prog="$(plan_status_fields)"
+  [ -z "$prog" ] || prog=", $prog"
   case "$1" in done | failed) fin="$now" ;; esac
   tmp="$(mktemp "$d/.terminal-job.XXXXXX" 2>/dev/null)" || return 0
-  if printf '{"id": "t-%s-%s", "action": "%s", "command": "%s", "phase": "%s", "message": "%s", "started_at": %s, "updated_at": %s, "finished_at": %s, "version": "%s", "pid": %s}\n' \
+  if printf '{"id": "t-%s-%s", "action": "%s", "command": "%s", "phase": "%s", "message": "%s", "started_at": %s, "updated_at": %s, "finished_at": %s, "version": "%s"%s, "pid": %s}\n' \
        "$DEVOS_ADE_JOB_STARTED" "$$" "$TERMINAL_JOB" "$(_terminal_job_cmd)" "$1" "$(_job_json_str "$2")" "$DEVOS_ADE_JOB_STARTED" \
-       "$now" "$fin" "$(_job_json_str "${3:-}")" "$$" > "$tmp" && chmod 644 "$tmp" && mv -f "$tmp" "$f"; then return 0; fi
+       "$now" "$fin" "$(_job_json_str "${3:-}")" "$prog" "$$" > "$tmp" && chmod 644 "$tmp" && mv -f "$tmp" "$f"; then return 0; fi
+  rm -f "$tmp" 2>/dev/null || true
+  return 0
+}
+
+# _terminal_job_progress — the record of a running update gets its steps now (lib/plan.sh calls this after each step): the
+# line as it is, with the step fields of plan_status_fields in place of the ones before. Also from setup, which ./stack update
+# runs as a process of its own (DEVOS_ADE_TERMINAL_JOB says the record is its parent's): one atomic write, never fatal.
+_terminal_job_progress() {
+  local d f line hd pre post pid tmp prog
+  [ -n "${TERMINAL_JOB:-}${DEVOS_ADE_TERMINAL_JOB:-}" ] || return 0
+  d="$STATE_DIR/status"; f="$(terminal_job_file)"
+  [ -f "$f" ] || return 0
+  prog="$(plan_status_fields)"; [ -n "$prog" ] || return 0
+  IFS= read -r line < "$f" 2>/dev/null || return 0
+  case "$line" in *'"phase": "running"'*) ;; *) return 0 ;; esac
+  pid="${line##*\"pid\": }"; pid="${pid%%\}*}"
+  case "$pid" in '' | *[!0-9]*) return 0 ;; esac
+  hd="${line%%, \"step\": *}"; [ "$hd" != "$line" ] || hd="${line%, \"pid\": *}"
+  pre="${hd%%\"updated_at\": *}"; post="${hd#*\"updated_at\": }"; post="${post#*,}"
+  hd="${pre}\"updated_at\": $(date +%s),${post}"
+  tmp="$(mktemp "$d/.terminal-job.XXXXXX" 2>/dev/null)" || return 0
+  if printf '%s, %s, "pid": %s}\n' "$hd" "$prog" "$pid" > "$tmp" && chmod 644 "$tmp" && mv -f "$tmp" "$f"; then return 0; fi
   rm -f "$tmp" 2>/dev/null || true
   return 0
 }
@@ -137,7 +163,7 @@ _terminal_job_cmd() {
 _terminal_job_start() {
   TERMINAL_JOB=''
   _terminal_job_wanted "$1" || return 0
-  TERMINAL_JOB="$1"
+  TERMINAL_JOB="$1"; export DEVOS_ADE_TERMINAL_JOB="$1"   # (the processes it starts add their steps to the record: _terminal_job_progress)
   case "${DEVOS_ADE_JOB_STARTED:-}" in '' | *[!0-9]*) DEVOS_ADE_JOB_STARTED='' ;; esac
   if [ "${2:-}" != --continued ] || [ -z "$DEVOS_ADE_JOB_STARTED" ]; then
     DEVOS_ADE_JOB_STARTED="$(date +%s)"; DEVOS_ADE_JOB_FROM="$(installed_version 2>/dev/null || true)"

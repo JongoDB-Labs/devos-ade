@@ -1,0 +1,24 @@
+# The steps of a nothing-changed ./stack update of v0.49.0 and the seconds each took, measured on the Linux test host: the plan of the
+# first update on a computer that has not recorded one of its own (lib/plan.sh). LABEL <TAB> SECONDS, or the word skipped for a step
+# the update left out. A label stands without its trailing parenthesised part ("Services (9)" is "Services").
+Backup	4
+New code	0
+AWS key check	skipped
+Ports and settings in .env	skipped
+Images	1
+Prices	skipped
+LiteLLM config	skipped
+Image downloads	1
+Open WebUI image	1
+Default models	skipped
+Services	6
+LiteLLM keys, Admin sign-in	skipped
+Voice	skipped
+Web search	skipped
+Local git server	skipped
+Terminal	4
+Code page	3
+Chat's sandbox	3
+Open WebUI with your subscriptions	3
+Smoke test	skipped
+Finishing	3

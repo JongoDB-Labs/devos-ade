@@ -101,7 +101,7 @@ off_exit() {
   [ "$_EXIT_HOOKS" != ' ' ] || trap - EXIT
 }
 
-log()  { printf '%s==>%s %s\n' "$C_GRN" "$C_OFF" "$*" >&2; }
+log()  { printf '%s==>%s %s\n' "$C_GRN" "$C_OFF" "$*" >&2; case "$*" in *' ready ('*')') ! declare -F plan_bar >/dev/null || plan_bar ;; esac; }   # (a finished step of an update: its bar on a terminal, lib/plan.sh)
 warn() { printf '%s!!%s  %s\n' "$C_YEL" "$C_OFF" "$*" >&2; }
 # test_url_ignored NAME WHAT — a test suite's address (DEVOS_ADE_TEST_OPENROUTER_API, DEVOS_ADE_TEST_STT_API,
 # DEVOS_ADE_TEST_EXPLABS_API) found without DEVOS_ADE_TESTING=1: not used, and said (lib/openrouter.sh, lib/stt.sh,
