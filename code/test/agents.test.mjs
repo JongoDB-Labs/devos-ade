@@ -9,7 +9,7 @@ import path from 'node:path';
 import { AcpAgent, NotSignedIn, UnsafeMode } from '../server/agents/acp.mjs';
 import { CodexAgent, rateLimits } from '../server/agents/codex.mjs';
 import { acpCall, parseDiff, callId, codexPlan } from '../server/agents/map.mjs';
-import { toolOfChatModel, chatModelId, harnessOk } from '../server/agents/tools.mjs';
+import { toolOfChatModel, chatModelId, parseChatModel, encodeModelId, decodeModelId, harnessOk } from '../server/agents/tools.mjs';
 
 import { fakeProc } from './fake-agent-proc.mjs';
 
@@ -432,5 +432,21 @@ test('the page\'s card names and inputs; diffs; ids; plans; limits; the harness 
   assert.equal(toolOfChatModel(chatModelId('codex')), 'codex');
   assert.equal(toolOfChatModel('plan-gemini'), null);
   assert.equal(toolOfChatModel('plan-codex2'), null);
+  // plan-<tool>--<model>: the model in the characters ids may carry, any other as ~hh; read back only as spelled here
+  assert.equal(chatModelId('codex', 'gpt-5.1-codex-max'), 'plan-codex--gpt-5.1-codex-max');
+  assert.equal(chatModelId('claude', 'sonnet[1m]'), 'plan-claude--sonnet~5b1m~5d');
+  assert.equal(chatModelId('copilot', 'a/b~c'), 'plan-copilot--a~2fb~7ec');
+  assert.deepEqual(parseChatModel('plan-claude--sonnet~5b1m~5d'), { tool: 'claude', model: 'sonnet[1m]' });
+  assert.deepEqual(parseChatModel('plan-copilot--a~2fb~7ec'), { tool: 'copilot', model: 'a/b~c' });
+  assert.deepEqual(parseChatModel('plan-grok--grok-code-fast-1'), { tool: 'grok', model: 'grok-code-fast-1' });
+  assert.deepEqual(parseChatModel('plan-codex'), { tool: 'codex', model: null });
+  assert.equal(toolOfChatModel('plan-codex--gpt-x'), 'codex');
+  for (const m of ['x[y]', 'a/b', 'a~b', 'a--b', '~', '!']) assert.equal(decodeModelId(encodeModelId(m)), m);
+  assert.equal(encodeModelId('a b'), null);   // (a space is no part of an id)
+  assert.equal(encodeModelId('é'), null);
+  assert.equal(encodeModelId('a'.repeat(201)), null);
+  for (const bad of ['plan-codex--', 'plan-codex--a~5B', 'plan-codex--a~5', 'plan-codex--a~zz', 'plan-codex--a/b', 'plan-codex--%41', 'plan-codex--~41', 'plan-gemini--x', 'plan-cursor--x', 'plan--x', 'plan-codex--x\n', 42, null]) {
+    assert.equal(parseChatModel(bad), null, String(bad));
+  }
   assert.ok(harnessOk('bedrock') && harnessOk('claude') && !harnessOk('gemini'));
 });

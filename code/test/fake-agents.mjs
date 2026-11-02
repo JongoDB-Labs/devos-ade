@@ -16,6 +16,8 @@ const sessions = new Map();   // ACP: sessionId -> {cwd, history: [text]}
 const cancelled = new Set();  // ACP: sessions told to stop their turn; Codex: turns interrupted
 // what a tool of the agent's would do when nobody stops it in time: FAKE_MARK gets a line (the tests look for none)
 const ran = (what) => { if (process.env.FAKE_MARK) fs.appendFileSync(process.env.FAKE_MARK, `${what}\n`); };
+// what the client asked that is no tool's doing: FAKE_SEEN gets a line (the model a turn runs with)
+const seen = (what) => { if (process.env.FAKE_SEEN) fs.appendFileSync(process.env.FAKE_SEEN, `${what}\n`); };
 // waitStop(key) -> true when the client stopped it within 400 ms (what a tool's own start-up takes, at least)
 const waitStop = async (key) => { for (let i = 0; i < 40; i++) { if (cancelled.has(key)) return true; await new Promise((r) => setTimeout(r, 10)); } return false; };
 // its modes: Copilot's ids (the protocol's), else Cursor's — and one that approves by itself
@@ -93,7 +95,7 @@ async function acp(m) {
       log(`set_config_option ${m.params.configId}=${m.params.value}`);
       if (m.params.configId === 'mode') configMode = m.params.value; else if (m.params.configId === 'permission') perm = m.params.value;
       return { result: { configOptions: configOptions() } };
-    case 'session/set_model': return { result: {} };
+    case 'session/set_model': seen(`acp set_model ${m.params.modelId}`); return { result: {} };
     case 'session/cancel': cancelled.add(m.params.sessionId); return undefined;
     case 'session/prompt': {
       const sid = m.params.sessionId;
@@ -169,6 +171,7 @@ async function codex(m) {
     case 'turn/start': {
       const tid = 'turn-1';
       const text = (p.input || []).find((x) => x.type === 'text')?.text || '';
+      seen(`codex turn model ${p.model}`);
       log(`turn/start ${JSON.stringify({ approvalPolicy: p.approvalPolicy, sandboxPolicy: p.sandboxPolicy ?? null })}`);
       cancelled.delete(tid);
       setTimeout(async () => {

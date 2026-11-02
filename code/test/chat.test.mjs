@@ -10,6 +10,7 @@ import path from 'node:path';
 import { createChatServer, ChatStore, readMessages, convKey, firstPrompt, EGRESS_OFF } from '../server/chat.mjs';
 import { defang, defangMentions, quoted, quoteTag, QUOTE_HEAD, QUOTE_TAG } from '../server/agents/quote.mjs';
 import { fakeProc } from './fake-agent-proc.mjs';
+import { fakeQuery } from './fake-sdk.mjs';
 
 const KEY = 'ab'.repeat(16);
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bn-chat-'));
@@ -21,7 +22,7 @@ const ALL = { claude: { installed: true, signed: 'yes' }, codex: { installed: tr
 function server(opts = {}) {
   const s = createChatServer({ key: KEY, status: statusOf(opts.tools ?? ALL), planAllowed: opts.plan === true, egressOff: opts.egressOff === true,
     store: new ChatStore({ file: path.join(dir, `c-${Math.random()}.json`) }),
-    spawnAgent: (o) => { spawned.push(o); return fakeProc(o.tool === 'codex' ? 'codex' : 'acp', opts.scenario ?? 'ok', o.tool); },
+    spawnAgent: opts.spawnAgent ?? ((o) => { spawned.push(o); return fakeProc(o.tool === 'codex' ? 'codex' : 'acp', opts.scenario ?? 'ok', o.tool); }),
     query: opts.query ?? (() => { throw new Error('no SDK here'); }), spawn: () => null });
   return new Promise((resolve) => s.listen(0, '127.0.0.1', () => resolve({ s, url: `http://127.0.0.1:${s.address().port}` })));
 }
@@ -33,17 +34,110 @@ async function streamed(res) {
     reasoning: chunks.map((c) => c.choices?.[0]?.delta?.reasoning_content ?? '').join(''), usage: chunks.at(-1)?.usage, error: chunks.find((c) => c.error)?.error };
 }
 
-test('its key only; the models: the subscriptions signed in now, Claude only with the switch', async () => {
+test('its key only; the models: the subscriptions signed in now, Claude only with the switch; each with the models its tool offers', async () => {
   const { s, url } = await server();
   try {
     assert.equal((await call(url, '/v1/models', null, null)).status, 401);
     assert.equal((await call(url, '/v1/models', null, 'cd'.repeat(16))).status, 401);
     const m = await (await call(url, '/v1/models')).json();
-    assert.deepEqual(m.data.map((x) => x.id), ['plan-codex', 'plan-copilot']);
+    // (Codex's model/list without its hidden model; the models Copilot's session reports: the default of each first)
+    assert.deepEqual(m.data.map((x) => x.id), ['plan-codex', 'plan-codex--gpt-x', 'plan-copilot', 'plan-copilot--fast-1', 'plan-copilot--smart-2']);
     assert.equal(m.data[0].name, 'Codex · your ChatGPT plan');
+    assert.equal(m.data[1].name, 'Codex · GPT X');
+    assert.equal(m.data[4].name, 'GitHub Copilot · Smart');
   } finally { s.closeAgents(); s.close(); }
-  const p = await server({ plan: true });
-  try { assert.deepEqual((await (await call(p.url, '/v1/models')).json()).data.map((x) => x.id), ['plan-claude', 'plan-codex', 'plan-copilot']); } finally { p.s.close(); }
+  const p = await server({ plan: true, query: fakeQuery() });
+  try {
+    // (Claude Code's supportedModels(): the fake offers one, haiku)
+    assert.deepEqual((await (await call(p.url, '/v1/models')).json()).data.map((x) => x.id),
+      ['plan-claude', 'plan-claude--haiku', 'plan-codex', 'plan-codex--gpt-x', 'plan-copilot', 'plan-copilot--fast-1', 'plan-copilot--smart-2']);
+  } finally { p.s.closeAgents(); p.s.close(); }
+});
+
+test('the lists are read once and kept (Open WebUI asks /models often); a read that fails keeps the defaults, and Claude\'s aliases', async () => {
+  let n = 0;
+  const { s, url } = await server({ plan: true, spawnAgent: () => { n++; throw new Error('no sandbox'); }, query: () => { n++; throw new Error('no claude'); } });
+  try {
+    const ids = async () => (await (await call(url, '/v1/models')).json()).data.map((x) => x.id);
+    const want = ['plan-claude', 'plan-claude--opus', 'plan-claude--sonnet', 'plan-claude--haiku', 'plan-codex', 'plan-copilot'];
+    assert.deepEqual(await ids(), want);
+    const first = n;
+    assert.equal(first, 3);
+    assert.deepEqual(await ids(), want);
+    assert.equal(n, first);   // (the failed read is not tried again at once)
+  } finally { s.close(); }
+  const k = await server({ query: fakeQuery() });
+  try {
+    spawned.length = 0;
+    for (let i = 0; i < 3; i++) await call(k.url, '/v1/models');
+    assert.deepEqual(spawned.map((o) => o.tool).sort(), ['codex', 'copilot']);   // (one read of each, three asks)
+    assert.ok(spawned.every((o) => o.mode === 'chat' && /^0{32}$/.test(o.chat)));
+  } finally { k.s.closeAgents(); k.s.close(); }
+});
+
+test('a model of the list is set before the prompt; plan-<tool> asks for the tool\'s own default again', async () => {
+  const seenFile = path.join(dir, `seen-${Math.random()}`);
+  process.env.FAKE_SEEN = seenFile;
+  const { s, url } = await server();
+  const ask = async (model, messages) => (await (await call(url, '/v1/chat/completions', { model, messages })).json());
+  const seenNow = () => (fs.existsSync(seenFile) ? fs.readFileSync(seenFile, 'utf8').trim().split('\n') : []);
+  try {
+    let j = await ask('plan-copilot--smart-2', [{ role: 'user', content: 'one' }]);
+    assert.equal(j.choices[0].message.content, 'Hello you said: one');
+    assert.deepEqual(seenNow(), ['acp set_model smart-2']);
+    // the same chat on the default: the agent running is set back (fast-1 is what its session started with)
+    j = await ask('plan-copilot', [{ role: 'user', content: 'one' }, { role: 'assistant', content: j.choices[0].message.content }, { role: 'user', content: 'two' }]);
+    assert.equal(j.choices[0].message.content, 'Hello you said: two');
+    assert.deepEqual(seenNow(), ['acp set_model smart-2', 'acp set_model fast-1']);
+    // Codex takes the model with its next turn: gpt-x is what its thread started with, so a turn on the default says it too
+    fs.rmSync(seenFile, { force: true });
+    await ask('plan-codex--gpt-x', [{ role: 'user', content: 'c1' }]);
+    await ask('plan-codex', [{ role: 'user', content: 'c2' }]);
+    assert.deepEqual(seenNow(), ['codex turn model gpt-x', 'codex turn model gpt-x']);
+  } finally { delete process.env.FAKE_SEEN; s.closeAgents(); s.close(); }
+});
+
+test('a Claude model of the list is the Agent SDK\'s model option', async () => {
+  const seen = [];
+  const q = fakeQuery();
+  const query = (a) => { seen.push(a.options); return q(a); };
+  const { s, url } = await server({ plan: true, query });
+  try {
+    await call(url, '/v1/models');   // (the read of the list: a process of its own, in the list\'s folder)
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0].model, undefined);
+    assert.deepEqual(seen[0].tools, []);
+    const r = await call(url, '/v1/chat/completions', { model: 'plan-claude--haiku', messages: [{ role: 'user', content: 'hi' }] });
+    assert.equal(r.status, 200);
+    assert.equal(seen[1].model, 'haiku');
+    assert.notEqual(seen[1].cwd, seen[0].cwd);
+    await call(url, '/v1/chat/completions', { model: 'plan-claude', messages: [{ role: 'user', content: 'hi again' }] });
+    assert.equal(seen[2].model, undefined);   // (the plan\'s own default)
+  } finally { s.closeAgents(); s.close(); }
+});
+
+test('a model id that is not one the tool offers now, or not spelled as we spell them, is refused and says what is offered', async () => {
+  const { s, url } = await server();
+  try {
+    const err = async (model, code, re) => {
+      const res = await call(url, '/v1/chat/completions', { model, messages: [{ role: 'user', content: 'x' }] });
+      assert.equal(res.status, code, model);
+      assert.match((await res.json()).error.message, re, model);
+    };
+    await err('plan-codex--gpt-nope', 404, /Codex does not offer the model gpt-nope on your plan now \(it offers: gpt-x\): choose another from the list, or plan-codex for its default/);
+    await err('plan-copilot--hidden-1', 404, /Copilot does not offer the model hidden-1 .*fast-1, smart-2/);
+    // (not our spelling: nothing is asked of any tool)
+    spawned.length = 0;
+    for (const bad of ['plan-codex--', 'plan-codex--gpt x', 'plan-codex--gpt-x~', 'plan-codex--a~4', 'plan-codex--a~4A', 'plan-codex--%67pt-x', 'plan-codex--~67pt-x',
+      'plan-codex-gpt-x', 'plan-gemini--x', 'plan-cursor--x', `plan-codex--${'a'.repeat(601)}`]) await err(bad, 404, /no such model here/);
+    assert.equal(spawned.length, 0);
+    // (a tool that is not signed in: said before anything about its models)
+    const o = await server({ tools: { ...ALL, codex: { installed: true, signed: 'no' } } });
+    try {
+      const res = await call(o.url, '/v1/chat/completions', { model: 'plan-codex--gpt-x', messages: [{ role: 'user', content: 'x' }] });
+      assert.equal(res.status, 409);
+    } finally { o.s.close(); }
+  } finally { s.closeAgents(); s.close(); }
 });
 
 test('an answer streamed from the agent; the next turn of that chat is the same session; a regenerate starts anew with its preface', async () => {

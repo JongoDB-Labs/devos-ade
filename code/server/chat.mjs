@@ -22,7 +22,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { HARNESSES, chatModelId, toolOfChatModel } from './agents/tools.mjs';
+import { HARNESSES, CLAUDE_PLAN_FALLBACK, chatModelId, encodeModelId, parseChatModel } from './agents/tools.mjs';
 import { AcpAgent, NotSignedIn, UnsafeMode } from './agents/acp.mjs';
 import { CodexAgent } from './agents/codex.mjs';
 import { said } from './agents/jsonrpc.mjs';
@@ -40,6 +40,10 @@ const MAX_IMAGES = 4, MAX_IMAGE_BYTES = 5 << 20;
 const IDLE_MS = 10 * 60000;          // an agent kept for the next turn of its conversation this long
 const KEEP_RUNNING = 4;              // agents kept at once (each a process in the sandbox)
 const MAX_RECORDS = 500;
+const LIST_TTL = 10 * 60000;         // a subscription's list of models is read again after this long (Open WebUI asks /models often)
+const LIST_RETRY = 30000;            // ... or this long after a read that failed (the last good list stays meanwhile)
+const LIST_TIMEOUT = 30000;          // one read: an agent started, asked, and stopped
+const LIST_FOLDER = '0'.repeat(32);  // the folder those agents start in (no conversation's: an empty folder, as theirs are)
 // What Claude is told in a Chat conversation (its own system prompt, recorded with the conversation)
 export const CHAT_SYSTEM = 'You are Claude, made by Anthropic, answering in a chat app (Open WebUI) on the user\'s own Claude plan. Reply to the conversation in Markdown. You have no tools, files or web access here.';
 
@@ -163,19 +167,67 @@ export function createChatServer({ key, status, planAllowed = false, egressOff =
   };
   const fail = (res, code, message) => send(res, code, { error: { message, type: code >= 500 ? 'server_error' : 'invalid_request_error' } });
 
+  // the agent of a conversation (or of a read of the models: no events): Codex's app server or an ACP agent
+  const newAgent = (tool, folder, onEvent) => {
+    const proc = spawnAgent({ tool, mode: 'chat', chat: folder }, { onStderr: (s) => log(`chat ${tool} stderr: ${said(s, 200)}`) });
+    const opts = { tool, chat: true, clientVersion, log: (m) => log(`chat ${tool}: ${m}`), onEvent };
+    return HARNESSES[tool].kind === 'codex' ? new CodexAgent(proc, opts) : new AcpAgent(proc, opts);
+  };
+
+  // The models a subscription offers, read from the tool itself as the Code page reads them: Codex's model/list, the
+  // models an ACP agent reports for a new session, Claude Code's supportedModels() -> [{id, name}]
+  async function readModels(tool) {
+    if (tool === 'claude') {
+      const ac = new AbortController();
+      const q = query({ prompt: (async function* idle() { await new Promise((r) => ac.signal.addEventListener('abort', r, { once: true })); })(),
+        options: claudeOptions(LIST_FOLDER, ac) });
+      const timer = setTimeout(() => ac.abort(), LIST_TIMEOUT);
+      try {
+        const list = await q.supportedModels();
+        // ('default' is plan-claude itself)
+        return (Array.isArray(list) ? list : []).map(obj).filter((m) => m.value !== 'default' && encodeable(m.value))
+          .slice(0, 100).map((m) => ({ id: m.value, name: said(m.displayName || m.value, 120) }));
+      } finally { clearTimeout(timer); ac.abort(); try { q.close?.(); } catch { /* gone */ } }
+    }
+    const agent = newAgent(tool, LIST_FOLDER, () => {});
+    const timer = setTimeout(() => agent.close(), LIST_TIMEOUT);
+    try {
+      await agent.init();
+      await agent.open({ cwd: `${sandboxChatDir}/${LIST_FOLDER}` });
+      return agent.models.filter((m) => encodeable(m.id)).map((m) => ({ id: m.id, name: m.name }));
+    } finally { clearTimeout(timer); agent.close(); }
+  }
+  const encodeable = (m) => encodeModelId(m) !== null;
+  const lists = new Map();   // tool -> {at, ok, models, p (a read in flight)}
+  // planModels(tool) -> [{id, name}]: the list kept LIST_TTL (a read that failed: LIST_RETRY, the last good list or
+  // Claude's aliases or none meanwhile — the tool's default, plan-<tool>, is always there); one read at a time per tool
+  function planModels(tool) {
+    const c = lists.get(tool);
+    if (c?.p) return c.p;
+    if (c && Date.now() - c.at < (c.ok ? LIST_TTL : LIST_RETRY)) return Promise.resolve(c.models);
+    const kept = c?.models ?? (tool === 'claude' ? CLAUDE_PLAN_FALLBACK : []);
+    const p = readModels(tool).then((models) => ({ at: Date.now(), ok: true, models }), (e) => {
+      log(`chat ${tool}: no list of models (${said(e?.message || String(e), 200)})`);
+      return { at: Date.now(), ok: false, models: kept };
+    }).then((r) => { lists.set(tool, r); return r.models; });
+    lists.set(tool, { at: c?.at ?? 0, ok: c?.ok ?? false, models: kept, p });
+    return p;
+  }
+
   // which models Open WebUI lists: the subscriptions whose tool is here and says it is signed in (Copilot cannot say:
-  // listed while it is there); Claude only while Settings' switch is on
+  // listed while it is there); Claude only while Settings' switch is on. Each is there as its default (plan-<tool>) and
+  // once for every model it offers (plan-<tool>--<model>: agents/tools.mjs), as many as its own picker in the Terminal
   async function models() {
     if (egressOff) return [];
     const st = await status();
-    const out = [];
-    for (const h of Object.values(HARNESSES)) {
+    const here = Object.values(HARNESSES).filter((h) => {
       const t = st?.tools?.[h.id];
-      if (h.noChat || !t?.installed || t.signed === 'no') continue;
-      if (h.id === 'claude' && (planAllowed !== true || t.signed !== 'yes')) continue;
-      out.push({ id: chatModelId(h.id), object: 'model', created: 0, owned_by: h.plan, name: `${h.name} · ${h.plan}` });
-    }
-    return out;
+      if (h.noChat || !t?.installed || t.signed === 'no') return false;
+      return !(h.id === 'claude' && (planAllowed !== true || t.signed !== 'yes'));
+    });
+    const offered = await Promise.all(here.map((h) => planModels(h.id)));
+    return here.flatMap((h, i) => [{ id: chatModelId(h.id), object: 'model', created: 0, owned_by: h.plan, name: `${h.name} · ${h.plan}` },
+      ...offered[i].map((m) => ({ id: chatModelId(h.id, m.id), object: 'model', created: 0, owned_by: h.plan, name: `${h.name} · ${m.name}` }))]);
   }
 
   function release(folder) {
@@ -200,21 +252,20 @@ export function createChatServer({ key, status, planAllowed = false, egressOff =
   }
 
   // one turn with an ACP or Codex agent: kept running for the conversation's next turn
-  async function agentTurn({ tool, folder, ref, text, images, out, signal }) {
+  async function agentTurn({ tool, folder, ref, model, text, images, out, signal }) {
     let r = running.get(folder);
     if (r?.busy) throw Object.assign(new Error('this conversation is still answering its last message'), { status: 409 });
     if (!r) {
       if (!room()) throw Object.assign(new Error('too many conversations with your subscriptions are answering at once: try again in a moment'), { status: 503 });
-      const proc = spawnAgent({ tool, mode: 'chat', chat: folder }, { onStderr: (s) => log(`chat ${tool} stderr: ${said(s, 200)}`) });
-      const opts = { tool, chat: true, clientVersion, log: (m) => log(`chat ${tool}: ${m}`), onEvent: (ev) => r?.onEvent?.(ev) };
-      const agent = HARNESSES[tool].kind === 'codex' ? new CodexAgent(proc, opts) : new AcpAgent(proc, opts);
-      r = { agent, tool, busy: true, at: Date.now(), timer: null, ref: null };
+      const agent = newAgent(tool, folder, (ev) => r?.onEvent?.(ev));
+      r = { agent, tool, busy: true, at: Date.now(), timer: null, ref: null, base: null };
       running.set(folder, r);
       try {
         await agent.init();
         const o = await agent.open({ cwd: `${sandboxChatDir}/${folder}`, resume: ref });
         r.ref = o.ref;
         r.resumed = o.resumed;
+        r.base = agent.model;   // (the tool's own default: what plan-<tool> asks for again after another model's turn)
         await agent.chatMode();
       } catch (e) { release(folder); throw e; }
       agent.closed.then(() => { if (running.get(folder) === r) { running.delete(folder); clearTimeout(r.timer); } });
@@ -229,6 +280,10 @@ export function createChatServer({ key, status, planAllowed = false, egressOff =
     const abort = () => r.agent.cancel();
     signal.addEventListener('abort', abort, { once: true });
     try {
+      // the model of this id, before the prompt, as the Code page switches (agent.setModel: Codex takes it with the next
+      // turn, ACP agents set it on the session); the default again for plan-<tool>
+      const want = model ?? r.base;
+      if (want && want !== r.agent.model) await r.agent.setModel(want).catch((e) => { throw Object.assign(new Error(`${HARNESSES[tool].name} did not switch to ${want} (${said(e?.message || String(e), 200)})`), { status: 502 }); });
       const res = await r.agent.prompt(text, images);
       // a tool reached for (and stopped): this session is not used again — whatever the tool did or saw stays out of
       // the conversation's next turns, which start a new session
@@ -242,23 +297,24 @@ export function createChatServer({ key, status, planAllowed = false, egressOff =
   }
 
   // one turn with Claude on your plan: the Agent SDK, Claude Code in the sandbox in the conversation's folder, no tool
-  async function claudeTurn({ folder, ref, text, images, out, signal }) {
+  // (the options of every Claude Code process here: a turn's, and the read of the plan's models)
+  const claudeOptions = (folder, abortController, extra = {}) => ({
+    pathToClaudeCodeExecutable: '/usr/local/bin/claude',
+    spawnClaudeCodeProcess: (o) => spawn(o, { plan: true, chat: folder, onStderr: (s) => log(`chat claude stderr: ${said(s, 200)}`) }),
+    env: {}, cwd: `${sandboxChatDir}/${folder}`,
+    systemPrompt: { type: 'custom', prompt: CHAT_SYSTEM, snapshot: true },
+    tools: [], settingSources: [], strictMcpConfig: true, includePartialMessages: true,
+    permissionMode: 'default', canUseTool: async () => ({ behavior: 'deny', message: 'There are no tools in this chat.' }),
+    abortController, ...extra,
+  });
+  async function claudeTurn({ folder, ref, model, text, images, out, signal }) {
     const abortController = new AbortController();
     signal.addEventListener('abort', () => abortController.abort(), { once: true });
     const content = images.length ? [...images.map((im) => ({ type: 'image', source: { type: 'base64', media_type: im.media_type, data: im.data } })), { type: 'text', text }] : text;
     async function* input() {
       yield { type: 'user', message: { role: 'user', content }, parent_tool_use_id: null, session_id: '', origin: { kind: 'human' } };
     }
-    const options = {
-      pathToClaudeCodeExecutable: '/usr/local/bin/claude',
-      spawnClaudeCodeProcess: (o) => spawn(o, { plan: true, chat: folder, onStderr: (s) => log(`chat claude stderr: ${said(s, 200)}`) }),
-      env: {}, cwd: `${sandboxChatDir}/${folder}`,
-      systemPrompt: { type: 'custom', prompt: CHAT_SYSTEM, snapshot: true },
-      tools: [], settingSources: [], strictMcpConfig: true, includePartialMessages: true,
-      permissionMode: 'default', canUseTool: async () => ({ behavior: 'deny', message: 'There are no tools in this chat.' }),
-      abortController,
-      ...(ref ? { resume: ref } : {}),
-    };
+    const options = claudeOptions(folder, abortController, { ...(ref ? { resume: ref } : {}), ...(model ? { model } : {}) });
     let sessionId = ref, usage = null, streamed = false, error = null;
     for await (const m of query({ prompt: input(), options })) {
       if (m?.type === 'system' && m.subtype === 'init' && typeof m.session_id === 'string') sessionId = m.session_id;
@@ -279,8 +335,9 @@ export function createChatServer({ key, status, planAllowed = false, egressOff =
   }
 
   async function completions(req, res, body) {
-    const tool = toolOfChatModel(body.model);
-    if (!tool) return fail(res, 404, 'no such model here');
+    const asked = parseChatModel(body.model);
+    if (!asked) return fail(res, 404, 'no such model here');
+    const { tool } = asked;
     if (egressOff) return fail(res, 409, EGRESS_OFF);
     const st = await status();
     const t = st?.tools?.[tool];
@@ -288,6 +345,13 @@ export function createChatServer({ key, status, planAllowed = false, egressOff =
     if (tool === 'claude' && planAllowed !== true) return fail(res, 403, 'Claude on your plan is off: Settings › Models & providers › Claude Code has the switch');
     if (!t?.installed) return fail(res, 404, `${h.name} is not in the sandbox (Settings › Claude Code › More › Tools in the sandbox)`);
     if (t.signed === 'no') return fail(res, 409, `${h.name} is not signed in: open the Terminal tab (Open › ${h.name}) and sign in with its own sign-in, then ask again`);
+    // (plan-<tool>--<model>: one the tool offers now — the same list /models gave — else refused, with what it offers)
+    let model = null;
+    if (asked.model !== null) {
+      const offered = await planModels(tool);
+      model = offered.find((m) => m.id === asked.model)?.id ?? null;
+      if (model === null) return fail(res, 404, `${h.name} does not offer the model ${said(asked.model, 80)} on your plan now${offered.length ? ` (it offers: ${offered.slice(0, 12).map((m) => m.id).join(', ')}${offered.length > 12 ? ', …' : ''})` : ''}: choose another from the list, or ${chatModelId(tool)} for its default`);
+    }
     const msgs = readMessages(body.messages);
     if (msgs.error) return fail(res, 400, msgs.error);
     const before = msgs.turns.slice(0, -1);
@@ -325,8 +389,8 @@ export function createChatServer({ key, status, planAllowed = false, egressOff =
     res.on('close', () => { if (!res.writableFinished) ac.abort(); });
     let r;
     try {
-      r = tool === 'claude' ? await claudeTurn({ folder, ref, text, images: msgs.images, out, signal: ac.signal })
-        : await agentTurn({ tool, folder, ref, text, images: msgs.images, out, signal: ac.signal });
+      r = tool === 'claude' ? await claudeTurn({ folder, ref, model, text, images: msgs.images, out, signal: ac.signal })
+        : await agentTurn({ tool, folder, ref, model, text, images: msgs.images, out, signal: ac.signal });
     } catch (e) {
       const msg = e instanceof NotSignedIn ? `${h.name} is not signed in: open the Terminal tab (Open › ${h.name}) and sign in with its own sign-in, then ask again`
         : e instanceof UnsafeMode ? e.message
