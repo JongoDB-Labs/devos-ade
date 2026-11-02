@@ -12,6 +12,11 @@
 //                       sessions the Code tab reported, and a note instead of files
 //   Chat conversations  Open WebUI's own search, asked by the portal server (/api/search/chats: portal/chatsearch.py);
 //                       if that fails, "Search in Chat" opens the Chat tab
+//   Git                 the built-in git server's repositories (name, description) and its issues and pull requests (titles),
+//                       asked by the portal server (/api/search/git: portal/gitsearch.py, with a read-only token that stays
+//                       there); only where the Git tab is on. Code is searched only where the git server's indexer is on
+//                       (Enter then opens its own code search); if the search fails, "Search in Git" opens the Git tab.
+//                       Enter or a click opens #git/<owner>/<repo>[/issues/N | /pulls/N] (git.js)
 //   Walkthrough         its steps (tour.js); Enter opens the walkthrough at that step
 //   Docs                README.md and docs/*.md, an index built into the portal's image; Enter opens the section on
 //                       GitHub, at the installed release
@@ -24,10 +29,10 @@
   const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
   const RELEASE = /^v\d{1,4}\.\d{1,4}\.\d{1,4}$/;
   const HASH = /^#[a-z]+(?:\/[A-Za-z0-9_+-]{1,64}){0,2}$/;
-  const PER_GROUP = { pages: 6, settings: 8, code: 5, files: 6, chats: 6, tour: 4, docs: 6 };
+  const PER_GROUP = { pages: 6, settings: 8, code: 5, files: 6, chats: 6, git: 6, tour: 4, docs: 6 };
   const GROUPS = [["pages", "Pages"], ["settings", "Settings"], ["code", "Code sessions"], ["files", "Workspace files"],
-    ["chats", "Chat conversations"], ["tour", "Walkthrough"], ["docs", "Docs"]];
-  const MIN_ASYNC = 2;   // the Code page and Chat are asked from two characters on
+    ["chats", "Chat conversations"], ["git", "Git"], ["tour", "Walkthrough"], ["docs", "Docs"]];
+  const MIN_ASYNC = 2;   // the Code page, Chat and Git are asked from two characters on
   const WAIT_MS = 220;   // after typing pauses
   const CODE_TIMEOUT_MS = 4000;
 
@@ -92,6 +97,29 @@
       .map((p) => ({ path: p, shown: shownText(p, 300) }));
     return { sessions, files, truncated: d.truncated === true, error: typeof d.error === "string" ? shownText(d.error, 200) : "" };
   }
+  // The portal's Git answer ({repos: [{repo, description, private, archived}], issues: [{repo, number, title, pr, state}]}),
+  // checked, as search entries: other people's words, so shownText; the place a result opens is built here from the checked
+  // "owner/name" and a number, never taken from the answer (git.js opens it only in the shapes it knows). At most 8 of each.
+  const GIT_REPO = /^[A-Za-z0-9._-]{1,100}\/[A-Za-z0-9._-]{1,100}$/;
+  function gitEntries(d) {
+    const out = [];
+    const bad = (r) => !GIT_REPO.test(r) || r.split("/").some((x) => x === "." || x === "..");
+    for (const r of (d && Array.isArray(d.repos) ? d.repos : []).slice(0, 8)) {
+      if (!r || typeof r.repo !== "string" || bad(r.repo)) continue;
+      const desc = typeof r.description === "string" && r.description ? shownText(r.description, 160) : "";
+      out.push({ group: "git", key: `git:${r.repo}`, title: r.repo, sub: `Repository${r.private === true ? " · private" : ""}${r.archived === true ? " · archived" : ""}${desc ? ` · ${desc}` : ""}`,
+        alt: "", prefiltered: true, place: r.repo });
+    }
+    for (const x of (d && Array.isArray(d.issues) ? d.issues : []).slice(0, 8)) {
+      if (!x || typeof x.repo !== "string" || bad(x.repo) || !Number.isInteger(x.number) || x.number < 1 || x.number > 999999999) continue;
+      const pr = x.pr === true;
+      const title = typeof x.title === "string" && x.title ? shownText(x.title, 200) : `#${x.number}`;
+      out.push({ group: "git", key: `git:${x.repo}:${pr ? "pulls" : "issues"}:${x.number}`, title,
+        sub: `${x.repo} · ${pr ? "Pull request" : "Issue"} #${x.number}${x.state === "closed" ? " · closed" : ""}`, alt: "", prefiltered: true,
+        place: `${x.repo}/${pr ? "pulls" : "issues"}/${x.number}` });
+    }
+    return out;
+  }
   // wordHit(TITLE, Q) -> every word of Q starts a word of TITLE ("budget" in "Spending & budgets", not in "nobudget")
   function wordHit(title, q) {
     const words = String(q || "").toLowerCase().split(/\s+/).filter(Boolean).slice(0, 16);
@@ -138,7 +166,7 @@
     return sorted;
   }
 
-  const pure = { shownText, settingsEntries, docEntries, docsBase, takeCodeReply, searchEntries, wordHit };
+  const pure = { shownText, settingsEntries, docEntries, docsBase, takeCodeReply, searchEntries, wordHit, gitEntries, GROUPS, PER_GROUP, MIN_ASYNC };
   root.bnSearch = { _pure: pure };
   if (typeof document === "undefined" || typeof document.querySelector !== "function") return;
 
@@ -146,10 +174,13 @@
   const MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
   const dlg = $("#search"), opener = $("#search-btn"), moreEntry = $("#more-search");
   if (!dlg || !opener) return;
-  let index = null, indexAt = 0, indexErr = "", q = "", active = -1, options = [], seq = 0;
-  let chats = { q: "", list: [], error: "", busy: false }, code = { q: "", sessions: null, files: [], error: "", busy: false, id: "" };
+  let index = null, indexAt = 0, indexErr = "", q = "", active = -1, options = [], seq = 0, gitSeq = 0;
+  let chats = { q: "", list: [], error: "", busy: false }, git = { q: "", repos: [], issues: [], error: "", busy: false }, code = { q: "", sessions: null, files: [], error: "", busy: false, id: "" };
   let waitT = null, codeT = null;
 
+  // the Git tab is on here (git.js: the local git server is on, and this is the local site), and whether its code indexer is
+  const gitState = (() => { try { return JSON.parse(document.querySelector('meta[name="bn-git"]').content) || {}; } catch (_) { return {}; } })();
+  const gitHere = () => Boolean(gitState.here && APP_URLS.git);
   const codeOrigin = (() => { try { return APP_URLS.code ? new URL(appUrl("code")).origin : ""; } catch (_) { return ""; } })();
   const codeFrame = () => document.querySelector('#frames iframe[data-app="code"]');
   // the frame can answer: it exists, it reported to the portal since it loaded (unlocked and running) — on a phone too,
@@ -190,6 +221,7 @@
         out.push({ group: "chats", key: `chat:${c.id}`, title: c.title, sub: c.snippet ? `Chat · ${c.snippet}` : "Chat conversation", alt: "", prefiltered: true, run: () => openChat(c.id) });
       }
     }
+    if (git.q === q) for (const e of gitEntries({ repos: git.repos, issues: git.issues })) out.push({ ...e, run: () => window.bnGit.open(e.place) });
     if (window.bnTour && window.bnTour.steps) {
       for (const s of window.bnTour.steps()) out.push({ group: "tour", key: `tour:${s.id}`, title: s.title, sub: `Walkthrough · ${s.section}`, alt: "", run: () => window.bnTour.open(s.id) });
     }
@@ -226,6 +258,23 @@
     const list = Array.isArray(d.chats) ? d.chats.slice(0, 20).filter((c) => c && typeof c.id === "string" && UUID.test(c.id))
       .map((c) => ({ id: c.id, title: shownText(typeof c.title === "string" && c.title ? c.title : "Untitled chat", 200), snippet: typeof c.snippet === "string" ? shownText(c.snippet, 160) : "" })) : [];
     chats = { q: text, list, error: d.error ? shownText(String(d.error), 200) : status === 200 ? "" : `HTTP ${status}`, busy: false };
+    draw();
+  }
+  async function askGit(text) {
+    if (!gitHere()) return;
+    const mine = ++gitSeq;
+    git = { q: text, repos: [], issues: [], error: "", busy: true };
+    draw();
+    let d = {}, status = 0;
+    try {
+      const r = await fetch(`/api/search/git?q=${encodeURIComponent(text)}`, { headers: { "X-Requested-With": "devos-ade" }, credentials: "same-origin", cache: "no-store" });
+      status = r.status;
+      if (r.status === 401) { location.assign("/login"); return; }
+      d = await r.json().catch(() => ({}));
+    } catch (e) { d = { error: `the portal did not answer (${e.message})` }; }
+    if (git.q !== text || mine !== gitSeq) return;
+    git = { q: text, repos: Array.isArray(d.repos) ? d.repos : [], issues: Array.isArray(d.issues) ? d.issues : [],
+      error: d.off ? "the local git server is off" : d.error ? shownText(String(d.error), 200) : status === 200 ? "" : `HTTP ${status}`, busy: false };
     draw();
   }
   function askCode(text) {
@@ -278,6 +327,10 @@
     else if (code.error) out.push(code.error);
     else if (code.truncated) out.push("Workspace files: the first matches only — the Code page's own search has them all.");
     if (chats.error) out.push(`Chat search: ${chats.error}`);
+    if (gitHere()) {
+      if (git.error && git.q === q) out.push(`Git search: ${git.error}`);
+      else if (!gitState.code_search) out.push("Git: repositories, issues and pull requests are searched, not code: the git server's code indexer is off (it is by default).");
+    }
     return out;
   }
   function draw() {
@@ -287,6 +340,12 @@
     if (q.length >= MIN_ASYNC && chats.error && chats.q === q) {
       (groups.chats = groups.chats || { shown: [], more: 0 }).shown.push({ entry: { group: "chats", key: "chat:open", title: "Search in Chat", sub: "Opens the Chat tab: its own search box", alt: "", run: () => showTab("chat") }, hits: [] });
     }
+    if (q.length >= MIN_ASYNC && gitHere() && git.q === q) {
+      const grp = groups.git = groups.git || { shown: [], more: 0 };
+      if (git.error) grp.shown.push({ entry: { group: "git", key: "git:open", title: "Search in Git", sub: "Opens the Git tab: its own search box", alt: "", run: () => window.bnGit.open("") }, hits: [] });
+      // (code only where the git server's indexer is on: its own search page shows the results)
+      else if (gitState.code_search === true) grp.shown.push({ entry: { group: "git", key: "git:code", title: `Search code for "${shownText(q, 40)}" in Git`, sub: "Opens the git server's code search", alt: "", run: () => window.bnGit.open(`explore/code?q=${encodeURIComponent(q)}`) }, hits: [] });
+    }
     const keep = active >= 0 && options[active] ? options[active].key : null;
     options = [];
     const parts = [];
@@ -295,7 +354,7 @@
     const order = [...Object.keys(groups), ...GROUPS.map(([g]) => g).filter((g) => !groups[g])];
     for (const g of order) {
       const name = NAMES[g];
-      const busy = q.length >= MIN_ASYNC && ((g === "chats" && chats.busy && chats.q === q) || (g === "files" && code.busy && code.q === q));
+      const busy = q.length >= MIN_ASYNC && ((g === "chats" && chats.busy && chats.q === q) || (g === "git" && git.busy && git.q === q) || (g === "files" && code.busy && code.q === q));
       const grp = groups[g];
       if (!grp && !busy) continue;
       const head = el("p", { class: "search-group", id: `sg-${g}`, role: "presentation" }, name,
@@ -349,8 +408,8 @@
     q = input.value.slice(0, root.bnFuzzy.MAX_QUERY).replace(/\s+/g, " ").trim();
     draw();
     clearTimeout(waitT);
-    if (q.length < MIN_ASYNC) { chats = { q: "", list: [], error: "", busy: false }; code = { q: "", sessions: null, files: [], error: "", busy: false, id: "" }; return; }
-    waitT = setTimeout(() => { askCode(q); askChats(q); }, WAIT_MS);
+    if (q.length < MIN_ASYNC) { chats = { q: "", list: [], error: "", busy: false }; git = { q: "", repos: [], issues: [], error: "", busy: false }; code = { q: "", sessions: null, files: [], error: "", busy: false, id: "" }; return; }
+    waitT = setTimeout(() => { askCode(q); askChats(q); askGit(q); }, WAIT_MS);
   }
   function onKey(e) {
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
