@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { harnessOf, normEvent, normPlan, normServerMsg } from '../src/api';
-import { planText, harnessState, answerers } from '../src/components/Pickers';
+import { planText, harnessState, answerers, claudePlanModels } from '../src/components/Pickers';
 import { SETUP_LINKS, settingsRoute, setupTarget, type SetupReason } from '../src/setuplinks';
 import { applyEvent, newView } from '../src/session';
 
@@ -113,4 +113,11 @@ test("WebSearch's result without a search backend links where one is set up (Set
   const re = new RegExp(/export const WEB_SEARCH_OFF = \/(.+)\/;/.exec(src)?.[1] ?? '^$');
   assert.ok(re.test("Web search isn't available for gpt-6-luna in DevOS ADE. Use WebFetch with a URL."));
   assert.ok(!re.test('Web search results for query: "x"'));
+});
+
+test('Claude on your plan: the models Claude Code reports for it; its four aliases when it reported none', () => {
+  const m = (value: string, displayName: string) => ({ value, displayName, resolved: '', efforts: [] });
+  assert.deepEqual(claudePlanModels([m('default', 'Default (recommended)'), m('sonnet[1m]', 'Sonnet (1M context)'), m('opus', ''), m('opus', 'again'), m('', 'x')]),
+    [{ id: 'default', name: 'Default (recommended)' }, { id: 'sonnet[1m]', name: 'Sonnet (1M context)' }, { id: 'opus', name: 'opus' }]);
+  assert.deepEqual(claudePlanModels([]).map((x) => x.id), ['default', 'opus', 'sonnet', 'haiku']);
 });

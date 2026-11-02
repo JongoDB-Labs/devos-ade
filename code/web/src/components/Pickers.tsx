@@ -8,7 +8,7 @@ import { COMPAT_INFO, GROUP_TITLE, PROVIDER_SETUP, compatWarning, findModel, hid
 import { STARRED_MAX } from '../prefs';
 import { byokCount, meter } from '../spend';
 import { percent } from '../budget';
-import type { BnModel, Harness, HarnessInfo, PlanUsage } from '../types';
+import type { BnModel, CliModel, Harness, HarnessInfo, PlanUsage } from '../types';
 import { MODE_INFO, offeredModes, startMode } from '../modes';
 import { label, money, perMtok, tokens } from '../text';
 import { Dropdown, MenuItem, copyText } from './ui';
@@ -43,8 +43,15 @@ function pick(m: BnModel): void {
   });
 }
 
-// Claude on your plan's models: Claude Code's own names there (what your plan offers; its default when none)
-const PLAN_MODELS = [{ id: 'default', name: "Your plan's default" }, { id: 'opus', name: 'Opus' }, { id: 'sonnet', name: 'Sonnet' }, { id: 'haiku', name: 'Haiku' }];
+// Claude on your plan's models: what Claude Code reports for the plan (supportedModels(): its own names, in the
+// session's cliModels, once its process runs). The four aliases below are the fallback, for a session that has not
+// started yet or when Claude Code's list cannot be read: Claude Code's own names there (its default when none).
+const PLAN_MODELS_FALLBACK = [{ id: 'default', name: "Your plan's default" }, { id: 'opus', name: 'Opus' }, { id: 'sonnet', name: 'Sonnet' }, { id: 'haiku', name: 'Haiku' }];
+export function claudePlanModels(cli: CliModel[]): { id: string; name: string }[] {
+  const seen = new Set<string>();
+  const list = cli.filter((m) => m.value !== '' && !seen.has(m.value) && seen.add(m.value)).map((m) => ({ id: m.value, name: m.displayName || m.value }));
+  return list.length ? list : PLAN_MODELS_FALLBACK;
+}
 
 /** a subscription in the picker: whether it can start here, in words — and when not, why (setuplinks.ts: its item goes
  *  where that is turned on, saying where) */
@@ -128,7 +135,7 @@ function PlanModelPicker({ compact }: { compact?: boolean }) {
   const v = useSel(store, (s) => activeView(s));
   const names = useSel(store, (s) => (v ? harnessName(v.harness, s) : ''));
   if (!v) return null;
-  const models = v.harness === 'claude' ? PLAN_MODELS : v.init?.models ?? [];
+  const models = v.harness === 'claude' ? claudePlanModels(v.cliModels) : v.init?.models ?? [];
   const cur = models.find((m) => m.id === v.model)?.name ?? (v.model || 'its default');
   return (
     <Dropdown title={`Who answers: ${names} · ${cur}`} class="picker" panelClass="model-panel" testid="model-picker"
