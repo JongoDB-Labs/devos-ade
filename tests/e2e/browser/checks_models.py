@@ -20,7 +20,7 @@ from playwright.sync_api import expect as see
 
 from common import ENV, Skip, check, expect
 from checks_api import lite
-from checks_browser import _confirm, _need_helper, _settings_api, _wait_job, goto_setting, login, open_settings, shot
+from checks_browser import _confirm, _need_helper, _settings_api, _wait_job, chat_frame, goto_setting, login, open_settings, owui_api, shot
 from checks_code import HAIKU, LOCKED_OK, Code, csp_clean, need_haiku, need_on, saved, ui_page
 from checks_terminal import new_shell_window, term_text, terminal_frame, type_line, unlock_in, wait_text, wait_xterm
 
@@ -220,6 +220,59 @@ def ui_models(ctx):
     page.keyboard.press("Escape")
     csp_clean(page, rec)
     return f"status bar actions 28 px+ with tips (Run: Alt+R); picker groups {groups}"
+
+
+def _terminal_models(page, f, arg: str) -> list[str]:
+    """The ids devos-claude --models [all] prints in a shell window of the browser terminal (rows: a marker, the id, …)."""
+    type_line(page, f, f"clear; devos-claude --models {arg}".rstrip())
+    out = wait_text(f, r"devos-claude --model <id or name>", 30)
+    return [m.group(1) for m in (re.match(r"^[ *] (\S+)\s", ln) for ln in out.splitlines()) if m and m.group(1) != "MODEL"]
+
+
+@check("browser", "models-same-on-all-surfaces")
+def same_models(ctx):
+    """With each of its tools as the Terminal has them, Chat and Code offer the same models. Bedrock's (and the other
+    providers') through the gateway: Chat's picker (Open WebUI, LiteLLM's /models) has every enabled one, the Code page
+    (/.bn/models) and the Terminal (devos-claude --models all) the same, and the listed ones (CODE_MODELS: the Code page's
+    picker and /model, never Chat's) the same in the Code page and the Terminal. Your subscriptions in Chat: every
+    plan-<tool>--<model> has the tool's own plan-<tool> beside it, in the spelling agents/tools.mjs writes (plan-<tool>--
+    then letters, digits and . _ : + -, any other character as ~ and two lower-case hex digits); each tool's models once."""
+    need_on()
+    c = Code(ctx, "models-same-on-all-surfaces")
+    ms = _models(c)["models"]
+    code_all = sorted(m["id"] for m in ms)
+    code_listed = sorted(m["id"] for m in ms if m["listed"])
+    expect(code_all and code_listed, f"the Code page lists no models: {code_all}")
+    # Chat: Open WebUI's own list, through its frame
+    page, rec = ctx.page("models-same-on-all-surfaces")
+    login(page)
+    fl, f = chat_frame(page)
+    r = owui_api(f, "/api/models")
+    expect(r["status"] == 200, f"/api/models {r['status']}")
+    chat = [m["id"] for m in json.loads(r["body"])["data"]]
+    missing = sorted(set(code_all) - set(chat))
+    expect(not missing, f"in the Code page's list, not Chat's: {missing}")
+    plan = [m for m in chat if m.startswith("plan-")]
+    tools = {m.split("--")[0] for m in plan}
+    for t in tools:
+        expect(t in plan, f"{t}: its models are there but not {t} itself: {plan}")
+    for m in plan:
+        expect(re.fullmatch(r"plan-[a-z]{1,20}(--([A-Za-z0-9._:+-]|~[0-9a-f]{2})+)?", m), f"{m}: not the spelling of a Chat model id")
+    expect(len(plan) == len(set(plan)), f"a Chat model twice: {plan}")
+    # Terminal: devos-claude --models, in a shell window of the browser terminal
+    page.click(".tab[data-tab=terminal]")
+    tf = terminal_frame(page)
+    unlock_in(tf, ENV["PORTAL_PASSWORD"])
+    tf = terminal_frame(page)
+    wait_xterm(tf)
+    new_shell_window(page, tf)
+    term_all = sorted(_terminal_models(page, tf, "all"))
+    term_listed = sorted(_terminal_models(page, tf, ""))
+    expect(term_all == code_all, f"Terminal (--models all) vs Code page: only Terminal {sorted(set(term_all) - set(code_all))}, only Code {sorted(set(code_all) - set(term_all))}")
+    expect(term_listed == code_listed, f"Terminal (--models) vs Code page's listed: only Terminal {sorted(set(term_listed) - set(code_listed))}, only Code {sorted(set(code_listed) - set(term_listed))}")
+    rec.save()
+    return (f"{len(code_all)} models on the Code page, in Chat and in the Terminal ({len(code_listed)} listed by CODE_MODELS on the Code page and in the Terminal); "
+            f"Chat's subscriptions: {', '.join(plan) or 'none signed in for Chat'}")
 
 
 @check("browser", "terminal-devos-claude-models")
