@@ -117,7 +117,60 @@
     return job.phase === "preparing" || (Array.isArray(job.steps) ? job.steps : []).some((x) => x && /^Prepare: /.test(x.label || "")) || /^Prepare: /.test(job.step || "");
   }
 
-  root.bnUpdateCheck = { _pure: { describe, ago, clock, fresher, statusKey, prepareLine, preparedFirst } };
+
+  // --- an update's progress bar (JON-978; lib/plan.sh has the same arithmetic for a terminal's) ---
+  // The plan is the steps the last update took, with their seconds ({label, secs}: job.plan). The steps the job has done are
+  // matched to it by label without the trailing parenthesised part ("Services (9) (http://…)" is "Services"); a step the plan
+  // does not have counts as it comes. Left = what the plan expects of the steps not seen yet, plus for the running one what it
+  // expects less the time it has run, but never under MIN_LEFT_S: a step that runs long keeps the bar short of done.
+  const MIN_LEFT_S = 5;
+  const normLabel = (l) => { const t = String(l || ""); const i = t.indexOf(" ("); return i < 0 ? t : t.slice(0, i); };
+  // 3 -> "a few seconds", 40 -> "less than a minute", 95 -> "about 2 minutes"; short: "~2 min"
+  function leftWords(s) {
+    if (s < 15) return { long: "a few seconds left", short: "a few seconds left" };
+    if (s < 60) return { long: "less than a minute left", short: "under a minute left" };
+    const m = Math.round(s / 60);
+    return { long: `about ${m} ${m === 1 ? "minute" : "minutes"} left`, short: `~${m} min left` };
+  }
+  // progress(job, nowS) -> null (no bar), else {done, total, stepNo, label, left, pct, finished, valuenow, valuemax, valuetext,
+  // text, todo: [{label, secs}]}. nowS: the server's clock when the status was read (a terminal's record is written once a step).
+  function progress(job, nowS) {
+    if (!job || job.action !== "update") return null;
+    const plan = Array.isArray(job.plan) ? job.plan : [], steps = (Array.isArray(job.steps) ? job.steps : []).filter((x) => x && typeof x === "object");
+    if (!plan.length && !steps.length && !job.step) return null;
+    const pl = plan.filter((p) => p && typeof p.label === "string").map((p) => ({ label: normLabel(p.label), secs: p.secs > 0 ? p.secs : 0, used: false }));
+    const find = (l) => pl.find((p) => !p.used && p.label === l);
+    let extra = 0;
+    for (const x of steps) { const p = find(normLabel(x && x.label)); if (p) p.used = true; else extra++; }
+    const finished = job.phase === "done";
+    const running = finished ? "" : normLabel(job.step);
+    let total = pl.length + extra, expected = 0;
+    if (running) { const p = find(running); if (p) { p.used = true; expected = p.secs; } else total++; }
+    const now = Number.isFinite(nowS) ? nowS : job.updated_at;
+    const elapsed = running && job.step_started_at && now ? Math.max(0, now - job.step_started_at) : 0;
+    let left = running ? Math.max(expected - elapsed, MIN_LEFT_S) : 0;
+    const todo = pl.filter((p) => !p.used);
+    for (const p of todo) left += p.secs;
+    const done = steps.length;
+    total = finished && done ? done : Math.max(total, done);   // (finished: the steps it took; a plan step it never reached is no step)
+    const stepNo = finished ? total : running ? done + 1 : done;
+    const frac = running && expected > 0 ? Math.min(0.9, elapsed / expected) : 0;
+    const pct = finished ? 100 : Math.min(99, Math.floor(((done + frac) / Math.max(total, 1)) * 100));
+    const last = steps.length ? normLabel(steps[steps.length - 1].label) : "";
+    const label = running || last;
+    const words = leftWords(left), n = (c) => `${c} ${c === 1 ? "step" : "steps"}`;
+    const valuetext = finished ? `Done, ${n(total)}` : stepNo ? `Step ${stepNo} of ${total}, ${label}, ${words.long}` : `Starting, ${n(total)}, ${words.long}`;
+    const text = finished ? `Done · ${n(total)}` : `${stepNo ? `Step ${stepNo} of ${total} · ${label}` : n(total)} · ${words.short}`;
+    return { done, total, stepNo, label, left, pct, finished, valuenow: stepNo, valuemax: Math.max(total, 1), valuetext, text, todo: todo.map(({ label: l, secs }) => ({ label: l, secs })) };
+  }
+  // announce(prevKey, p, jobId) -> {key, say}: the bar's words for a screen reader's polite live region, once for each step
+  function announce(prevKey, p, jobId) {
+    if (!p) return { key: "", say: "" };
+    const key = `${jobId || ""}:${p.finished ? "done" : p.stepNo}`;
+    return { key, say: key === prevKey ? "" : p.valuetext };
+  }
+
+  root.bnUpdateCheck = { _pure: { describe, ago, clock, fresher, statusKey, prepareLine, preparedFirst, progress, announce, leftWords, normLabel } };
   if (typeof document === "undefined") return;
 
   let last = null;          // the last update status seen (Home's summary, or a click's answer)

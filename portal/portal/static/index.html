@@ -198,8 +198,14 @@
       <div class="job-head"><h2 id="job-title">Update</h2> <button type="button" class="quiet" id="job-dismiss" hidden>Dismiss</button></div>
       <p id="job-origin" class="note job-origin"></p>
       <ol id="job-steps" class="job-steps"></ol>
+      <div id="job-progress" class="job-progress" hidden>
+        <div id="job-bar" class="job-bar" role="progressbar" aria-label="Update progress" aria-valuemin="0" aria-valuemax="1" aria-valuenow="0"><span id="job-bar-fill" class="job-bar-fill"></span></div>
+        <p id="job-progress-text" class="job-progress-text" aria-hidden="true"></p>
+        <p id="job-progress-live" class="visually-hidden" aria-live="polite"></p>
+      </div>
       <p id="job-step" class="job-step" hidden></p>
       <ol id="job-done" class="job-done" aria-label="Steps done" hidden></ol>
+      <details id="job-todo-box" class="job-todo-box" hidden><summary id="job-todo-sum">Still to come</summary><ol id="job-todo" class="job-done job-todo" aria-label="Steps still to come"></ol></details>
       <p id="job-message" class="job-message"></p>
       <p id="job-reconnect" class="reconnect" role="status" hidden><span class="spinner" aria-hidden="true"></span>
         <span id="job-reconnect-text">Restarting — reconnecting…</span> <span id="job-reconnect-time" class="elapsed"></span></p>

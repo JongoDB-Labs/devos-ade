@@ -1436,7 +1436,8 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
             return deny
         st = admin.helper_state(settings.status_dir)
         st.update({"allowed": admin_allowed(request), "remote": admin.is_remote(request),
-                   "in_progress": admin.job_in_progress(st), "actions": list(admin.ACTIONS)})
+                   "in_progress": admin.job_in_progress(st), "actions": list(admin.ACTIONS),
+                   "now": int(time.time())})   # (the clock the step times are on: Home's progress bar measures a running step against it)
         return _no_store(JSONResponse(st))
 
     async def api_admin_request(request: Request) -> Response:

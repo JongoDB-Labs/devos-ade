@@ -318,6 +318,19 @@ a.form-link:not([href]) { display: none; }
 /* the step a change failed at (Settings: the last one seen) */
 .job-steps li.bad { color: var(--bad); font-weight: 600; }
 .job-steps li.bad::before { content: "✕ "; }
+/* the update's progress bar (JON-978): a track and a fill; the words under it are the same as aria-valuetext */
+.job-progress { margin: 12px 0 8px; }
+.job-bar { height: 10px; border-radius: 999px; background: var(--bg-2); border: 1px solid var(--line); overflow: hidden; }
+.job-bar-fill { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 999px; transition: width .6s ease; }
+.job-progress-text { margin: 6px 0 0; font-size: 14px; color: var(--ink); overflow-wrap: anywhere; }
+@media (prefers-reduced-motion: reduce) { .job-bar-fill { transition: none; } }
+.visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+/* a step the update left out, and the ones still to come: grey, no tick */
+.job-done li.skipped, .job-todo li { color: var(--muted); }
+.job-done li.skipped::before { content: "– "; color: var(--muted); }
+.job-todo li::before { content: "○ "; color: var(--muted); }
+.job-todo-box { margin: 0 0 8px; font-size: 13px; color: var(--muted); }
+.job-todo-box summary { cursor: pointer; margin-bottom: 4px; }
 .job-message { margin: 4px 0 0; font-size: 15px; }
 .job-message.good { color: var(--ok); font-weight: 500; }
 .job-message.bad { color: var(--bad); }

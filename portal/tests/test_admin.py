@@ -319,6 +319,35 @@ def test_a_jobs_steps_pass_with_their_types_checked(make_client, dirs):
     assert len(c.get("/api/admin/status", headers=API).json()["job"]["steps"]) == 80
 
 
+def test_an_updates_plan_and_its_skipped_steps_pass_with_their_types_checked(make_client, dirs):
+    st, rq = dirs
+    c = make_client()
+    beat(st)
+    now = int(time.time())
+    plan = [{"label": "Backup", "secs": 4}, {"label": "Voice", "secs": 0}, {"label": "Slow", "secs": 90000}, {"label": "Odd", "secs": "3"},
+            {"label": "Bool", "secs": True}, {"label": "", "secs": 1}, {"secs": 2}, "x"]
+    steps = [{"label": "Voice", "took": "skipped", "why": "the models found did not change"}, {"label": "Images", "took": "1s", "why": "ignored"},
+             {"label": "Smoke test", "took": "skipped", "why": 5}, {"label": "Code page", "took": "skipped"}]
+    # a terminal update (lib/lock.sh) has them too, as the helper's does
+    (st / "terminal-job.json").write_text(json.dumps({"id": "t-1", "action": "update", "command": "update", "phase": "running", "message": "Running in a terminal",
+                                                       "started_at": now - 60, "updated_at": now, "step": "Images", "step_started_at": now - 3,
+                                                       "steps": steps, "plan": plan, "pid": 1}))
+    r = c.get("/api/admin/status", headers=API).json()
+    j = r["job"]
+    assert abs(r["now"] - time.time()) < 5   # (the clock a running step is measured against)
+    assert j["origin"] == "terminal" and j["step"] == "Images"
+    assert j["plan"] == [{"label": "Backup", "secs": 4}, {"label": "Voice", "secs": 0}, {"label": "Slow", "secs": 0}, {"label": "Odd", "secs": 0},
+                         {"label": "Bool", "secs": 0}]
+    assert j["steps"] == [{"label": "Voice", "took": "skipped", "why": "the models found did not change"}, {"label": "Images", "took": "1s"},
+                          {"label": "Smoke test", "took": "skipped"}, {"label": "Code page", "took": "skipped"}]
+    # no plan, or the wrong type: empty, never an error; at most 80
+    (st / "terminal-job.json").write_text(json.dumps({"id": "t-1", "action": "update", "phase": "running", "updated_at": now, "plan": {"a": 1}}))
+    assert c.get("/api/admin/status", headers=API).json()["job"]["plan"] == []
+    (st / "terminal-job.json").write_text(json.dumps({"id": "t-1", "action": "update", "phase": "running", "updated_at": now,
+                                                       "plan": [{"label": f"S{i}", "secs": 1} for i in range(100)]}))
+    assert len(c.get("/api/admin/status", headers=API).json()["job"]["plan"]) == 80
+
+
 def test_symlinked_or_huge_status_files_are_ignored(make_client, dirs, tmp_path):
     st, rq = dirs
     (tmp_path / "x.json").write_text(json.dumps({"heartbeat": int(time.time())}))

@@ -626,7 +626,9 @@ const BACKGROUND = {
 function soFar(s) { return s < 60 ? `${Math.max(1, Math.round(s))} s` : `${Math.round(s / 60)} min`; }
 function stepText(job) {
   if (!job.step) return "";
-  const s = job.step_started_at && job.updated_at ? Math.max(0, job.updated_at - job.step_started_at) : 0;
+  // (a terminal's record is written once a step, so the server's clock says how long it has run; the helper's, every poll)
+  const at = adminState && Number.isFinite(adminState.now) ? adminState.now : job.updated_at;
+  const s = job.step_started_at && at ? Math.max(0, at - job.step_started_at) : 0;
   const what = job.step.charAt(0).toUpperCase() + job.step.slice(1);
   return s >= 1 ? `${what}, ${soFar(s)} so far` : what;
 }
@@ -636,8 +638,38 @@ function renderSteps(job, inProgress) {
   const mine = job.action === "update" || job.action === "rollback";
   now.textContent = mine && inProgress ? stepText(job) : "";
   now.hidden = !now.textContent;
-  done.replaceChildren(...(mine ? steps : []).map((x) => el("li", { text: x.took ? `${x.label} · ${x.took}` : x.label })));
+  // (a step the update left out is greyed, with its reason)
+  done.replaceChildren(...(mine ? steps : []).map((x) => x.took === "skipped"
+    ? el("li", { class: "skipped", text: `${x.label} · skipped${x.why ? ` (${x.why})` : ""}` })
+    : el("li", { text: x.took ? `${x.label} · ${x.took}` : x.label })));
   done.hidden = !done.children.length;
+  renderProgress(job, inProgress);
+}
+// The update's progress bar (JON-978): steps done of the plan, the step that runs, the time left. The bar is a progressbar
+// with its words in aria-valuetext; the visible words are hidden from the card's live region, which would read them out on
+// every poll, and a live region of its own says them once for each step.
+let progressKey = "";
+function renderProgress(job, inProgress) {
+  const box = $("#job-progress");
+  const U = window.bnUpdateCheck && window.bnUpdateCheck._pure;
+  const p = U && (inProgress || job.phase === "done") && Array.isArray(job.steps) && (job.steps.length || inProgress) ? U.progress(job, adminState && adminState.now) : null;
+  box.hidden = !p;
+  if (!p) { progressKey = ""; return; }
+  const bar = $("#job-bar");
+  bar.setAttribute("aria-valuemin", "0");
+  bar.setAttribute("aria-valuemax", String(p.valuemax));
+  bar.setAttribute("aria-valuenow", String(p.valuenow));
+  bar.setAttribute("aria-valuetext", p.valuetext);
+  $("#job-bar-fill").style.width = `${p.pct}%`;
+  $("#job-progress-text").textContent = p.text;
+  const a = U.announce(progressKey, p, job.id);
+  progressKey = a.key;
+  if (a.say) $("#job-progress-live").textContent = a.say;
+  // the steps still to come, as the last update took them (a step may still be skipped: that is known once it is reached)
+  const todo = $("#job-todo");
+  todo.replaceChildren(...p.todo.map((x) => el("li", { text: x.secs >= 1 ? `${x.label} · about ${x.secs} s` : x.label })));
+  $("#job-todo-box").hidden = !p.todo.length || p.finished;
+  $("#job-todo-sum").textContent = `Still to come (${p.todo.length})`;
 }
 // The update that finished while Home looked on: said once ("Updated to v0.27.1"), besides the card and Activity
 let lastJobKey = "";

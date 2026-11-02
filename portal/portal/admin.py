@@ -139,19 +139,35 @@ def _prepare(beat: dict) -> dict:
 COMMAND = re.compile(r"[a-z][a-z-]{0,23}(?: [a-z][a-z-]{0,23})?")
 
 
-TOOK = re.compile(r"[0-9]{1,4}m[0-9]{2}s|[0-9]{1,4}(?:\.[0-9])?s")   # "1m50s", "12s", "0.4s" (a settings change's steps)
+TOOK = re.compile(r"[0-9]{1,4}m[0-9]{2}s|[0-9]{1,4}(?:\.[0-9])?s|skipped")   # "1m50s", "12s", "0.4s" (a settings change's steps), "skipped" (an update's)
 
 
 STEPS_MAX = 80   # (lib/helper.sh JOB_STEPS_MAX: an update's every step, from the backup to what's new)
 
 
 def _steps(v) -> list:
-    """The phases a job finished so far, as the helper read them from its log ([{label, took}], at most STEPS_MAX)."""
+    """The phases a job finished so far, as the helper read them from its log ([{label, took}], at most STEPS_MAX). A step the
+    update left out has took "skipped" and why (the reason, in a line)."""
     out = []
     for x in v if isinstance(v, list) else []:
         if isinstance(x, dict) and isinstance(x.get("label"), str) and x["label"].strip():
             took = x.get("took")
-            out.append({"label": x["label"][:120], "took": took if isinstance(took, str) and TOOK.fullmatch(took) else ""})
+            step = {"label": x["label"][:120], "took": took if isinstance(took, str) and TOOK.fullmatch(took) else ""}
+            if step["took"] == "skipped" and isinstance(x.get("why"), str) and x["why"].strip():
+                step["why"] = x["why"][:200]
+            out.append(step)
+        if len(out) == STEPS_MAX:
+            break
+    return out
+
+
+def _plan(v) -> list:
+    """An update's plan (lib/plan.sh): the steps the last update took and their seconds, [{label, secs}], at most STEPS_MAX."""
+    out = []
+    for x in v if isinstance(v, list) else []:
+        if isinstance(x, dict) and isinstance(x.get("label"), str) and x["label"].strip():
+            secs = x.get("secs")
+            out.append({"label": x["label"][:120], "secs": secs if isinstance(secs, int) and not isinstance(secs, bool) and 0 <= secs <= 86400 else 0})
         if len(out) == STEPS_MAX:
             break
     return out
@@ -170,6 +186,8 @@ def _job(raw: dict, origin: str) -> dict | None:
         # its steps (an update's or a rollback's restart): what runs now and since when, and the ones done with their time
         "step": _str(raw.get("step"), 160), "step_started_at": _int(raw.get("step_started_at")),
         "steps": _steps(raw.get("steps")),
+        # an update's plan: the steps the last one took and their seconds, for the progress bar (lib/plan.sh)
+        "plan": _plan(raw.get("plan")),
         # where it ran: "helper" (Home, Settings, the nightly jobs) or "terminal" (a ./stack command typed in a terminal)
         "origin": origin,
     }
