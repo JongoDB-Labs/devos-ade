@@ -45,6 +45,9 @@ TERMINAL = "terminal"
 # terminal's sandbox — so only while the terminal is on. Its own host, CODE_HOST (default code.PORTAL_HOST), behind the
 # session AND a fresh password unlock of its own; remote with the terminal's switch (REMOTE_CODE_HOST, lib/code.sh).
 CODE = "code"
+# The built-in git server (LOCALGIT on, the default; lib/localgit.sh): Forgejo's web UI at GIT_HOST (default git.PORTAL_HOST),
+# framed by the Git page. Local only: its site is not on the remote one (caddy/localgit-on.caddy).
+GIT = "git"
 
 # LiteLLM virtual keys shown on Home: (env var, key alias, label) — each named for where its spend comes from: the
 # claude-code key is devos-claude's (Claude Code in your own terminal), the terminal's is the Code page's and the
@@ -136,6 +139,13 @@ class Settings:
     # snapshot: answers.current_egress; the code container enforces it); with host, Chat's sandbox has a proxy of its
     # own (compose.code-egress.yaml)
     terminal_egress: str = "internet"
+    # The built-in git server (LOCALGIT_MODE is lib/common.sh's BN_LOCALGIT_MODE: on while LOCALGIT is). The Git page's search
+    # asks its API through Caddy's internal :8099 site with a read-only token (portal/gitsearch.py); the token is never shown
+    # anywhere (repr off) and is dropped while the git server is off.
+    git: bool = False
+    git_api_url: str = "http://caddy:8099"
+    git_token: str = field(default="", repr=False)
+    git_code_indexer: bool = False   # LOCALGIT_CODE_INDEXER=true: Forgejo's repository indexer (code search) is on
 
     def install_folder(self) -> str:
         """The install's folder, where ./stack runs: "~/bn" for an env file ~/bn/.env; "" when ./stack did not say (or
@@ -164,7 +174,7 @@ class Settings:
     def app_origins(self) -> list[str]:
         local = [self.origin(sub) for sub in APPS]
         return (local + ([self.origin(sub, remote=True) for sub in APPS] if self.remote_on() else []) + self.terminal_origins()
-                + self.code_origins())
+                + self.code_origins() + self.git_origins())
 
     def app_urls(self, remote: bool = False) -> dict:
         """{"chat": "https://…/", …}: where Home opens each app on this site (the terminal only where it is on)."""
@@ -173,8 +183,16 @@ class Settings:
             urls[TERMINAL] = self.origin(TERMINAL, remote) + "/"
         if self.code_on(remote):
             urls[CODE] = self.origin(CODE, remote) + "/"
+        if self.git_on(remote):
+            urls[GIT] = self.origin(GIT) + "/"
         return urls
 
+    def git_on(self, remote: bool = False) -> bool:
+        """The built-in git server is on — and this is the local site: its web UI has no host on the remote one."""
+        return self.git and not remote
+
+    def git_origins(self) -> list[str]:
+        return [self.origin(GIT)] if self.git else []
     def terminal_on(self, remote: bool = False) -> bool:
         """The terminal is enabled — and, on the remote site, allowed there (REMOTE_TERMINAL) with a name of its own."""
         if not self.terminal:
@@ -254,6 +272,9 @@ def from_env(env: dict | None = None) -> Settings:
     remote_terminal = terminal and _on(env.get("REMOTE_TERMINAL"))
     code = terminal and _on(env.get("CODE_ENABLED"))
     app_hosts = {sub: env.get(var, "").strip().lower() for sub, var in APP_HOST_ENV.items() if env.get(var, "").strip()}
+    git = (env.get("LOCALGIT_MODE") or "").strip().lower() == "on"
+    if (env.get("GIT_HOST") or "").strip():
+        app_hosts[GIT] = env["GIT_HOST"].strip().lower()
     if (env.get("TERMINAL_HOST") or "").strip():
         app_hosts[TERMINAL] = env["TERMINAL_HOST"].strip().lower()
     if (env.get("CODE_HOST") or "").strip():
@@ -322,6 +343,10 @@ def from_env(env: dict | None = None) -> Settings:
         remote_preview=_on(env.get("REMOTE_PREVIEW")),
         claude_plan=code and _on(env.get("CODE_CLAUDE_PLAN")),
         terminal_egress=_egress(env.get("TERMINAL_EGRESS")),
+        git=git,
+        git_api_url=(env.get("LOCALGIT_API_URL") or "http://caddy:8099").strip().rstrip("/"),
+        git_token=(env.get("LOCALGIT_READ_TOKEN") or "").strip() if git else "",
+        git_code_indexer=git and _on(env.get("LOCALGIT_CODE_INDEXER")),
         tailscale_allowed_login=(env.get("TAILSCALE_ALLOWED_LOGIN") or "").strip().lower(),
         proxy_secret=env.get("PORTAL_PROXY_SECRET", ""),
         env_file=(env.get("PORTAL_ENV_FILE") or "").strip(),

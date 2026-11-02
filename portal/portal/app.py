@@ -23,7 +23,7 @@ from starlette.responses import FileResponse, HTMLResponse, JSONResponse, PlainT
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import activity, admin, answers, appicons, appsso, brand, chatsearch, codeexport, feedback, icons, prices, recent, searchindex, settings_api, summary, uilayout, updates, webapp
+from . import activity, admin, answers, appicons, appsso, brand, chatsearch, codeexport, feedback, gitsearch, icons, prices, recent, searchindex, settings_api, summary, uilayout, updates, webapp
 from . import code as codepage
 from . import settings as settings_mod
 from .config import CODE, TERMINAL, Settings
@@ -1308,6 +1308,9 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
         # The Code page likewise (it needs the terminal; remote access with the terminal's switch).
         code = {"enabled": settings.code, "here": settings.code_on(rem)}
         meta += f'\n<meta name="bn-code" content="{html.escape(json.dumps(code), quote=True)}">'
+        # The Git page (the built-in git server): on at all, and on this site (local only), and whether code search is on
+        git = {"enabled": settings.git, "here": settings.git_on(rem), "code_search": settings.git_code_indexer}
+        meta += f'\n<meta name="bn-git" content="{html.escape(json.dumps(git), quote=True)}">'
         page = page.replace("</head>", meta + "\n</head>", 1)
         return _security_headers(_no_store(HTMLResponse(appicons.versioned(page))), settings)
 
@@ -1572,6 +1575,29 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
             return _no_store(JSONResponse({"error": str(e), "chats": []}))
         return _no_store(JSONResponse({"chats": found}))
 
+    git = gitsearch.GitSearch(settings)
+
+    async def api_search_git(request: Request) -> Response:
+        """The Git group of the search: repositories and issues / pull requests of the built-in git server, asked of Forgejo
+        from here with the portal's read-only token (portal/gitsearch.py). Like the chat search: a failure is an answer with
+        "error", which the page turns into one "Search in Git" entry; the git server being off is {"off": true}."""
+        if (deny := api_guard(request)) is not None:
+            return deny
+        empty = {"repos": [], "issues": []}
+        if not settings.git_on(remote(request)):
+            return _no_store(JSONResponse({"off": True, **empty}))
+        q = chatsearch.query(request.query_params.get("q"))
+        if not q:
+            return _no_store(JSONResponse({"error": "q: the text to look for (1-64 characters)", **empty}, status_code=400))
+        if not git.rate.take():
+            return _no_store(JSONResponse({"error": "Too many searches at once: try again in a moment.", **empty}, status_code=429))
+        try:
+            found = await git.search(request.app.state.http, q)
+        except chatsearch.SearchError as e:
+            log.warning("git search: %s", e)
+            return _no_store(JSONResponse({"error": str(e), **empty}))
+        return _no_store(JSONResponse(found))
+
     recent_chats = recent.RecentChats(chats)
 
     # --- Home's item menu for a Chat conversation (static/home.js, portal/chatsearch.py): rename, archive, delete — Open
@@ -1785,6 +1811,7 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
             Route("/api/feedback", api_feedback, methods=["GET"]),
             Route("/api/search/index", api_search_index, methods=["GET"]),
             Route("/api/search/chats", api_search_chats, methods=["GET"]),
+            Route("/api/search/git", api_search_git, methods=["GET"]),
             Route("/api/continue", api_continue, methods=["GET"]),
             Route("/api/ui/layout", api_ui_layout_get, methods=["GET"]),
             Route("/api/ui/layout", api_ui_layout_put, methods=["PUT"]),

@@ -406,6 +406,8 @@ services:
       # private, loopback and link-local addresses stays on.
       FORGEJO__migrations__ALLOWED_DOMAINS: ${LOCALGIT_MIRROR_HOSTS:-}
       FORGEJO__migrations__ALLOW_LOCALNETWORKS: "false"
+      # Code search (the repository indexer) is off unless LOCALGIT_CODE_INDEXER=true in .env: it keeps an index of every repository.
+      FORGEJO__indexer__REPO_INDEXER_ENABLED: ${LOCALGIT_CODE_INDEXER:-false}
       FORGEJO__log__LEVEL: Warn
     volumes:
       - gitdata:/var/lib/gitea
@@ -487,6 +489,15 @@ services:
       REMOTE_ADMIN_HOST: ${REMOTE_ADMIN_HOST:-}
       REMOTE_FILES_HOST: ${REMOTE_FILES_HOST:-}
       TAILSCALE_ALLOWED_LOGIN: ${TAILSCALE_ALLOWED_LOGIN:-}
+      # The Git page and its search (portal/gitsearch.py): the git server's host name and whether it is on (lib/common.sh sets
+      # BN_LOCALGIT_MODE), and for the search a READ-ONLY token of the git server's owner (read:repository, read:issue; made by
+      # lib/localgit.sh, in .env) — in this container's environment alone — and Caddy's internal :8099 site to ask through: the
+      # portal is not on the git server's network.
+      LOCALGIT_MODE: ${BN_LOCALGIT_MODE:-off}
+      GIT_HOST: ${GIT_HOST:-}
+      LOCALGIT_API_URL: http://caddy:8099
+      LOCALGIT_READ_TOKEN: ${LOCALGIT_READ_TOKEN:-}
+      LOCALGIT_CODE_INDEXER: ${LOCALGIT_CODE_INDEXER:-false}
     # Read-only: model check results (probe-results.tsv), the rendered config and the catalog for Home, and
     # .state/status (the installed version, written by ./stack). Writable besides /tmp: portal-state (/state:
     # the logout time, so a restart keeps it), litellm/prices/ (only prices.auto.tsv + prices.meta.json from the
