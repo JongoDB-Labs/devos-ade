@@ -412,6 +412,7 @@ settings_check_batch() {
     fi
     _cfg_stack_running || die "CODE_ENABLED: turning the Code page on with the terminal off needs the stack running (the terminal's LiteLLM key) — ./stack up first"
   fi
+  if cfg_has PORTAL_HTTPS && [ "$(cfg_new PORTAL_HTTPS)" = true ] && ! https_on && why="$(https_unsupported)"; then die "PORTAL_HTTPS: $why"; fi
   if cfg_has TAILSCALE_ALLOWED_LOGIN && [ -z "$(cfg_new TAILSCALE_ALLOWED_LOGIN)" ]; then
     die "TAILSCALE_ALLOWED_LOGIN cannot be made blank here (that would let anyone in your tailnet try the password)"
   fi
@@ -943,6 +944,7 @@ _cfg_write() {
     case "$k" in
       OPENROUTER_API_KEY | STT_API_KEY | STT_MODEL) if [ -z "$v" ]; then args+=("-$k" ''); continue; fi ;;
       CODE_ENABLED) continue ;;   # written by ./stack code enable | disable (_cfg_code), which need the old value first
+      PORTAL_HTTPS) continue ;;   # written by https_enable | https_disable (_cfg_https): the certificate and the trust come first
     esac
     args+=("$k" "$v")
   done
@@ -1048,6 +1050,8 @@ _cfg_post() {
   if _cfg_on openrouter; then _cfg_t "Restart · OpenRouter's models (from the list cached)" _cfg_openrouter; fi
   if _cfg_on explabs; then _cfg_t "Restart · Experiential Labs' models (from the list cached)" _cfg_explabs; fi
   if _cfg_on remote-preview; then _cfg_t "Restart · the remote preview address" code_remote_sync; fi   # (blank when off)
+  # the portal over HTTPS or plain HTTP again (lib/tls.sh): its own restart of Caddy and the apps, with .env's new origins
+  if _cfg_on https; then _cfg_t "Restart · the portal over HTTPS (certificate, trust, Caddy)" _cfg_https; fi
   # .env first, so ./stack up applies them too when the stack is stopped
   if _cfg_on pins && [ -s "$STACK_DIR/litellm/enabled-models.txt" ]; then _cfg_t "Restart · the models chosen" choose_defaults; fi
   if [ -z "$(get_env LITELLM_MASTER_KEY)" ] || [ ! -f "$cfg" ]; then ! _cfg_on code || _cfg_code; log "saved — ./stack setup applies it"; return 0; fi
@@ -1130,6 +1134,19 @@ _cfg_post() {
   # the built-in git server up or gone (LOCALGIT), with its account and the Code page's host
   if _cfg_on localgit; then _cfg_t "Restart · the built-in git server" localgit_up; fi
   if _cfg_on code; then _cfg_code; fi   # last: it restarts the portal and Caddy itself (and turns the terminal on)
+}
+
+# _cfg_https — PORTAL_HTTPS: https_enable | https_disable (lib/tls.sh), which write it themselves, make or delete the certificates,
+# ask the computer for its trust (macOS shows its own password prompt: this runs in the user's session, as the helper does) and
+# restart Caddy and the apps with the new scheme. A trust that fails turns it off again and fails the change. A rollback
+# (CFG_ROLLBACK=1) has .env's old value back already: only the restart follows it.
+_cfg_https() {
+  if [ "${CFG_ROLLBACK:-0}" = 1 ]; then https_apply; return; fi
+  if [ "$(cfg_new PORTAL_HTTPS)" = true ]; then
+    https_enable || die "HTTPS stays off — the messages above say why"
+  else
+    ASSUME_YES=1 https_disable
+  fi
 }
 
 # _cfg_budgets — each key's budget in LiteLLM as BUDGET_* now says (a new alert threshold: every key's soft budget)

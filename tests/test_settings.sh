@@ -70,8 +70,8 @@ test_every_env_key_is_in_the_settings_table_once() {
   # + BEDROCK_MODELS: the extra Bedrock models the model browser adds beyond the catalog, JON-520,
   # + the built-in git server's 9: its switch, its owner's password, its host name, its origin, its mirrors' hosts and
   # their way out, the portal sign-in's header name, the portal's read-only search token and the code indexer's switch,
-  # + LOCAL_RUNTIME: the runtime local-model downloads go to, JON-829, + UPDATE_PREPARE: preparing a release ahead, JON-972)
-  assert_eq "$(settings_rows | wc -l | tr -d ' ')" 160
+  # + LOCAL_RUNTIME: the runtime local-model downloads go to, JON-829, + UPDATE_PREPARE: preparing a release ahead, JON-972, + PORTAL_HTTPS: the portal over HTTPS, JON-976)
+  assert_eq "$(settings_rows | wc -l | tr -d ' ')" 161
 }
 
 test_table_columns_are_valid() {
@@ -268,7 +268,7 @@ test_snapshot_masks_every_secret() {
   assert_contains "$s" "\"base\": \"$(env_sha256)\""
   assert_contains "$s" '"key": "MY_OWN_SECRET", "group": "advanced", "secret": "S"'
   if command -v python3 >/dev/null 2>&1; then
-    python3 -I -c 'import json, sys; d = json.load(open(sys.argv[1])); assert len(d["keys"]) == 161; assert d["last_change"] is None' "$f"
+    python3 -I -c 'import json, sys; d = json.load(open(sys.argv[1])); assert len(d["keys"]) == 162; assert d["last_change"] is None' "$f"
   fi
 }
 
