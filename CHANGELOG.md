@@ -6,6 +6,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.48.1] - 2026-11-02
+
 ### Fixed
 - **Customize's tray no longer covers the handles (JON-974).** The tray sticks to the top while the page scrolls, and at
   about 240 px it hid the handles and resize edges that scrolled under it (and a handle reached with the keyboard could end
@@ -4119,7 +4121,8 @@ Initial public release.
 - `bin/claude-bedrock`: runs Claude Code against Bedrock through LiteLLM without touching plain `claude`.
 - Cost transparency: Bedrock prices in `./stack costs` and the Open WebUI model picker, spend per key.
 
-[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.48.0...HEAD
+[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.48.1...HEAD
+[0.48.1]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.48.0...v0.48.1
 [0.48.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.47.0...v0.48.0
 [0.47.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.46.0...v0.47.0
 [0.46.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.45.1...v0.46.0
