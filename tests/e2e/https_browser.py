@@ -33,6 +33,28 @@ def main() -> int:
         ctx = browser.new_context()   # (no ignore_https_errors)
         page = ctx.new_page()
         page.on("requestfailed", lambda r: errors.append(f"{r.url}: {r.failure}") if "ERR_CERT" in (r.failure or "") else None)
+        # what the page did, said when a step times out: the documents' answers, requests still out or failed, console errors
+        notes: list[str] = []
+        pending: dict = {}
+        page.on("request", lambda r: pending.__setitem__(id(r), f"{r.resource_type} {r.url}"[:200]))
+        page.on("requestfinished", lambda r: pending.pop(id(r), None))
+        page.on("requestfailed", lambda r: notes.append(f"failed {pending.pop(id(r), r.url)}: {r.failure}"[:300]))
+        page.on("response", lambda r: notes.append(f"{r.status} {r.request.method} {r.url}"[:300]) if r.request.resource_type == "document" else None)
+        page.on("console", lambda m: notes.append(f"console {m.type}: {m.text}"[:300]) if m.type in ("error", "warning") else None)
+
+        def said(step: str) -> None:
+            try:
+                state = page.evaluate("document.readyState")
+            except Exception as e:   # (a page in the middle of a navigation)
+                state = f"? ({e.__class__.__name__})"
+            print(f"{step}: at {page.url}, readyState {state}")
+            print(*notes[-40:], sep="\n")
+            print("still out:", *list(pending.values())[:30], sep="\n  ")
+            try:
+                page.screenshot(path=f"/out/{step}.png")
+                print(page.inner_text("body", timeout=5000)[:800])
+            except Exception as e:
+                print(f"(no screenshot or text: {e.__class__.__name__})")
 
         resp = page.goto(f"{base}/", wait_until="domcontentloaded")
         assert resp is not None, "no response for the portal"
@@ -40,7 +62,11 @@ def main() -> int:
         assert page.url.startswith("https://"), f"login page is not https: {page.url}"
         page.fill("#password", password)
         page.click("form[action='/login'] button[type=submit]")
-        page.wait_for_url(re.compile(r"^https://[^/]+/($|\?|#)"), timeout=30000)
+        try:
+            page.wait_for_url(re.compile(r"^https://[^/]+/($|\?|#)"), timeout=30000)
+        except Exception:
+            said("after-sign-in")
+            raise
         cookies = [c for c in ctx.cookies() if c["name"] == "bn_session"]
         assert cookies and cookies[0]["secure"], "the session cookie is not Secure"
         print("ok portal login over https, Secure cookie")
