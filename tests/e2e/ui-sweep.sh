@@ -38,6 +38,8 @@
 #   SWEEP_WIDTHS=desktop,tablet,phone  SWEEP_THEMES=light,dark   a smaller sweep
 #   SWEEP_ONLY=code,off_pages          just those parts (signin portal off_pages walkthrough code errors manifest links)
 #   SWEEP_SIZES=desktop=1440x900,tablet=834x1194   other viewports for those widths (e.g. a design review's)
+#   SWEEP_REF_CACHE=0  --compare sweeps REF every time (default: REF's inventory is kept in ~/.cache/ade-e2e/sweep-ref by
+#                      REF's commit, this sweeper's files and these settings, and swept again only when one changes)
 # The sweep reads; what it seeds is the throwaway's own: a project of its workspace (a git repository with a change, its
 # own Claude Code settings, not trusted) for the Code page's Projects, Git and trust views. Costs setup's probe only.
 set -uo pipefail
@@ -79,8 +81,25 @@ if [ -n "$COMPARE" ]; then   # the sweep twice (REF, then the candidate) and the
   git -C "$ROOT" worktree add -q --detach "$REFWT" "$COMPARE" || die "cannot make a worktree of $COMPARE"
   rm -rf "$CMP/ref" "$CMP/candidate" "$CMP/inventory-diff.json"
   more=(); [ "$LONG" = 0 ] || more=(--long-path)
-  say "compare: sweeping $COMPARE ($(git -C "$REFWT" rev-parse --short HEAD))"
-  "$HERE/ui-sweep.sh" --aws-env "$AWS_ENV_FILE" --src "$REFWT" --project "$PROJECT" --out "$CMP/ref" ${more[@]+"${more[@]}"}
+  # REF's inventory is the same every time this sweeper sweeps it the same way: kept by REF's commit, a hash of this
+  # checkout's sweeper (the browser suite's files, this script, lib.sh) and the sweep's settings; any change sweeps again.
+  # SWEEP_REF_CACHE=0 sweeps REF every time; the cache is ~/.cache/ade-e2e/sweep-ref (controls.json only).
+  ref_key="$( { git -C "$REFWT" rev-parse HEAD
+    (cd "$HERE" && find browser -type f ! -path '*/__pycache__/*' ! -path 'browser/fixtures/*' | LC_ALL=C sort | xargs shasum -a 256)
+    shasum -a 256 "$HERE/ui-sweep.sh" "$HERE/lib.sh" | cut -d' ' -f1
+    printf '%s\n' "${SWEEP_WIDTHS:-}" "${SWEEP_THEMES:-}" "${SWEEP_ONLY:-}" "${SWEEP_SIZES:-}" "$LONG"; } | shasum -a 256 | cut -c1-32)"
+  ref_cache="$HOME/.cache/ade-e2e/sweep-ref/$ref_key"
+  if [ "${SWEEP_REF_CACHE:-1}" != 0 ] && [ -s "$ref_cache/controls.json" ]; then
+    mkdir -p "$CMP/ref/run/sweep" && cp "$ref_cache/controls.json" "$CMP/ref/run/sweep/controls.json"
+    say "compare: $COMPARE's inventory from the cache ($ref_key, swept $(cat "$ref_cache/when" 2>/dev/null || echo '?')): not swept again"
+  else
+    say "compare: sweeping $COMPARE ($(git -C "$REFWT" rev-parse --short HEAD))"
+    "$HERE/ui-sweep.sh" --aws-env "$AWS_ENV_FILE" --src "$REFWT" --project "$PROJECT" --out "$CMP/ref" ${more[@]+"${more[@]}"}
+    if [ -s "$CMP/ref/run/sweep/controls.json" ] && [ "${SWEEP_REF_CACHE:-1}" != 0 ]; then
+      mkdir -p "$ref_cache.tmp$$" && cp "$CMP/ref/run/sweep/controls.json" "$ref_cache.tmp$$/" && date -u '+%F %TZ' > "$ref_cache.tmp$$/when" &&
+        { rm -rf "$ref_cache"; mv "$ref_cache.tmp$$" "$ref_cache"; } || rm -rf "$ref_cache.tmp$$"
+    fi
+  fi
   say "compare: sweeping the candidate ($(git -C "$SRC" rev-parse --short HEAD))"
   "$HERE/ui-sweep.sh" --aws-env "$AWS_ENV_FILE" --src "$SRC" --project "$PROJECT" --out "$CMP/candidate" ${more[@]+"${more[@]}"}
   for w in ref candidate; do [ -s "$CMP/$w/run/sweep/controls.json" ] || die "the $w sweep wrote no controls.json (see $CMP/$w/logs and run/sweep.log)"; done
@@ -146,8 +165,9 @@ else
   : > "$STACK/.devos-ade-e2e"; printf '/.devos-ade-e2e\n' >> "$STACK/.git/info/exclude"
   cp "$STACK/.env.example" "$STACK/.env"; chmod 600 "$STACK/.env"
   pick_port P 18780; pick_port L 14780; pick_port M 19165
+  pick_subnet G   # the git server's own network: a free /28, so a sweep runs beside another throwaway (an older REF ignores it)
   set_env COMPOSE_PROJECT_NAME "$PROJECT"; set_env PORTAL_HOST "$HOST"; set_env PORTAL_PORT "$P"
-  set_env LITELLM_PORT "$L"; set_env SHARED_MCP_PORT "$M"; set_env OPENWEBUI_ADMIN_EMAIL "you@example.com"
+  set_env LITELLM_PORT "$L"; set_env SHARED_MCP_PORT "$M"; set_env LOCALGIT_SUBNET "$G"; set_env OPENWEBUI_ADMIN_EMAIL "you@example.com"
   for kv in $BUDGETS; do set_env "${kv%%=*}" "${kv#*=}"; done
   set_env PORTAL_PASSWORD "$(openssl rand -hex 10)"
   seed_cheap_default   # (new sessions on Haiku: no flow falls back to a dearer model)
