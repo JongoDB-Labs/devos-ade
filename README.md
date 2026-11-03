@@ -1535,6 +1535,20 @@ uninstall` removes it, turning the server off keeps it).
   the terminal's gateway on a TLS listener that forwards only git's paths of a repository (never the web UI, the API or
   anything else), with a certificate `./stack` made for the name `gateway` and the Code page hands to git as the one CA it
   trusts for that host. Claude's own `git` in the terminal is not wired to it yet (the Code page's operations are).
+- **Keep a project on it (Code page).** Asked once per project: *New project* has **Keep it on your local git server**,
+  ticked (an empty folder, a clone, a folder of the workspace; git init is implied), and a project that is not kept and has not
+  said no gets a line at the top of its Git panel — *Keep this project on your local git server?* — with the repository's
+  name (the project's, in the characters a repository takes) to change first. *Keep it there* makes a private repository
+  `devos/<name>` through the server's API (a name that is taken is said, and nothing is made), adds it as the project's remote
+  (`origin`, or `local` beside a remote it has), and pushes. After that the project is pushed by itself — after a commit
+  made in the panel, after a session's turn, and every 10 minutes for what moved — each branch to the branch of that name,
+  **never forced**: a branch the server would not take (it has commits the project does not) is shown as *the local git server has
+  commits this project doesn't — pull first* and left alone. Automatic pushes stop, and the panel says why, if the remote is
+  ever pointed anywhere but that repository. The panel shows where it is kept, when it was last pushed and what has not been,
+  **Push now**, **Open in Git** (the portal's Git page), **Issues** and **Pull requests**, a switch for the automatic
+  pushes and **Stop keeping it here** (the remote goes; the repository stays on the server). *Not for this project* is
+  remembered; the project's menu still has *Keep on your local git server…*. Claude is told a kept project is pushed by itself
+  and not to publish it elsewhere unless asked.
 - **Search.** The global search's **Git** group lists repositories (name, description) and issues and pull requests
   (titles). The portal server asks Forgejo's API for them with a **read-only token** of the owner account (`read:repository`,
   `read:issue`; `LOCALGIT_READ_TOKEN` in `.env`, made by `./stack up` and made again if the server stops accepting it): only
