@@ -205,7 +205,7 @@ def test_a_greyed_item_of_the_code_page_opens_settings_from_the_code_tabs_own_fr
     # (a reason the portal knows, its place from the portal's own list — never one the frame names — and the portal's
     # own address for it: the hash of its Settings place, never a URL)
     assert 'if (typeof reason !== "string" || !Object.hasOwn(CODE_SETUP, reason)) return;' in body
-    assert "e.data.place" not in js and "const hash = `#settings/${CODE_SETUP[reason]}`;" in body
+    assert "e.data.place" not in body and "const hash = `#settings/${CODE_SETUP[reason]}`;" in body
     assert body.count("location.hash = hash") == 1 and "location.href" not in body and "assign(" not in body
     # the list: each reason's place as catalog/setup-links.tsv has it
     table = Path(os.environ.get("BN_REPO_DIR") or Path(__file__).resolve().parents[2]) / "catalog" / "setup-links.tsv"
@@ -227,6 +227,28 @@ def test_a_greyed_item_of_the_code_page_opens_settings_from_the_code_tabs_own_fr
                 sent |= {r for r in rows if re.search(r"""['"`]%s['"`]""" % re.escape(r), text)}
             wanted = {r for r in sent if rows[r].startswith("setting:")}
             assert len(wanted) >= 8 and wanted <= set(lst), sorted(wanted - set(lst))
+
+
+def test_a_kept_projects_repository_opens_the_git_page_from_the_code_tabs_own_frame_only():
+    # (JON-1005: the Code page's {type: "bn-code-git", place} — the Git page at owner/name, or its issues or pull requests, nothing else)
+    js = open("portal/static/code.js", encoding="utf-8").read()
+    handler = js.split('if (e.data.type === "bn-code-git") {', 1)
+    assert len(handler) == 2
+    check = handler[0].rsplit('window.addEventListener("message", (e) => {', 1)[1]
+    assert "e.origin !== codeOrigin" in check and "e.source !== f.contentWindow" in check
+    body = handler[1].split("\n      }\n", 1)[0]
+    # (the place the frame names, only as a repository's path of plain characters, and the portal's own address for it: the hash
+    # of its Git page, never a URL)
+    pat = re.search(r"!/(\^.+\$)/\.test\(place\)", body)
+    assert 'typeof place !== "string"' in body and pat, body
+    place = re.compile(pat.group(1))
+    for ok in ("devos/app", "devos/my.app_2", "devos/app/issues", "devos/app/pulls"):
+        assert place.fullmatch(ok), ok
+    for bad in ("devos", "devos/app/settings", "devos/app/issues/1", "../x/y", "devos/../app", "devos/app?x=1", "devos/app#x",
+                "https://evil.example/x", "//evil.example/x", "devos/.app", "devos/app/issues/", "devos /app"):
+        assert not place.fullmatch(bad), bad
+    assert "const hash = `#git/${place}`;" in body
+    assert body.count("location.hash = hash") == 1 and "location.href" not in body and "assign(" not in body
 
 
 def test_code_tabs_frame_is_made_when_idle_for_its_badge_on_phones_too():
