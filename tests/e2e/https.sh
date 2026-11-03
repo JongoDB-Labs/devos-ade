@@ -22,6 +22,8 @@ PW_IMAGE="mcr.microsoft.com/playwright/python:v1.55.0-noble@sha256:640d578aae63c
 PROJECT=bne2e; OUT="$ROOT/tests/e2e/out"
 # shellcheck source=lib.sh
 . "$HERE/lib.sh"
+# shellcheck source=browser-net.sh
+. "$HERE/browser-net.sh"   # the Linux browser's own network
 while [ $# -gt 0 ]; do
   case "$1" in
     --project) PROJECT="${2:-}"; shift 2 ;;
@@ -37,7 +39,7 @@ STACK="$ROOT/tests/e2e/work/$PROJECT"
 for t in certutil openssl curl docker; do command -v "$t" >/dev/null 2>&1 || die "needs $t"; done
 
 OUT="$OUT/https"; mkdir -p "$OUT"; RESULTS="$OUT/results.tsv"; : > "$RESULTS"
-HT="$(mktemp -d)"; trap 'rm -rf "$HT"' EXIT
+HT="$(mktemp -d)"; trap 'browser_net_stop; rm -rf "$HT"' EXIT
 HOSTN="$PROJECT.localhost"; PORT="$(get_env PORTAL_PORT)"
 [ -n "$PORT" ] || die "no PORTAL_PORT in $STACK/.env"
 T0="$(now)"
@@ -76,13 +78,16 @@ browser() {
   local image="$PROJECT/e2e-playwright:local"; mkdir -p "$OUT/browser" "$HT/nss-copy"
   docker build -q --build-arg PW_IMAGE="$PW_IMAGE" -t "$image" "$HERE" > "$OUT/browser-build.log" 2>&1 || { echo "docker build of the Playwright runner failed"; return 1; }
   cp -R "$HT/.pki/nssdb/." "$HT/nss-copy/" && chmod -R a+rX "$HT/nss-copy"
-  local opts=(--network host --user "$(id -u):$(id -g)" -e HOME=/tmp) h
+  # (a network of its own, the stack's port relayed in under its own number: browser-net.sh)
+  browser_net_start "$PORT" || { echo "the relay to the stack's port did not start (browser-net.sh)"; return 1; }
+  local opts=(${BNET_OPTS[@]+"${BNET_OPTS[@]}"} --user "$(id -u):$(id -g)" -e HOME=/tmp) h rc
   for h in "$HOSTN" "chat.$HOSTN" "terminal.$HOSTN"; do opts+=(--add-host "$h:127.0.0.1"); done
   docker run --rm --name "$PROJECT-https-playwright" --init --shm-size=1g "${opts[@]}" \
     -e E2E_HOST="$HOSTN" -e E2E_PORT="$PORT" \
-    -v "$STACK/.env:/run/e2e/env:ro" -v "$HERE/https_browser.py:/suite/https_browser.py:ro" \
+    -v "$STACK/.env:/run/e2e/env:ro" -v "$HERE/https_browser.py:/suite/https_browser.py:ro" -v "$HERE/browser/relay.py:/suite/relay.py:ro" \
     -v "$HT/nss-copy:/tmp/.pki/nssdb" -v "$OUT/browser:/out" \
-    "$image" python3 -u /suite/https_browser.py
+    "$image" ${BNET_CMD[@]+"${BNET_CMD[@]}"} python3 -u /suite/https_browser.py
+  rc=$?; browser_net_stop; return "$rc"
 }
 turn_off() {
   st https off || return 1

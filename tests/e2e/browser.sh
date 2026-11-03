@@ -3,9 +3,10 @@
 # Called by tests/e2e/run.sh: browser.sh STACK_DIR OUT_DIR PROJECT PW_IMAGE [CHECK_FILTER]
 # The container gets the throwaway .env read-only (the suite reads its credentials from there; they are never
 # passed on a command line or printed), and the three .state folders the portal reads, for the fake update /
-# helper states. The *.PROJECT.localhost names point at the host: Linux uses the host network (and runs the
-# container as you, so files it writes stay yours); Docker Desktop (macOS/Windows) maps them to host-gateway, where
-# it forwards to the published 127.0.0.1 ports. Exits non-zero when the suite could not run to its end.
+# helper states. The *.PROJECT.localhost names point at the stack's published 127.0.0.1 ports: on Linux the container
+# has a network of its own with those ports relayed in (browser-net.sh; it runs as you, so files it writes stay yours);
+# Docker Desktop (macOS/Windows) maps them to host-gateway, where it forwards to them. Exits non-zero when the suite
+# could not run to its end.
 set -uo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 stack="$1"; out="$2"; project="$3"; pw_image="$4"; filter="${5:-}"
@@ -25,8 +26,16 @@ get() { K="$1" awk 'index($0, ENVIRON["K"] "=") == 1 { v = substr($0, length(ENV
 image_tag() { sed -n "s|^[[:space:]]*image:[[:space:]]*[^[:space:]]*$1:\\([^@[:space:]]*\\).*|\\1|p" "$stack/compose.yaml" | head -n 1; }
 
 opts=()
+# shellcheck source=browser-net.sh
+. "$here/browser-net.sh"
 if [ "$(uname -s)" = Linux ]; then
-  opts=(--network host --user "$(id -u):$(id -g)" -e HOME=/tmp); target=127.0.0.1
+  # (a network of its own, the stack's ports relayed in under their own numbers: browser-net.sh)
+  if ! browser_net_start "$(get PORTAL_PORT)" "$(get LITELLM_PORT)" "$(get SHARED_MCP_PORT)" "${E2E_GIT_ADMIN_PORT:-}"; then
+    printf 'browser\tbrowser-network\tFAIL\t0\tthe relay to the stack'"'"'s ports did not start (browser-net.sh)\n' >> "$out/browser/results.tsv"
+    exit 1
+  fi
+  trap browser_net_stop EXIT
+  opts=(${BNET_OPTS[@]+"${BNET_OPTS[@]}"} --user "$(id -u):$(id -g)" -e HOME=/tmp); target=127.0.0.1
 else
   target="host-gateway"
 fi
@@ -53,7 +62,7 @@ docker run --rm --name "$project-playwright" --init --shm-size=1g "${opts[@]}" \
   -v "$stack/.state/status:/state/status" \
   -v "$stack/.state/update-check:/state/update-check" \
   -v "$stack/.state/requests:/state/requests" \
-  "$image" python3 -u /suite/suite.py > "$out/browser/run.log" 2>&1
+  "$image" ${BNET_CMD[@]+"${BNET_CMD[@]}"} python3 -u /suite/suite.py > "$out/browser/run.log" 2>&1
 rc=$?
 tail -n 5 "$out/browser/run.log" >&2
 exit "$rc"

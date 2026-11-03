@@ -218,9 +218,10 @@ RESULTS = OUT / "results.tsv"
 # something on the stack that would fail the checks after it puts it right here (checks_code: the Code page's
 # sessions). What it says is printed under the check's line (run.log); it never changes a result.
 AFTER: list = []
-# On Linux Chromium shares the test host's network (browser.sh: --network host), so a container of the run starting or
-# stopping changes its interfaces, and it cancels what it is loading: net::ERR_NETWORK_CHANGED (v0.39.0's and v0.42.0's
-# settings-page). checks_browser.Recorder counts each; a check that fails after one is tried once more (try_twice).
+# Until v0.57.0 Chromium on Linux shared the test host's network (--network host), so any container starting or stopping
+# changed its interfaces, and it cancelled what it was loading: net::ERR_NETWORK_CHANGED (v0.39.0's and v0.42.0's
+# settings-page; v0.57.0's first four-stage run). It has a network of its own now (browser-net.sh; E2E_BROWSER_NET=host:
+# the old way). checks_browser.Recorder still counts each; a check that fails after one is tried once more (try_twice).
 NETWORK_CHANGED = [0]
 
 

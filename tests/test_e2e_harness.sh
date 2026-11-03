@@ -1314,3 +1314,124 @@ PY
   python3 -I "$TMP/said.py" "$STACK_DIR/tests/e2e/browser/common.py" "$TMP/results.tsv" > "$TMP/out" 2>&1 || { cat "$TMP/out" >&2; return 1; }
   assert_contains "$(cat "$TMP/out")" "ok"
 }
+
+# _relay_echo — a TCP echo server on a free 127.0.0.1 port (ECHO_PORT; ECHO_PID), each connection's bytes sent back until
+# its end, then its own end (half-close); it ends by itself after 60 s. client.py — the bytes each way through it.
+# RELAY_DIR: a short folder for the sockets (TMP's path is too long for one: at most 104 bytes on macOS).
+_relay_echo() {
+  cat > "$TMP/echo.py" <<'PY'
+import os, socket, sys, threading
+s = socket.socket(); s.bind(("127.0.0.1", 0)); s.listen(8)
+open(sys.argv[1], "w").write(str(s.getsockname()[1]))
+threading.Timer(60, lambda: os._exit(0)).start()
+def serve(c):
+    while (b := c.recv(65536)):
+        c.sendall(b)
+    c.shutdown(socket.SHUT_WR); c.close()
+while True:
+    threading.Thread(target=serve, args=(s.accept()[0],), daemon=True).start()
+PY
+  cat > "$TMP/client.py" <<'PY'
+import socket, sys
+kind, where = sys.argv[1], sys.argv[2]
+c = socket.socket(socket.AF_UNIX) if kind == "unix" else socket.socket()
+c.connect(where if kind == "unix" else ("127.0.0.1", int(where)))
+data = bytes(range(256)) * 1024   # 256 KiB: more than one read of the relay's
+c.sendall(data); c.shutdown(socket.SHUT_WR)
+got = b""
+while (b := c.recv(65536)):
+    got += b
+print("ok" if got == data else f"got {len(got)} of {len(data)} bytes back")
+PY
+  rm -f "$TMP/echo.port"; python3 -I "$TMP/echo.py" "$TMP/echo.port" & ECHO_PID=$!
+  for _ in $(seq 1 50); do [ -s "$TMP/echo.port" ] && break; sleep 0.1; done
+  ECHO_PORT="$(cat "$TMP/echo.port" 2>/dev/null)"; [ -n "$ECHO_PORT" ] || { echo "the echo server did not start" >&2; return 1; }
+  RELAY_DIR="$(mktemp -d /tmp/bnrelay.XXXXXX)" || return 1
+}
+_relay_done() { # the echo server ended, RELAY_DIR's files and folders gone (what the relays left)
+  kill "$ECHO_PID" 2>/dev/null || true; wait "$ECHO_PID" 2>/dev/null || true
+  rm -f "$RELAY_DIR"/*/* 2>/dev/null; find "$RELAY_DIR" -maxdepth 1 ! -type d -exec rm -f {} + 2>/dev/null; rmdir "$RELAY_DIR"/* "$RELAY_DIR" 2>/dev/null
+  [ ! -e "$RELAY_DIR" ] || { echo "left: $(ls -laR "$RELAY_DIR")" >&2; return 1; }
+}
+_relay_wait_ready() { # LOG -> 0 once the relay said ready
+  for _ in $(seq 1 50); do grep -q '^ready$' "$1" 2>/dev/null && return 0; sleep 0.1; done
+  echo "the relay did not say ready: $(cat "$1" 2>/dev/null)" >&2; return 1
+}
+
+test_e2e_browser_relay_carries_bytes_both_ways_from_the_containers_port_to_the_hosts() {
+  # the whole way on one machine: 127.0.0.1:FREE (inside) -> FREE.sock, a link to PORT.sock -> 127.0.0.1:PORT (host)
+  _relay_echo || return 1
+  local relay="$STACK_DIR/tests/e2e/browser/relay.py" h="$RELAY_DIR/host" c="$RELAY_DIR/ctr" free rc=0 out st a
+  mkdir -p "$h" "$c"
+  python3 -I "$relay" host "$h" "$ECHO_PORT" > "$TMP/relay.log" 2>&1 & local hp=$!
+  _relay_wait_ready "$TMP/relay.log" || rc=1
+  if [ "$rc" = 0 ]; then
+    [ -n "$(find "$h/$ECHO_PORT.sock" -perm 600 2>/dev/null)" ] || { echo "the socket is not 600: $(ls -l "$h")" >&2; rc=1; }
+    out="$(python3 -I "$TMP/client.py" unix "$h/$ECHO_PORT.sock" 2>&1)"; assert_eq "$out" "ok" || rc=1
+    free="$(python3 -I -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
+    ln -s "$h/$ECHO_PORT.sock" "$c/$free.sock"
+    out="$(python3 -I "$relay" inside "$c" "$free" -- python3 -I "$TMP/client.py" tcp "$free" 2>&1)"; assert_eq "$out" "ok" || rc=1
+    # the command's exit status is the relay's own
+    st=0; python3 -I "$relay" inside "$c" "$free" -- python3 -I -c 'import sys; sys.exit(7)' || st=$?; assert_eq "$st" 7 || rc=1
+    # a port nothing listens on: refused (closed at once), as without the relay
+    python3 -I "$relay" host "$h" 1 > "$TMP/relay1.log" 2>&1 & local p1=$!
+    if _relay_wait_ready "$TMP/relay1.log"; then
+      out="$(python3 -I -c 'import socket, sys; c = socket.socket(socket.AF_UNIX); c.connect(sys.argv[1]); c.settimeout(5); print(repr(c.recv(1)))' "$h/1.sock" 2>&1)"
+      assert_eq "$out" "b''" || rc=1
+    else rc=1; fi
+    kill "$p1" 2>/dev/null || true; wait "$p1" 2>/dev/null || true
+  fi
+  kill "$hp" 2>/dev/null || true; wait "$hp" 2>/dev/null || true
+  [ ! -e "$h/$ECHO_PORT.sock" ] || { echo "the relay left its socket behind" >&2; rc=1; }
+  # a socket's path too long: said in one line, no traceback
+  st=0; out="$(python3 -I "$relay" host "$TMP/$(printf 'x%.0s' $(seq 1 120))" 80 2>&1)" || st=$?; assert_eq "$st" 1 || rc=1
+  assert_contains "$out" "relay.py host: " || rc=1; assert_not_contains "$out" "Traceback" || rc=1
+  _relay_done || rc=1
+  # usage: no ports, a port out of range, inside without a command
+  for a in "host $h" "host $h 0" "host $h 70000" "host $h x1" "inside $c 80" "inside $c 80 --" "nope $h 80"; do
+    # shellcheck disable=SC2086  # (the words of each case)
+    st=0; python3 -I "$relay" $a > /dev/null 2>&1 || st=$?; [ "$st" = 2 ] || { echo "relay.py $a: not a usage error ($st)" >&2; rc=1; }
+  done
+  return "$rc"
+}
+
+test_e2e_browser_relay_ends_when_the_shell_that_started_it_is_gone() {
+  _relay_echo || return 1
+  local relay="$STACK_DIR/tests/e2e/browser/relay.py" h="$RELAY_DIR/host" pid rc=0
+  mkdir -p "$h"
+  bash -c 'python3 -I "$1" host "$2" "$3" > "$2/log" 2>&1 & echo $! > "$2/pid"
+    for _ in $(seq 1 50); do grep -q "^ready$" "$2/log" 2>/dev/null && break; sleep 0.1; done' _ "$relay" "$h" "$ECHO_PORT"
+  pid="$(cat "$h/pid")"
+  for _ in $(seq 1 60); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
+  if kill -0 "$pid" 2>/dev/null; then echo "the relay outlived its shell by 6 s" >&2; kill "$pid"; rc=1; fi
+  [ ! -e "$h/$ECHO_PORT.sock" ] || { echo "its socket was left behind" >&2; rc=1; }
+  _relay_done || rc=1
+  return "$rc"
+}
+
+test_e2e_browser_net_gives_the_linux_browser_a_network_of_its_own_and_cleans_up() {
+  _relay_echo || return 1
+  local rc=0 d pid out
+  uname() { if [ "${1:-}" = -s ]; then echo "${FAKE_UNAME:-Linux}"; else command uname "$@"; fi; }
+  # shellcheck source=../tests/e2e/browser-net.sh
+  . "$STACK_DIR/tests/e2e/browser-net.sh"
+  browser_net_start "$ECHO_PORT" "" || { echo "browser_net_start failed" >&2; rc=1; }
+  d="$BNET_DIR"; pid="$BNET_PID"
+  assert_eq "${BNET_OPTS[*]-}" "--network bridge -v $d:/relay" || rc=1
+  assert_eq "${BNET_CMD[*]-}" "python3 -I /suite/relay.py inside /relay $ECHO_PORT --" || rc=1
+  out="$(python3 -I "$TMP/client.py" unix "$d/$ECHO_PORT.sock" 2>&1)"; assert_eq "$out" "ok" || rc=1
+  browser_net_stop
+  [ ! -e "$d" ] || { echo "its folder is left: $(ls -la "$d")" >&2; rc=1; }
+  if kill -0 "$pid" 2>/dev/null; then echo "the relay still runs" >&2; kill "$pid"; rc=1; fi
+  assert_eq "$BNET_DIR$BNET_PID" "" || rc=1
+  browser_net_stop || rc=1   # (again: nothing to stop)
+  E2E_BROWSER_NET=host browser_net_start "$ECHO_PORT" || rc=1
+  assert_eq "${BNET_OPTS[*]-}|${BNET_CMD[*]-}|$BNET_DIR" "--network host||" || rc=1
+  FAKE_UNAME=Darwin browser_net_start "$ECHO_PORT" || rc=1
+  assert_eq "${BNET_OPTS[*]-}|${BNET_CMD[*]-}|$BNET_DIR" "||" || rc=1
+  if browser_net_start "80a" 2>/dev/null; then echo "a bad port was taken" >&2; rc=1; fi
+  if browser_net_start "" 2>/dev/null; then echo "no ports was taken" >&2; rc=1; fi
+  unset -f uname
+  _relay_done || rc=1
+  return "$rc"
+}

@@ -212,9 +212,10 @@ e2e_helper_start() {
 # _e2e_helper_settle HEARTBEAT — waits for the helper's next heartbeat (its first loop ran to the end), then, up to
 # 200 s, for the read of the model browser's lists that loop started (lib/model_browser.sh model_browser_tick: Bedrock's
 # in a one-off container of LiteLLM's image, on the stack's network, up to 180 s). That container's start and end each
-# add or remove an interface on the test host, which the Linux browser shares (browser.sh: --network host), and Chromium
-# cancels what it is loading: net::ERR_NETWORK_CHANGED in settings-page, the first check after the helper starts
-# (v0390k, v0420f, v0420g, v0440b). Never fails: the checks start either way.
+# add or remove an interface on the test host, which the Linux browser shared until v0.57.0 (--network host; now a network
+# of its own, browser-net.sh, unless E2E_BROWSER_NET=host), and Chromium cancelled what it was loading:
+# net::ERR_NETWORK_CHANGED in settings-page, the first check after the helper starts (v0390k, v0420f, v0420g, v0440b).
+# Never fails: the checks start either way.
 _e2e_helper_settle() {
   local hb pid t0; t0="$(now)"
   for _ in $(seq 1 20); do hb="$(_helper_beat_at)" && [ "$hb" -gt "$1" ] && break; sleep 1; done

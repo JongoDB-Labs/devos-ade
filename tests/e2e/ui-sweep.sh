@@ -71,6 +71,8 @@ done
 
 . "$HERE/lib.sh"
 . "$ROOT/lib/ports.sh"   # port_in_use
+# shellcheck source=browser-net.sh
+. "$HERE/browser-net.sh"   # the Linux browser's own network
 if [ -n "$COMPARE" ]; then   # the sweep twice (REF, then the candidate) and the diff; each run is this script, as a plain run
   { [ -z "$LAYOUT" ] && [ "$REUSE$TEARDOWN_ONLY" = 00 ]; } || die "--compare does not combine with --layout, --reuse or --teardown"
   [ -n "$AWS_ENV_FILE" ] || die "--aws-env FILE is required"
@@ -82,11 +84,12 @@ if [ -n "$COMPARE" ]; then   # the sweep twice (REF, then the candidate) and the
   rm -rf "$CMP/ref" "$CMP/candidate" "$CMP/inventory-diff.json"
   more=(); [ "$LONG" = 0 ] || more=(--long-path)
   # REF's inventory is the same every time this sweeper sweeps it the same way: kept by REF's commit, a hash of this
-  # checkout's sweeper (the browser suite's files, this script, lib.sh) and the sweep's settings; any change sweeps again.
+  # checkout's sweeper (the browser suite's files, this script, lib.sh, browser-net.sh) and the sweep's settings; any change
+  # sweeps again.
   # SWEEP_REF_CACHE=0 sweeps REF every time; the cache is ~/.cache/ade-e2e/sweep-ref (controls.json only).
   ref_key="$( { git -C "$REFWT" rev-parse HEAD
     (cd "$HERE" && find browser -type f ! -path '*/__pycache__/*' ! -path 'browser/fixtures/*' | LC_ALL=C sort | xargs shasum -a 256)
-    shasum -a 256 "$HERE/ui-sweep.sh" "$HERE/lib.sh" | cut -d' ' -f1
+    shasum -a 256 "$HERE/ui-sweep.sh" "$HERE/lib.sh" "$HERE/browser-net.sh" | cut -d' ' -f1
     printf '%s\n' "${SWEEP_WIDTHS:-}" "${SWEEP_THEMES:-}" "${SWEEP_ONLY:-}" "${SWEEP_SIZES:-}" "$LONG"; } | shasum -a 256 | cut -c1-32)"
   ref_cache="$HOME/.cache/ade-e2e/sweep-ref/$ref_key"
   if [ "${SWEEP_REF_CACHE:-1}" != 0 ] && [ -s "$ref_cache/controls.json" ]; then
@@ -124,7 +127,7 @@ fi
 # shellcheck disable=SC2034  # (HELPER_PID: read by lib.sh's teardown)
 HELPER_PID=''
 LONG_OPT=''; [ "$LONG" = 0 ] || LONG_OPT=' --long-path'
-trap 'rc=$?; trap - EXIT INT TERM HUP; if [ "$KEEP" = 0 ]; then teardown; else say "kept: tests/e2e/ui-sweep.sh --teardown --project $PROJECT$LONG_OPT"; fi; exit $rc' EXIT
+trap 'rc=$?; trap - EXIT INT TERM HUP; browser_net_stop; if [ "$KEEP" = 0 ]; then teardown; else say "kept: tests/e2e/ui-sweep.sh --teardown --project $PROJECT$LONG_OPT"; fi; exit $rc' EXIT
 trap 'warn "interrupted"; exit 130' INT TERM HUP
 
 st() { # the throwaway's ./stack, clean environment, no terminal
@@ -198,7 +201,11 @@ docker build -q --build-arg PW_IMAGE="$PW_IMAGE" -t "$PROJECT/e2e-playwright:loc
 NEW_LOGO="$(shasum -a 256 < "$ROOT/portal/portal/static/logo.svg" | cut -d' ' -f1)"
 OLD_LOGO="$(git -C "$ROOT" show 49d7e83:portal/portal/static/logo.svg 2>/dev/null | shasum -a 256 | cut -d' ' -f1)"
 opts=()
-if [ "$(uname -s)" = Linux ]; then opts=(--network host --user "$(id -u):$(id -g)" -e HOME=/tmp); target=127.0.0.1; else target=host-gateway; fi
+if [ "$(uname -s)" = Linux ]; then
+  # (a network of its own, the stack's ports relayed in under their own numbers: browser-net.sh)
+  browser_net_start "$P" "$L" "$M" || die "the relay to the stack's ports did not start (browser-net.sh)"
+  opts=(${BNET_OPTS[@]+"${BNET_OPTS[@]}"} --user "$(id -u):$(id -g)" -e HOME=/tmp); target=127.0.0.1
+else target=host-gateway; fi
 for h in "$HOST" "chat.$HOST" "admin.$HOST" "files.$HOST" "terminal.$HOST" "code.$HOST" "nosuch.$HOST"; do opts+=(--add-host "$h:$target"); done
 mkdir -p "$OUT/run"
 if [ -n "$LAYOUT" ]; then
@@ -216,7 +223,7 @@ if [ -n "$LAYOUT" ]; then
     -e LAYOUT_HAR="${LAYOUT_HAR:-}" \
     -v "$STACK/.env:/run/e2e/env:ro" -v "$HERE/browser:/suite:ro" -v "$OUT/layout:/out/layout" -v "$OUT/run:/out" \
     -v "$STACK/.state/status:/state/status:ro" -v "$STACK/.state/update-check:/state/update-check" \
-    "$PROJECT/e2e-playwright:local" python3 -u /suite/layout_sweep.py --mode "$LAYOUT" --out /out/layout \
+    "$PROJECT/e2e-playwright:local" ${BNET_CMD[@]+"${BNET_CMD[@]}"} python3 -u /suite/layout_sweep.py --mode "$LAYOUT" --out /out/layout \
       ${mockopt[@]+"${mockopt[@]}"} > "$OUT/layout/sweep.log" 2>&1
   rc=$?
   redact "$OUT/layout/sweep.log"
@@ -232,7 +239,7 @@ docker run --rm --name "$PROJECT-playwright" --init --shm-size=1g "${opts[@]}" \
   -v "$STACK/.env:/run/e2e/env:ro" -v "$HERE/browser:/suite:ro" -v "$OUT/run:/out" \
   -v "$STACK/.state/status:/state/status" -v "$STACK/.state/update-check:/state/update-check" \
   -v "$ROOT:/repo:ro" -v "$STACK:/stack:ro" \
-  "$PROJECT/e2e-playwright:local" python3 -u /suite/ui_sweep.py > "$OUT/run/sweep.log" 2>&1
+  "$PROJECT/e2e-playwright:local" ${BNET_CMD[@]+"${BNET_CMD[@]}"} python3 -u /suite/ui_sweep.py > "$OUT/run/sweep.log" 2>&1
 rc=$?
 redact "$OUT/run/sweep.log"; redact_outputs
 tail -n 40 "$OUT/run/sweep.log" >&2
