@@ -83,9 +83,9 @@ function setup({ connected = true, existsName = null } = {}) {
   const fetchImpl = async (url, opts = {}) => {
     const u = new URL(url);
     api.push({ method: opts.method || 'GET', path: u.pathname, headers: opts.headers, body: opts.body ? JSON.parse(opts.body) : null });
-    if (opts.method === 'POST' && u.pathname === '/api/v1/user/repos') {
-      const taken = existsName !== null && JSON.parse(opts.body).name === existsName;
-      return { ok: !taken, status: taken ? 409 : 201, text: async () => JSON.stringify(taken ? { message: 'The repository with the same name already exists.' } : { name: 'x' }) };
+    // (the one question asked of the server: is there a repository of that name already? 200 yes, 404 no)
+    if ((opts.method || 'GET') === 'GET' && u.pathname.startsWith('/api/v1/repos/devos/') && existsName !== null && u.pathname === `/api/v1/repos/devos/${existsName}`) {
+      return { ok: true, status: 200, text: async () => JSON.stringify({ name: existsName }) };
     }
     return { ok: false, status: 404, text: async () => '{"message":"not found"}' };
   };
@@ -117,36 +117,51 @@ test('the repository name: the project\'s name in the characters Forgejo takes',
   assert.ok(nameOk('a.b_c-d') && !nameOk('-a') && !nameOk('a b') && !nameOk('x.git') && !nameOk('x.WIKI') && !nameOk('') && !nameOk(7));
 });
 
-test('Keep it there: a private repository by the API, origin as the remote of a project that has none, and its branch pushed with upstream', async () => {
+test('Keep it there: the name is checked, origin is the remote of a project that has none, and its branch pushed with upstream (the push makes the repository)', async () => {
   const s = setup();
   const id = project(s);
   const v = await s.keep.keep(id, {});
-  const post = s.api.find((c) => c.method === 'POST');
-  assert.deepEqual([post.path, post.body], ['/api/v1/user/repos', { name: 'My-App', private: true, auto_init: false }]);
-  assert.equal(post.headers.Authorization, `token ${LTOK}`);
+  assert.deepEqual(s.api.map((c) => [c.method, c.path]), [['GET', '/api/v1/repos/devos/My-App']], 'only a look at the name: nothing is created through the API');
+  assert.equal(s.api[0].headers.Authorization, `token ${LTOK}`);
   assert.equal(s.sb.repos.get('app').remotes.origin, 'https://gateway:8093/devos/My-App.git');
   assert.equal(urlOf('devos', 'My-App'), 'https://gateway:8093/devos/My-App.git');
   assert.equal(`${LOCALGIT.host}:${LOCALGIT.port}`, 'gateway:8093');
   const nets = s.sb.nets();
   assert.deepEqual(nets.map((r) => [r.action, r.repo, r.remote, r.branch, r.dst]), [['publish', 'app', 'origin', 'main', 'main']]);
   assert.equal(nets[0].url, 'https://gateway:8093/devos/My-App.git');
-  assert.deepEqual([v.state, v.repo, v.remote, v.auto, v.unpushed, v.lastError], ['kept', 'devos/My-App', 'origin', true, [], null]);
+  assert.deepEqual([v.state, v.repo, v.made, v.remote, v.auto, v.unpushed, v.lastError], ['kept', 'devos/My-App', true, 'origin', true, [], null]);
   assert.ok(Number.isInteger(v.pushedAt));
   assert.deepEqual(s.projects.localgit(id).heads, { main: sha('a') });
   assert.ok(!JSON.stringify([v, s.logs]).includes(LTOK));
 });
 
-test('a name of your own is checked; one that is taken is a plain 409 and nothing is made, no remote, no record', async () => {
+test('a name of your own is checked; one on the server already is a plain 409 and nothing is changed, no remote, no record', async () => {
   const s = setup({ existsName: 'taken' });
   const id = project(s);
   await assert.rejects(s.keep.keep(id, { name: 'bad name' }), /repository name of letters/);
   await assert.rejects(s.keep.keep(id, { name: 'x.git' }), /repository name of letters/);
-  await assert.rejects(s.keep.keep(id, { name: 'taken' }), (e) => e.status === 409 && e.message === 'devos/taken is taken — pick another name');
+  await assert.rejects(s.keep.keep(id, { name: 'taken' }), (e) => e.status === 409 && e.message === 'devos/taken is on the git server already, so pick another name');
   assert.deepEqual(s.sb.repos.get('app').remotes, {});
   assert.equal(s.projects.localgit(id), null);
   assert.deepEqual(s.sb.nets(), []);
   const v = await s.keep.keep(id, { name: 'other-name' });
   assert.equal(v.repo, 'devos/other-name');
+});
+
+test('a name another kept project holds is a 409 too, before either has pushed; no commits: kept, made false, no push; the first push makes it (made true)', async () => {
+  const s = setup();
+  const a = project(s, 'Fresh', 'fresh', { branches: {}, branch: 'main' });
+  const b = project(s, 'Other', 'other');
+  const v = await s.keep.keep(a, { name: 'shared' });
+  assert.deepEqual([v.state, v.repo, v.made, v.pushedAt, s.sb.nets().length], ['kept', 'devos/shared', false, null, 0]);
+  await assert.rejects(s.keep.keep(b, { name: 'shared' }), (e) => e.status === 409 && e.message === 'devos/shared is on the git server already, so pick another name');
+  assert.equal(s.projects.localgit(b), null);
+  assert.deepEqual(s.sb.repos.get('other').remotes, {});
+  s.sb.repos.get('fresh').branches.main = sha('b');
+  s.keep.committed('fresh');
+  await sleepUntil(() => s.sb.nets().length === 1);
+  await tick(50);
+  assert.equal((await s.keep.view(a)).made, true);
 });
 
 test('a project that has a remote gets local beside it, pushed without upstream; an existing local is not touched', async () => {
@@ -160,7 +175,7 @@ test('a project that has a remote gets local beside it, pushed without upstream;
   const id2 = project(s, 'Two', 'two', { remotes: { origin: 'https://github.com/o/r.git', local: 'https://example.org/x.git' } });
   await assert.rejects(s.keep.keep(id2, {}), (e) => e.status === 409 && /remote named local already/.test(e.message));
   assert.equal(s.sb.repos.get('two').remotes.local, 'https://example.org/x.git');
-  assert.equal(s.api.filter((c) => c.method === 'POST').length, 1, 'no repository made for the refused one');
+  assert.ok(s.api.every((c) => c.method === 'GET'), 'nothing but looks at a name');
 });
 
 test('not a repository, not connected, a read-only folder: refused before anything is made', async () => {

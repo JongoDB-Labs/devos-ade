@@ -441,13 +441,10 @@ test_the_web_site_signs_the_owner_in_only_after_the_portal_and_the_sandboxs_path
   assert_contains "$mirrors" 'push_mirrors(/[A-Za-z0-9._-]+)?|push_mirrors-sync|mirror-sync'
   assert_not_contains "$mirrors" "admin"
   # (and, for the portal's Git search, the two GET searches — a matcher of their own, GET and those paths only)
-  assert_eq "$(printf '%s\n' "$mirrors" | grep -c 'reverse_proxy')" 5
+  assert_eq "$(printf '%s\n' "$mirrors" | grep -c 'reverse_proxy')" 4
   assert_contains "$(printf '%s\n' "$mirrors" | sed -n '/@search {/,/}/p')" "method GET"
   assert_contains "$(printf '%s\n' "$mirrors" | sed -n '/@search {/,/}/p')" "path /api/v1/repos/search /api/v1/repos/issues/search"
   assert_contains "$mirrors" "reverse_proxy @search forgejo:3000"
-  # (and a new repository of the owner's, for Keep it on your local git server: POST and that one path, nothing under it)
-  assert_eq "$(printf '%s\n' "$mirrors" | sed -n '/@create {/,/}/p' | tr -s '\t ' ' ' | tr '\n' ';')" " @create {; method POST; path /api/v1/user/repos; };"
-  assert_contains "$mirrors" "reverse_proxy @create forgejo:3000"
   y="$(sed -n '/^  forgejo:/,/^  portal:/p' "$T_ROOT/compose.yaml")"
   assert_contains "$y" 'FORGEJO__service__ENABLE_REVERSE_PROXY_AUTHENTICATION: ${LOCALGIT_SSO_ON:-false}'
   assert_contains "$y" 'FORGEJO__service__ENABLE_REVERSE_PROXY_AUTO_REGISTRATION: "false"'

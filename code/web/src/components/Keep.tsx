@@ -107,6 +107,11 @@ function Kept({ id }: { id: string }) {
       <div class="small muted" data-testid="keep-line">
         {keptLine(k, ago)}
       </div>
+      {!k.made && (
+        <div class="small muted" data-testid="keep-not-made">
+          Made on the local git server with the first commit pushed.
+        </div>
+      )}
       {k.rejected.map((m) => (
         <div class="small warn-text" key={m} data-testid="keep-rejected">
           {label(m, 300)}
@@ -122,15 +127,19 @@ function Kept({ id }: { id: string }) {
         <button type="button" class="btn small primary" disabled={off || k.busy} onClick={() => void pushKept(id)} data-testid="keep-push">
           {busy?.what === 'push' || k.busy ? <Spinner size={12} /> : <Icon name="upload" size={13} />} Push now
         </button>
-        <button type="button" class="btn small" onClick={() => openPortalGit(k.repo)} title="The repository in the Git page" data-testid="keep-open">
-          <Icon name="server" size={13} /> Open in Git
-        </button>
-        <button type="button" class="btn small ghost" onClick={() => openPortalGit(k.repo, 'issues')} data-testid="keep-issues">
-          Issues
-        </button>
-        <button type="button" class="btn small ghost" onClick={() => openPortalGit(k.repo, 'pulls')} data-testid="keep-pulls">
-          Pull requests
-        </button>
+        {k.made && (
+          <>
+          <button type="button" class="btn small" onClick={() => openPortalGit(k.repo)} title="The repository in the Git page" data-testid="keep-open">
+            <Icon name="server" size={13} /> Open in Git
+          </button>
+          <button type="button" class="btn small ghost" onClick={() => openPortalGit(k.repo, 'issues')} data-testid="keep-issues">
+            Issues
+          </button>
+          <button type="button" class="btn small ghost" onClick={() => openPortalGit(k.repo, 'pulls')} data-testid="keep-pulls">
+            Pull requests
+          </button>
+          </>
+        )}
       </div>
       <div class="gitr-row">
         <label class="gitr-check small">

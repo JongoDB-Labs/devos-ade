@@ -22,6 +22,8 @@ export interface KeepView {
   /** kept: owner/name, and the remote it was added as in the project's repository */
   repo: string | null;
   remote: string | null;
+  /** the repository exists on the server (the first push with commits makes it) */
+  made: boolean;
   auto: boolean;
   /** when it was last pushed (ms), or null */
   pushedAt: number | null;
@@ -61,6 +63,7 @@ export function normKeep(v: unknown): KeepView | null {
     suggested: repoNameOk(o.suggested) ? o.suggested : 'project',
     state,
     repo: state === 'kept' ? repo : null,
+    made: state === 'kept' && o.made === true,
     remote: state === 'kept' && typeof o.remote === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(o.remote) ? o.remote : null,
     auto: o.auto !== false,
     pushedAt: typeof o.pushedAt === 'number' && Number.isFinite(o.pushedAt) && o.pushedAt > 0 ? o.pushedAt : null,

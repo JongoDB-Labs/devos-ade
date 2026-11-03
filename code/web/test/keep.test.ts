@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { boxShown, gitPlace, gitPlaceUrl, keptLine, keptShown, newProjectBody, normKeep, offerShown, repoNameOk, repoSlug } from '../src/keep';
 
 const view = (over: Record<string, unknown> = {}) => ({ available: true, owner: 'devos', suggested: 'My-App', state: null, auto: true, pushedAt: null, lastError: null, busy: false, ...over });
-const kept = (over: Record<string, unknown> = {}) => view({ state: 'kept', repo: 'devos/My-App', remote: 'origin', unpushed: [], rejected: [], ...over });
+const kept = (over: Record<string, unknown> = {}) => view({ state: 'kept', repo: 'devos/My-App', remote: 'origin', made: true, unpushed: [], rejected: [], ...over });
 
 // (the same table is in code/test/keep.test.mjs: the page and the backend make the same name of a project's)
 const SLUGS: [string, string][] = [['My App', 'My-App'], ['  café  au lait!! ', 'cafe-au-lait'], ['a/b\\c', 'a-b-c'], ['..hidden.', 'hidden'], ['thing.git', 'thing'], ['x.wiki.git', 'x'],
@@ -41,6 +41,13 @@ test('the answer: only what fits is taken; a kept project without a repository i
   assert.equal(normKeep(view({ state: 'maybe' }))?.state, null);
   assert.equal(normKeep(view({ state: 'declined', repo: 'devos/x' }))?.repo, null, 'a repository only for a kept project');
   assert.equal(normKeep(kept({ auto: false }))?.auto, false);
+});
+
+test('made: only a kept project whose repository was made by a push says so', () => {
+  assert.equal(normKeep(kept())?.made, true);
+  assert.equal(normKeep(kept({ made: false }))?.made, false);
+  assert.equal(normKeep(kept({ made: 'yes' }))?.made, false);
+  assert.equal(normKeep(view({ made: true }))?.made, false);
 });
 
 test('the Git panel offers once per project: not when it is not possible, not for a repository around or inside the folder, not after a No (unless asked from the menu)', () => {

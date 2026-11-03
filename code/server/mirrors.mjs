@@ -53,10 +53,7 @@ export function makeMirrors({ store = new GitHosts(), fetchImpl = globalThis.fet
     let json = null;
     const text = await res.text().catch(() => '');
     try { json = text ? JSON.parse(text) : null; } catch { json = null; }
-    if (!res.ok) {
-      // (upstream: the server's own status, for a caller that tells one refusal from another: a name taken is 409)
-      throw Object.assign(err(res.status === 404 ? 404 : res.status === 401 || res.status === 403 ? 502 : 400, `the git server refused: ${short(json?.message || `HTTP ${res.status}`, 300)}`), { upstream: res.status });
-    }
+    if (!res.ok) throw err(res.status === 404 ? 404 : res.status === 401 || res.status === 403 ? 502 : 400, `the git server refused: ${short(json?.message || `HTTP ${res.status}`, 300)}`);
     return json;
   }
   // the remote host and credential a mirror uses: a connected git host with an access token, for the URL's host
@@ -145,16 +142,16 @@ export function makeMirrors({ store = new GitHosts(), fetchImpl = globalThis.fet
   function owner() {
     try { return local().owner; } catch { return null; }
   }
-  // createRepo(name) -> {owner, name, repo}: a new, empty, private repository of the owner's (keep.mjs: Keep it on your local
-  // git server). A name that is taken is a plain 409 and nothing is made.
-  async function createRepo(name) {
+  // nameFree(name) -> {owner, name, repo}: the owner has no repository of that name (keep.mjs: Keep it on your local git server; the
+  // first push makes it). One that exists is a plain 409.
+  async function nameFree(name) {
     const { owner: o } = local();
     if (typeof name !== 'string' || !NAME.test(name)) throw err(400, 'a repository name of letters, digits, . _ and - (at most 100)');
-    try { await api('POST', '/user/repos', { name, private: true, auto_init: false }); } catch (e) {
-      if (e.upstream === 409) throw err(409, `${o}/${name} is taken — pick another name`);
+    try { await api('GET', `/repos/${o}/${name}`); } catch (e) {
+      if (e.status === 404) return { owner: o, name, repo: `${o}/${name}` };
       throw e;
     }
-    return { owner: o, name, repo: `${o}/${name}` };
+    throw err(409, `${o}/${name} is on the git server already, so pick another name`);
   }
 
   // hosts() -> the host names the mirrors reach (the egress the git server gets is limited to them)
@@ -163,5 +160,5 @@ export function makeMirrors({ store = new GitHosts(), fetchImpl = globalThis.fet
     for (const m of await list()) { try { set.add(new URL(m.remote).hostname); } catch { /* not a URL */ } }
     return [...set].sort();
   }
-  return { list, add, sync, remove, hosts, owner, createRepo };
+  return { list, add, sync, remove, hosts, owner, nameFree };
 }
