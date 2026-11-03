@@ -6,17 +6,7 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
-## [0.55.0] - 2026-11-03
-
 ### Added
-- **The update's progress is a popup that shows every action with its time (JON-1004).** It opens by itself when an update
-  starts (from Home, or typed in a terminal, the first time Home sees it) and has the same bar as the card, then a row for each
-  action in order: the ones done with how long they took and a thin bar on one scale, so the slowest stand out; the one that
-  runs, counting up each second; the ones to come, with the time they took last time; a skipped one greyed with its reason; a
-  failed one marked. In order / Slowest first sorts them. Escape, Close or a click outside closes it and the update goes on;
-  it does not open again by itself during the same run, and Show progress (on the update card and the job card) opens it. When
-  the update has ended it says the total time and the three slowest actions with their share ("Setup: services 3m 12s
-  (55%)"), and Copy timings copies one line for each action to paste into a ticket or a spreadsheet.
 - **A project can be kept on your local git server (JON-1005).** The Code page asks once per project: *New project* has
   **Keep it on your local git server** (ticked; an empty folder, a clone or a folder of the workspace), and any other project
   that is not kept gets *Keep this project on your local git server?* at the top of its Git panel, with the repository's name to
@@ -35,6 +25,31 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   last host (`LOCALGIT_CADDY_IP`, written by `./stack`). `./stack up` and `./stack setup` stop with a clear message, naming a
   free /28, when it is not valid or another Docker network (or the remote access network) already uses that range. The
   end-to-end tests give each throwaway its own.
+
+### Tests
+- **Keeping a project on the local git server (JON-1005).** End-to-end check `browser/code-ui-keep-on-local-git`: a new project
+  kept there has no repository before its first push, a commit made in the Git panel is on the server within 30 s by itself,
+  in a private repository; a project answered *Not for this project* is not asked again after a reload; *Stop keeping it here*
+  leaves the repository on the server. The UI sweep's comparison declares the New project dialog's git init box, locked while
+  Keep is ticked.
+- **Release stages side by side on one test host.** Each throwaway (and the UI sweep's) takes a git-server subnet of its own,
+  so two stages can run at once. The UI sweep keeps the reference version's inventory and sweeps it again only when that
+  version, the sweeper or its settings change.
+- **The layout sweep on a busy host.** A measurement with a finding not allowed is taken again after a pause
+  (`LAYOUT_CONFIRM_MS`, 1500), and only what both looks find is a finding; the summary says how many one look alone found. A
+  page whose stylesheet did not load is opened once more in a new browser instead of being measured unstyled.
+
+## [0.55.0] - 2026-11-03
+
+### Added
+- **The update's progress is a popup that shows every action with its time (JON-1004).** It opens by itself when an update
+  starts (from Home, or typed in a terminal, the first time Home sees it) and has the same bar as the card, then a row for each
+  action in order: the ones done with how long they took and a thin bar on one scale, so the slowest stand out; the one that
+  runs, counting up each second; the ones to come, with the time they took last time; a skipped one greyed with its reason; a
+  failed one marked. In order / Slowest first sorts them. Escape, Close or a click outside closes it and the update goes on;
+  it does not open again by itself during the same run, and Show progress (on the update card and the job card) opens it. When
+  the update has ended it says the total time and the three slowest actions with their share ("Setup: services 3m 12s
+  (55%)"), and Copy timings copies one line for each action to paste into a ticket or a spreadsheet.
 
 ### Fixed
 - **Preparing ahead works with Chat's way out through this computer (JON-1003).** With `TERMINAL_EGRESS=host` and the Code
