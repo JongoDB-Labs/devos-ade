@@ -2440,10 +2440,11 @@ KEEP_A, KEEP_B = "e2e-keep-a", "e2e-keep-b"
 @saved
 def ui_keep_on_local_git(ctx):
     """Keeping a project on the built-in git server (JON-1005; no model calls; the throwaway's own git server, on as on a new
-    install): New project › An empty folder has "Keep it on your local git server" ticked — the repository devos/<name> is on the
-    server, private (Forgejo's API, as checks_git.py), and the Git panel says it is kept; a file committed in the panel is on the
-    server within 30 s without a push; another project's offer is answered Not for this project, and after a reload it is not
-    asked again; Stop keeping it here leaves the repository on the server. Screenshots k1-k3."""
+    install): New project › An empty folder has "Keep it on your local git server" ticked — the Git panel says it is kept, and no
+    repository is on the server before a push (the first push makes it); a file committed in the panel is on the server within
+    30 s without a push, in the repository devos/<name> made by that push, private (Forgejo's API, as checks_git.py); another
+    project's offer is answered Not for this project, and after a reload it is not asked again; Stop keeping it here leaves the
+    repository on the server. Screenshots k1-k3."""
     need_on()
     if not checks_git.ON:
         raise Skip("the built-in git server is off in this throwaway (LOCALGIT=off)")
@@ -2502,6 +2503,9 @@ def ui_keep_on_local_git(ctx):
             if not seen:
                 time.sleep(2)
         expect(seen, "the commit was not on the server within 30 s")
+        st, made = checks_git.forgejo(ctx, "GET", f"/api/v1/repos/{owner}/{KEEP_A}")
+        private = made.get("private") if isinstance(made, dict) else None
+        expect(st == 200 and private is True, f"the repository the first push made is not private: HTTP {st}, private {private}")
         # B: a project with no answer yet; Not for this project; after a reload it is not asked again
         dlg = new_project(KEEP_B)
         page.get_by_test_id("new-project-keep").uncheck()
@@ -2537,8 +2541,8 @@ def ui_keep_on_local_git(ctx):
                 checks_git.forgejo(ctx, "DELETE", f"/api/v1/repos/{owner}/{d}")
         except Exception:  # noqa: BLE001 — cleanup never hides the failure
             pass
-    return (f"New project › an empty folder with Keep it on your local git server ticked made {owner}/{KEEP_A} (private) on the git server and "
-            "the Git panel said so; a commit made in the panel was on the server within 30 s; a project that was not kept made no repository, its "
+    return (f"New project › an empty folder with Keep it on your local git server ticked was kept (the Git panel said so; no repository before "
+            f"a push); a commit made in the panel was on the server within 30 s, in {owner}/{KEEP_A} (private) made by that push; a project that was not kept made no repository, its "
             "offer was answered Not for this project and not asked again after a reload; Stop keeping it here left the repository; no CSP violations")
 
 
