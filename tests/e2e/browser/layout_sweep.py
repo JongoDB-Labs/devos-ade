@@ -50,6 +50,9 @@ except ImportError:   # (its pure parts — the widths, the allowlist, merging �
 
 HERE = Path(__file__).resolve().parent
 MEASURE = (HERE / "layout_measure.js").read_text(encoding="utf-8")
+# the stylesheets a page links that did not load (a busy host's request that failed): such a page is unstyled, not laid out
+# wrong, and is not measured
+UNLOADED_CSS = "() => [...document.querySelectorAll('link[rel=stylesheet]')].filter((l) => !l.disabled && !l.sheet).map((l) => l.getAttribute('href') || '?')"
 ALLOWLIST = HERE / "layout-allowlist.json"
 
 FULL_WIDTHS = list(range(320, 1921, 40))
@@ -98,6 +101,7 @@ class Cfg:
     har_replay: Path | None = None
     state_dir: Path | None = None    # the throwaway's .state (the update card's states: its update-check answer)
     deadline: float = 0.0            # stop measuring (and say so) after this time.time()
+    confirm_ms: int = 1500           # a measurement with a finding not allowed is taken again after this pause (0: never)
     host_rules: str = ""
 
     def __post_init__(self):
@@ -107,6 +111,10 @@ class Cfg:
 
 class Lost(Exception):
     """A state could not be reached (or a resize ended it)."""
+
+
+class Unstyled(Lost):
+    """A state's page has a stylesheet that did not load."""
 
 
 # ------------------------------------------------------------------------------------------------------------------
@@ -210,41 +218,34 @@ class Sweep:
                         break
                     try:
                         d = p.evaluate(MEASURE, {"vw": w, "vh": h})
+                        first = None
+                        if self.cfg.confirm_ms and any(allowed(self.allow, f[0], f"{f[0]}|{f[2]}", state) is None for f in found(d, page_of(state))):
+                            # (a page still laying itself out after the resize — a busy host, two stages at once — is looked
+                            # at again after a pause: only what both looks find is a finding, as the second look shows it)
+                            first = found(d, page_of(state))
+                            p.wait_for_timeout(self.cfg.confirm_ms)
+                            self.settle(p)
+                            d = p.evaluate(MEASURE, {"vw": w, "vh": h})
                     except PwError as e:
                         self.note("measure failed", f"{state} {device} {w}x{h} {theme}: {str(e).splitlines()[0][:200]}")
                         continue
                     self.counts["measurements"] += 1
-                    self.record(p, d)
+                    self.record(p, d, first)
 
-    def record(self, p, d: dict):
+    def record(self, p, d: dict, first: list[tuple] | None = None):
         c = self.cur
         where = {"state": c["state"], "device": c["device"], "w": c["w"], "h": c["h"], "theme": c["theme"]}
-        page = page_of(c["state"])
-        for o in d["overlaps"]:
-            self.add(p, "overlap", o["kind"], f"{page}|{o['a']['path']}|{o['b']['path']}", where, a=o["a"], b=o["b"],
-                     detail=f"{o['kind']}: {o['w']}x{o['h']} px of “{o['a']['text']}” and “{o['b']['text']}”", box=o["at"])
         for o in d["clipped"]:
             if o["meaning"] == "content" or o["intended"]:
-                self.counts["clipped content (not a finding)" if o["meaning"] == "content" else "clipped as intended (title kept)"] = \
-                    self.counts.get("clipped content (not a finding)" if o["meaning"] == "content" else "clipped as intended (title kept)", 0) + 1
-                continue
-            self.add(p, "clipped text", o["how"], f"{page}|{o['path']}", where, a=o,
-                     detail=f"{o['meaning']} “{o['text']}” {o['how']}: {o['shown']}% shown ({o['have']} of {o['need']} px)", box=o["box"])
-        for o in d.get("squeezed", []):
-            self.add(p, "squeezed", "scroll area too small", f"{page}|{o['path']}", where, a=o,
-                     detail=f"a scrolling area is {o['w']}x{o['h']} px: too small for what it holds (“{o['text']}”)", box=o["box"])
-        if d["hscroll"]:
-            hs = d["hscroll"]
-            top = hs["els"][0] if hs["els"] else {"path": "?", "text": "", "id": -1, "box": None}
-            self.add(p, "sideways scroll", "document", f"{page}|{top['path']}", where, a=top,
-                     detail=f"the page scrolls {hs['by']} px sideways; widest: " + "; ".join(f"{e['path']} “{e['text']}”" for e in hs["els"][:3]),
-                     box=top.get("box"))
-        for o in d["small"]:
-            self.add(p, "small target", "under 24 px", f"{page}|{o['path']}", where, a=o,
-                     detail=f"“{o['text']}” is {o['w']}x{o['h']} px, its 24 px circle meets {o['near']}", box=o["box"])
-        for o in d["unreachable"]:
-            self.add(p, "unreachable", "focusable out of view", f"{page}|{o['path']}", where, a=o,
-                     detail=f"“{o['text']}” can be focused but not scrolled to: {o['why']}", box=o["box"])
+                k = "clipped content (not a finding)" if o["meaning"] == "content" else "clipped as intended (title kept)"
+                self.counts[k] = self.counts.get(k, 0) + 1
+        now = found(d, page_of(c["state"]))
+        kept, gone = confirmed(first, now)
+        if gone:
+            k = "gone on a second look (not a finding)"
+            self.counts[k] = self.counts.get(k, 0) + gone
+        for check, kind, sig, a, b, detail, box in kept:
+            self.add(p, check, kind, sig, where, a=a, b=b, detail=detail, box=box)
 
     def add(self, p, check: str, kind: str, sig: str, where: dict, a: dict, detail: str, b: dict | None = None, box=None):
         key = f"{check}|{sig}"
@@ -325,20 +326,30 @@ class Sweep:
                 if self.cfg.deadline and time.time() > self.cfg.deadline:
                     return
                 t = time.time()
-                c, p = self.context(device, widths[0], self.cfg.heights[0], tour=st.tour)
-                try:
-                    for step in st.fn(self, p, device):
-                        sub, marker, reopen = (*step, None)[:3]
-                        if self.cfg.only and not re.search(self.cfg.only, st.name) and not re.search(self.cfg.only, sub):
+                for attempt in (1, 2):
+                    c, p = self.context(device, widths[0], self.cfg.heights[0], tour=st.tour)
+                    try:
+                        for i, step in enumerate(st.fn(self, p, device)):
+                            sub, marker, reopen = (*step, None)[:3]
+                            if i == 0 and (bad := p.evaluate(UNLOADED_CSS)):
+                                raise Unstyled(f"a stylesheet did not load: {', '.join(bad)}")
+                            if self.cfg.only and not re.search(self.cfg.only, st.name) and not re.search(self.cfg.only, sub):
+                                continue
+                            self.measure_all(p, sub, device, widths, marker, reopen)
+                    except Unstyled as e:
+                        # (checked before anything of the state is measured: opened once more, in a new browser)
+                        if attempt == 1:
+                            self.note("opened again", f"{st.name} ({device}): {e}")
                             continue
-                        self.measure_all(p, sub, device, widths, marker, reopen)
-                except Lost as e:
-                    self.note("state not reached", f"{st.name} ({device}): {e}")
-                except Exception as e:  # noqa: BLE001 — one state's failure is said, the sweep goes on
-                    self.note("state not reached", f"{st.name} ({device}): {type(e).__name__}: {str(e).splitlines()[0][:300]}")
-                    (self.out / "tracebacks.txt").open("a").write(f"--- {st.name} {device}\n{traceback.format_exc()}\n")
-                finally:
-                    c.close()
+                        self.note("state not reached", f"{st.name} ({device}): {e}, twice")
+                    except Lost as e:
+                        self.note("state not reached", f"{st.name} ({device}): {e}")
+                    except Exception as e:  # noqa: BLE001 — one state's failure is said, the sweep goes on
+                        self.note("state not reached", f"{st.name} ({device}): {type(e).__name__}: {str(e).splitlines()[0][:300]}")
+                        (self.out / "tracebacks.txt").open("a").write(f"--- {st.name} {device}\n{traceback.format_exc()}\n")
+                    finally:
+                        c.close()
+                    break
                 print(f"  {st.name:<28} {device:<8} {len(widths)} widths  {time.time() - t:5.1f}s  "
                       f"findings {len(self.findings)}", flush=True)
 
@@ -352,6 +363,46 @@ class Sweep:
         out.sort(key=lambda f: (f["allowed"], f["check"], f["sig"]))
         return {"findings": out, "notes": self.notes, "counts": self.counts, "secs": round(time.time() - self.t0, 1),
                 "mode": self.cfg.mode, "widths": self.cfg.widths, "heights": self.cfg.heights, "themes": self.cfg.themes}
+
+
+def found(d: dict, page: str) -> list[tuple]:
+    """One measurement's findings, as (check, kind, sig, a, b, detail, box): sig is the finding's signature without its
+    check. Clipped content, and titles clipped as intended, are not findings (Sweep.record counts them)."""
+    out = []
+    for o in d["overlaps"]:
+        out.append(("overlap", o["kind"], f"{page}|{o['a']['path']}|{o['b']['path']}", o["a"], o["b"],
+                    f"{o['kind']}: {o['w']}x{o['h']} px of “{o['a']['text']}” and “{o['b']['text']}”", o["at"]))
+    for o in d["clipped"]:
+        if o["meaning"] == "content" or o["intended"]:
+            continue
+        out.append(("clipped text", o["how"], f"{page}|{o['path']}", o, None,
+                    f"{o['meaning']} “{o['text']}” {o['how']}: {o['shown']}% shown ({o['have']} of {o['need']} px)", o["box"]))
+    for o in d.get("squeezed", []):
+        out.append(("squeezed", "scroll area too small", f"{page}|{o['path']}", o, None,
+                    f"a scrolling area is {o['w']}x{o['h']} px: too small for what it holds (“{o['text']}”)", o["box"]))
+    if d["hscroll"]:
+        hs = d["hscroll"]
+        top = hs["els"][0] if hs["els"] else {"path": "?", "text": "", "id": -1, "box": None}
+        out.append(("sideways scroll", "document", f"{page}|{top['path']}", top, None,
+                    f"the page scrolls {hs['by']} px sideways; widest: " + "; ".join(f"{e['path']} “{e['text']}”" for e in hs["els"][:3]),
+                    top.get("box")))
+    for o in d["small"]:
+        out.append(("small target", "under 24 px", f"{page}|{o['path']}", o, None,
+                    f"“{o['text']}” is {o['w']}x{o['h']} px, its 24 px circle meets {o['near']}", o["box"]))
+    for o in d["unreachable"]:
+        out.append(("unreachable", "focusable out of view", f"{page}|{o['path']}", o, None,
+                    f"“{o['text']}” can be focused but not scrolled to: {o['why']}", o["box"]))
+    return out
+
+
+def confirmed(first: list[tuple] | None, now: list[tuple]) -> tuple[list[tuple], int]:
+    """NOW's findings that FIRST (an earlier look at the same state and size) had too, by check and signature, and how many
+    of either look's were not in both; with no earlier look, all of NOW's."""
+    if first is None:
+        return now, 0
+    a = {(f[0], f[2]) for f in first}
+    b = {(f[0], f[2]) for f in now}
+    return [f for f in now if (f[0], f[2]) in a], len(a ^ b)
 
 
 def strip(o: dict | None) -> dict | None:
@@ -931,6 +982,9 @@ def write(out: Path, res: dict) -> list[dict]:
     bad = [f for f in res["findings"] if not f["allowed"]]
     lines = [f"layout sweep ({res.get('mode')}): {res['counts'].get('measurements', 0)} measurements of {res['counts'].get('states', 0)} "
              f"states in {res['secs']} s; {len(res['findings'])} distinct findings, {len(bad)} not allowed", ""]
+    if res["counts"].get("gone on a second look (not a finding)"):
+        lines[1:1] = [f"{res['counts']['gone on a second look (not a finding)']} finding(s) of one look only: gone (or new) on a second "
+                      "look after a pause, so the page was still laying itself out (a busy host); not findings", ""]
     by: dict[str, int] = {}
     for f in res["findings"]:
         k = f"{f['check']} ({f['kind']})" + (" [allowed]" if f["allowed"] else "")
@@ -976,6 +1030,7 @@ def main(argv=None) -> int:
     ap.add_argument("--har-replay")
     ap.add_argument("--state-dir", default=os.environ.get("LAYOUT_STATE_DIR", "/state" if Path("/state/update-check").is_dir() else ""))
     ap.add_argument("--minutes", type=float, default=float(os.environ.get("LAYOUT_MINUTES", "0")))
+    ap.add_argument("--confirm-ms", type=int, default=int(os.environ.get("LAYOUT_CONFIRM_MS", "1500")))
     ap.add_argument("--no-shots", action="store_true")
     a = ap.parse_args(argv)
 
@@ -1007,7 +1062,7 @@ def main(argv=None) -> int:
               themes=[t for t in a.themes.split(",") if t in THEMES] or list(THEMES), only=a.only, shots=not a.no_shots,
               static_dir=Path(a.static_dir) if a.static_dir else None, har_record=Path(a.har_record) if a.har_record else None,
               har_replay=Path(a.har_replay) if a.har_replay else None, state_dir=Path(a.state_dir) if a.state_dir else None,
-              deadline=time.time() + a.minutes * 60 if a.minutes else 0.0, host_rules=rules)
+              deadline=time.time() + a.minutes * 60 if a.minutes else 0.0, host_rules=rules, confirm_ms=a.confirm_ms)
     states = states_for(cfg.mode)
 
     try:

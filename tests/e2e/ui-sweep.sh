@@ -212,7 +212,7 @@ if [ -n "$LAYOUT" ]; then
   docker rm -f "$PROJECT-layout" >/dev/null 2>&1 || true
   docker run --rm --name "$PROJECT-layout" --init --shm-size=2g "${opts[@]}" ${web[@]+"${web[@]}"} \
     -e E2E_HOST="$HOST" -e E2E_PORT="$P" -e E2E_LITELLM_PORT="$L" -e E2E_MCP_PORT="$M" \
-    -e LAYOUT_JOBS="${LAYOUT_JOBS:-3}" -e LAYOUT_ONLY="${LAYOUT_ONLY:-}" -e LAYOUT_MINUTES="${LAYOUT_MINUTES:-0}" \
+    -e LAYOUT_JOBS="${LAYOUT_JOBS:-3}" -e LAYOUT_ONLY="${LAYOUT_ONLY:-}" -e LAYOUT_MINUTES="${LAYOUT_MINUTES:-0}" -e LAYOUT_CONFIRM_MS="${LAYOUT_CONFIRM_MS:-1500}" \
     -e LAYOUT_HAR="${LAYOUT_HAR:-}" \
     -v "$STACK/.env:/run/e2e/env:ro" -v "$HERE/browser:/suite:ro" -v "$OUT/layout:/out/layout" -v "$OUT/run:/out" \
     -v "$STACK/.state/status:/state/status:ro" -v "$STACK/.state/update-check:/state/update-check" \

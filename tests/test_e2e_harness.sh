@@ -1118,6 +1118,105 @@ PY
   assert_contains "$(cat "$TMP/out")" "ok"
 }
 
+# --- the layout sweep's second look: a measurement with a finding not allowed is taken again after a pause, and only what
+# both looks find is a finding (a page still laying itself out on a busy host, two stages at once, is not a layout
+# problem); what one look alone found is counted and said in the summary; a fake page, no browser ---
+test_e2e_layout_sweep_counts_only_what_a_second_look_finds_too() {
+  command -v python3 >/dev/null 2>&1 || { echo "no python3" >&2; return 77; }
+  cat > "$TMP/look.py" <<'PY'
+import sys, tempfile
+from pathlib import Path
+sys.dont_write_bytecode = True
+sys.path.insert(0, sys.argv[1])
+import layout_sweep as L
+
+def check(cond, what):
+    if not cond:
+        sys.exit(f"FAIL: {what}")
+
+def look(over=(), unreach=(), small=()):
+    el = lambda path: {"path": path, "text": path, "id": 1, "box": None}
+    return {"overlaps": [{"kind": "text over text", "a": el(a), "b": el(b), "w": 9, "h": 9, "at": None} for a, b in over],
+            "clipped": [{"meaning": "content", "intended": False}], "squeezed": [], "hscroll": None,
+            "small": [{**el(x), "w": 20, "h": 20, "near": "y"} for x in small],
+            "unreachable": [{**el(x), "why": "clipped by main.stage (which does not scroll)"} for x in unreach]}
+
+class Page:
+    def __init__(self, looks):
+        self.looks, self.measured, self.waited = list(looks), 0, 0
+    def set_viewport_size(self, s): pass
+    def emulate_media(self, **k): pass
+    def wait_for_timeout(self, ms): self.waited += ms
+    def evaluate(self, js, arg=None):
+        if js is L.MEASURE:
+            self.measured += 1
+            return self.looks.pop(0)
+
+def sweep(allow=(), confirm=1500):
+    sw = L.Sweep.__new__(L.Sweep)
+    sw.cfg = L.Cfg(origin="http://x", password="p", out=None, shots=False, heights=[800], themes=["light"], confirm_ms=confirm)
+    sw.findings, sw.notes, sw.allow, sw.t0 = {}, [], list(allow), 0
+    sw.counts = {"measurements": 0, "states": 0}
+    sw.cur = {"state": "-", "device": "-", "w": 0, "h": 0, "theme": "-"}
+    return sw
+
+# found/confirmed: by check and signature; no first look keeps all
+f1 = L.found(look(over=[("a", "b")], unreach=["u"]), "home")
+f2 = L.found(look(unreach=["u"], small=["s"]), "home")
+check([x[0] for x in f1] == ["overlap", "unreachable"] and f1[1][2] == "home|u", f"found {f1}")
+kept, gone = L.confirmed(f1, f2)
+check([x[2] for x in kept] == ["home|u"] and gone == 2, f"confirmed {kept} {gone}")
+check(L.confirmed(None, f2) == (f2, 0), "one look only when there is no first")
+# a transient overlap and a lasting unreachable control: one finding, the second look recorded, one gone, one pause
+sw, p = sweep(), Page([look(over=[("a", "b")], unreach=["u"]), look(unreach=["u"])])
+sw.measure_all(p, "home", "desktop", [1240], None)
+check(p.measured == 2 and p.waited == 1500, f"looked twice after a pause: {p.measured} {p.waited}")
+check(list(sw.findings) == ["unreachable|home|u"], f"what both looks found: {list(sw.findings)}")
+check(sw.counts["measurements"] == 1 and sw.counts["gone on a second look (not a finding)"] == 1 and sw.counts["clipped content (not a finding)"] == 1, f"counts {sw.counts}")
+# a finding on both looks at every size stays; allowed findings alone are not looked at twice
+sw, p = sweep(allow=[{"check": "small target", "sig": r"^small target\|home\|s$", "why": "reviewed"}]), Page([look(small=["s"])])
+sw.measure_all(p, "home", "desktop", [1240], None)
+check(p.measured == 1 and p.waited == 0 and sw.findings["small target|home|s"]["allowed"], "an allowed finding: one look")
+# LAYOUT_CONFIRM_MS=0: one look, as before
+sw, p = sweep(confirm=0), Page([look(over=[("a", "b")])])
+sw.measure_all(p, "home", "desktop", [1240], None)
+check(p.measured == 1 and list(sw.findings) == ["overlap|home|a|b"], "no second look when it is off")
+# the summary says how many one look alone found
+d = Path(tempfile.mkdtemp())
+L.write(d, {"findings": [], "notes": [], "counts": {"measurements": 3, "states": 1, "gone on a second look (not a finding)": 4}, "secs": 1, "mode": "full"})
+t = (d / "summary.txt").read_text(encoding="utf-8")
+check("4 finding(s) of one look only" in t and "0 distinct findings, 0 not allowed" in t, t)
+# a stylesheet that did not load: the state is not measured in that browser, but opened once more in a new one, and said;
+# twice, the state is not reached (said), with no findings from an unstyled page
+class Css(Page):
+    def __init__(self, unloaded, looks):
+        super().__init__(looks)
+        self.unloaded = unloaded
+    def evaluate(self, js, arg=None):
+        return self.unloaded if js is L.UNLOADED_CSS else super().evaluate(js, arg)
+class Ctx:
+    closed = 0
+    def close(self): Ctx.closed += 1
+def run(pages):
+    sw = sweep()
+    sw.cfg.mode, sw.cfg.widths = "full", [1240]
+    sw.context = lambda device, w, h, tour=False: (Ctx(), pages.pop(0))
+    def fn(S, p, device):
+        yield "terminal-customize", None
+    sw.run([L.State("terminal-customize", fn, devices=("desktop",))])
+    return sw
+sw = run([Css(["/static/termpage.css"], []), Css([], [look(unreach=["u"]), look(unreach=["u"])])])
+check([n["what"] for n in sw.notes] == ["opened again"] and "termpage.css" in sw.notes[0]["detail"], f"notes {sw.notes}")
+check(sw.counts["measurements"] == 1 and list(sw.findings) == ["unreachable|terminal|u"] and Ctx.closed == 2, f"measured once, in the second browser: {sw.counts} {Ctx.closed}")
+sw = run([Css(["/static/termpage.css"], []), Css(["/static/termpage.css"], [])])
+check([n["what"] for n in sw.notes] == ["opened again", "state not reached"] and sw.notes[1]["detail"].endswith("twice"), f"notes {sw.notes}")
+check(sw.counts["measurements"] == 0 and not sw.findings, "nothing measured from an unstyled page")
+print("ok")
+PY
+  python3 -I "$TMP/look.py" "$STACK_DIR/tests/e2e/browser" > "$TMP/out" 2>&1 || { cat "$TMP/out" >&2; return 1; }
+  assert_contains "$(cat "$TMP/out")" "ok"
+}
+
 test_e2e_a_check_cut_off_by_a_network_change_is_tried_once_more_and_says_so() {
   # (common.try_twice, taken out of tests/e2e/browser/common.py: the module itself only imports in the suite's container)
   cat > "$TMP/twice.py" <<'PY'
