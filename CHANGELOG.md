@@ -17,6 +17,18 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   it does not open again by itself during the same run, and Show progress (on the update card and the job card) opens it. When
   the update has ended it says the total time and the three slowest actions with their share ("Setup: services 3m 12s
   (55%)"), and Copy timings copies one line for each action to paste into a ticket or a spreadsheet.
+- **A project can be kept on your local git server (JON-1005).** The Code page asks once per project: *New project* has
+  **Keep it on your local git server** (ticked; an empty folder, a clone or a folder of the workspace), and any other project
+  that is not kept gets *Keep this project on your local git server?* at the top of its Git panel, with the repository's name to
+  change first. *Keep it there* checks the name (one already on the server or held by another kept project is said, and nothing
+  is changed), adds `devos/<name>` as the project's remote (`origin`, or `local` beside one it has) and pushes; the first push
+  with commits makes the private repository. From then on the project is pushed by itself after a commit in the panel, after a
+  session's turn and every 10 minutes, each branch to the branch of that name and never forced; a branch the server would not
+  take is shown ("pull first") and left alone, and the pushes stop, saying why, if the remote is ever pointed anywhere but that
+  repository. The panel shows where it is kept, when it was last pushed and what has not been, with **Push now**, **Open in
+  Git**, **Issues**, **Pull requests**, a switch for the automatic pushes and **Stop keeping it here** (the repository stays on
+  the server). *Not for this project* is remembered. Claude is told a kept project is pushed by itself and not to publish it
+  elsewhere unless asked. The sandbox gets one more git operation, `git.remote.remove`.
 
 ### Fixed
 - **Preparing ahead works with Chat's way out through this computer (JON-1003).** With `TERMINAL_EGRESS=host` and the Code
