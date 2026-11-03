@@ -1,7 +1,8 @@
 """Browser half of tests/e2e/https.sh (JON-976): runs in the pinned Playwright container with a copy of the NSS database
 that holds the install's own CA (HOME=/tmp, so Chromium reads /tmp/.pki/nssdb). No ignore_https_errors: a certificate
 the CA does not vouch for would stop every page here. Checks: the portal login page, the sign-in, Chat and the Terminal
-page load over https (each page answers and no certificate error), and a wss connection to Chat opens.
+page load over https (each page answers and no certificate error; the Terminal after its own unlock, which asks for the
+portal password once more, with a Secure cookie), and a wss connection to Chat opens.
 Exits non-zero on the first failed assertion, printing why."""
 
 from __future__ import annotations
@@ -73,6 +74,19 @@ def main() -> int:
 
         for name, sub, path in (("chat", "chat", "/"), ("terminal", "terminal", "/")):
             r = page.goto(f"https://{sub}.{HOST}:{PORT}{path}", wait_until="domcontentloaded", timeout=60000)
+            if name == "terminal" and r is not None and r.status == 401 and page.locator("form[action='/.bn/unlock']").count():
+                # the Terminal's own unlock (its page answers 401): the portal password once more, over https
+                page.fill("#password", password)
+                try:
+                    with page.expect_navigation(wait_until="domcontentloaded", timeout=30000) as nav:
+                        page.click("form[action='/.bn/unlock'] button[type=submit]")
+                except Exception:
+                    said("terminal-unlock")
+                    raise
+                r = nav.value
+                unlock = [c for c in ctx.cookies() if c["name"] == "bn_terminal"]
+                assert unlock and unlock[0]["secure"], "the Terminal's unlock cookie is not Secure"
+                print("ok terminal unlocked over https, Secure cookie")
             assert r is not None and r.status < 400, f"{name} page: {r.status if r else 'no response'}"
             assert page.url.startswith("https://"), f"{name} left https: {page.url}"
             print(f"ok {name} page over https ({r.status})")
