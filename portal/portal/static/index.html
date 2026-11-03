@@ -182,6 +182,7 @@
       <ol id="update-steps" class="update-steps"></ol>
       <!-- With the update helper: Update now first, the terminal command folded under it; without it: the command
            (app.js placeUpdateCli moves #update-cli-line between the two places) -->
+      <p class="update-progress-line" id="update-progress-line" hidden><button type="button" class="action" id="update-show-progress">Show progress</button></p>
       <p class="cmdline update-go" id="update-go" hidden><button type="button" class="action primary" id="update-now" data-action="update" aria-describedby="update-hint" hidden>Update now</button>
         <button type="button" class="action" data-action="rollback" id="update-rollback" hidden>Roll back</button></p>
       <div id="update-cli-plain"><p class="cmdline" id="update-cli-line"><code id="update-cmd">./stack update</code> <button type="button" class="copy" id="copy-update">Copy</button></p></div>
@@ -196,7 +197,7 @@
     </section>
 
     <section id="job" class="job" aria-live="polite" hidden>
-      <div class="job-head"><h2 id="job-title">Update</h2> <button type="button" class="quiet" id="job-dismiss" hidden>Dismiss</button></div>
+      <div class="job-head"><h2 id="job-title">Update</h2> <button type="button" class="quiet" id="job-show-progress" hidden>Show progress</button> <button type="button" class="quiet" id="job-dismiss" hidden>Dismiss</button></div>
       <p id="job-origin" class="note job-origin"></p>
       <ol id="job-steps" class="job-steps"></ol>
       <div id="job-progress" class="job-progress" hidden>
@@ -328,6 +329,26 @@
       <p class="confirm-buttons"><button type="button" class="quiet" id="confirm-cancel">Cancel</button>
         <button type="submit" class="action primary" id="confirm-ok">Confirm</button></p>
     </form>
+  </dialog>
+  <dialog id="update-progress" class="up-dlg" aria-labelledby="up-title">
+    <div class="up-body">
+      <div class="up-head"><h2 id="up-title">Update progress</h2> <button type="button" class="quiet" id="up-close">Close</button></div>
+      <div id="up-progress" class="job-progress" hidden>
+        <div id="up-bar" class="job-bar" role="progressbar" aria-label="Update progress" aria-valuemin="0" aria-valuemax="1" aria-valuenow="0"><span id="up-bar-fill" class="job-bar-fill"></span></div>
+        <p id="up-progress-text" class="job-progress-text" aria-hidden="true"></p>
+        <p id="up-progress-live" class="visually-hidden" aria-live="polite"></p>
+      </div>
+      <p id="up-message" class="note"></p>
+      <div id="up-order" class="chips seg up-order" role="group" aria-label="Order of the actions" hidden>
+        <button type="button" class="chip" data-order="order" aria-pressed="true">In order</button>
+        <button type="button" class="chip" data-order="slowest" aria-pressed="false">Slowest first</button>
+      </div>
+      <ol id="up-rows" class="up-rows" aria-label="Actions"></ol>
+      <div id="up-end" class="up-end" hidden>
+        <p id="up-summary" class="up-summary"></p>
+        <button type="button" class="quiet" id="up-copy">Copy timings</button>
+      </div>
+    </div>
   </dialog>
   <section id="activity" class="activity" role="dialog" aria-modal="false" aria-labelledby="activity-title" hidden></section>
   <dialog id="search" class="search-dlg" aria-label="Search">

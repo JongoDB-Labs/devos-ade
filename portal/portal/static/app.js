@@ -549,6 +549,8 @@ function renderUpdateCard() {
   $("#update-now").textContent = fin ? "Finish the update" : "Update now";
   $("#update-rollback").hidden = fin !== "card";
   $(".update-notes").hidden = Boolean(fin);
+  const jb = adminState && adminState.job;
+  $("#update-progress-line").hidden = !(jb && jb.action === "update" && jb.phase && !$("#job").hidden);
   if (card.hidden) { placeHelperOff(); return; }
   if (fin) {
     const f = P.finishCard(adminState, u);
@@ -681,16 +683,10 @@ let progressKey = "";
 function renderProgress(job, inProgress) {
   const box = $("#job-progress");
   const U = window.bnUpdateCheck && window.bnUpdateCheck._pure;
-  const p = U && (inProgress || job.phase === "done") && Array.isArray(job.steps) && (job.steps.length || inProgress) ? U.progress(job, adminState && adminState.now) : null;
+  const p = progressFor(job, inProgress);
   box.hidden = !p;
   if (!p) { progressKey = ""; return; }
-  const bar = $("#job-bar");
-  bar.setAttribute("aria-valuemin", "0");
-  bar.setAttribute("aria-valuemax", String(p.valuemax));
-  bar.setAttribute("aria-valuenow", String(p.valuenow));
-  bar.setAttribute("aria-valuetext", p.valuetext);
-  $("#job-bar-fill").style.width = `${p.pct}%`;
-  $("#job-progress-text").textContent = p.text;
+  paintBar("job", p);
   const a = U.announce(progressKey, p, job.id);
   progressKey = a.key;
   if (a.say) $("#job-progress-live").textContent = a.say;
@@ -699,6 +695,81 @@ function renderProgress(job, inProgress) {
   todo.replaceChildren(...p.todo.map((x) => el("li", { text: x.secs >= 1 ? `${x.label} · about ${x.secs} s` : x.label })));
   $("#job-todo-box").hidden = !p.todo.length || p.finished;
   $("#job-todo-sum").textContent = `Still to come (${p.todo.length})`;
+}
+function progressFor(job, inProgress, nowS = adminState && adminState.now) {
+  const U = window.bnUpdateCheck && window.bnUpdateCheck._pure;
+  return U && (inProgress || job.phase === "done") && Array.isArray(job.steps) && (job.steps.length || inProgress) ? U.progress(job, nowS) : null;
+}
+// The bar and its words (the card's, pre "job", or the popup's, "up"): a progressbar with its words in aria-valuetext
+function paintBar(pre, p) {
+  const bar = $(`#${pre}-bar`);
+  bar.setAttribute("aria-valuemin", "0");
+  bar.setAttribute("aria-valuemax", String(p.valuemax));
+  bar.setAttribute("aria-valuenow", String(p.valuenow));
+  bar.setAttribute("aria-valuetext", p.valuetext);
+  $(`#${pre}-bar-fill`).style.width = `${p.pct}%`;
+  $(`#${pre}-progress-text`).textContent = p.text;
+}
+
+// The update's progress popup (JON-1004): the bar of the card, then a row for each action with its time. It opens by itself
+// when an update starts (or when Home first sees one a terminal runs) and never again for the same run once it was closed;
+// Show progress opens it by hand. The running row counts up here each second from the server's clock as last read: no
+// request for it.
+let adminReadAt = Date.now(), upRun = null, upKey = "", upOrder = "order", upRows = [], upTick = null;
+const UP_STATE = { done: "Done", running: "Running", waiting: "Waiting", skipped: "Skipped", failed: "Failed" };
+function upNow(job) {
+  const base = adminState && Number.isFinite(adminState.now) ? adminState.now : job.updated_at;
+  return base + (Date.now() - adminReadAt) / 1000;
+}
+function upRow(r) {
+  const li = el("li", { class: `up-row ${r.state}` }, el("span", { class: "up-name" }, el("span", { class: "visually-hidden", text: `${UP_STATE[r.state]}: ` }), r.label),
+    el("span", { class: "up-dur", text: r.durText }));
+  if (r.startedAt) li.dataset.start = String(r.startedAt);
+  if (r.note) li.append(el("span", { class: "up-note", text: r.note }));
+  if (r.width) { const fill = el("span", { class: "up-fill" }); fill.style.width = `${r.width}%`; li.append(el("span", { class: "up-track", "aria-hidden": "true" }, fill)); }
+  return li;
+}
+function renderUpdateModal() {
+  const dlg = $("#update-progress"), job = adminState && adminState.job;
+  const U = window.bnUpdateCheck && window.bnUpdateCheck._pure;
+  if (!dlg.open || !U || !job || job.action !== "update") return;
+  const p = progressFor(job, adminState.in_progress, upNow(job));
+  $("#up-progress").hidden = !p;
+  if (p) {
+    paintBar("up", p);
+    const a = U.announce(upKey, p, job.id);
+    upKey = a.key;
+    if (a.say) $("#up-progress-live").textContent = a.say;
+  }
+  upRows = U.updateRows(job, upNow(job));
+  $("#up-rows").replaceChildren(...U.sortRows(upRows, upOrder).map(upRow));
+  $("#up-order").hidden = upRows.length < 2;
+  const sum = U.summary(job, upRows);
+  $("#up-end").hidden = !sum;
+  $("#up-summary").textContent = sum ? sum.text : "";
+  $("#up-message").textContent = U.jobEnded(job) || !upRows.length ? job.message || "" : "";
+  $("#up-message").className = `job-message ${job.phase === "failed" ? "bad" : ""}`;
+}
+function tickUpdateModal() {
+  const job = adminState && adminState.job, U = window.bnUpdateCheck && window.bnUpdateCheck._pure;
+  if (!job || !U) return;
+  for (const li of document.querySelectorAll("#up-rows .up-row.running[data-start]")) {
+    li.querySelector(".up-dur").textContent = U.fmtDur(Math.max(0, upNow(job) - Number(li.dataset.start)));
+  }
+}
+function openUpdateModal() {
+  const dlg = $("#update-progress");
+  if (!dlg.open) { upKey = ""; dlg.showModal(); }
+  clearInterval(upTick); upTick = setInterval(tickUpdateModal, 1000);
+  renderUpdateModal();
+}
+// An update that runs: the popup opens once for each run, when Home is the page in front and nothing else is open
+function noticeRun(job, inProgress) {
+  if (!inProgress || job.action !== "update" || $("#home").hidden || document.querySelector("dialog[open]:not(#update-progress)")) return;
+  // (the request Home just sent has no id yet: the helper's job that answers it is the same run)
+  if (upRun !== null && (upRun === job.id || (upRun === "" && job.id))) { upRun = job.id || ""; return; }
+  upRun = job.id || "";
+  openUpdateModal();
 }
 // The update that finished while Home looked on: said once ("Updated to v0.27.1"), besides the card and Activity
 let lastJobKey = "";
@@ -880,6 +951,9 @@ function renderJob(job, inProgress) {
   list.hidden = !steps.length || nothingNew || job.phase === "skipped";
   renderSteps(job, inProgress);
   noticeFinished(job, inProgress);
+  $("#job-show-progress").hidden = job.action !== "update";
+  noticeRun(job, inProgress);
+  renderUpdateModal();
   $("#job-message").textContent = msg;
   $("#job-message").className = `job-message ${job.phase === "failed" ? "bad" : job.phase === "done" ? "good" : ""}`;
   let note = "";
@@ -901,6 +975,7 @@ async function pollAdmin() {
   clearTimeout(adminTimer);
   try {
     const a = await api("/api/admin/status");
+    adminReadAt = Date.now();
     reconnecting = false;
     showReconnect(false);
     if (awaiting) {
@@ -1044,6 +1119,18 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   $("#confirm-form").addEventListener("submit", submitConfirm);
   $("#confirm-cancel").addEventListener("click", () => { $("#confirm-password").value = ""; $("#confirm").close(); });
+  for (const id of ["#job-show-progress", "#update-show-progress"]) $(id).addEventListener("click", openUpdateModal);
+  $("#up-close").addEventListener("click", () => $("#update-progress").close());
+  $("#update-progress").addEventListener("click", (e) => { if (e.target === e.currentTarget) e.currentTarget.close(); });   // the backdrop
+  $("#update-progress").addEventListener("close", () => { clearInterval(upTick); upTick = null; });
+  for (const b of document.querySelectorAll("#up-order .chip")) {
+    b.addEventListener("click", () => {
+      upOrder = b.dataset.order;
+      for (const c of document.querySelectorAll("#up-order .chip")) c.setAttribute("aria-pressed", String(c === b));
+      renderUpdateModal();
+    });
+  }
+  $("#up-copy").addEventListener("click", () => { const U = window.bnUpdateCheck && window.bnUpdateCheck._pure; if (U) copy(U.copyText(upRows), "the timings"); });
   $("#job-dismiss").addEventListener("click", () => {
     const j = adminState && adminState.job;
     if (j) { try { localStorage.setItem("bn.job.dismissed", j.id || String(j.finished_at)); } catch (_) { /* fine */ } }

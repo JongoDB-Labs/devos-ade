@@ -237,7 +237,7 @@
       const label = job.step.charAt(0).toUpperCase() + job.step.slice(1), p = take(normLabel(label));   // (the helper's log says it in lower case)
       const now = Number.isFinite(nowS) ? nowS : job.updated_at;
       const startedAt = job.step_started_at || null, secs = startedAt && now ? Math.max(0, now - startedAt) : 0;
-      rows.push({ state: "running", label, secs, startedAt, durText: fmtDur(secs), note: last(p), why: "" });
+      rows.push({ state: "running", label, secs, startedAt, durText: startedAt ? fmtDur(secs) : "", note: last(p), why: "" });
     }
     if (!jobEnded(job)) for (const p of plan) if (!p.used) rows.push({ state: "waiting", label: p.label, secs: null, durText: "", note: last(p), why: "" });
     const longest = Math.max(0, ...rows.filter((r) => (r.state === "done" || r.state === "failed") && r.secs > 0).map((r) => r.secs));
