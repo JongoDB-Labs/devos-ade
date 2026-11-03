@@ -322,27 +322,42 @@
   const scrollPad = (trayHeight) => (Number.isFinite(trayHeight) && trayHeight > 0 ? Math.ceil(trayHeight) + TRAY_GAP : 0);
   // an observer entry for the sentinel: gone past the top edge (not below the bottom, not merely hidden with the tray)
   const stuckFrom = (e) => !!e && !e.isIntersecting && !!e.rootBounds && !!e.boundingClientRect && e.boundingClientRect.top < e.rootBounds.top;
+  // Stuck, the tray keeps the room it gave up, as a bottom margin where it was (above the top by then): what follows it
+  // stays put. Were the page to move up under it, the browser's scroll anchoring would scroll back as far, the sentinel
+  // could come into view again, and the tray would flip between stuck and not on every frame, its buttons never still
+  // (a page scrolled into that band: e2e widgets-customize-desktop's "element is not stable", 2026-11-03).
+  const keptRoom = (full, compact) => (Number.isFinite(full) && Number.isFinite(compact) && full > compact ? Math.ceil(full - compact) : 0);
   // (the Terminal page's tray is the same class and calls this too: scroller is .tp there, #home here; returns the stop)
   function stickTray(tray, scroller) {
     const sentinel = document.createElement("div");
     sentinel.className = "wg-sentinel"; sentinel.setAttribute("aria-hidden", "true");
     tray.before(sentinel);
     const pad = () => { const v = scrollPad(tray.getBoundingClientRect().height); scroller.style.scrollPaddingTop = v ? `${v}px` : ""; };
+    const base = parseFloat(getComputedStyle(tray).marginBottom) || 0;
+    let full = 0;   // the tray's height before it compacted
+    const room = () => { tray.style.marginBottom = `${base + keptRoom(full, tray.getBoundingClientRect().height)}px`; };
+    const stick = (on) => {
+      if (on === tray.classList.contains("wg-stuck")) return;
+      if (on) full = tray.getBoundingClientRect().height;
+      tray.classList.toggle("wg-stuck", on);
+      if (on) room(); else tray.style.marginBottom = "";
+    };
     let io = null, ro = null;
     if (typeof IntersectionObserver === "function") {
-      io = new IntersectionObserver((es) => { for (const e of es) tray.classList.toggle("wg-stuck", stuckFrom(e)); }, { root: scroller, threshold: [0, 1] });
+      io = new IntersectionObserver((es) => { for (const e of es) stick(stuckFrom(e)); }, { root: scroller, threshold: [0, 1] });
       io.observe(sentinel);
     }
-    if (typeof ResizeObserver === "function") { ro = new ResizeObserver(pad); ro.observe(tray); }
+    // (a compact tray that changes height, a chip added or gone, keeps the room in line)
+    if (typeof ResizeObserver === "function") { ro = new ResizeObserver(() => { pad(); if (tray.classList.contains("wg-stuck")) room(); }); ro.observe(tray); }
     pad();
     return function stop() {
       if (io) io.disconnect();
       if (ro) ro.disconnect();
-      sentinel.remove(); tray.classList.remove("wg-stuck"); scroller.style.scrollPaddingTop = "";
+      sentinel.remove(); tray.classList.remove("wg-stuck"); tray.style.marginBottom = ""; scroller.style.scrollPaddingTop = "";
     };
   }
 
-  const pure = { TRAY_GAP, scrollPad, stuckFrom, stickTray, VERSION, MAX_BYTES, CACHE, COLS, HEIGHTS, HEIGHT_REM, HOME, TERMINAL, PAGES, available, minSpan, clampSpan, defaults, normalize,
+  const pure = { TRAY_GAP, scrollPad, stuckFrom, keptRoom, stickTray, VERSION, MAX_BYTES, CACHE, COLS, HEIGHTS, HEIGHT_REM, HOME, TERMINAL, PAGES, available, minSpan, clampSpan, defaults, normalize,
     isDefault, usedSpan, shown, moveBy, moveBefore, setSpan, resizeBy, setHeight, heightStep, hide, show, reset, entry, parseDoc, savePatch, styleFor, rowSpan, titleOf,
     VIEWS_MAX, SPLITS, COMMANDS_MAX, COMMAND_LABEL_MAX, COMMAND_TEXT_MAX, KEYS, TERMINAL_PX, screenDefaults, normalizeScreen, isDefaultScreen, addView, closeView,
     setSplit, dragWeights, arrange, commandProblem, normalizeCommands, saveCommand, removeCommand, screenEntry, commandsEntry, savePatchScreen, savePatchCommands };

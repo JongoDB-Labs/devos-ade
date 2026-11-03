@@ -48,6 +48,12 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   progress, and with the card above Home's Refresh failed with "Could not load the latest numbers". It now stays where it
   was, and with a layout of your own it follows the update card, as wide as the page, as in Home's own order. The end-to-end check
   `browser/widgets-customize-desktop` now checks both, and that Refresh works after Reset.
+- **Customize's tray holds still at the top of the page.** Scrolled just past where the tray sticks, it could flip
+  between its full size and its one-row form on every frame, so Reset to default and Done could not be clicked until you
+  scrolled. Compacting gave up about 200 px, the page moved up under it, the browser scrolled back as far to keep your
+  place, which unstuck the tray, and so on. The tray now keeps the room it gave up, so nothing under it moves. The same
+  goes for the Terminal page's tray. The end-to-end check `browser/widgets-tray-holds-still-at-the-edge` scrolls into
+  that spot and counts the flips (52 a second before, 1 now).
 - **No proxy secret in the main Caddy's log (JON-1011).** When a request the main Caddy passed on failed (a container
   restarting, a closed connection), its log line had the headers it sent on, and with them the secret ones it adds: the
   code container's (`CODE_PROXY_SECRET`), the portal's, the terminal's, the preview's and the git server's sign-in header

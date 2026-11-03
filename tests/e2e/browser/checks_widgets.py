@@ -411,6 +411,48 @@ def widgets_tray_sticky(ctx):
     return f"stuck tray {stuck:.0f} px (at the top {top:.0f}), scroll-padding {pad:.0f}, {seen} handles reached backwards, none under it"
 
 
+# the tray's stuck class flips over a second, with the page scrolled past the tray's sentinel by half the room the tray
+# gives up when it compacts (one row is at most 90 px): one flip at most, then it holds
+FLIPS = """async () => {
+  const home = document.getElementById('home'), tray = document.getElementById('widget-tray'), s = document.querySelector('.wg-sentinel');
+  const full = tray.getBoundingClientRect().height;
+  home.scrollTop = s.getBoundingClientRect().top - home.getBoundingClientRect().top + home.scrollTop + Math.max(20, (full - 90) / 2);
+  let flips = 0;
+  const mo = new MutationObserver(() => { flips++; });
+  mo.observe(tray, {attributes: true, attributeFilter: ['class']});
+  await new Promise((r) => setTimeout(r, 1000));
+  mo.disconnect();
+  return {flips, full: Math.round(full), stuck: tray.classList.contains('wg-stuck'), scrollTop: Math.round(home.scrollTop)};
+}"""
+
+
+@check("browser", "widgets-tray-holds-still-at-the-edge")
+def widgets_tray_still(ctx):
+    """Scrolled just past where the tray sticks, it sticks and stays: compacting gives up ~200 px, and the page moving up
+    under it made the browser's scroll anchoring scroll back as far, unstick it, and so on every frame (Reset and Done
+    never still enough to click: widgets-customize-desktop, 2026-11-03). The tray keeps that room as a margin now."""
+    page, rec = ctx.page("widgets-tray-still")
+    seen = []
+    try:
+        start(page)
+        customize(page)
+        for vw, vh in ((1400, 900), (1280, 800)):
+            page.set_viewport_size({"width": vw, "height": vh})
+            page.evaluate("() => { document.getElementById('home').scrollTop = 0; }")
+            page.wait_for_timeout(300)
+            got = page.evaluate(FLIPS)
+            expect(got["flips"] <= 1 and got["stuck"], f"{vw}x{vh}: the tray flipped {got['flips']} times in a second at the edge ({got})")
+            page.click("#wg-reset", timeout=5000)   # (still enough to click)
+            seen.append(f"{vw}x{vh} {got['flips']} flip(s)")
+        page.click("#wg-done", timeout=5000)
+        page.wait_for_selector("#widget-tray", state="hidden")
+        expect(page.evaluate("() => document.getElementById('widget-tray').style.marginBottom") == "", "the tray kept its margin after Done")
+        rec.save()
+    finally:
+        page.evaluate(CLEAR)
+    return "; ".join(seen)
+
+
 @check("browser", "widgets-phone-and-desktop-stay-apart")
 def widgets_phone_apart(ctx):
     page, rec = ctx.page("widgets-phone", "phone")

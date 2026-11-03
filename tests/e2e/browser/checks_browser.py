@@ -1027,8 +1027,12 @@ def update_progress_modal(ctx):
         text = page.inner_text("#up-summary")
         expect(re.fullmatch(r"Took 36s\. Slowest: Images 21s \(58%\), Services 7s \(19%\), Backup 4s \(11%\)\.", text), f"summary: {text!r}")
         expect(page.locator("#up-rows li.running, #up-rows li.waiting").count() == 0, "rows still running or waiting after it ended")
+        # (the update's own end toasts first, "Updated to …": what is waited for is Copy's toast, not any text)
         page.click("#up-copy")
-        page.wait_for_function("(document.querySelector('#toast').textContent || '').length > 0", timeout=5000)
+        try:
+            page.wait_for_function("/^(Copied the timings|Copy is blocked)/.test(document.querySelector('#toast').textContent || '')", timeout=5000)
+        except PwError:
+            pass
         expect(re.match(r"Copied the timings|Copy is blocked", page.inner_text("#toast")), f"toast: {page.inner_text('#toast')!r}")
         shot(page, "06i-home-update-progress-modal-done")
         states.append(f"ended: {text}; Copy timings")

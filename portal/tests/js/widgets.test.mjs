@@ -462,6 +462,16 @@ test("the tray is stuck only when its sentinel has gone out of the top of the sc
   assert.equal(W.stuckFrom(null), false);
 });
 
+test("stuck, the tray keeps the room it gave up, so nothing under it moves (no scroll-anchoring loop)", () => {
+  assert.equal(W.keptRoom(249, 54), 195);
+  assert.equal(W.keptRoom(240.4, 60), 181, "rounded up: a fraction short would still move the page");
+  assert.equal(W.keptRoom(54, 60), 0, "a compact tray as tall or taller keeps nothing");
+  for (const bad of [[NaN, 50], [240, undefined], [Infinity, 50], [null, null]]) assert.equal(W.keptRoom(...bad), 0, String(bad));
+  const js = source("widgets.js");
+  assert.match(js, /if \(on\) full = tray\.getBoundingClientRect\(\)\.height;/, "the full height is read before the tray compacts");
+  assert.match(js, /tray\.style\.marginBottom = ""; scroller\.style\.scrollPaddingTop = "";/, "stop() takes the margin away");
+});
+
 test("the compact tray keeps the status line announced and the help in the page (widgets.css)", () => {
   const css = source("widgets.css");
   assert.match(css, /\.wg-tray\.wg-stuck \.note:not\(\.wg-saved\), \.wg-tray\.wg-stuck \.wg-tray-sub \{ display: none; \}/);
