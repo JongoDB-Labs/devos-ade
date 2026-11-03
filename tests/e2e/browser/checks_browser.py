@@ -407,12 +407,15 @@ def update_now_after_a_failed_update(ctx):
     card offers Finish the update and Roll back, in sight, enabled and clickable (not inert, nothing over it), and Finish
     the update confirms as a finish (no new backup; Roll back still goes back). The update card, whose Update now would
     only finish it too, stays hidden meanwhile. Dismissed, that card leaves both to the update card, which says the update
-    did not finish and that Update now installs the newer release afterwards. After the helper was late, Finish the update
+    did not finish and that Update now installs the newer release afterwards. A ./stack command typed in a terminal since then
+    (the card shows the newest job: that one) leaves both to the update card too. After the helper was late, Finish the update
     comes back within seconds of its next heartbeat, without a reload."""
     if real_helper_running():
         raise Skip("a real update helper is running: this check fakes its heartbeat and its job")
     up = STATE / "update-check" / "latest.json"
-    files = {n: STATE / "status" / n for n in ("helper.json", "helper-status.json")}
+    # (terminal-job.json too: the job card shows the newest of the helper's job and the last ./stack command typed in a terminal,
+    # and the cli checks before this one leave theirs)
+    files = {n: STATE / "status" / n for n in ("helper.json", "helper-status.json", "terminal-job.json")}
     saved = {p: p.read_bytes() for p in (up, *files.values()) if p.exists()}
     page, rec = ctx.page("update-now-after-failed")
     login(page)
@@ -434,6 +437,7 @@ def update_now_after_a_failed_update(ctx):
                                                   "message": "The smoke test failed (e2e)", "started_at": now - 900,
                                                   "updated_at": now - 600, "finished_at": now - 600, "version": "v98.0.0",
                                                   "trigger": "request"})
+        files["terminal-job.json"].unlink(missing_ok=True)
         beat()
         page.evaluate("() => { try { localStorage.removeItem('bn.job.dismissed'); } catch (_) { /* fine */ } }")   # (an earlier run's)
         page.reload()
@@ -457,6 +461,20 @@ def update_now_after_a_failed_update(ctx):
         page.click("#confirm-cancel")
         page.locator("#confirm").wait_for(state="hidden", timeout=5000)
         states.append("after a failed, unfinished update: Finish the update and Roll back on its card, enabled, clickable, confirms as a finish")
+        # 1b. a ./stack command typed in a terminal since: the job card shows that one, and Finish the update is on the update card
+        _write_json(files["terminal-job.json"], {"id": "b" * 32, "action": "config", "command": "config set", "phase": "done",
+                                                 "message": "", "started_at": now - 120, "updated_at": now - 100, "finished_at": now - 100,
+                                                 "version": "v98.0.0"})
+        page.reload()
+        page.wait_for_selector("#update-now:visible", timeout=15000)
+        expect(page.inner_text("#job-title") == "./stack config set finished" and page.locator("#job-actions").is_hidden(),
+               f"the job card after a terminal command: {page.inner_text('#job-title')!r}, actions shown: {page.locator('#job-actions').is_visible()}")
+        expect(page.inner_text("#update-now") == "Finish the update" and page.inner_text("#update-rollback") == "Roll back to v0.4.1",
+               f"the update card after a terminal command: {page.inner_text('#update-now')!r} / {page.inner_text('#update-rollback')!r}")
+        files["terminal-job.json"].unlink()
+        page.reload()
+        page.wait_for_selector("#job-finish:visible", timeout=15000)
+        states.append("a terminal command since: Finish the update and Roll back on the update card")
         # 2. that card dismissed: both in the update card's place, which says what is left and what comes after
         page.click("#job-dismiss")
         page.wait_for_selector("#update-now:visible", timeout=5000)
