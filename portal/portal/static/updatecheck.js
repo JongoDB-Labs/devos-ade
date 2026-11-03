@@ -201,8 +201,84 @@
     const rb = (a && a.rollback) || {};
     return `Finish the update to ${(a && a.version) || "the new version"}: the steps it did not finish run again (the images, then setup), with no new backup, so Roll back still goes back to ${rb.to || "the previous version"}. Chat, Admin and Files may be down for a minute or two while the services restart.`;
   }
+  // --- the update's progress popup: one row for each action, with its time (JON-1004) ---
+  // tookSecs("1m50s") -> 110, ("0.4s") -> 0.4; null for "skipped" or no time. A step's `took` is what the helper read from its log.
+  function tookSecs(t) {
+    const m = /^(?:(\d+)m(\d{2})|(\d+(?:\.\d)?))s$/.exec(String(t || ""));
+    return !m ? null : m[3] !== undefined ? Number(m[3]) : Number(m[1]) * 60 + Number(m[2]);
+  }
+  // 0.4 -> "<1s", 12 -> "12s", 110 -> "1m 50s", 120 -> "2m", 3725 -> "1h 2m"
+  function fmtDur(s) {
+    if (!Number.isFinite(s) || s < 0) return "";
+    if (s < 1) return "<1s";
+    const t = Math.round(s), h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), r = t % 60;
+    if (h) return m ? `${h}h ${m}m` : `${h}h`;
+    if (m) return r ? `${m}m ${r}s` : `${m}m`;
+    return `${t}s`;
+  }
+  const jobEnded = (job) => Boolean(job) && (job.phase === "done" || job.phase === "failed" || job.phase === "skipped");
+  // updateRows(job, nowS) -> [{key, label, state, secs, startedAt, durText, note, why, width}] in the order the update runs them:
+  // the steps done (state done, skipped or failed), the one that runs (state running: secs is how long so far), and the ones
+  // still to come (state waiting: secs is null, note says what the last update took). Steps match the plan as progress() does.
+  // width is 0-100 on one scale for the whole list (the longest finished action is 100); only a finished action has one.
+  function updateRows(job, nowS) {
+    if (!job || job.action !== "update") return [];
+    const plan = (Array.isArray(job.plan) ? job.plan : []).filter((p) => p && typeof p.label === "string")
+      .map((p) => ({ label: normLabel(p.label), secs: p.secs > 0 ? p.secs : 0, used: false }));
+    const take = (l) => { const p = plan.find((q) => !q.used && q.label === l); if (p) p.used = true; return p || null; };
+    const last = (p) => (p ? `took ${fmtDur(p.secs)} last time` : "");
+    const rows = [];
+    for (const x of (Array.isArray(job.steps) ? job.steps : []).filter((y) => y && typeof y === "object" && y.label)) {
+      const p = take(normLabel(x.label)), secs = tookSecs(x.took);
+      if (x.took === "skipped") rows.push({ state: "skipped", label: x.label, secs: null, durText: "skipped", note: x.why || "", why: x.why || "" });
+      else rows.push({ state: x.failed === true ? "failed" : "done", label: x.label, secs, durText: secs === null ? "" : fmtDur(secs), note: x.failed === true ? "failed" : "", why: "", plan: p });
+    }
+    if (!jobEnded(job) && job.step) {
+      const label = job.step.charAt(0).toUpperCase() + job.step.slice(1), p = take(normLabel(label));   // (the helper's log says it in lower case)
+      const now = Number.isFinite(nowS) ? nowS : job.updated_at;
+      const startedAt = job.step_started_at || null, secs = startedAt && now ? Math.max(0, now - startedAt) : 0;
+      rows.push({ state: "running", label, secs, startedAt, durText: fmtDur(secs), note: last(p), why: "" });
+    }
+    if (!jobEnded(job)) for (const p of plan) if (!p.used) rows.push({ state: "waiting", label: p.label, secs: null, durText: "", note: last(p), why: "" });
+    const longest = Math.max(0, ...rows.filter((r) => (r.state === "done" || r.state === "failed") && r.secs > 0).map((r) => r.secs));
+    rows.forEach((r, i) => {
+      r.key = `${i}:${normLabel(r.label)}`;
+      r.width = longest && (r.state === "done" || r.state === "failed") && r.secs > 0 ? Math.max(2, Math.round((r.secs / longest) * 100)) : 0;
+      delete r.plan;
+    });
+    return rows;
+  }
+  // sortRows(rows, "order" | "slowest") -> a new list. Slowest first: the finished actions by their time, then the one that
+  // runs, the ones to come and the skipped ones as they were (ties keep their order).
+  function sortRows(rows, mode) {
+    const list = rows.slice();
+    if (mode !== "slowest") return list;
+    const timed = (r) => r.state === "done" || r.state === "failed";
+    const rank = (r) => (timed(r) ? 0 : r.state === "running" ? 1 : r.state === "waiting" ? 2 : 3);
+    return list.map((r, i) => ({ r, i })).sort((a, b) => rank(a.r) - rank(b.r) || (timed(a.r) ? (b.r.secs || 0) - (a.r.secs || 0) : 0) || a.i - b.i).map((x) => x.r);
+  }
+  // summary(job, rows) -> null while it runs (or nothing was timed), else {total, slowest: [{label, secs, share}], text}: the time
+  // the actions took together and the 3 slowest with their share of it ("Setup: services 3m 12s (55%)")
+  function summary(job, rows) {
+    if (!jobEnded(job)) return null;
+    const timed = rows.filter((r) => (r.state === "done" || r.state === "failed") && r.secs > 0);
+    const total = timed.reduce((n, r) => n + r.secs, 0);
+    if (!total) return null;
+    const slowest = timed.map((r, i) => ({ r, i })).sort((a, b) => b.r.secs - a.r.secs || a.i - b.i).slice(0, 3)
+      .map(({ r }) => ({ label: r.label, secs: r.secs, share: Math.round((r.secs / total) * 100) }));
+    const lead = job.phase === "failed" ? `Failed after ${fmtDur(total)}.` : `Took ${fmtDur(total)}.`;
+    return { total, slowest, text: `${lead} Slowest: ${slowest.map((s) => `${s.label} ${fmtDur(s.secs)} (${s.share}%)`).join(", ")}.` };
+  }
+  // copyText(rows) -> "LABEL<TAB>SECONDS" for each action that ran (skipped: "skipped"), then "Total<TAB>SECONDS"
+  function copyText(rows) {
+    const sec = (n) => String(Math.round(n * 10) / 10);
+    const lines = rows.filter((r) => r.state === "done" || r.state === "failed" || r.state === "skipped")
+      .map((r) => `${r.label.replace(/[\t\r\n]+/g, " ")}\t${r.state === "skipped" ? "skipped" : sec(r.secs || 0)}`);
+    lines.push(`Total\t${sec(rows.reduce((n, r) => n + ((r.state === "done" || r.state === "failed") && r.secs > 0 ? r.secs : 0), 0))}`);
+    return lines.join("\n");
+  }
   root.bnUpdateCheck = { _pure: { stepItem, describe, ago, clock, fresher, statusKey, prepareLine, preparedFirst, progress, announce, leftWords, normLabel,
-    finishMode, finishCard, finishConfirm } };
+    finishMode, finishCard, finishConfirm, tookSecs, fmtDur, jobEnded, updateRows, sortRows, summary, copyText } };
   if (typeof document === "undefined") return;
 
   let last = null;          // the last update status seen (Home's summary, or a click's answer)
