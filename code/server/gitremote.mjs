@@ -202,7 +202,7 @@ export function makeGitRemote({ call: sandboxCall, openBroker = null, store = ne
   const via = (h) => (!h ? 'no credential (a public repository)' : h.auth === 'oauth' ? `sign-in '${h.label}'${h.oauth?.account ? ` as ${h.oauth.account}` : ''}`
     : `${h.auth === 'token' ? 'HTTPS token' : 'SSH key'} '${h.label}'${h.imported ? ` (${h.imported.source}'s login${h.imported.account ? `, ${h.imported.account}` : ''})` : ''}`);
   const credText = (a) => (a === 'token' ? 'an access token' : a === 'oauth' ? 'a sign-in' : 'a new SSH key');
-  const hostRef = (h) => (!h ? null : { id: h.id, label: h.label, kind: h.kind, auth: h.auth,
+  const hostRef = (h) => (!h ? null : { id: h.id, label: h.label, kind: h.kind, auth: h.auth, ...(h.builtin === LOCALGIT.id ? { builtin: LOCALGIT.id } : {}),
     ...(h.auth === 'oauth' ? { account: h.oauth?.account ?? null } : h.imported ? { source: h.imported.source, account: h.imported.account ?? null } : {}) });
   // a signed-in host whose sign-in ended: refused before anything is planned
   const needsSignIn = (h) => { if (h?.auth === 'oauth' && h.oauth?.needsSignIn) throw err(409, `${h.label}: its sign-in ended${h.oauth.why ? ` (${h.oauth.why})` : ''} — Sign in again (Git hosts)`); };

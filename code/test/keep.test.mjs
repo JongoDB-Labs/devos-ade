@@ -11,7 +11,7 @@ import { GitHosts, LOCALGIT } from '../server/githosts.mjs';
 import { makeMirrors } from '../server/mirrors.mjs';
 import { makeGitRemote } from '../server/gitremote.mjs';
 import { Projects, localgitRecord } from '../server/projects.mjs';
-import { makeKeep, repoSlug, nameOk, urlOf, rejectedText } from '../server/keep.mjs';
+import { makeKeep, repoSlug, nameOk, urlOf, rejectedText, pointsHome } from '../server/keep.mjs';
 import { gitNote } from '../server/gitnote.mjs';
 import { SandboxError } from '../server/spawn-client.mjs';
 import { tmp } from './helpers.mjs';
@@ -30,7 +30,7 @@ function sandbox() {
   const repos = new Map();
   const log = [];
   const server = new Map();   // "remote url" -> Map(branch -> commit)
-  let busy = 0, maxBusy = 0, delay = 0, refuse = new Set();
+  let busy = 0, maxBusy = 0, delay = 0, refuse = new Set(), afterLook = null;
   const repo = (r) => {
     if (!repos.has(r)) throw new SandboxError('not a git repository', 'refused');
     return repos.get(r);
@@ -41,9 +41,12 @@ function sandbox() {
       if (!repos.has(req.repo)) return { result: { repo: false, reason: 'not a git repository' } };
       const g = repos.get(req.repo);
       const head = g.branches[g.branch] ?? null;
-      return { result: { repo: true, root: '', branch: g.branch, head, state: null, rewrites: 0,
-        remotes: Object.entries(g.remotes).map(([name, url]) => ({ name, urls: [url], pushUrls: [] })),
+      const answer = { result: { repo: true, root: '', branch: g.branch, head, state: null, rewrites: g.rewrites ?? 0,
+        remotes: Object.entries(g.remotes).map(([name, url]) => ({ name, urls: [...(g.moreUrls?.[name] ?? []), url].sort((a, b) => (a === url) - (b === url)), pushUrls: g.pushUrls?.[name] ?? [] })),
         branches: Object.entries(g.branches).map(([name, h]) => ({ name, head: h, upstream: null })), remoteBranches: [], remoteHeads: {} } };
+      // (a test's change of the repository's configuration right after it was read: the remote is not what the look saw when the plan is made)
+      if (afterLook) { const f = afterLook; afterLook = null; f(g); }
+      return answer;
     }
     if (req.op === 'git.remote.set') { repo(req.repo).remotes[req.name] = req.url; return { result: { ok: true, added: true } }; }
     if (req.op === 'git.remote.remove') {
@@ -63,7 +66,7 @@ function sandbox() {
     }
     throw new Error(`unexpected ${req.op}`);
   };
-  return { call, log, repos, server, get maxBusy() { return maxBusy; }, set delay(v) { delay = v; }, refuse,
+  return { call, log, repos, server, get maxBusy() { return maxBusy; }, set delay(v) { delay = v; }, refuse, after: (f) => { afterLook = f; },
     nets: () => log.filter((r) => r.op === 'git.net'),
     make: (r, over = {}) => repos.set(r, { branch: 'main', branches: { main: sha('a') }, remotes: {}, ...over }) };
 }
@@ -94,7 +97,11 @@ function setup({ connected = true, existsName = null } = {}) {
 }
 const project = (s, name = 'My App', root = 'app', git = {}) => { s.sb.make(root, git); return s.projects.add({ name, root }).id; };
 
+// (the same table is in code/web/test/keep.test.ts: the page and the backend make the same name of a project's)
+const SLUGS = [['My App', 'My-App'], ['  café  au lait!! ', 'cafe-au-lait'], ['a/b\\c', 'a-b-c'], ['..hidden.', 'hidden'], ['thing.git', 'thing'], ['x.wiki.git', 'x'],
+  ['日本語', 'project'], ['snake_case-and.dots', 'snake_case-and.dots'], ['_lead', 'lead'], ['', 'project'], ['-', 'project'], ['...', 'project'], ['ok-1.2', 'ok-1.2'], ['a.git.wiki', 'a']];
 test('the repository name: the project\'s name in the characters Forgejo takes', () => {
+  for (const [n, want] of SLUGS) assert.equal(repoSlug(n), want, JSON.stringify(n));
   assert.equal(repoSlug('My App'), 'My-App');
   assert.equal(repoSlug('  café  au lait!! '), 'cafe-au-lait');
   assert.equal(repoSlug('a/b\\c'), 'a-b-c');
@@ -454,4 +461,49 @@ test('the Git panel\'s own plan: a branch of the caller\'s naming goes to the br
   assert.deepEqual(await remote.remoteRemove({ repo: 'app', name: 'origin', url: 'https://gateway:8093/devos/x.git' }), { ok: true });
   await assert.rejects(remote.remoteRemove({ repo: '../x', name: 'origin', url: 'https://gateway:8093/devos/x.git' }), /not a repository folder/);
   await assert.rejects(remote.remoteRemove({ repo: 'app', name: '-x', url: 'https://gateway:8093/devos/x.git' }), /not a remote name/);
+});
+
+const HOME = 'https://gateway:8093/devos/My-App.git';
+// a kept project whose remote then changed: no push, automatic pushes off (it stays kept), the reason on the record
+async function astray(change, { afterLook = false } = {}) {
+  const s = setup();
+  const id = project(s);
+  await s.keep.keep(id, {});
+  const before = s.sb.nets().length;
+  const g = s.sb.repos.get('app');
+  g.branches.main = sha('b');
+  if (afterLook) s.sb.after(change); else change(g);
+  const out = await s.keep.sync(id);
+  assert.equal(s.sb.nets().length, before, 'nothing was pushed');
+  const rec = s.projects.localgit(id);
+  assert.deepEqual([rec.state, rec.auto], ['kept', false]);
+  assert.equal(rec.lastError, 'the remote origin no longer points at your local git server, so automatic pushes stopped: check it, then turn them on again');
+  assert.equal(out.error, rec.lastError);
+  assert.ok(s.logs.some((l) => /no longer points at your local git server/.test(l)));
+  // automatic pushes are off now: a commit starts nothing
+  s.keep.committed('app');
+  await tick(50);
+  assert.equal(s.sb.nets().length, before);
+  assert.equal((await s.keep.view(id)).auto, false);
+}
+test('a remote repointed to another host: nothing is pushed, automatic pushes stop, and the project says why', () => astray((g) => { g.remotes.origin = 'https://evil.example/x/My-App.git'; }));
+test('a push URL added to the remote: nothing is pushed', () => astray((g) => { g.pushUrls = { origin: ['https://evil.example/x.git'] }; }));
+test('a second URL on the remote: nothing is pushed', () => astray((g) => { g.moreUrls = { origin: ['https://evil.example/x.git'] }; }));
+test('a URL rewrite (url.<x>.pushInsteadOf) in the repository\'s configuration: nothing is pushed', () => astray((g) => { g.rewrites = 1; }));
+test('a remote that changes between the look and the plan (the plan names another URL): nothing is pushed', () => astray((g) => { g.remotes.origin = 'https://gateway:8093/devos/other.git'; }, { afterLook: true }));
+
+test('a remote that is still the repository made here, with the same push URL, still pushes', async () => {
+  const s = setup();
+  const id = project(s);
+  await s.keep.keep(id, {});
+  const g = s.sb.repos.get('app');
+  g.pushUrls = { origin: [HOME] };
+  g.branches.main = sha('b');
+  const out = await s.keep.sync(id);
+  assert.deepEqual(out.pushed, ['main']);
+  assert.deepEqual([s.projects.localgit(id).auto, s.projects.localgit(id).lastError], [true, null]);
+  assert.equal(pointsHome({ urls: [HOME], pushUrls: [] }, 'devos', 'My-App'), true);
+  assert.equal(pointsHome({ urls: [HOME, HOME], pushUrls: [] }, 'devos', 'My-App'), false);
+  assert.equal(pointsHome({ urls: [HOME], pushUrls: ['x'] }, 'devos', 'My-App'), false);
+  assert.equal(pointsHome(undefined, 'devos', 'My-App'), false);
 });

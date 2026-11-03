@@ -31,6 +31,16 @@ export function repoSlug(name) {
 export const nameOk = (v) => typeof v === 'string' && NAME.test(v) && !RESERVED.test(v);
 /** urlOf(owner, name) -> the repository's address as the sandbox reaches it (the gateway's git listener: githosts.mjs LOCALGIT) */
 export const urlOf = (owner, name) => `https://${LOCALGIT.host}:${LOCALGIT.port}/${owner}/${name}.git`;
+/** pointsHome(rm, owner, name) -> whether a remote of the project's repository (as git.remote.state lists it) is the one made here, and
+ *  nothing else: exactly one URL, the repository's address, and no push URL or the same one. An automatic push confirms nothing with
+ *  anybody, so it goes only where this says so. */
+export function pointsHome(rm, owner, name) {
+  const url = urlOf(owner, name);
+  const push = Array.isArray(rm?.pushUrls) ? rm.pushUrls : [];
+  return !!rm && Array.isArray(rm.urls) && rm.urls.length === 1 && rm.urls[0] === url && (push.length === 0 || (push.length === 1 && push[0] === url));
+}
+/** astrayText(remote) -> what the panel says when a remote does not point at the local git server any more */
+export const astrayText = (remote) => `the remote ${remote} no longer points at your local git server, so automatic pushes stopped: check it, then turn them on again`;
 /** rejectedText(branch) -> what the panel says of a branch the server would not take */
 export const rejectedText = (branch) => `${branch}: the local git server has commits this project doesn't — pull first`;
 
@@ -116,6 +126,14 @@ export function makeKeep({ store, remote, mirrors, now = () => Date.now(), log =
     if (manual && rec.lastError !== text) store().setLocalgit(id, (cur) => (cur?.state === 'kept' && cur.repo === rec.repo ? { ...cur, lastError: text } : cur));
     return { pushed: [], error: text };
   }
+  // astray(id, rec) — the remote is not the repository made here any more: nothing is pushed, automatic pushes are turned off (the
+  // project stays kept, and the panel says why), and the push you ask for by hand is the Git panel's own, which shows the URL
+  function astray(id, rec) {
+    const text = astrayText(rec.remote);
+    store().setLocalgit(id, (cur) => (cur?.state === 'kept' && cur.repo === rec.repo ? { ...cur, auto: false, lastError: text } : cur));
+    log(`keep ${id}: ${text}`);
+    return { pushed: [], error: text };
+  }
   async function syncOnce(id, { manual = false } = {}) {
     const rec = store().localgit(id);
     if (rec?.state !== 'kept') return { pushed: [] };
@@ -128,7 +146,13 @@ export function makeKeep({ store, remote, mirrors, now = () => Date.now(), log =
       return note(id, rec, failText(e), manual);
     }
     if (!st.repo) return note(id, rec, 'this folder is not a git repository any more', manual);
-    if (!st.remotes.some((r) => r.name === rec.remote)) return note(id, rec, `the remote ${rec.remote} is gone: stop keeping it here, then keep it again`, manual);
+    const rm = st.remotes.find((r) => r.name === rec.remote);
+    if (!rm) return note(id, rec, `the remote ${rec.remote} is gone: stop keeping it here, then keep it again`, manual);
+    // (nothing is confirmed with anybody here: the remote must still be exactly the repository made on the built-in server — one URL,
+    // no other push URL, and no URL rewrite in the repository's configuration, which could send a push elsewhere)
+    const owner = mirrors.owner() ?? rec.repo.split('/')[0];
+    const name = rec.repo.split('/')[1];
+    if (!pointsHome(rm, owner, name) || st.rewrites > 0) return astray(id, rec);
     // (a branch the server refused is left alone until it moves — or until you push now)
     const moved = st.branches.filter((b) => b.head && rec.heads[b.name] !== b.head && (manual || rec.rejected[b.name] !== b.head));
     if (!moved.length) {
@@ -143,6 +167,8 @@ export function makeKeep({ store, remote, mirrors, now = () => Date.now(), log =
       const action = rec.remote === 'origin' && b.name === st.branch ? 'publish' : 'push';
       try {
         const pl = await remote().plan({ action, repo: root.rel, remote: rec.remote, branch: b.name });
+        // (the remote may have changed since it was read: the plan names the URL the push goes to, and the host whose credential it gets)
+        if (pl.url !== urlOf(owner, name) || pl.host?.builtin !== LOCALGIT.id) return astray(id, rec);
         const r = await remote().run({ planId: pl.planId });
         if (r?.ok !== true) throw new Error('the push did not go through');
         heads[b.name] = HEX.test(r.sha ?? '') ? r.sha : b.head;
@@ -203,7 +229,7 @@ export function makeKeep({ store, remote, mirrors, now = () => Date.now(), log =
     const rm = st.repo ? st.remotes.find((r) => r.name === rec.remote) : null;
     let removed = false;
     const owner = mirrors.owner() ?? rec.repo.split('/')[0];
-    if (rm && rm.urls.length === 1 && rm.urls[0] === urlOf(owner, rec.repo.split('/')[1])) {
+    if (pointsHome(rm, owner, rec.repo.split('/')[1])) {
       await remote().remoteRemove({ repo: root.rel, name: rec.remote, url: rm.urls[0] });
       removed = true;
     }
