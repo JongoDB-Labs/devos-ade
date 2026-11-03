@@ -26,6 +26,12 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 - **Throwaways set up at once never take the same port.** The e2e harness chose the first port nothing listened on, minutes
   before its stack listened there, so two release stages started together could choose the same one ("port is already
   allocated"). A port chosen is now also held for its project until its stack listens.
+- **The Linux test browser has a network of its own.** On the test host's network, Chromium cancelled what it was loading
+  whenever another stage's Docker network or container came or went (`net::ERR_NETWORK_CHANGED`), so release stages could
+  not run side by side. It now runs on Docker's default bridge, the stack's ports relayed in under their own numbers
+  (`tests/e2e/browser-net.sh`, `tests/e2e/browser/relay.py`); `E2E_BROWSER_NET=host` keeps the old way.
+- **The layout sweep tells a stylesheet that did not load.** Chromium gives a stylesheet whose load failed an empty sheet,
+  not none, so the sweep measured pages without their styles and reported what that broke. Such a page is now opened again.
 - **End to end:** `code-ui-session-delete-and-new-project` (a session with no prompt deleted; Add to project › New project…,
   kept on the local git server, pushed from the project's menu).
 
