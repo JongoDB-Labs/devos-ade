@@ -10,7 +10,8 @@
 #   2. unpack   git archive of that commit into .state/update/prepare/src (nothing in the checkout moves: no HEAD, no
 #               working tree, no .env, no update record). Removed when the run ends.
 #   3. build    each image of the release (the portal, shared-mcp, Open WebUI; the Terminal's and the Code page's while
-#               they are on), one at a time, as <project>-prep/<service>:local from that copy and a private copy of .env
+#               they are on), one at a time, as <project>-prep/<image>:local (the name Compose gives the service's image:
+#               chat-egress builds terminal-egress) from that copy and a private copy of .env
 #               whose project is <project>-prep. BuildKit's layer cache is shared, so ./stack update's own build of
 #               <project>/<service>:local is a cache hit.
 #   4. download the images the release's compose files pin by digest and this computer does not have (a tag is never
@@ -255,6 +256,9 @@ _prep_services() {
   fi
 }
 # _prep_build_one SERVICE — in the context: its build with the arguments setup gives it (so the cache is the same)
+# _prep_image SERVICE -> the image the build of SERVICE makes, as Compose names it (Chat's egress proxy, chat-egress, builds the
+# terminal's egress image: compose.code-egress.yaml); nothing when Compose does not say
+_prep_image() { dc config --images "$1" 2>/dev/null | head -n 1; }
 _prep_build_one() {
   case "$1" in
     open-webui) dc build -q --build-arg "BN_VENDOR_TRY=$(owui_vendor_try)" open-webui ;;
@@ -282,7 +286,7 @@ prepare_run() {
   return "$rc"
 }
 _prepare_run_inner() {
-  local hint="$1" newest inst free min max d pp svc id total=0 size ref pulled=0 rc old_commit
+  local hint="$1" newest inst free min max d pp svc img id total=0 size ref pulled=0 rc old_commit
   d="$(prepare_dir)"; pp="$(prepare_project)"
   mkdir -p "$d" && chmod 700 "$d" || { PREP_WHY="cannot write $d"; return 1; }
   min="${PREPARE_MIN_FREE_MB:-10240}"; max="${PREPARE_MAX_MB:-8192}"
@@ -320,10 +324,11 @@ _prepare_run_inner() {
   for svc in $(_prep_ctx _prep_services 2>/dev/null); do
     if [ "${PREP_FOREGROUND:-0}" != 1 ] && _prep_cpu_high "${PREPARE_STOP_CPU_PCT:-90}"; then PREP_WHY="$(_prep_cpu_why)"; return 2; fi
     _prep_step "Prepare: build $svc" _prep_ctx _prep_build_one "$svc" || return $?
-    id="$(_image_id "$pp/$svc:local")"
-    [ -n "$id" ] || { PREP_WHY="the build of $svc left no image"; return 1; }
-    printf '%s\t%s\n' "$id" "$pp/$svc:local" >> "$d/images.tsv"
-    size="$(docker image inspect --format '{{.Size}}' "$pp/$svc:local" 2>/dev/null || echo 0)"; case "$size" in '' | *[!0-9]*) size=0 ;; esac
+    img="$(_prep_ctx _prep_image "$svc")"; img="${img:-$pp/$svc:local}"
+    id="$(_image_id "$img")"
+    [ -n "$id" ] || { PREP_WHY="the build of $svc left no image ($img)"; return 1; }
+    printf '%s\t%s\n' "$id" "$img" >> "$d/images.tsv"
+    size="$(docker image inspect --format '{{.Size}}' "$img" 2>/dev/null || echo 0)"; case "$size" in '' | *[!0-9]*) size=0 ;; esac
     total=$((total + size / 1000000))
     [ "$total" -le "$max" ] || { PREP_WHY="the images would use more than $max MB (PREPARE_MAX_MB)"; return 1; }
   done

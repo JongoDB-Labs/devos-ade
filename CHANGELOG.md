@@ -7,6 +7,11 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 ## [Unreleased]
 
 ### Fixed
+- **Preparing ahead works with Chat's way out through this computer (JON-1003).** With `TERMINAL_EGRESS=host` and the Code
+  page on, the release prepared ahead stopped at "the build of chat-egress left no image": that service builds the
+  terminal's egress image (`terminal-egress`), and the prepare looked for an image named after the service. Every Update
+  now then did the whole update itself (minutes instead of seconds). The prepare now looks for the image as Compose names
+  it.
 - **A smoke test that only ran out of time no longer fails the update (JON-996).** On a busy computer a check that asks a
   container something (the sandbox's isolation checks among them) could pass the 30 second limit without having answered
   wrongly, and the whole update was recorded as failed with Roll back offered. The smoke test now says such a check as `slow`,

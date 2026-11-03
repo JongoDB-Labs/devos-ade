@@ -37,15 +37,18 @@ _pw() {
       info) return 0 ;;
       compose)
         case " $* " in
-          *" config --images "*)   # the images the compose file in --project-directory names, as Compose prints them
-            local dir='' a prev=''
-            for a in "$@"; do [ "$prev" != --project-directory ] || dir="$a"; prev="$a"; done
-            sed -n 's/^[[:space:]]*image:[[:space:]]*//p' "$dir/compose.yaml" | sed "s|\${COMPOSE_PROJECT_NAME:-devos-ade}|${COMPOSE_PROJECT_NAME:-devos-ade}|" ;;
-          *" build "*)
-            local svc="${*: -1}"
+          *" config --images "*)   # the images the compose file in --project-directory names (of one service when named),
+            local dir a prev='' svc=''   # as Compose prints them
+            dir="$(_stub_dir "$@")"
+            for a in "$@"; do [ "$prev" != --images ] || svc="$a"; prev="$a"; done
+            if [ -n "$svc" ]; then _stub_image_of "$dir" "$svc"
+            else sed -n 's/^[[:space:]]*image:[[:space:]]*//p' "$dir/compose.yaml" | sed "s|\${COMPOSE_PROJECT_NAME:-devos-ade}|${COMPOSE_PROJECT_NAME:-devos-ade}|"; fi ;;
+          *" build "*)   # makes the image compose.yaml names for the service (as Compose does), else <project>/<service>:local
+            local svc="${*: -1}" img
             [ ! -f "$TMP/build-sleeps" ] || { echo "1 update" > "$HOLDER"; sleep 10; }
             [ ! -f "$TMP/build-fails" ] || { echo "ERROR: failed to solve: boom" >&2; return 1; }
-            printf '%s/%s:local NEW%s\n' "${COMPOSE_PROJECT_NAME:-devos-ade}" "$svc" "$svc" >> "$IMGS"; echo "sha256:NEW$svc" ;;
+            img="$(_stub_image_of "$(_stub_dir "$@")" "$svc")"
+            printf '%s NEW%s\n' "${img:-${COMPOSE_PROJECT_NAME:-devos-ade}/$svc:local}" "$svc" >> "$IMGS"; echo "sha256:NEW$svc" ;;
         esac ;;
       image)
         case "$2" in
@@ -67,6 +70,14 @@ _pw() {
     esac
     return 0
   }
+}
+# _stub_dir ARGS... -> the --project-directory of a Compose call; _stub_image_of DIR SERVICE -> the image: of SERVICE in
+# DIR/compose.yaml, with the project filled in (nothing when the service has none)
+_stub_dir() { local a prev='' dir=''; for a in "$@"; do [ "$prev" != --project-directory ] || dir="$a"; prev="$a"; done; printf '%s' "$dir"; }
+_stub_image_of() {
+  [ -f "$1/compose.yaml" ] || return 0
+  awk -v s="  $2:" '$0 == s { f = 1; next } f && /^  [^ ]/ { f = 0 } f && /^[[:space:]]*image:/ { sub(/^[[:space:]]*image:[[:space:]]*/, ""); print; exit }' "$1/compose.yaml" |
+    sed "s|\${COMPOSE_PROJECT_NAME:-devos-ade}|${COMPOSE_PROJECT_NAME:-devos-ade}|"
 }
 _compose() {   # _compose DIGEST — a compose.yaml with a built image and a pinned one
   printf 'services:\n  portal:\n    build: { context: ./portal }\n    image: ${COMPOSE_PROJECT_NAME:-devos-ade}/portal:local\n'
@@ -283,6 +294,24 @@ test_the_terminal_and_the_code_page_images_are_built_under_the_same_name() {
   grep ' build ' "$DLOG" | grep -vq '^bn-t-prep ' && return 1
   assert_contains "$(cat "$STATE_DIR/update/prepare/images.tsv")" "bn-t-prep/code:local"
   assert_eq "$(awk '$1 == "bn-t/code:local" || $1 == "bn-t/terminal:local"' "$IMGS")" ""
+}
+
+test_chats_egress_proxy_is_found_under_the_image_it_builds() {
+  # (JON-1003) with Chat's way out through the host and the Code page on, the egress build is chat-egress, whose image is the
+  # terminal's egress image: the prepare looks for what Compose builds, not an image named after the service
+  _pw
+  mkdir -p "$TMP/origin/terminal/egress"; echo "FROM scratch" > "$TMP/origin/terminal/egress/Dockerfile"
+  { _compose "$DIG_NEW"; printf '  chat-egress:\n    build: { context: ./terminal/egress }\n    image: ${COMPOSE_PROJECT_NAME:-devos-ade}/terminal-egress:local\n'; } > "$TMP/origin/compose.yaml"
+  git -C "$TMP/origin" add . ; git -C "$TMP/origin" commit -qm egress; git -C "$TMP/origin" tag v0.5.0; _seen v0.5.0
+  terminal_on() { return 0; }; terminal_why_out() { :; }; terminal_egress_build_service() { echo chat-egress; }; code_ready() { return 1; }
+  terminal_build_args() { TERMINAL_BUILD_ARGS=(--build-arg APT_REFRESH=2026-45); }
+  out="$(prepare_run v0.5.0 2>&1)" || { echo "$out" >&2; return 1; }
+  _prep_read; assert_eq "$PS_state" "ready"
+  grep -q 'docker compose.* build -q chat-egress$' "$DLOG" || { cat "$DLOG" >&2; return 1; }
+  assert_contains "$(cat "$STATE_DIR/update/prepare/images.tsv")" "bn-t-prep/terminal-egress:local"
+  ! grep -q 'chat-egress:local' "$STATE_DIR/update/prepare/images.tsv" || return 1
+  # ready means ready: its builds are all still here
+  prepare_is_ready "$(git -C "$STACK_DIR" rev-parse v0.5.0)"
 }
 
 # --- the helper's tick ---
