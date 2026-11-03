@@ -35,6 +35,7 @@ from urllib.parse import urlencode
 
 from playwright.sync_api import expect as see
 
+import checks_git
 import code_tidy
 from common import CLAUDE_CODE_VERSION, ENV, HOST, PORT, SHOTS, Skip, after_check, check, expect, http, origin
 from checks_browser import (Recorder, _confirm, _need_helper, _problems_outside_reloads, _reload, _switch, _wait_job, goto_setting, login,
@@ -2430,6 +2431,114 @@ def ui_projects(ctx):
             f"a Haiku session there ran in {cwd} (pwd), was closed and resumed from the Projects tab; "
             "Open a terminal here showed a window in that folder; Add to project showed the session in the empty project; "
             "Remove from Code took the record only (the folder stayed); no CSP violations")
+
+
+KEEP_A, KEEP_B = "e2e-keep-a", "e2e-keep-b"
+
+
+@check("browser", "code-ui-keep-on-local-git")
+@saved
+def ui_keep_on_local_git(ctx):
+    """Keeping a project on the built-in git server (JON-1005; no model calls; the throwaway's own git server, on as on a new
+    install): New project › An empty folder has "Keep it on your local git server" ticked — the repository devos/<name> is on the
+    server, private (Forgejo's API, as checks_git.py), and the Git panel says it is kept; a file committed in the panel is on the
+    server within 30 s without a push; another project's offer is answered Not for this project, and after a reload it is not
+    asked again; Stop keeping it here leaves the repository on the server. Screenshots k1-k3."""
+    need_on()
+    if not checks_git.ON:
+        raise Skip("the built-in git server is off in this throwaway (LOCALGIT=off)")
+    page, rec = ui_page(ctx, "code-ui-keep-on-local-git")
+    c = Code.on(page, rec, goto=False)
+    owner = checks_git.OWNER
+    gone = {e["name"] for e in (c.api("GET", "/api/fs?path=.")["json"] or {}).get("entries", [])}
+    _drop_projects(c, (KEEP_A, KEEP_B))
+    for d in (KEEP_A, KEEP_B):
+        if d in gone:
+            c.api("DELETE", f"/api/fs?path={d}")
+        checks_git.forgejo(ctx, "DELETE", f"/api/v1/repos/{owner}/{d}")
+    page.reload()
+    see(page.get_by_test_id("conn")).to_have_text("Connected", timeout=30000)
+    c = Code.on(page, rec, goto=False)
+
+    def ids():
+        return {x["root"]: x for x in c.api("GET", "/api/projects")["json"]["projects"]}
+
+    def new_project(name):
+        page.get_by_test_id("side-sessions").click()
+        page.get_by_test_id("new-project").click()
+        page.get_by_test_id("new-project-name").fill(name)
+        return page.get_by_test_id("new-project-dialog")
+
+    try:
+        # A: the box is there and ticked; git init is implied
+        dlg = new_project(KEEP_A)
+        see(page.get_by_test_id("new-project-keep")).to_be_checked(timeout=30000)
+        expect(page.get_by_test_id("new-project-git").is_disabled(), "git init is not implied by keeping it")
+        shot(page, "k1-code-new-project-keep")
+        page.get_by_test_id("new-project-create").click()
+        see(dlg).to_have_count(0, timeout=60000)
+        see(page.get_by_test_id("toast").last).to_contain_text("kept on your local git server", timeout=60000)
+        st, repo = checks_git.forgejo(ctx, "GET", f"/api/v1/repos/{owner}/{KEEP_A}")
+        expect(st == 200 and repo["private"] is True and repo["name"] == KEEP_A, f"the repository on the server: HTTP {st} {str(repo)[:200]}")
+        page.keyboard.press("Control+Shift+G")
+        see(page.get_by_test_id("keep-repo")).to_have_text(f"{owner}/{KEEP_A}", timeout=30000)
+        shot(page, "k2-code-git-panel-kept")
+        # a commit made in the panel reaches the server by itself
+        c.api("PUT", f"/api/fs/file?path={KEEP_A}/kept.txt", {"text": "kept on the local git server\n"})
+        page.get_by_test_id("git-refresh").click()
+        row = page.locator("[data-testid=git-file][data-path='kept.txt']")
+        see(row).to_have_count(1, timeout=30000)
+        row.hover()
+        row.get_by_test_id("git-stage").click()
+        see(page.locator("[data-testid=git-file][data-path='kept.txt'][data-group=staged]")).to_have_count(1, timeout=30000)
+        page.get_by_test_id("git-message").fill("e2e: a commit kept on the local git server")
+        page.get_by_test_id("git-commit").click()
+        deadline = time.time() + 30
+        seen = False
+        while time.time() < deadline and not seen:
+            st, f = checks_git.forgejo(ctx, "GET", f"/api/v1/repos/{owner}/{KEEP_A}/contents/kept.txt?ref=main")
+            seen = st == 200
+            if not seen:
+                time.sleep(2)
+        expect(seen, "the commit was not on the server within 30 s")
+        # B: a project with no answer yet; Not for this project; after a reload it is not asked again
+        dlg = new_project(KEEP_B)
+        page.get_by_test_id("new-project-keep").uncheck()
+        page.get_by_test_id("new-project-create").click()
+        see(dlg).to_have_count(0, timeout=60000)
+        st, _ = checks_git.forgejo(ctx, "GET", f"/api/v1/repos/{owner}/{KEEP_B}")
+        expect(st == 404, f"a repository was made for a project that was not kept: HTTP {st}")
+        page.keyboard.press("Control+Shift+G")
+        see(page.get_by_test_id("keep-offer")).to_be_visible(timeout=30000)
+        shot(page, "k3-code-git-panel-offer")
+        page.get_by_test_id("keep-no").click()
+        see(page.get_by_test_id("keep-offer")).to_have_count(0, timeout=30000)
+        page.reload()
+        see(page.get_by_test_id("conn")).to_have_text("Connected", timeout=30000)
+        page.keyboard.press("Control+Shift+G")
+        see(page.get_by_test_id("git-panel")).to_be_visible(timeout=30000)
+        time.sleep(3)
+        expect(page.get_by_test_id("keep-offer").count() == 0, "a No was asked again after a reload")
+        keep_b = c.api("GET", f"/api/projects/{ids()[KEEP_B]['id']}/keep")["json"]
+        expect(keep_b.get("state") == "declined", f"the answer: {keep_b}")
+        # Stop keeping it here (A): the remote goes, the repository stays
+        a = ids()[KEEP_A]["id"]
+        r = c.api("DELETE", f"/api/projects/{a}/keep")
+        expect(r["status"] == 200 and r["json"].get("removed") is True, f"stop: {r['status']} {r['text'][:200]}")
+        st, _ = checks_git.forgejo(ctx, "GET", f"/api/v1/repos/{owner}/{KEEP_A}")
+        expect(st == 200, f"the repository did not stay: HTTP {st}")
+        csp_clean(page, rec)
+    finally:
+        try:
+            _drop_projects(c, (KEEP_A, KEEP_B))
+            for d in (KEEP_A, KEEP_B):
+                c.api("DELETE", f"/api/fs?path={d}")
+                checks_git.forgejo(ctx, "DELETE", f"/api/v1/repos/{owner}/{d}")
+        except Exception:  # noqa: BLE001 — cleanup never hides the failure
+            pass
+    return (f"New project › an empty folder with Keep it on your local git server ticked made {owner}/{KEEP_A} (private) on the git server and "
+            "the Git panel said so; a commit made in the panel was on the server within 30 s; a project that was not kept made no repository, its "
+            "offer was answered Not for this project and not asked again after a reload; Stop keeping it here left the repository; no CSP violations")
 
 
 @check("browser", "code-projects-config-above")
