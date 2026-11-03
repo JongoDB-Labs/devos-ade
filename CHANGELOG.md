@@ -33,6 +33,9 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   failed, unfinished update (a rollback offered) with a newer release out, Update now is in sight, enabled, not inert and
   clickable, and opens its confirmation; after the update helper was late, it is back within 10 seconds of the helper's
   next heartbeat, without a reload.
+- **The Git deep link check loads the page afresh (JON-979 follow-up).** `browser/git-deep-link` opened the deep link
+  as a hash change and then reloaded; when the portal had already cut the address to `#git`, the reload loaded the git
+  server's front page and the check timed out (once in the v0.54.0 run). It now loads the deep link from `about:blank`.
 
 ## [0.53.0] - 2026-11-02
 

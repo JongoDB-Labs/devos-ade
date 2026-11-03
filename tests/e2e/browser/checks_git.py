@@ -140,8 +140,10 @@ def deep_link(ctx):
     m = make(ctx)
     page, rec = ctx.page("git-deep")
     login(page)
+    # a fresh load of the deep link, as from a link elsewhere (not a hash change then a reload: showTab can have cut the
+    # address to #git before the reload, which then loads the git server's front page)
+    page.goto("about:blank")
     page.goto(origin() + f"/#git/{OWNER}/{REPO}/issues/1")
-    page.reload()
     page.wait_for_selector('iframe[data-app="git"]', state="attached", timeout=30000)
     f = frame_of(page, "git")
     f.wait_for_url(re.compile(re.escape(f"/{OWNER}/{REPO}/issues/1") + r"$"), timeout=30000)
