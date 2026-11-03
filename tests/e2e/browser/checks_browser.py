@@ -930,6 +930,118 @@ def update_progress_bar(ctx):
     return "; ".join(states)
 
 
+@check("browser", "home-update-progress-modal")
+def update_progress_modal(ctx):
+    """JON-1004: a ./stack update typed in a terminal opens the progress popup by itself, with a row for each action (done ones
+    with their time and a bar on one scale, the running one counting up, the ones to come with the last time, a skipped one
+    greyed). Escape, Close and the backdrop close it and the update goes on; it does not reopen by itself, and Show progress
+    opens it. Slowest first sorts the rows. When the update has ended: the summary and Copy timings. Phone width fits."""
+    if real_helper_running():
+        raise Skip("a real update helper is running: this check fakes its heartbeat and its job")
+    st = STATE / "status"
+    files = {n: st / n for n in ("helper.json", "helper-status.json", "terminal-job.json")}
+    saved = {n: f.read_bytes() for n, f in files.items() if f.exists()}
+    page, rec = ctx.page("update-progress-modal")
+    login(page)
+    states = []
+    plan = [{"label": l, "secs": s} for l, s in (("Backup", 4), ("New code", 0), ("AWS key check", 0), ("Images", 20), ("Services", 6), ("Smoke test", 3))]
+    why = "the same AWS key and region were checked in the last 24 hours"
+    done = [{"label": "Backup", "took": "4s"}, {"label": "New code (git)", "took": "0s"}, {"label": "AWS key check", "took": "skipped", "why": why},
+            {"label": "Images", "took": "21s"}]
+
+    def job(phase, steps, step="", message="Running in a terminal", fin=None):
+        t = int(time.time())
+        _write_json(files["terminal-job.json"], {"id": "t-1700000001-1", "action": "update", "command": "update", "phase": phase, "message": message,
+                                                 "started_at": t - 40, "updated_at": t, "finished_at": fin, "version": "v0.9.0",
+                                                 "step": step, "step_started_at": (t - 3) if step else None, "steps": steps, "plan": plan, "pid": 1})
+
+    def is_open():
+        return page.eval_on_selector("#update-progress", "d => d.open")
+
+    try:
+        files["helper-status.json"].unlink(missing_ok=True)
+        job("running", done, step="Services")
+        page.reload()
+        # it opens by itself, as a modal with a heading it is named by
+        page.locator("#update-progress[open]").wait_for(timeout=15000)
+        expect(page.get_attribute("#update-progress", "aria-labelledby") == "up-title", "the popup is not named by its heading")
+        expect(page.inner_text("#up-title") == "Update progress", f"title: {page.inner_text('#up-title')!r}")
+        expect(page.evaluate("document.querySelector('#update-progress').matches(':modal')"), "the popup is no modal")
+        expect(page.locator("#up-bar").get_attribute("role") == "progressbar", "the bar is no progressbar")
+        expect((page.locator("#up-bar").get_attribute("aria-valuetext") or "").startswith("Step 5 of 6, Services"), f"valuetext: {page.locator('#up-bar').get_attribute('aria-valuetext')!r}")
+        rows = page.locator("#up-rows > li")
+        expect(rows.count() == 6, f"{rows.count()} rows, not 6")
+        names = [x.strip() for x in page.locator("#up-rows .up-name").all_inner_texts()]
+        expect(names == ["Done: Backup", "Done: New code (git)", "Skipped: AWS key check", "Done: Images", "Running: Services", "Waiting: Smoke test"], f"rows: {names!r}")
+        durs = [x.strip() for x in page.locator("#up-rows .up-dur").all_inner_texts()]
+        expect(durs[:4] == ["4s", "<1s", "skipped", "21s"], f"durations: {durs!r}")
+        expect("took 3s last time" in page.inner_text("#up-rows li.waiting"), f"waiting: {page.inner_text('#up-rows li.waiting')!r}")
+        expect(why in page.inner_text("#up-rows li.skipped"), "the skipped row does not say why")
+        widths = page.eval_on_selector_all("#up-rows .up-fill", "els => els.map(e => parseFloat(e.style.width))")
+        expect(len(widths) == 2 and widths[1] == 100 and 0 < widths[0] < 100, f"bars: {widths}")
+        # the running row counts up by itself
+        t0 = page.inner_text("#up-rows li.running .up-dur")
+        page.wait_for_function("t => document.querySelector('#up-rows li.running .up-dur').textContent !== t", arg=t0, timeout=5000)
+        states.append(f"opened by itself: 6 rows, bars {widths}, running row ticks ({t0} on)")
+        shot(page, "06g-home-update-progress-modal")
+        # slowest first
+        page.click("#up-order .chip[data-order='slowest']")
+        first = [x.strip() for x in page.locator("#up-rows .up-name").all_inner_texts()]
+        expect(first[0] == "Done: Images" and first[1] == "Done: Backup", f"slowest first: {first!r}")
+        expect(page.get_attribute("#up-order .chip[data-order='slowest']", "aria-pressed") == "true", "the chosen order is not pressed")
+        page.click("#up-order .chip[data-order='order']")
+        expect(page.locator("#up-rows .up-name").first.inner_text().strip() == "Done: Backup", "in order did not restore the order")
+        states.append("slowest first sorts, in order restores")
+        # phone width: nothing runs off the side
+        wide = page.viewport_size
+        page.set_viewport_size({"width": 390, "height": 844})
+        page.wait_for_timeout(300)
+        expect(page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "the page is wider than a phone")
+        expect(page.evaluate("(() => { const d = document.querySelector('#update-progress'); return d.scrollWidth <= d.clientWidth; })()"), "the popup scrolls sideways on a phone")
+        shot(page, "06h-home-update-progress-modal-phone")
+        page.set_viewport_size(wide or {"width": 1280, "height": 800})
+        states.append("phone width: no sideways scroll")
+        # Escape closes it, the update goes on, and it does not open again by itself
+        page.keyboard.press("Escape")
+        expect(not is_open(), "Escape did not close the popup")
+        job("running", done + [{"label": "Services (9) (http://x)", "took": "7s"}], step="Smoke test")
+        page.locator("#job-bar[aria-valuenow='6']").wait_for(timeout=15000)
+        page.wait_for_timeout(3000)
+        expect(not is_open(), "the popup opened again by itself during the same run")
+        # Show progress opens it, on the job card and on the update card; Close and the backdrop close it
+        page.click("#job-show-progress")
+        expect(is_open(), "Show progress did not open the popup")
+        expect("Smoke test" in page.inner_text("#up-rows li.running"), "the popup does not show the step that runs now")
+        page.click("#up-close")
+        expect(not is_open(), "Close did not close the popup")
+        page.click("#job-show-progress")
+        page.mouse.click(5, 5)
+        expect(not is_open(), "a click on the backdrop did not close the popup")
+        states.append("Escape, Close and the backdrop close it; no reopening by itself; Show progress opens it")
+        # the end: the summary and Copy timings
+        page.click("#job-show-progress")
+        expect(page.locator("#up-end").is_hidden(), "a summary while it runs")
+        job("done", done + [{"label": "Services (9) (http://x)", "took": "7s"}, {"label": "Smoke test", "took": "4s"}], message="Updated to v9.9.9", fin=int(time.time()))
+        page.locator("#up-end:not([hidden])").wait_for(timeout=15000)
+        text = page.inner_text("#up-summary")
+        expect(re.fullmatch(r"Took 36s\. Slowest: Images 21s \(58%\), Services 7s \(19%\), Backup 4s \(11%\)\.", text), f"summary: {text!r}")
+        expect(page.locator("#up-rows li.running, #up-rows li.waiting").count() == 0, "rows still running or waiting after it ended")
+        page.click("#up-copy")
+        page.wait_for_function("(document.querySelector('#toast').textContent || '').length > 0", timeout=5000)
+        expect(re.match(r"Copied the timings|Copy is blocked", page.inner_text("#toast")), f"toast: {page.inner_text('#toast')!r}")
+        shot(page, "06i-home-update-progress-modal-done")
+        states.append(f"ended: {text}; Copy timings")
+        page.keyboard.press("Escape")
+    finally:
+        for n, f in files.items():
+            if n in saved:
+                f.write_bytes(saved[n])
+            else:
+                f.unlink(missing_ok=True)
+    rec.save()
+    return "; ".join(states)
+
+
 @check("browser", "home-auto-update-switch")
 def auto_switch(ctx):
     if real_helper_running():

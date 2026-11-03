@@ -6,6 +6,16 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Added
+- **The update's progress is a popup that shows every action with its time (JON-1004).** It opens by itself when an update
+  starts (from Home, or typed in a terminal, the first time Home sees it) and has the same bar as the card, then a row for each
+  action in order: the ones done with how long they took and a thin bar on one scale, so the slowest stand out; the one that
+  runs, counting up each second; the ones to come, with the time they took last time; a skipped one greyed with its reason; a
+  failed one marked. In order / Slowest first sorts them. Escape, Close or a click outside closes it and the update goes on;
+  it does not open again by itself during the same run, and Show progress (on the update card and the job card) opens it. When
+  the update has ended it says the total time and the three slowest actions with their share ("Setup: services 3m 12s
+  (55%)"), and Copy timings copies one line for each action to paste into a ticket or a spreadsheet.
+
 ### Fixed
 - **Preparing ahead works with Chat's way out through this computer (JON-1003).** With `TERMINAL_EGRESS=host` and the Code
   page on, the release prepared ahead stopped at "the build of chat-egress left no image": that service builds the
