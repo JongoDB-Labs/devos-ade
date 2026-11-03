@@ -378,13 +378,14 @@
   const elOf = (id) => home.querySelector(`[data-widget="${id}"]`);
   const widgetEls = () => Array.from(home.querySelectorAll("[data-widget]"));
   // the markup's own order, kept so Reset (and a layout equal to the default) can put every widget back: each parent
-  // with its children; a widget is remembered by its id (Send feedback's placeholder is replaced by its card)
+  // with its children; a widget is remembered by its id (Send feedback's placeholder is replaced by its card) as {widget},
+  // not {id}: the update's progress (<section id="job">) has an id too, and was taken for a widget and dropped on Reset
   const origin = (() => {
     const parents = new Set([host]);
     for (const e of widgetEls()) parents.add(e.parentNode);
-    return Array.from(parents).map((p) => ({ parent: p, kids: Array.from(p.children).map((k) => (k.dataset.widget ? { id: k.dataset.widget } : k)) }));
+    return Array.from(parents).map((p) => ({ parent: p, kids: Array.from(p.children).map((k) => (k.dataset.widget ? { widget: k.dataset.widget } : k)) }));
   })();
-  const hostKids = origin[0].kids.filter((k) => !k.id);
+  const hostKids = origin[0].kids.filter((k) => !k.widget);
   const wrappers = hostKids.filter((k) => k.querySelector && k.querySelector("[data-widget]"));   // .home-top and .grid: empty while the widgets are in #widgets
   const anchored = hostKids.filter((k) => !wrappers.includes(k));                                      // the update's progress (#job): first, always as wide as the page
 
@@ -527,8 +528,8 @@
       w.classList.remove("wg-off", "wg-peek"); delete w.dataset.wgHeight; w.removeAttribute("data-wide"); w.inert = false;
       if (!w.getAttribute("style")) w.removeAttribute("style");
     }
-    for (const o of origin.slice(1)) o.parent.replaceChildren(...o.kids.map((k) => (k.id ? elOf(k.id) : k)).filter(Boolean));
-    host.replaceChildren(...origin[0].kids.map((k) => (k.id ? elOf(k.id) : k)).filter(Boolean));
+    for (const o of origin.slice(1)) o.parent.replaceChildren(...o.kids.map((k) => (k.widget ? elOf(k.widget) : k)).filter(Boolean));
+    host.replaceChildren(...origin[0].kids.map((k) => (k.widget ? elOf(k.widget) : k)).filter(Boolean));
   }
   let stopStick = null;
   // the layout on screen: the page's own, or the grid

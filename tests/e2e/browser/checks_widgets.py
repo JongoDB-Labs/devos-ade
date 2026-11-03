@@ -156,6 +156,8 @@ def widgets_customize_desktop(ctx):
         page.wait_for_selector("#home:not([hidden]) .spend")
         expect(not shown(page, "services"), "a reload showed Services again")
         expect(page.evaluate("() => document.getElementById('widgets').classList.contains('wg-custom')"), "the saved layout was not applied")
+        # the update's progress is no widget: first in the grid, as wide as the page
+        expect(page.evaluate("() => document.getElementById('widgets').firstElementChild.id === 'job'"), "the update's progress is not first in the grid")
         # the person's choice stays: Refresh brings Services new numbers and it stays hidden
         page.click("#refresh")
         page.wait_for_timeout(2500)
@@ -179,6 +181,11 @@ def widgets_customize_desktop(ctx):
         page.click("#wg-done")
         expect(not page.evaluate("() => document.getElementById('widgets').classList.contains('wg-custom')"), "Reset and Done left the grid on")
         expect(page.evaluate("() => !!document.querySelector('.grid > .col > .models')"), "Reset did not put the widgets back")
+        # and the update's progress where the markup has it (Reset once dropped it, and Home's Refresh then failed on it)
+        expect(page.evaluate("() => !!document.querySelector('#widgets > #update-card + #job')"), "Reset and Done dropped the update's progress")
+        page.click("#refresh")
+        page.wait_for_timeout(2500)
+        expect(page.locator("#load-error").is_hidden(), f"Refresh after Reset and Done failed: {page.locator('#load-error').inner_text()!r}")
         wait_saved(page, "desktop", lambda d: d is None, "nothing")
         shot(page, "widgets-reset-desktop")
     finally:
