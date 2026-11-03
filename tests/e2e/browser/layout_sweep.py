@@ -51,8 +51,15 @@ except ImportError:   # (its pure parts — the widths, the allowlist, merging �
 HERE = Path(__file__).resolve().parent
 MEASURE = (HERE / "layout_measure.js").read_text(encoding="utf-8")
 # the stylesheets a page links that did not load (a busy host's request that failed): such a page is unstyled, not laid out
-# wrong, and is not measured
-UNLOADED_CSS = "() => [...document.querySelectorAll('link[rel=stylesheet]')].filter((l) => !l.disabled && !l.sheet).map((l) => l.getAttribute('href') || '?')"
+# wrong, and is not measured. Chromium gives a link whose load failed a sheet all the same: no rules (an error status, a
+# body cut short, HTML instead of CSS) or rules it will not show (the connection reset) — never null (v0.57.0's 057c:
+# Home's activity.css). Another site's sheet hides its rules too: not judged.
+UNLOADED_CSS = """() => [...document.querySelectorAll('link[rel=stylesheet]')].filter((l) => {
+  if (l.disabled) return false;
+  if (!l.sheet) return true;
+  if (new URL(l.href, location.href).origin !== location.origin) return false;
+  try { return l.sheet.cssRules.length === 0; } catch (e) { return true; }
+}).map((l) => l.getAttribute('href') || '?')"""
 ALLOWLIST = HERE / "layout-allowlist.json"
 
 FULL_WIDTHS = list(range(320, 1921, 40))
