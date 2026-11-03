@@ -6,6 +6,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.57.0] - 2026-11-03
+
 ### Added
 - **Add to project › New project… (JON-1021).** The Code page's *Add to project* picker (a session's ⋯ menu, or several
   sessions picked in Sessions) ends with **New project…**: New project for those sessions, an empty folder of the workspace or a
@@ -4445,7 +4447,8 @@ Initial public release.
 - `bin/claude-bedrock`: runs Claude Code against Bedrock through LiteLLM without touching plain `claude`.
 - Cost transparency: Bedrock prices in `./stack costs` and the Open WebUI model picker, spend per key.
 
-[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.56.0...HEAD
+[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.57.0...HEAD
+[0.57.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.56.0...v0.57.0
 [0.56.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.55.0...v0.56.0
 [0.55.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.54.0...v0.55.0
 [0.54.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.53.0...v0.54.0
