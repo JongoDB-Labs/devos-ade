@@ -6,6 +6,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.54.0] - 2026-11-02
+
 ### Added
 - **The portal over HTTPS on this computer (JON-976, opt-in).** `./stack https on|off|status`, or Settings › Account &
   security › **Serve the portal over HTTPS** (`PORTAL_HTTPS`; setup asks once, default yes; unattended setups and updates
@@ -4321,7 +4323,8 @@ Initial public release.
 - `bin/claude-bedrock`: runs Claude Code against Bedrock through LiteLLM without touching plain `claude`.
 - Cost transparency: Bedrock prices in `./stack costs` and the Open WebUI model picker, spend per key.
 
-[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.53.0...HEAD
+[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.54.0...HEAD
+[0.54.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.53.0...v0.54.0
 [0.53.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.52.0...v0.53.0
 [0.52.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.51.1...v0.52.0
 [0.51.1]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.51.0...v0.51.1
