@@ -5,7 +5,7 @@
 // resolves them, and a ?project= link (an id's shape only: nothing is created by a link).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cwdOk, hostPathOk, inProject, liveHostTops, mentionPath, nameOk, needsLook, normProjects, readOnlyTops, normSessionSettings, normSettingsView, projectFor, projectOfCwd, rootOk, sessionsByProject, settingsApplied, settingsStateFor, shownIn, visibleWs, workspacePath, WORKSPACE_ID } from '../src/projects';
+import { cwdOk, hostPathOk, inProject, liveHostTops, mentionPath, nameOk, needsLook, newProjectFrom, normProjects, readOnlyTops, normSessionSettings, normSettingsView, projectFor, projectOfCwd, rootOk, sessionsByProject, settingsApplied, settingsStateFor, shownIn, visibleWs, workspacePath, WORKSPACE_ID } from '../src/projects';
 import { parseDeepLink, withoutDeepLink } from '../src/deeplink';
 import { normSessionInfo } from '../src/api';
 import type { SessionInfo } from '../src/types';
@@ -374,4 +374,22 @@ test('a session of an agent of your subscriptions waits for the settings dialog 
     assert.equal(holdForSettings('codex', undefined, state), false, 'no such project');
   }
   for (const state of ['trusted', 'none', 'workspace'] as const) assert.equal(holdForSettings('copilot', project, state), false, state);
+});
+
+test('Add to project › New project…: the sessions\' own folder when it can be a project, else an empty folder', () => {
+  const E = { tab: 'empty', folder: '' };
+  assert.deepEqual(newProjectFrom(['/workspace/my-app', '/workspace/my-app'], ['', 'other']), { tab: 'folder', folder: 'my-app' });
+  assert.deepEqual(newProjectFrom(['/workspace/a/b'], ['']), { tab: 'folder', folder: 'a/b' });
+  assert.deepEqual(newProjectFrom(['/workspace'], ['']), E, 'the workspace itself: a new folder');
+  assert.deepEqual(newProjectFrom(['/workspace/a', '/workspace/b'], ['']), E, 'two folders');
+  assert.deepEqual(newProjectFrom([], ['']), E);
+  assert.deepEqual(newProjectFrom([undefined], ['']), E, 'a folder not known');
+  assert.deepEqual(newProjectFrom(['/workspace/app'], ['app']), E, 'already a project');
+  assert.deepEqual(newProjectFrom(['/workspace/app/src'], ['app']), E, 'inside a project');
+  assert.deepEqual(newProjectFrom(['/workspace/app'], ['app/web']), E, 'around a project');
+  assert.deepEqual(newProjectFrom(['/workspace/apps'], ['app']), { tab: 'folder', folder: 'apps' }, 'a name that only starts the same');
+  assert.deepEqual(newProjectFrom(['/workspace/.git'], ['']), E, 'not a folder a project may be');
+  assert.deepEqual(newProjectFrom(['/workspace/a/b/c/d/e'], ['']), E, 'too deep');
+  assert.deepEqual(newProjectFrom(['/Users/me/src/x'], ['']), E, 'a folder of this computer');
+  assert.deepEqual(newProjectFrom(['/workspacex/y'], ['']), E);
 });

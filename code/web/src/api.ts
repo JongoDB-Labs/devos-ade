@@ -822,10 +822,11 @@ export async function archiveSession(id: string, archived: boolean): Promise<voi
   await request('POST', `/api/sessions/${id}/archive`, { archived });
 }
 /** Delete a session: its transcript leaves the sandbox's store (the files it changed stay). The session's own id is
- *  named again, as the backend asks. */
-export async function deleteSession(id: string): Promise<void> {
+ *  named again, as the backend asks. -> transcript: false for one with no prompt yet (there was none to delete). */
+export async function deleteSession(id: string): Promise<{ transcript: boolean }> {
   if (!isUuid(id)) throw new ApiError(400, 'bad session id');
-  await request('POST', `/api/sessions/${id}/delete`, { confirm: id.toLowerCase() });
+  const o = await request('POST', `/api/sessions/${id}/delete`, { confirm: id.toLowerCase() });
+  return { transcript: o.transcript !== false };
 }
 const windowOf = (o: { window?: unknown }): string | null => (typeof o.window === 'string' && /^[A-Za-z0-9_.-]{1,30}$/.test(o.window) ? o.window : null);
 /** A new terminal window in the folder a session works in. */

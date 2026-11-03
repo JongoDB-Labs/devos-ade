@@ -107,6 +107,28 @@ test('delete: refused while the terminal runs it and with a bad id; an old sandb
   state.deleteAnswer = null;
 });
 
+test('delete: a session started here with no prompt yet (no transcript in the sandbox) is deleted all the same, and leaves /api/state', async () => {
+  const { json } = await req('POST', '/api/sessions', { model: 'claude-haiku-5-5' });
+  const id = json.id;
+  assert.ok((await req('GET', '/api/state')).json.sessions.some((x) => x.id === id), 'open here');
+  state.deleteAnswer = () => Promise.reject(new SandboxError('no such session', 'refused'));
+  const r = await req('POST', `/api/sessions/${id}/delete`, { confirm: id });
+  state.deleteAnswer = null;
+  assert.equal(r.status, 200, JSON.stringify(r.json));
+  assert.deepEqual(r.json, { ok: true, deleted: id, transcript: false }, 'said: there was no transcript');
+  assert.equal((await req('GET', '/api/state')).json.sessions.some((x) => x.id === id), false, 'not listed again after a reload');
+  state.deleteAnswer = () => Promise.reject(new SandboxError('no such session', 'refused'));
+  assert.equal((await req('POST', `/api/sessions/${id}/delete`, { confirm: id })).status, 404, 'then unknown');
+  state.deleteAnswer = null;
+});
+
+test('delete: a session deleted after it was open here is not listed by /api/state again (a reload would show it ended)', async () => {
+  const { json } = await req('POST', '/api/sessions', { model: 'claude-haiku-5-5' });
+  const r = await req('POST', `/api/sessions/${json.id}/delete`, { confirm: json.id });
+  assert.equal(r.status, 200);
+  assert.equal((await req('GET', '/api/state')).json.sessions.some((x) => x.id === json.id), false);
+});
+
 test('folder-terminal: a session\'s working folder (the workspace\'s own: no root; a folder: its path), never .git, and a bad id', async () => {
   let r = await req('POST', `/api/sessions/${A}/folder-terminal`);
   assert.equal(r.status, 200);

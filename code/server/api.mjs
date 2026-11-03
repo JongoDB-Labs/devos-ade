@@ -938,20 +938,26 @@ export function makeApi({ call, sessions, projects = null, reloadPollMs = 1000, 
     if (!cwdOk(cwd)) throw new HttpError(409, 'its folder is no longer added: its sessions are read only here');
     if (!a) await notRunning(id);
     if (s?.open) s.close();
+    let none = false;
     if (a) agentStore.remove(id);
     else {
       try {
         await call({ op: 'sessions.delete', id, ...cwdField(cwd), ...storeField(id) });
       } catch (e) {
         if (unknownOp(e)) throw new HttpError(501, 'the sandbox is older than this Code page: ./stack up restarts it');
-        if (e instanceof SandboxError && e.kind === 'refused' && /no such session/.test(e.message)) throw refused(404, e, HttpError);
-        throw e;
+        if (!(e instanceof SandboxError && e.kind === 'refused' && /no such session/.test(e.message))) throw e;
+        // (a session started here with no prompt yet: Claude Code writes its transcript with the first prompt, so the
+        // sandbox has none to delete — it leaves the page all the same; one this server never had is unknown)
+        if (!s) throw refused(404, e, HttpError);
+        log(`session ${id.slice(0, 8)}: no transcript in the sandbox (no prompt yet): nothing to delete there`);
+        none = true;
       }
     }
+    sessions.forget?.(id);
     cwds.delete(id); planIds.delete(id);
     log(`session ${id.slice(0, 8)} deleted from the Code page's menu`);
     try { projects?.forgetSession(id); } catch (e) { log(`projects: ${short(e?.message || String(e), 200)}`); }
-    return { ok: true, deleted: id };
+    return { ok: true, deleted: id, ...(none ? { transcript: false } : {}) };
   }
   // The folder a terminal window opens in for a place of the workspace (a session's working folder, a file's folder): a
   // folder of the workspace up to ROOT_DEPTH levels (bn-coded checks it again: a real folder, no link, never .git or the

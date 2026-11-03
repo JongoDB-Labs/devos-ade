@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { boundedJson, normEvent, normOutcome, normServerMsg, overBudget, permissionInput, PERMISSION_SHOWN_CHARS, PERMISSION_SHOWN_STRING } from '../src/api';
+import { boundedJson, deleteSession, normEvent, normOutcome, normServerMsg, overBudget, permissionInput, PERMISSION_SHOWN_CHARS, PERMISSION_SHOWN_STRING } from '../src/api';
 
 const S = '3f2a7c1e-9b4d-4e8a-a1c2-0d9e8f7a6b5c';
 const msg = (o: unknown) => normServerMsg(JSON.stringify(o));
@@ -188,4 +188,23 @@ test('Auto mode: a `blocked` event checked field by field; a prompt\'s reasonTyp
   assert.ok(p && p.kind === 'permission' && p.req.reasonType === 'rule');
   const q = msg({ type: 'permission', id: 'p2', session: A, tool: 'Bash', input: { command: 'ls' }, complete: true, reasonType: '<b>', rules: [], projectRules: [] });
   assert.ok(q && q.kind === 'permission' && q.req.reasonType === null);
+});
+
+test('Delete: the session\'s own id as confirm; a session with no prompt yet is said (transcript: false), anything else is a transcript', async () => {
+  const sent: unknown[] = [];
+  const real = globalThis.fetch;
+  let body: unknown = { ok: true, deleted: S, transcript: false };
+  globalThis.fetch = (async (_u: string, init: RequestInit) => {
+    sent.push(JSON.parse(String(init.body)));
+    return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+  }) as typeof fetch;
+  try {
+    assert.deepEqual(await deleteSession(S.toUpperCase()), { transcript: false });
+    assert.deepEqual(sent[0], { confirm: S });
+    body = { ok: true, deleted: S };
+    assert.deepEqual(await deleteSession(S), { transcript: true });
+    body = { ok: true, deleted: S, transcript: 'no' };
+    assert.deepEqual(await deleteSession(S), { transcript: true }, 'only false says none');
+    await assert.rejects(deleteSession('../x'));
+  } finally { globalThis.fetch = real; }
 });

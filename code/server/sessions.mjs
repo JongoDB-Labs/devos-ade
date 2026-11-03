@@ -1159,6 +1159,13 @@ export class SessionManager {
     while (this.sessions.size > KEEP && ended.length) this.sessions.delete(ended.shift().id);
   }
 
+  // forget(id) — a deleted session (its process already closed) leaves the sessions open here: /api/state no longer
+  // lists it, so a reload does not show it again as ended
+  forget(id) {
+    const s = this.get(id);
+    if (s && !s.open) this.sessions.delete(id);
+  }
+
   /** After a plugin change: every running process reloads its plugins -> how many did (each within timeoutMs).
    *  untilChanged: Claude Code learns of the CLI's settings change through its file watcher, a moment later — the
    *  sessions whose plugin list the first reload left as it was reload again every pollMs (in the background) until it

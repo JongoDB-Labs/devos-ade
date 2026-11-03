@@ -16,6 +16,9 @@ import {
   addToProject,
   archiveSessionById,
   askToKeep,
+  openPortalGit,
+  pushKept,
+  refreshKeep,
   keepNextCloneOnLocalGit,
   closeSessionById,
   continueAfterSettings,
@@ -50,7 +53,7 @@ import {
 import * as api from '../api';
 import { boxShown, newProjectBody } from '../keep';
 import { GROUP_LABEL, groupOf, type Group } from '../groups';
-import { afterSettingsChoice, needsLook, RECHECK_TEXT, rootOk, sessionsByProject, settingsApplied, visibleWs, WORKSPACE_ID, type Project, type SettingsView } from '../projects';
+import { afterSettingsChoice, needsLook, newProjectFrom, RECHECK_TEXT, rootOk, sessionsByProject, settingsApplied, visibleWs, WORKSPACE_ID, type Project, type SettingsView } from '../projects';
 import type { SessionView } from '../session';
 import type { Harness, ImportedFrom, SessionInfo } from '../types';
 import { ago, label } from '../text';
@@ -214,6 +217,30 @@ const STACK_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 /** Settings › Claude Code › Project folders on the portal (a new tab), when this page knows the portal. */
 const foldersLink = (portal: string | null): string | null => (portal ? `${portal.replace(/\/+$/, '')}/#settings/+project-folders` : null);
 
+/** A project's menus and the built-in git server: kept, Push now (everything that moved) and Open in Git; not kept,
+ *  Keep on your local git server… (the Git panel's offer). Its standing is asked again as the menu opens. */
+function KeepItems({ id, close, testid }: { id: string; close: () => void; testid: string }) {
+  const k = useSel(store, (s) => s.keep.views[id] ?? null);
+  const busy = useSel(store, (s) => s.keep.busy !== null);
+  useEffect(() => void refreshKeep(id), [id]);
+  if (k?.state === 'kept' && k.repo)
+    return (
+      <>
+        <MenuItem icon="upload" disabled={busy} onSelect={() => (close(), void pushKept(id))} testid={`${testid}-push`}>
+          Push to your local git server now
+        </MenuItem>
+        <MenuItem icon="external" onSelect={() => (close(), openPortalGit(k.repo))} testid={`${testid}-open`}>
+          Open {label(k.repo, 80)} in Git
+        </MenuItem>
+      </>
+    );
+  return (
+    <MenuItem icon="server" onSelect={() => (close(), void askToKeep(id))} testid={testid}>
+      Keep on your local git server…
+    </MenuItem>
+  );
+}
+
 /** A project's ⋯ menu: New session, a terminal in its folder, Connect a git repository, Rename, Remove from Code. */
 function ProjectMenu({ p, onRename }: { p: Project; onRename: () => void }) {
   if (p.gone)
@@ -250,11 +277,7 @@ function ProjectMenu({ p, onRename }: { p: Project; onRename: () => void }) {
             onSelect={() => (close(), p.readOnly ? goSetup('folder-read-only') : void connectGitRepo(p.id))}>
             {p.readOnly ? 'Connect a git repository — read-only folder: Settings › Claude Code › Project folders' : 'Connect a git repository'}
           </MenuItem>
-          {!p.readOnly && (
-            <MenuItem icon="server" onSelect={() => (close(), void askToKeep(p.id))} testid="project-menu-keep">
-              Keep on your local git server…
-            </MenuItem>
-          )}
+          {!p.readOnly && <KeepItems id={p.id} close={close} testid="project-menu-keep" />}
           <MenuItem icon="shield" onSelect={() => (close(), openProjectDialog({ kind: 'settings', id: p.id }))} testid="project-menu-settings">
             Claude Code settings…
           </MenuItem>
@@ -569,11 +592,7 @@ export function ProjectChip({ compact = false }: { compact?: boolean }) {
           <MenuItem icon="branch" onSelect={() => (close(), void connectGitRepo(p.id))}>
             Connect a git repository
           </MenuItem>
-          {!p.readOnly && (
-            <MenuItem icon="server" onSelect={() => (close(), void askToKeep(p.id))} testid="project-chip-keep">
-              Keep on your local git server…
-            </MenuItem>
-          )}
+          {!p.readOnly && <KeepItems id={p.id} close={close} testid="project-chip-keep" />}
           <MenuItem icon="terminal" onSelect={() => (close(), void openProjectTerminal(p.id))}>
             Open a terminal here
           </MenuItem>
@@ -592,7 +611,7 @@ export function ProjectDialogs() {
   const d = useSel(store, (s) => s.projectDialog);
   if (!d) return null;
   const close = () => openProjectDialog(null);
-  if (d.kind === 'new') return <NewProjectDialog tab={d.tab} onClose={close} />;
+  if (d.kind === 'new') return <NewProjectDialog tab={d.tab} add={d.add} folder={d.folder} onClose={close} />;
   if (d.kind === 'remove') return <RemoveProjectDialog id={d.id} onClose={close} />;
   if (d.kind === 'delete-session') return <DeleteSessionDialog id={d.id} title={d.title} onClose={close} />;
   if (d.kind === 'export') return <ExportDialog id={d.id} onClose={close} />;
@@ -603,7 +622,9 @@ export function ProjectDialogs() {
 }
 
 /** New project: an empty folder of the workspace (and git init), a clone, or a folder of the workspace. */
-function NewProjectDialog({ tab, onClose }: { tab: Extract<ProjectDialog, { kind: 'new' }>['tab']; onClose: () => void }) {
+/** New project; add: the sessions Add to project picked, added to it once it is made (an empty folder or one of the
+ *  workspace: the two made here at once), folder: the one offered first (the folder they work in). */
+function NewProjectDialog({ tab, add = [], folder: first = '', onClose }: { tab: Extract<ProjectDialog, { kind: 'new' }>['tab']; add?: string[]; folder?: string; onClose: () => void }) {
   const projects = useSel(store, (s) => s.projects);
   const portal = useSel(store, (s) => s.server?.portalOrigin ?? null);
   const [kind, setKind] = useState(tab);
@@ -612,7 +633,7 @@ function NewProjectDialog({ tab, onClose }: { tab: Extract<ProjectDialog, { kind
   // "Keep it on your local git server": asked once, here, when the built-in server is there (null: not known yet); on by default
   const [available, setAvailable] = useState<boolean | null>(null);
   const [keep, setKeep] = useState(true);
-  const [folder, setFolder] = useState('');
+  const [folder, setFolder] = useState(first);
   const [folders, setFolders] = useState<string[] | null>(null);
   const [err, setErr] = useState<Problem | null>(null);
   const [busy, setBusy] = useState(false);
@@ -631,6 +652,7 @@ function NewProjectDialog({ tab, onClose }: { tab: Extract<ProjectDialog, { kind
       } catch {
         /* none listed */
       }
+      if (first && rootOk(first)) out.add(first);
       if (!gone) setFolders([...out].sort((a, b) => a.localeCompare(b)));
     })();
     return () => {
@@ -659,13 +681,18 @@ function NewProjectDialog({ tab, onClose }: { tab: Extract<ProjectDialog, { kind
       return;
     }
     setBusy(true);
-    const e = await createProject(newProjectBody(kind === 'empty' ? 'empty' : 'folder', target, { git, keep: boxShown(available, kind) && keep }));
+    const e = await createProject(newProjectBody(kind === 'empty' ? 'empty' : 'folder', target, { git, keep: boxShown(available, kind) && keep }), add);
     setBusy(false);
     if (e) setErr(e);
     else onClose();
   };
   return (
-    <Dialog title="New project" onClose={onClose} testid="new-project-dialog">
+    <Dialog title={!add.length ? 'New project' : add.length === 1 ? 'New project for the session' : `New project for ${add.length} sessions`} onClose={onClose} testid="new-project-dialog">
+      {add.length > 0 && (
+        <p class="muted small" data-testid="new-project-adds">
+          {add.length === 1 ? 'The session is listed in it' : `The ${add.length} sessions are listed in it`} once it is made; each still runs in its own folder.
+        </p>
+      )}
       <div class="np" role="radiogroup" aria-label="What the project starts from">
         <label class={`np-opt${kind === 'empty' ? ' on' : ''}`}>
           <input type="radio" name="np-kind" checked={kind === 'empty'} onChange={() => setKind('empty')} data-testid="new-project-empty" />
@@ -687,13 +714,15 @@ function NewProjectDialog({ tab, onClose }: { tab: Extract<ProjectDialog, { kind
             )}
           </span>
         </label>
-        <label class={`np-opt${kind === 'clone' ? ' on' : ''}`}>
-          <input type="radio" name="np-kind" checked={kind === 'clone'} onChange={() => setKind('clone')} data-testid="new-project-clone" />
-          <span class="np-body">
-            <span class="np-title">Clone a repository</span>
-            <span class="muted small">From GitHub, GitLab or any https/ssh host (Git hosts for a private one): the new folder becomes a project.</span>
-          </span>
-        </label>
+        {!add.length && (
+          <label class={`np-opt${kind === 'clone' ? ' on' : ''}`}>
+            <input type="radio" name="np-kind" checked={kind === 'clone'} onChange={() => setKind('clone')} data-testid="new-project-clone" />
+            <span class="np-body">
+              <span class="np-title">Clone a repository</span>
+              <span class="muted small">From GitHub, GitLab or any https/ssh host (Git hosts for a private one): the new folder becomes a project.</span>
+            </span>
+          </label>
+        )}
         <label class={`np-opt${kind === 'folder' ? ' on' : ''}`}>
           <input type="radio" name="np-kind" checked={kind === 'folder'} onChange={() => setKind('folder')} data-testid="new-project-folder" />
           <span class="np-body">
@@ -715,13 +744,15 @@ function NewProjectDialog({ tab, onClose }: { tab: Extract<ProjectDialog, { kind
             )}
           </span>
         </label>
-        <label class={`np-opt${kind === 'computer' ? ' on' : ''}`}>
-          <input type="radio" name="np-kind" checked={kind === 'computer'} onChange={() => setKind('computer')} data-testid="new-project-computer" />
-          <span class="np-body">
-            <span class="np-title">A folder of this computer</span>
-            {kind === 'computer' && <ComputerFolder portal={portal} />}
-          </span>
-        </label>
+        {!add.length && (
+          <label class={`np-opt${kind === 'computer' ? ' on' : ''}`}>
+            <input type="radio" name="np-kind" checked={kind === 'computer'} onChange={() => setKind('computer')} data-testid="new-project-computer" />
+            <span class="np-body">
+              <span class="np-title">A folder of this computer</span>
+              {kind === 'computer' && <ComputerFolder portal={portal} />}
+            </span>
+          </label>
+        )}
       </div>
       {boxShown(available, kind) && (
         <label class="gitr-check np-keep" data-testid="new-project-keep-label">
@@ -945,6 +976,14 @@ function FileDialog({ ids, onClose }: { ids: string[]; onClose: () => void }) {
             </button>
           </li>
         ))}
+        <li>
+          <button type="button" class="gitr-item" data-testid="file-dialog-new"
+            onClick={() => openProjectDialog({ kind: 'new', add: ids, ...newProjectFrom(ids.map((id) => where[id]?.cwd), projects.filter((p) => !p.host).map((p) => p.root)) })}>
+            <Icon name="plus" size={13} />
+            <span class="gitr-name">New project…</span>
+            <span class="muted small">{ids.length === 1 ? 'made now, with the session in it' : `made now, with the ${ids.length} sessions in it`}</span>
+          </button>
+        </li>
       </ul>
     </Dialog>
   );

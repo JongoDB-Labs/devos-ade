@@ -242,7 +242,8 @@ export interface RewindState {
 /** The Projects tab's dialogs: New project (an empty folder, a clone, a folder of the workspace), Remove from Code,
  *  Add to project (one or more sessions). */
 export type ProjectDialog =
-  | { kind: 'new'; tab: 'empty' | 'clone' | 'folder' | 'computer' }
+  /** add: sessions added to it once it is made (Add to project › New project…), folder: the folder offered first */
+  | { kind: 'new'; tab: 'empty' | 'clone' | 'folder' | 'computer'; add?: string[]; folder?: string }
   | { kind: 'remove'; id: string }
   /** Export to Files: the project's files as a zip (Export.tsx) */
   | { kind: 'export'; id: string }
@@ -1857,11 +1858,17 @@ export async function archiveSessionById(id: string, on: boolean): Promise<void>
 /** Delete a session for good (its dialog first: Projects.tsx DeleteSessionDialog): its transcript leaves the sandbox. */
 export async function deleteSessionById(id: string): Promise<boolean> {
   if (!isUuid(id)) return false;
+  let transcript = true;
   try {
-    await api.deleteSession(id);
+    ({ transcript } = await api.deleteSession(id));
   } catch (e) {
-    failed(e, 'Not deleted');
-    return false;
+    // (unknown to the backend and the sandbox — one this page still showed from before the Code page restarted: there is
+    // nothing of it to delete, so it leaves the page)
+    if (!(e instanceof api.ApiError && e.status === 404 && get().views[id])) {
+      failed(e, 'Not deleted');
+      return false;
+    }
+    transcript = false;
   }
   attached.delete(id);
   set((s) => {
@@ -1870,7 +1877,7 @@ export async function deleteSessionById(id: string): Promise<boolean> {
     return { ...s, views, active: s.active === id ? null : s.active, sessions: s.sessions.filter((x) => x.id !== id) };
   });
   announce();
-  toast('Deleted: its transcript is gone from the sandbox.', 'ok');
+  toast(transcript ? 'Deleted: its transcript is gone from the sandbox.' : 'Deleted: it had no prompts yet, so there was no transcript to remove.', 'ok');
   void refreshSessions();
   return true;
 }
@@ -2425,7 +2432,7 @@ export function openProjectDialog(d: ProjectDialog | null): void {
 /** What a project action came to when it did not work: ours, and the sandbox's own words apart when it is in them. */
 export type Problem = { text: string; said: SandboxWords | null };
 const problem = (text: string): Problem => ({ text, said: null });
-export async function createProject(b: { kind: 'new' | 'folder'; folder: string; name?: string; git?: boolean; keep?: boolean }): Promise<Problem | null> {
+export async function createProject(b: { kind: 'new' | 'folder'; folder: string; name?: string; git?: boolean; keep?: boolean }, add: string[] = []): Promise<Problem | null> {
   try {
     const r = await api.addProject(b);
     await refreshProjects();
@@ -2436,6 +2443,8 @@ export async function createProject(b: { kind: 'new' | 'folder'; folder: string;
     if (r.gitError) toast(r.said ? `${p.name}: the folder is there, but ${r.gitError}` : `${p.name}: the folder is there, but git init failed (${r.gitError}).`, 'error', undefined, r.said);
     else toast(b.kind === 'new' ? `New project ${p.name} in ${p.path}${r.git ? ', a git repository' : ''}` : `${p.name} (${p.path}) is a project now`, 'ok');
     keptToast(p.name, r);
+    // (Add to project › New project…: the sessions picked are listed there now)
+    if (add.length) await addToProject(add, p.id);
     void refreshSessions();
     return null;
   } catch (e) {

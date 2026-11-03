@@ -6,6 +6,22 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Added
+- **Add to project › New project… (JON-1021).** The Code page's *Add to project* picker (a session's ⋯ menu, or several
+  sessions picked in Sessions) ends with **New project…**: New project for those sessions, an empty folder of the workspace or a
+  folder of it, with **Keep it on your local git server** as in New project. When the sessions all work in one folder of the
+  workspace that can be a project, that folder is offered first. Once the project is made, the sessions are listed in it (each
+  still runs in its own folder).
+- **Push a kept project from its menu (JON-1021).** A project kept on your local git server has **Push to your local git server
+  now** and **Open *owner/name* in Git** in its ⋯ menu and the project chip's menu; one that is not kept still has *Keep on your
+  local git server…*.
+
+### Fixed
+- **A session with no prompt yet can be deleted (JON-1020).** Deleting a session that had just been started said "Not deleted:
+  no such session": Claude Code writes a transcript with the first prompt, so the sandbox had none to remove. It is deleted now
+  ("it had no prompts yet, so there was no transcript to remove"). A deleted session that was open no longer comes back as
+  *ended* after a reload.
+
 ## [0.56.0] - 2026-11-03
 
 ### Added

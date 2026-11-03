@@ -112,6 +112,14 @@ export function rootOk(v: unknown): v is string {
   const segs = v.split('/');
   return segs.length <= 4 && segs.every((s) => s.length >= 1 && s.length <= 100 && !s.startsWith('.') && s.trim() === s);
 }
+/** Add to project › New project…: the folder the sessions all work in, when it can be a project of its own (a folder of the
+ *  workspace, in no project and holding none), else a new empty folder. roots: the projects' folders of the workspace. */
+export function newProjectFrom(cwds: (string | null | undefined)[], roots: string[]): { tab: 'empty' | 'folder'; folder: string } {
+  const one = cwds.length > 0 && cwds.every((c) => c === cwds[0]) ? cwds[0] : null;
+  const rel = typeof one === 'string' && one.startsWith(`${WORKSPACE_PATH}/`) ? one.slice(WORKSPACE_PATH.length + 1) : '';
+  const clash = roots.some((r) => r !== '' && (r === rel || rel.startsWith(`${r}/`) || r.startsWith(`${rel}/`)));
+  return rootOk(rel) && !clash ? { tab: 'folder', folder: rel } : { tab: 'empty', folder: '' };
+}
 export const nameOk = (v: unknown): v is string => typeof v === 'string' && v.trim() === v && v.length >= 1 && v.length <= 80 && !ODD.test(v);
 /** A folder of this computer's path in the sandbox as the backend may name it: absolute, plain (no empty, "." or ".."
  *  part), one line, no odd character, not /workspace, around or inside it. */

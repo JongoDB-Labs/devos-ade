@@ -2547,6 +2547,117 @@ def ui_keep_on_local_git(ctx):
             "offer was answered Not for this project and not asked again after a reload; Stop keeping it here left the repository; no CSP violations")
 
 
+SESS_PROJ = "e2e-sess-proj"
+
+
+@check("browser", "code-ui-session-delete-and-new-project")
+@saved
+def ui_session_delete_and_new_project(ctx):
+    """A session with no prompt yet (Claude Code has written no transcript; Haiku, no model calls): its ⋯ › Delete deletes it
+    (v0.56.0 said "no such session") and a reload does not list it again; another one's ⋯ › Add to project › New project… makes
+    a project of a new folder with the session listed in it — and, with the built-in git server on, kept there: a commit, then
+    the project's ⋯ › Push to your local git server now puts it in the repository. Screenshots sp1-sp2."""
+    need_on()
+    page, rec = ui_page(ctx, "code-ui-session-delete-and-new-project")
+    c = Code.on(page, rec, goto=False)
+    owner = checks_git.OWNER if checks_git.ON else None
+    _drop_projects(c, (SESS_PROJ,))
+    if SESS_PROJ in {e["name"] for e in (c.api("GET", "/api/fs?path=.")["json"] or {}).get("entries", [])}:
+        c.api("DELETE", f"/api/fs?path={SESS_PROJ}")
+    if owner:
+        checks_git.forgejo(ctx, "DELETE", f"/api/v1/repos/{owner}/{SESS_PROJ}")
+    page.get_by_test_id("side-sessions").click()
+    page.get_by_test_id("model-picker").click()
+    page.get_by_test_id("model-haiku").click()
+    sids = []
+
+    def started():
+        old = _last_session(page)
+        page.get_by_test_id("new-session").click()
+        sid = _new_session_id(page, old)
+        sids.append(sid)
+        _unfold(page, "ws")
+        row = _proj(page, "ws").locator(f"[data-testid=session-row][data-session='{sid}']")
+        see(row).to_have_count(1, timeout=30000)
+        row.hover()
+        row.get_by_test_id("session-menu").click()
+        return sid
+
+    def open_here():
+        return [x["id"] for x in (c.api("GET", "/api/state")["json"] or {}).get("sessions", [])]
+
+    kept = False
+    try:
+        # Delete: just started, no prompt
+        sid = started()
+        expect(sid in open_here(), "the new session is not open in the backend")
+        page.get_by_test_id("session-delete").click()
+        see(page.get_by_test_id("delete-session-dialog")).to_be_visible(timeout=10000)
+        page.get_by_test_id("delete-session-confirm").click()
+        see(page.get_by_test_id("toast").last).to_contain_text("no transcript to remove", timeout=30000)
+        see(page.get_by_test_id("delete-session-dialog")).to_have_count(0, timeout=10000)
+        see(page.locator(f"[data-testid=session-row][data-session='{sid}']")).to_have_count(0, timeout=30000)
+        page.reload()
+        see(page.get_by_test_id("conn")).to_have_text("Connected", timeout=30000)
+        c = Code.on(page, rec, goto=False)   # (the reload took the in-page client with it)
+        page.get_by_test_id("side-sessions").click()
+        expect(sid not in open_here(), "the deleted session is listed by /api/state after a reload")
+        see(page.locator(f"[data-testid=session-row][data-session='{sid}']")).to_have_count(0, timeout=10000)
+        # Add to project › New project…: a new folder (the session works in the workspace itself), the session listed there
+        sid = started()
+        page.get_by_test_id("session-add-to-project").click()
+        page.get_by_test_id("file-dialog-new").click()
+        dlg = page.get_by_test_id("new-project-dialog")
+        see(dlg).to_contain_text("New project for the session", timeout=10000)
+        see(dlg.get_by_test_id("new-project-adds")).to_be_visible()
+        expect(dlg.get_by_test_id("new-project-clone").count() == 0 and dlg.get_by_test_id("new-project-computer").count() == 0,
+               "Clone and A folder of this computer are offered for sessions to add")
+        see(dlg.get_by_test_id("new-project-empty")).to_be_checked()
+        dlg.get_by_test_id("new-project-name").fill(SESS_PROJ)
+        if owner:
+            see(dlg.get_by_test_id("new-project-keep")).to_be_checked(timeout=30000)
+        shot(page, "sp1-code-add-to-new-project")
+        dlg.get_by_test_id("new-project-create").click()
+        see(dlg).to_have_count(0, timeout=60000)
+        p = next((x for x in c.api("GET", "/api/projects")["json"]["projects"] if x.get("root") == SESS_PROJ), None)
+        expect(p is not None, f"no project of {SESS_PROJ}/")
+        _unfold(page, p["id"])
+        see(_proj(page, p["id"]).locator(f"[data-testid=session-row][data-session='{sid}']")).to_have_count(1, timeout=30000)
+        st = next((x for x in c.api("GET", "/api/state")["json"]["sessions"] if x["id"] == sid), None)
+        expect(st and st.get("project") == p["id"], f"the session's project: {st}")
+        if owner:
+            kept = (c.api("GET", f"/api/projects/{p['id']}/keep")["json"] or {}).get("state") == "kept"
+            expect(kept, "the new project is not kept on the local git server")
+            c.api("PUT", f"/api/fs/file?path={SESS_PROJ}/notes.md", {"text": "from a session added to a new project\n"})
+            expect(c.api("POST", "/api/git/stage", {"all": True, "repo": SESS_PROJ})["status"] == 200, "stage")
+            r = c.api("POST", "/api/git/commit", {"message": "e2e: a project made for a session", "repo": SESS_PROJ})
+            expect(r["status"] == 200, f"commit: {r['status']} {r['text'][:200]}")
+            _proj(page, p["id"]).get_by_test_id("project-menu").click()
+            push = page.get_by_test_id("project-menu-keep-push")
+            see(push).to_be_visible(timeout=30000)
+            see(page.get_by_test_id("project-menu-keep-open")).to_contain_text(f"{owner}/{SESS_PROJ}")
+            shot(page, "sp2-code-project-menu-push")
+            push.click()
+            see(page.get_by_test_id("toast").filter(has_text="Pushed to your local git server.")).to_have_count(1, timeout=60000)
+            st, _ = checks_git.forgejo(ctx, "GET", f"/api/v1/repos/{owner}/{SESS_PROJ}/contents/notes.md?ref=main")
+            expect(st == 200, f"notes.md on the server: HTTP {st}")
+        csp_clean(page, rec)
+    finally:
+        try:
+            for sid in sids:
+                c.api("DELETE", f"/api/sessions/{sid}")
+            _drop_projects(c, (SESS_PROJ,))
+            c.api("DELETE", f"/api/fs?path={SESS_PROJ}")
+            if owner:
+                checks_git.forgejo(ctx, "DELETE", f"/api/v1/repos/{owner}/{SESS_PROJ}")
+        except Exception:  # noqa: BLE001 — cleanup never hides the failure
+            pass
+    return ("a session with no prompt yet was deleted (said: no transcript to remove) and not listed again after a reload; another one's "
+            f"Add to project › New project… made {SESS_PROJ}/ with the session listed in it"
+            + (f", kept on the local git server: a commit there was in {owner}/{SESS_PROJ} after the project menu's Push now" if kept else
+               " (the built-in git server is off here: not kept)") + "; no CSP violations")
+
+
 @check("browser", "code-projects-config-above")
 @saved
 def projects_config_above(ctx):
