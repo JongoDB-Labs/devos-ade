@@ -6,6 +6,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.55.0] - 2026-11-03
+
 ### Added
 - **The update's progress is a popup that shows every action with its time (JON-1004).** It opens by itself when an update
   starts (from Home, or typed in a terminal, the first time Home sees it) and has the same bar as the card, then a row for each
@@ -4379,7 +4381,8 @@ Initial public release.
 - `bin/claude-bedrock`: runs Claude Code against Bedrock through LiteLLM without touching plain `claude`.
 - Cost transparency: Bedrock prices in `./stack costs` and the Open WebUI model picker, spend per key.
 
-[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.54.0...HEAD
+[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.55.0...HEAD
+[0.55.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.54.0...v0.55.0
 [0.54.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.53.0...v0.54.0
 [0.53.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.52.0...v0.53.0
 [0.52.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.51.1...v0.52.0
