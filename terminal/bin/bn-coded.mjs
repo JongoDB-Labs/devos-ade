@@ -4045,7 +4045,8 @@ async function grepWalk(c, timeoutMs, root = WS_ROOT) {
     entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     for (const e of entries) {
       if (++visited > 50000) { truncated = true; break walk; }
-      if (Date.now() - t0 > timeoutMs) { timedOut = true; break walk; }
+      // (at the deadline, not past it: a deadline of 0 has no time at all, even for a walk that ends within the millisecond)
+      if (Date.now() - t0 >= timeoutMs) { timedOut = true; break walk; }
       if (Date.now() - tick > 25) { await new Promise((r) => setImmediate(r)); tick = Date.now(); }
       const rel = dir ? `${dir}/${e.name}` : e.name;
       if (named(e.name) || matches(c.exclude, rel)) continue;
