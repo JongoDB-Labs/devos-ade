@@ -32,6 +32,57 @@
 #                     gateway where the switch changed them, the account, the Code page's host
 #   localgit_status_line / localgit_summary_line   ./stack status, setup's summary
 
+# --- the git server's own Docker network (LOCALGIT_SUBNET; compose.yaml "localgit"; Caddy joins it on every stack) ---
+# Two stacks (separate Compose projects) on one Docker host each create their own localgit network, so the subnets must differ.
+
+LOCALGIT_SUBNET_DEFAULT="10.255.255.224/28"
+
+# localgit_subnet -> LOCALGIT_SUBNET from .env, or the default
+localgit_subnet() { local s; s="$(get_env LOCALGIT_SUBNET)"; printf '%s\n' "${s:-$LOCALGIT_SUBNET_DEFAULT}"; }
+
+# localgit_caddy_ip NET -> Caddy's fixed address on it, which Forgejo trusts as its one proxy: the subnet's last usable host
+# (10.255.255.238 for the default)
+localgit_caddy_ip() { remote_sidecar_ip "$1"; }
+
+# valid_localgit_subnet NET -> 0 for an IPv4 network /24../28 without host bits (a /29 has too few addresses for the services)
+valid_localgit_subnet() { valid_cidr "$1" && [ "${1#*/}" -le 28 ]; }
+
+# localgit_net_ok -> 0 when LOCALGIT_SUBNET is valid and overlaps neither another Docker network (this project's own
+# localgit network excepted) nor REMOTE_SUBNET while remote access is on; otherwise prints why, with the fix
+localgit_net_ok() {
+  local net own name subs s
+  net="$(localgit_subnet)"
+  valid_localgit_subnet "$net" || { printf 'LOCALGIT_SUBNET=%s in .env is not an IPv4 network from /24 to /28 without host bits (e.g. %s)\n' "$net" "$LOCALGIT_SUBNET_DEFAULT"; return 1; }
+  if remote_on && cidr_overlap "$net" "$(remote_subnet)"; then
+    printf 'LOCALGIT_SUBNET %s overlaps REMOTE_SUBNET %s — set LOCALGIT_SUBNET in .env to a free /28, e.g. 10.254.254.224/28\n' "$net" "$(remote_subnet)"
+    return 1
+  fi
+  own="$(project_name)_localgit"
+  while read -r name subs; do
+    [ -n "$name" ] && [ "$name" != "$own" ] || continue
+    for s in $subs; do
+      case "$s" in *:*) continue ;; esac   # IPv6
+      if cidr_overlap "$net" "$s"; then
+        printf 'LOCALGIT_SUBNET %s overlaps Docker network %s (%s) — set LOCALGIT_SUBNET in .env to a free /28, e.g. 10.254.254.224/28\n' "$net" "$name" "$s"
+        return 1
+      fi
+    done
+  done <<EOF
+$(_docker_network_subnets)
+EOF
+  return 0
+}
+
+# localgit_net_preflight — before ./stack up / setup start containers: a LOCALGIT_SUBNET that cannot be used stops here with
+# the reason (Caddy joins the network on every stack, so there is no leaving it out); LOCALGIT_CADDY_IP is kept in line
+# with it in .env, where Compose reads it.
+localgit_net_preflight() {
+  local why ip
+  why="$(localgit_net_ok)" || die "$why"
+  ip="$(localgit_caddy_ip "$(localgit_subnet)")"
+  [ "$(get_env LOCALGIT_CADDY_IP)" = "$ip" ] || set_env LOCALGIT_CADDY_IP "$ip"
+}
+
 LOCALGIT_USER=devos
 LOCALGIT_GATEWAY_HOST=gateway
 LOCALGIT_GATEWAY_PORT=8093

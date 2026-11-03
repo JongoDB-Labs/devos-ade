@@ -462,11 +462,12 @@ test_the_sign_in_header_has_a_secret_name_only_caddy_and_forgejo_know() {
   assert_not_contains "$(cat "$T_ROOT/compose.yaml" "$T_ROOT/caddy/localgit-on.caddy" "$T_ROOT/lib/localgit.sh" "$T_ROOT/lib/common.sh")" "X-Bn-Git-Unset"
   assert_not_contains "$(cat "$T_ROOT/compose.yaml")" 'ENABLE_REVERSE_PROXY_AUTHENTICATION: "true"'
   # the second layer: Forgejo's X-Forwarded-For trust is Caddy's fixed address alone, one hop, never a wildcard
-  assert_contains "$y" 'FORGEJO__security__REVERSE_PROXY_TRUSTED_PROXIES: 10.255.255.238/32'
+  assert_contains "$y" 'FORGEJO__security__REVERSE_PROXY_TRUSTED_PROXIES: ${LOCALGIT_CADDY_IP:-10.255.255.238}/32'
   assert_contains "$y" 'FORGEJO__security__REVERSE_PROXY_LIMIT: "1"'
   assert_not_contains "$y" 'TRUSTED_PROXIES: "*"'
-  assert_contains "$(cat "$T_ROOT/compose.yaml")" 'ipv4_address: 10.255.255.238'
-  assert_contains "$(cat "$T_ROOT/compose.yaml")" 'subnet: 10.255.255.224/28'
+  assert_contains "$(cat "$T_ROOT/compose.yaml")" 'ipv4_address: ${LOCALGIT_CADDY_IP:-10.255.255.238}'
+  assert_contains "$(cat "$T_ROOT/compose.yaml")" 'subnet: ${LOCALGIT_SUBNET:-10.255.255.224/28}'
+  assert_not_contains "$(cat "$T_ROOT/compose.yaml")" 'ipv4_address: 10.255.255.238'   # the address is never fixed in the file
   assert_contains "$(cat "$T_ROOT/caddy/localgit-on.caddy")" 'header_up {$LOCALGIT_SSO_HEADER} devos'
   for f in portal terminal litellm open-webui shared-mcp postgres rustfs searxng stt code; do
     assert_not_contains "$(sed -n "/^  $f:/,/^  [a-z-]*:\$/p" "$T_ROOT/compose.yaml")" "LOCALGIT_SSO_HEADER" || { echo "$f gets the secret name" >&2; return 1; }
@@ -602,4 +603,77 @@ test_code_search_follows_the_indexer_switch_in_forgejo_and_the_portal() {
   assert_contains "$y" 'FORGEJO__indexer__REPO_INDEXER_ENABLED: ${LOCALGIT_INDEXER:-false}'   # (off unless asked for)
   assert_contains "$(sed -n '/^  portal:/,/^  caddy:/p' "$T_ROOT/compose.yaml")" 'LOCALGIT_INDEXER: ${LOCALGIT_INDEXER:-false}'
   grep -q '^LOCALGIT_INDEXER=' "$T_ROOT/.env.example" || { echo ".env.example lacks the key" >&2; return 1; }
+}
+
+# --- the git server's own network: LOCALGIT_SUBNET, and Caddy's address derived from it (like REMOTE_SUBNET) ---
+
+test_localgit_subnet_defaults_stay_the_values_installs_have() {
+  printf 'X=1\n' > "$ENV_FILE"
+  assert_eq "$(localgit_subnet)" 10.255.255.224/28
+  assert_eq "$(localgit_caddy_ip "$(localgit_subnet)")" 10.255.255.238
+  printf 'LOCALGIT_SUBNET=10.254.3.16/28\n' > "$ENV_FILE"
+  assert_eq "$(localgit_subnet)" 10.254.3.16/28
+  assert_eq "$(localgit_caddy_ip 10.254.3.16/28)" 10.254.3.30
+  assert_eq "$(localgit_caddy_ip 10.99.0.0/24)" 10.99.0.254
+  # compose: the variable forms, each with the old value as its default
+  local c; c="$(cat "$T_ROOT/compose.yaml")"
+  assert_contains "$c" '${LOCALGIT_SUBNET:-10.255.255.224/28}'
+  assert_contains "$c" '${LOCALGIT_CADDY_IP:-10.255.255.238}/32'
+  assert_contains "$c" 'ipv4_address: ${LOCALGIT_CADDY_IP:-10.255.255.238}'
+}
+
+test_localgit_subnet_must_be_a_24_to_28_without_host_bits() {
+  valid_localgit_subnet 10.255.255.224/28 && valid_localgit_subnet 10.254.3.16/28 && valid_localgit_subnet 10.99.0.0/24 || return 1
+  local n
+  for n in 10.255.255.248/29 10.255.255.232/28 10.254.3.17/28 10.0.0.0/16 10.0.0.0/8 10.254.3.16 10.254.3.16/ abc 10.254.3.300/28 10.254.3.16/28/1 ''; do
+    if valid_localgit_subnet "$n"; then echo "accepted '$n'" >&2; return 1; fi
+  done
+  printf 'LOCALGIT_SUBNET=10.254.3.17/28\n' > "$ENV_FILE"
+  assert_contains "$(localgit_net_ok)" "not an IPv4 network from /24 to /28 without host bits"
+  printf 'LOCALGIT_SUBNET=10.255.255.248/29\n' > "$ENV_FILE"
+  assert_contains "$(localgit_net_ok)" "LOCALGIT_SUBNET=10.255.255.248/29"
+}
+
+test_localgit_net_ok_names_the_colliding_network_and_a_free_slash_28() {
+  printf 'COMPOSE_PROJECT_NAME=bn\n' > "$ENV_FILE"
+  docker() {
+    case "$1" in
+      network) case "$2" in ls) printf 'a\nb\nc\n' ;;
+               inspect) printf 'bridge 172.17.0.0/16 \nbn_localgit 10.255.255.224/28 \nbn2_localgit 10.255.255.224/28 \ncorp_vpn 10.0.0.0/8 fd00::/64 \n' ;; esac ;;
+    esac
+  }
+  out="$(localgit_net_ok)" && { echo "should collide" >&2; return 1; }
+  assert_contains "$out" "overlaps Docker network bn2_localgit (10.255.255.224/28)"   # another stack's, not its own bn_localgit
+  assert_contains "$out" "LOCALGIT_SUBNET in .env to a free /28"
+  set_env LOCALGIT_SUBNET 10.254.3.16/28
+  docker() { case "$2" in ls) echo a ;; inspect) printf 'bridge 172.17.0.0/16 \nbn_localgit 10.255.255.224/28 \nbn2_localgit 10.254.8.0/28 \n' ;; esac; }
+  localgit_net_ok || return 1
+  docker() { case "$2" in ls) echo a ;; inspect) printf 'bn_localgit 10.254.3.16/28 \n' ;; esac; }
+  localgit_net_ok || return 1   # its own network does not count
+  docker() { case "$2" in ls) echo a ;; inspect) printf 'other 10.254.3.0/24 \n' ;; esac; }
+  assert_contains "$(localgit_net_ok)" "overlaps Docker network other (10.254.3.0/24)"
+  docker() { return 1; }
+  localgit_net_ok || return 1   # no Docker answer: nothing to collide with
+}
+
+test_localgit_subnet_must_not_overlap_the_remote_one_while_remote_is_on() {
+  docker() { return 1; }
+  printf 'REMOTE_MODE=tailscale\nREMOTE_SUBNET=10.99.0.0/24\nLOCALGIT_SUBNET=10.99.0.16/28\n' > "$ENV_FILE"
+  assert_contains "$(localgit_net_ok)" "overlaps REMOTE_SUBNET 10.99.0.0/24"
+  printf 'REMOTE_MODE=off\nREMOTE_SUBNET=10.99.0.0/24\nLOCALGIT_SUBNET=10.99.0.16/28\n' > "$ENV_FILE"
+  localgit_net_ok || return 1
+}
+
+test_localgit_preflight_writes_caddys_address_and_stops_on_a_bad_subnet() {
+  docker() { return 1; }
+  printf 'X=1\n' > "$ENV_FILE"
+  localgit_net_preflight
+  assert_eq "$(get_env LOCALGIT_CADDY_IP)" 10.255.255.238
+  set_env LOCALGIT_SUBNET 10.254.3.16/28
+  localgit_net_preflight
+  assert_eq "$(get_env LOCALGIT_CADDY_IP)" 10.254.3.30
+  set_env LOCALGIT_SUBNET 10.254.3.17/28
+  out="$( (localgit_net_preflight) 2>&1)" && { echo "should stop" >&2; return 1; }
+  assert_contains "$out" "without host bits"
+  assert_eq "$(get_env LOCALGIT_CADDY_IP)" 10.254.3.30   # left as it was
 }

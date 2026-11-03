@@ -392,7 +392,7 @@ services:
       FORGEJO__security__REVERSE_PROXY_AUTHENTICATION_USER: ${LOCALGIT_SSO_HEADER:-}
       # Second layer: Forgejo takes X-Forwarded-For only from Caddy's fixed address (it does not limit the sign-in header itself:
       # the secret name above does that), one hop.
-      FORGEJO__security__REVERSE_PROXY_TRUSTED_PROXIES: 10.255.255.238/32
+      FORGEJO__security__REVERSE_PROXY_TRUSTED_PROXIES: ${LOCALGIT_CADDY_IP:-10.255.255.238}/32
       FORGEJO__security__REVERSE_PROXY_LIMIT: "1"
       FORGEJO__repository__DEFAULT_PRIVATE: private
       FORGEJO__repository__ENABLE_PUSH_CREATE_USER: "true"   # a push to a missing repository of the owner makes it (private): the Code page's Publish
@@ -563,7 +563,7 @@ services:
       default:
       stt:
       localgit:
-        ipv4_address: 10.255.255.238   # fixed: Forgejo's trusted proxy (REVERSE_PROXY_TRUSTED_PROXIES)
+        ipv4_address: ${LOCALGIT_CADDY_IP:-10.255.255.238}   # fixed: Forgejo's trusted proxy (REVERSE_PROXY_TRUSTED_PROXIES); the subnet's last host
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/caddy-health"]
       interval: 10s
@@ -759,7 +759,7 @@ networks:
     internal: true
     ipam:
       config:
-        - subnet: 10.255.255.224/28   # outside Docker's default pools (like the Tailscale sidecar's); Caddy is .238
+        - subnet: ${LOCALGIT_SUBNET:-10.255.255.224/28}   # outside Docker's default pools (like the Tailscale sidecar's); Caddy is its last host (LOCALGIT_CADDY_IP, .238 by default); LOCALGIT_SUBNET in .env moves it so a second stack can run
 
 volumes:
   pgdata:

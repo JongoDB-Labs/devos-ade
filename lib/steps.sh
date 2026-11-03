@@ -281,13 +281,13 @@ _upd_tree() { local d; for d in "$@"; do [ -d "$d" ] || { printf '%s -\n' "$d"; 
 _upd_fn() { local n; for n in "$@"; do declare -f "$n" 2>/dev/null || printf 'no function %s\n' "$n"; done | cksum; }
 # the .env keys setup itself writes after the ports and settings step (keys, the models' defaults, voice, the Open WebUI
 # marks): never an input of a step before them
-UPD_ENV_DERIVED='^(LITELLM_KEY_[A-Z_]*|OPENWEBUI_API_KEY|LITELLM_UI_USER|LITELLM_DB_ADMIN_READY|OWUI_[A-Z_]*|STT_BEDROCK_MODEL|CLAUDE_BEDROCK_[A-Z_]*|PORTAL_GID|REMOTE_SIDECAR_IP)='
+UPD_ENV_DERIVED='^(LITELLM_KEY_[A-Z_]*|OPENWEBUI_API_KEY|LITELLM_UI_USER|LITELLM_DB_ADMIN_READY|OWUI_[A-Z_]*|STT_BEDROCK_MODEL|CLAUDE_BEDROCK_[A-Z_]*|PORTAL_GID|REMOTE_SIDECAR_IP|LOCALGIT_CADDY_IP)='
 # the keys the last steps write (the git server's search token, by the git account step, which recreates the portal itself
 # when it is new): an input of no step, whatever else a step leaves out. As one, they ran every step that reads .env again on
 # the next update (tests/test_update_mode.sh).
 UPD_ENV_LATE='^(LOCALGIT_READ_TOKEN)='
 _upd_env() { grep -vE "${1:-$UPD_ENV_DERIVED}" "$ENV_FILE" 2>/dev/null | grep -vE "$UPD_ENV_LATE" | LC_ALL=C sort; }   # (hashed with the rest, never printed)
-_upd_env_settings() { _upd_env '^(LITELLM_KEY_[A-Z_]*|OPENWEBUI_API_KEY|LITELLM_UI_USER|LITELLM_DB_ADMIN_READY|OWUI_[A-Z_]*|STT_PROVIDER|STT_MODEL|STT_BEDROCK_MODEL|CLAUDE_BEDROCK_[A-Z_]*|PORTAL_GID|REMOTE_SIDECAR_IP)='; }
+_upd_env_settings() { _upd_env '^(LITELLM_KEY_[A-Z_]*|OPENWEBUI_API_KEY|LITELLM_UI_USER|LITELLM_DB_ADMIN_READY|OWUI_[A-Z_]*|STT_PROVIDER|STT_MODEL|STT_BEDROCK_MODEL|CLAUDE_BEDROCK_[A-Z_]*|PORTAL_GID|REMOTE_SIDECAR_IP|LOCALGIT_CADDY_IP)='; }
 _upd_keys() { local k; for k in LITELLM_KEY_CLAUDE_CODE LITELLM_KEY_OPENWEBUI LITELLM_KEY_SETUP OPENWEBUI_API_KEY LITELLM_DB_ADMIN_READY; do printf '%s=%s\n' "$k" "$(get_env "$k")"; done; }
 _upd_compose() { { cat "$STACK_DIR"/compose*.yaml 2>/dev/null; compose_overlays 2>/dev/null; project_name; } | cksum; }
 # _upd_local_ids -> the IDs of the images this checkout builds (portal, shared-mcp, Open WebUI, stt), one docker call, kept for
@@ -322,9 +322,9 @@ _upd_container_of() { _upd_containers | awk -v n="$1" 'index($1, n) { print }'; 
 upd_in_settings() {
   _upd_env_settings
   _upd_fn _setup_settings setup_ports setup_secrets setup_portal_host resolve_portal_port resolve_port migrate_direct_ports \
-    remote_net_preflight setup_remote_choice setup_openrouter setup_explabs setup_stt ensure_portal_password_hash localgit_secrets \
+    remote_net_preflight localgit_net_preflight setup_remote_choice setup_openrouter setup_explabs setup_stt ensure_portal_password_hash localgit_secrets \
     remote_ensure_proxy_secret owner_email_lowercase
-  _upd_files "$STACK_DIR"/lib/ports.sh "$STACK_DIR"/lib/remote.sh "$STACK_DIR"/lib/openrouter.sh "$STACK_DIR"/lib/explabs.sh "$STACK_DIR"/lib/stt.sh
+  _upd_files "$STACK_DIR"/lib/ports.sh "$STACK_DIR"/lib/remote.sh "$STACK_DIR"/lib/localgit.sh "$STACK_DIR"/lib/openrouter.sh "$STACK_DIR"/lib/explabs.sh "$STACK_DIR"/lib/stt.sh
   if ! remote_on; then echo remote-off; else echo "remote-on $RANDOM$RANDOM"; fi
 }
 # The AWS key check: the key, its secret and the region in .env (or this machine's IAM role), the AWS keys in your shell
@@ -350,7 +350,7 @@ upd_in_prices() {
 # LiteLLM's config: everything render_config reads (.env, the catalog, the models found, the prices in use, the web search
 # backend, the template code) and what it wrote (a config or hook that was changed by hand is written again)
 upd_in_litellm_config() {
-  _upd_env "^(LITELLM_KEY_[A-Z_]*|OPENWEBUI_API_KEY|LITELLM_UI_USER|OWUI_[A-Z_]*|CLAUDE_BEDROCK_[A-Z_]*|PORTAL_GID|REMOTE_SIDECAR_IP)="
+  _upd_env "^(LITELLM_KEY_[A-Z_]*|OPENWEBUI_API_KEY|LITELLM_UI_USER|OWUI_[A-Z_]*|CLAUDE_BEDROCK_[A-Z_]*|PORTAL_GID|REMOTE_SIDECAR_IP|LOCALGIT_CADDY_IP)="
   printf 'admin=%s\n' "$(get_env LITELLM_DB_ADMIN_READY)"
   catalog_rows 2>/dev/null | cksum
   _upd_files "$STACK_DIR/litellm/enabled-models.txt" "$STACK_DIR/litellm/probe-results.tsv" "$STACK_DIR/litellm/config.yaml" \

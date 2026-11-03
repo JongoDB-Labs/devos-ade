@@ -377,6 +377,29 @@ pick_port() { # pick_port VAR START — sets VAR (no subshell, so CHOSEN is kept
   eval "$1=$p"
 }
 
+# --- the git server's Docker network: a free /28 of its own, so two throwaways (or one and a real install) run at once ---
+# pick_subnet VAR — sets VAR to the first /28 inside 10.254.0.0/16 that overlaps no Docker network `docker network inspect`
+# reports (nor one already chosen here). The search starts at a spot taken from the project's name, so two throwaways
+# started together do not begin on the same one. Read-only: it creates nothing.
+CHOSEN_SUBNETS=' '
+pick_subnet() {
+  local taken ids start p
+  ids="$(docker network ls -q 2>/dev/null || true)"
+  taken="$CHOSEN_SUBNETS"
+  # shellcheck disable=SC2086  # one argument per network id
+  [ -z "$ids" ] || taken="$taken $(docker network inspect --format '{{range .IPAM.Config}}{{.Subnet}} {{end}}' $ids 2>/dev/null | tr '\n' ' ')"
+  start="$(printf '%s' "${PROJECT:-bne2e}" | cksum | awk '{ print $1 % 4096 }')"
+  p="$(printf '%s\n' "$taken" | tr ' ' '\n' | awk -v s="$start" '
+    $0 ~ /^[0-9.]+\/[0-9]+$/ { split($0, a, "/"); split(a[1], q, "."); n++
+      lo[n] = ((q[1] * 256 + q[2]) * 256 + q[3]) * 256 + q[4]; hi[n] = lo[n] + 2 ^ (32 - a[2]) - 1 }
+    END { for (i = 0; i < 4096; i++) { k = (s + i) % 4096; b = ((10 * 256 + 254) * 256 + int(k / 16)) * 256 + (k % 16) * 16; ok = 1
+            for (j = 1; j <= n; j++) if (b <= hi[j] && lo[j] <= b + 15) { ok = 0; break }
+            if (ok) { printf "10.254.%d.%d/28\n", int(k / 16), (k % 16) * 16; exit } } }')"
+  [ -n "$p" ] || die "no free /28 in 10.254.0.0/16 for the git server's network"
+  CHOSEN_SUBNETS="$CHOSEN_SUBNETS$p "
+  eval "$1=$p"
+}
+
 # link_state -> what ~/.local/bin/devos-claude and ~/.local/bin/claude-bedrock (its old name, a shim) are: each one's
 # link target and a checksum of the file it points to
 link_state() {

@@ -29,6 +29,12 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   Git**, **Issues**, **Pull requests**, a switch for the automatic pushes and **Stop keeping it here** (the repository stays on
   the server). *Not for this project* is remembered. Claude is told a kept project is pushed by itself and not to publish it
   elsewhere unless asked. The sandbox gets one more git operation, `git.remote.remove`.
+- **Two DevOS ADE installs, or an install and its test copies, can run on one computer.** The built-in git server's small
+  Docker network no longer has a fixed address range: `LOCALGIT_SUBNET` in `.env` (blank = the old `10.255.255.224/28`, so
+  nothing changes for an install that does not set it) can be any network from /24 to /28, and Caddy's address on it is the
+  last host (`LOCALGIT_CADDY_IP`, written by `./stack`). `./stack up` and `./stack setup` stop with a clear message, naming a
+  free /28, when it is not valid or another Docker network (or the remote access network) already uses that range. The
+  end-to-end tests give each throwaway its own.
 
 ### Fixed
 - **Preparing ahead works with Chat's way out through this computer (JON-1003).** With `TERMINAL_EGRESS=host` and the Code

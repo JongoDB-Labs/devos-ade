@@ -96,6 +96,7 @@ LOCALGIT	code	main	-	A git server on this computer (Forgejo): the sandbox pushes
 LOCALGIT_ADMIN_PASSWORD	code	more	LOCALGIT	The built-in git server's owner password (user devos): setup made it; sign in at the server with it.
 LOCALGIT_READ_TOKEN	code	more	LOCALGIT	The read-only token the portal's Git search uses (made by ./stack up; only the portal has it).
 LOCALGIT_INDEXER	code	more	LOCALGIT	Code search in the built-in git server (off by default): set true in .env, then ./stack up.
+LOCALGIT_SUBNET	code	more	LOCALGIT	The git server's small Docker network; change it if ./stack says it collides.
 TERMINAL_EGRESS	code	main	TERMINAL_ENABLED	The sandbox's internet: public addresses only (the default), with this computer's services too, or off.
 TERMINAL_EGRESS_ALLOW	code	more	TERMINAL_ENABLED	Only these names on the internet, and other ports (blank: every public name on 80, 443 and 22).
 TERMINAL_EGRESS_DENY	code	more	TERMINAL_ENABLED	Never these names on the internet.
@@ -206,6 +207,7 @@ REMOTE_CODE_HOST	about	main	-	The Code page's remote address.
 REMOTE_PREVIEW_HOST	about	main	-	The remote address of previews.
 REMOTE_PREVIEW_SITE	about	main	-	Whether previews have a site of their own.
 REMOTE_SIDECAR_IP	about	main	-	The sidecar's address on its network.
+LOCALGIT_CADDY_IP	about	main	-	Caddy's address on the git server's network.
 LITELLM_DB_ADMIN_READY	about	main	-	Setup created the Admin (LiteLLM) account.
 PORTAL_GID	about	main	-	Linux: the group the portal runs with.
 TERMINAL_UID	about	main	-	Your user id in the sandbox, so files in the workspace stay yours.

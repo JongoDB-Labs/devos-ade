@@ -366,8 +366,9 @@ stage() {
   # generated here and marked as shown, so setup's summary never prints it.
   cp "$STACK/.env.example" "$STACK/.env"; chmod 600 "$STACK/.env"
   pick_port pp 18480; pick_port lp 14480; pick_port mp 18865
+  pick_subnet lgs   # the git server's own network: a free /28 (a second throwaway or a real install can run beside this one)
   set_env COMPOSE_PROJECT_NAME "$PROJECT"; set_env PORTAL_HOST "$HOST"; set_env PORTAL_PORT "$pp"
-  set_env LITELLM_PORT "$lp"; set_env SHARED_MCP_PORT "$mp"
+  set_env LITELLM_PORT "$lp"; set_env SHARED_MCP_PORT "$mp"; set_env LOCALGIT_SUBNET "$lgs"   # (--reuse/--keep: the kept .env has it)
   set_env OPENWEBUI_ADMIN_EMAIL "e2e-admin@example.com"
   for kv in $BUDGETS; do set_env "${kv%%=*}" "${kv#*=}"; done
   set_env PORTAL_PASSWORD "$(openssl rand -hex 10)"

@@ -290,6 +290,29 @@ test_e2e_ports_skip_reserved_busy_and_chosen() {
   if (pick_port d 20000) 2>/dev/null; then return 1; fi
 }
 
+test_e2e_git_subnet_is_a_free_slash_28_in_10_254_and_skips_taken_ones() {
+  PROJECT=bne2e; CHOSEN_SUBNETS=' '
+  docker() { case "$*" in "network ls -q") echo a ;; network\ inspect*) printf '172.17.0.0/16 \n10.0.0.0/16 fd00::/64 \n' ;; esac; }
+  a=""; pick_subnet a
+  case "$a" in 10.254.*.*/28) ;; *) echo "not in 10.254.0.0/16: $a" >&2; return 1 ;; esac
+  # a second pick in the same run is another subnet
+  b=""; pick_subnet b; [ "$a" != "$b" ] || { echo "same subnet twice: $a" >&2; return 1; }
+  # a network that covers the first choice (a /24 around it) pushes the pick elsewhere
+  CHOSEN_SUBNETS=' '; c=""
+  docker() { case "$*" in "network ls -q") echo a ;; network\ inspect*) printf '%s \n' "${a%.*}.0/24" ;; esac; }
+  pick_subnet c
+  case "$c" in 10.254.*.*/28) ;; *) echo "not in 10.254.0.0/16: $c" >&2; return 1 ;; esac
+  [ "${c%.*}" != "${a%.*}" ] || { echo "overlaps the taken /24: $c vs $a" >&2; return 1; }
+  # every /28 of the /16 taken: a clear refusal
+  docker() { case "$*" in "network ls -q") echo a ;; network\ inspect*) printf '10.254.0.0/16 \n' ;; esac; }
+  CHOSEN_SUBNETS=' '
+  if (pick_subnet d) 2>/dev/null; then return 1; fi
+  # no Docker answer at all: the first free one (nothing is taken)
+  docker() { return 1; }
+  CHOSEN_SUBNETS=' '; e=""; pick_subnet e
+  case "$e" in 10.254.*.*/28) ;; *) echo "no docker: $e" >&2; return 1 ;; esac
+}
+
 test_e2e_redact_and_env_has_keep_secrets_out() {
   _fake_docker; mkdir -p "$STACK"
   printf 'PORTAL_PASSWORD=hunter2hunter2\nRUSTFS_SECRET_KEY=abcdefgh12345678\nPORTAL_PORT=18480\n' > "$STACK/.env"

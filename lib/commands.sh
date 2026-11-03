@@ -687,6 +687,7 @@ _setup_settings() {
   setup_done "ports chosen (the portal: $(portal_url))"; setup_step "asking about remote access"
   setup_remote_choice   # lib/remote.sh: asks once — this computer only (default), or your devices too
   remote_net_preflight  # remote access on: its Docker network usable? else this run goes on without it
+  localgit_net_preflight   # lib/localgit.sh: the git server's network free? else stop, saying which subnet to set
   setup_step "writing passwords and settings into .env"
   setup_secrets
   setup_step "asking about HTTPS"
@@ -1434,6 +1435,7 @@ cmd_up() {
   aws_auth_check   # lib/host.sh: a key in .env, or the instance role on EC2
   check_portal_host "$(portal_host)"
   if remote_on; then remote_ensure_proxy_secret; remote_net_preflight; fi   # lib/remote.sh: before any compose call
+  localgit_net_preflight   # lib/localgit.sh: LOCALGIT_SUBNET free and LOCALGIT_CADDY_IP in line, before any compose call
   terminal_up_hook     # lib/terminal.sh: its remote name, and a missing workspace folder said out loud
   code_up_hook         # lib/code.sh: its remote name and secret; left out (said) while the terminal is
   projects_up_hook     # lib/projects.sh: the project folders' mounts, each folder checked again (one left out: said)
@@ -2093,6 +2095,7 @@ cmd_restore() {
   write_mcp_config
   # .env may have changed: recreate the containers that read these keys, then start everything else.
   remote_net_preflight
+  localgit_net_preflight
   # (Chat's own egress proxy, should the restored .env no longer make it Chat's way out: gone before any up)
   ! declare -F chat_proxy_leave >/dev/null || chat_proxy_leave
   log "starting the services again (waits until each one is healthy)"
