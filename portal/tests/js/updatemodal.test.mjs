@@ -132,15 +132,21 @@ test("summary of a failed job says so; fewer than 3 timed actions list what ther
   assert.equal(s.text, "Failed after 40s. Slowest: Backup 30s (75%), Images 10s (25%).");
 });
 
+test("the summary names an action as the plan does: no counts or addresses", () => {
+  const j = J({ phase: "done", steps: [S("Images", "21s"), S("Services (9) (http://x)", "7s"), S("Backup", "4s")] });
+  assert.equal(U.summary(j, U.updateRows(j, 1000)).text, "Took 32s. Slowest: Images 21s (66%), Services 7s (22%), Backup 4s (13%).");
+  assert.equal(U.updateRows(j, 1000)[1].label, "Services (9) (http://x)");   // (the row keeps the whole label)
+});
+
 test("no summary when nothing was timed", () => {
   const j = J({ phase: "done", steps: [S("Backup", "0s")] });
   assert.equal(U.summary(j, U.updateRows(j, 1000)), null);
   assert.equal(U.summary(J({ phase: "done" }), []), null);
 });
 
-test("copy text: one LABEL, TAB, SECONDS line for each action that ran, skipped ones as skipped, then the total", () => {
+test("copy text: one LABEL, TAB, SECONDS line for each action that ran (labels without counts or addresses), skipped ones as skipped, then the total", () => {
   const j = J({ phase: "done", steps: [S("Backup", "4s"), S("AWS key check", "skipped", { why: "x" }), S("Services (9) (http://x)", "1m05s"), S("Quick", "0.4s")] });
-  assert.equal(U.copyText(U.updateRows(j, 1000)), "Backup\t4\nAWS key check\tskipped\nServices (9) (http://x)\t65\nQuick\t0.4\nTotal\t69.4");
+  assert.equal(U.copyText(U.updateRows(j, 1000)), "Backup\t4\nAWS key check\tskipped\nServices\t65\nQuick\t0.4\nTotal\t69.4");
 });
 
 test("copy text of a running job leaves out what has not finished; tabs and line breaks in a label are spaces", () => {

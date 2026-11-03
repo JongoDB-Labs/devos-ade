@@ -258,22 +258,23 @@
     return list.map((r, i) => ({ r, i })).sort((a, b) => rank(a.r) - rank(b.r) || (timed(a.r) ? (b.r.secs || 0) - (a.r.secs || 0) : 0) || a.i - b.i).map((x) => x.r);
   }
   // summary(job, rows) -> null while it runs (or nothing was timed), else {total, slowest: [{label, secs, share}], text}: the time
-  // the actions took together and the 3 slowest with their share of it ("Setup: services 3m 12s (55%)")
+  // the actions took together and the 3 slowest with their share of it ("Setup: services 3m 12s (55%)"; labels as the plan keeps them)
   function summary(job, rows) {
     if (!jobEnded(job)) return null;
     const timed = rows.filter((r) => (r.state === "done" || r.state === "failed") && r.secs > 0);
     const total = timed.reduce((n, r) => n + r.secs, 0);
     if (!total) return null;
     const slowest = timed.map((r, i) => ({ r, i })).sort((a, b) => b.r.secs - a.r.secs || a.i - b.i).slice(0, 3)
-      .map(({ r }) => ({ label: r.label, secs: r.secs, share: Math.round((r.secs / total) * 100) }));
+      .map(({ r }) => ({ label: normLabel(r.label), secs: r.secs, share: Math.round((r.secs / total) * 100) }));
     const lead = job.phase === "failed" ? `Failed after ${fmtDur(total)}.` : `Took ${fmtDur(total)}.`;
     return { total, slowest, text: `${lead} Slowest: ${slowest.map((s) => `${s.label} ${fmtDur(s.secs)} (${s.share}%)`).join(", ")}.` };
   }
-  // copyText(rows) -> "LABEL<TAB>SECONDS" for each action that ran (skipped: "skipped"), then "Total<TAB>SECONDS"
+  // copyText(rows) -> "LABEL<TAB>SECONDS" for each action that ran (skipped: "skipped"), then "Total<TAB>SECONDS". Labels
+  // as the plan keeps them (no counts or addresses), so two updates' timings compare and none carries this computer's address.
   function copyText(rows) {
     const sec = (n) => String(Math.round(n * 10) / 10);
     const lines = rows.filter((r) => r.state === "done" || r.state === "failed" || r.state === "skipped")
-      .map((r) => `${r.label.replace(/[\t\r\n]+/g, " ")}\t${r.state === "skipped" ? "skipped" : sec(r.secs || 0)}`);
+      .map((r) => `${normLabel(r.label).replace(/[\t\r\n]+/g, " ")}\t${r.state === "skipped" ? "skipped" : sec(r.secs || 0)}`);
     lines.push(`Total\t${sec(rows.reduce((n, r) => n + ((r.state === "done" || r.state === "failed") && r.secs > 0 ? r.secs : 0), 0))}`);
     return lines.join("\n");
   }

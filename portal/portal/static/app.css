@@ -490,9 +490,10 @@ a.install-btn, .install-actions a.action { text-decoration: none; cursor: pointe
 .fb-link { text-decoration: none; display: inline-block; }
 .fb-facts { overflow-wrap: anywhere; }
 /* the update's progress popup (JON-1004): the bar of the job card, then a row for each action with its time and a thin bar
-   on one scale; the dialog has no padding of its own, so a click on the dialog itself is a click on the backdrop */
+   on one scale; the dialog has no padding of its own, so a click on the dialog itself is a click on the backdrop. The marks
+   have empty alt text: each row says its state in words to a screen reader */
 .update-progress-line { margin: 12px 0 0; }
-.up-dlg { border: 1px solid var(--line); border-radius: var(--r-xl); padding: 0; width: min(640px, calc(100vw - 32px)); max-height: calc(100vh - 32px); background: var(--surface); color: var(--ink); box-shadow: var(--shadow-pop); }
+.up-dlg { border: 1px solid var(--line); border-radius: var(--r-xl); padding: 0; width: min(640px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; background: var(--surface); color: var(--ink); box-shadow: var(--shadow-pop); }
 .up-dlg::backdrop { background: rgb(0 0 0 / 0.38); }
 .up-body { padding: 20px 24px; }
 .up-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -507,12 +508,12 @@ a.install-btn, .install-actions a.action { text-decoration: none; cursor: pointe
 .up-fill { display: block; height: 100%; background: var(--accent); border-radius: 999px; }
 .up-row.waiting, .up-row.skipped { color: var(--muted); }
 .up-row.running .up-name { font-weight: 600; }
-.up-row.running .up-name::before { content: "◐ "; color: var(--accent); }
-.up-row.done .up-name::before { content: "✓ "; color: var(--ok); }
-.up-row.waiting .up-name::before { content: "○ "; }
-.up-row.skipped .up-name::before { content: "– "; }
+.up-row.running .up-name::before { content: "◐ " / ""; color: var(--accent); }
+.up-row.done .up-name::before { content: "✓ " / ""; color: var(--ok); }
+.up-row.waiting .up-name::before { content: "○ " / ""; }
+.up-row.skipped .up-name::before { content: "– " / ""; }
 .up-row.failed { color: var(--bad); }
-.up-row.failed .up-name::before { content: "✗ "; }
+.up-row.failed .up-name::before { content: "✗ " / ""; }
 .up-row.failed .up-fill { background: var(--bad); }
 .up-end { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
 .up-summary { margin: 0; font-size: 14px; overflow-wrap: anywhere; flex: 1 1 260px; }
