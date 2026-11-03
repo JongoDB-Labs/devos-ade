@@ -47,7 +47,7 @@ localgit_caddy_ip() { remote_sidecar_ip "$1"; }
 # valid_localgit_subnet NET -> 0 for an IPv4 network /24../28 without host bits (a /29 has too few addresses for the services)
 valid_localgit_subnet() { valid_cidr "$1" && [ "${1#*/}" -le 28 ]; }
 
-# localgit_net_ok -> 0 when LOCALGIT_SUBNET is valid and overlaps neither another Docker network (this project's own
+# localgit_net_ok -> (the Docker overlap check only when LOCALGIT_SUBNET is set in .env) 0 when LOCALGIT_SUBNET is valid and overlaps neither another Docker network (this project's own
 # localgit network excepted) nor REMOTE_SUBNET while remote access is on; otherwise prints why, with the fix
 localgit_net_ok() {
   local net own name subs s
@@ -57,6 +57,7 @@ localgit_net_ok() {
     printf 'LOCALGIT_SUBNET %s overlaps REMOTE_SUBNET %s — set LOCALGIT_SUBNET in .env to a free /28, e.g. 10.254.254.224/28\n' "$net" "$(remote_subnet)"
     return 1
   fi
+  [ -n "$(get_env LOCALGIT_SUBNET)" ] || return 0   # the default: no Docker call (an install that never set it runs as before)
   own="$(project_name)_localgit"
   while read -r name subs; do
     [ -n "$name" ] && [ "$name" != "$own" ] || continue
@@ -80,6 +81,8 @@ localgit_net_preflight() {
   local why ip
   why="$(localgit_net_ok)" || die "$why"
   ip="$(localgit_caddy_ip "$(localgit_subnet)")"
+  # a subnet in .env: its last host is written; the default: nothing is added to an install's .env, a stale value is put back
+  if [ -z "$(get_env LOCALGIT_SUBNET)" ] && [ -z "$(get_env LOCALGIT_CADDY_IP)" ]; then return 0; fi
   [ "$(get_env LOCALGIT_CADDY_IP)" = "$ip" ] || set_env LOCALGIT_CADDY_IP "$ip"
 }
 

@@ -635,7 +635,7 @@ test_localgit_subnet_must_be_a_24_to_28_without_host_bits() {
 }
 
 test_localgit_net_ok_names_the_colliding_network_and_a_free_slash_28() {
-  printf 'COMPOSE_PROJECT_NAME=bn\n' > "$ENV_FILE"
+  printf 'COMPOSE_PROJECT_NAME=bn\nLOCALGIT_SUBNET=10.255.255.224/28\n' > "$ENV_FILE"
   docker() {
     case "$1" in
       network) case "$2" in ls) printf 'a\nb\nc\n' ;;
@@ -664,16 +664,34 @@ test_localgit_subnet_must_not_overlap_the_remote_one_while_remote_is_on() {
   localgit_net_ok || return 1
 }
 
-test_localgit_preflight_writes_caddys_address_and_stops_on_a_bad_subnet() {
+test_localgit_preflight_writes_caddys_address_for_a_set_subnet_and_stops_on_a_bad_one() {
   docker() { return 1; }
-  printf 'X=1\n' > "$ENV_FILE"
-  localgit_net_preflight
-  assert_eq "$(get_env LOCALGIT_CADDY_IP)" 10.255.255.238
-  set_env LOCALGIT_SUBNET 10.254.3.16/28
+  printf 'LOCALGIT_SUBNET=10.254.3.16/28\n' > "$ENV_FILE"
   localgit_net_preflight
   assert_eq "$(get_env LOCALGIT_CADDY_IP)" 10.254.3.30
   set_env LOCALGIT_SUBNET 10.254.3.17/28
   out="$( (localgit_net_preflight) 2>&1)" && { echo "should stop" >&2; return 1; }
   assert_contains "$out" "without host bits"
   assert_eq "$(get_env LOCALGIT_CADDY_IP)" 10.254.3.30   # left as it was
+}
+
+test_localgit_default_path_never_calls_docker_and_leaves_env_alone() {
+  docker() { echo "docker called: $*" >&2; return 99; }
+  printf 'X=1\n' > "$ENV_FILE"
+  localgit_net_ok || return 1
+  localgit_net_preflight || return 1
+  assert_eq "$(cat "$ENV_FILE")" "X=1"   # no LOCALGIT_CADDY_IP added to an existing install
+  printf 'LOCALGIT_CADDY_IP=10.254.3.30\n' > "$ENV_FILE"
+  localgit_net_preflight || return 1
+  assert_eq "$(get_env LOCALGIT_CADDY_IP)" 10.255.255.238   # a stale one is put back
+  printf 'LOCALGIT_CADDY_IP=10.255.255.238\n' > "$ENV_FILE"
+  localgit_net_preflight || return 1
+  assert_eq "$(cat "$ENV_FILE")" "LOCALGIT_CADDY_IP=10.255.255.238"
+}
+
+test_localgit_a_set_subnet_still_gets_the_docker_overlap_check() {
+  printf 'COMPOSE_PROJECT_NAME=bn\nLOCALGIT_SUBNET=10.254.3.16/28\n' > "$ENV_FILE"
+  docker() { case "$2" in ls) echo a ;; inspect) printf 'other 10.254.3.0/24 \n' ;; esac; }
+  out="$( (localgit_net_preflight) 2>&1)" && { echo "should stop" >&2; return 1; }
+  assert_contains "$out" "overlaps Docker network other (10.254.3.0/24)"
 }
