@@ -2520,6 +2520,7 @@ def ui_keep_on_local_git(ctx):
         see(page.get_by_test_id("keep-offer")).to_have_count(0, timeout=30000)
         page.reload()
         see(page.get_by_test_id("conn")).to_have_text("Connected", timeout=30000)
+        c = Code.on(page, rec, goto=False)   # (the reload took the in-page client with it)
         page.keyboard.press("Control+Shift+G")
         see(page.get_by_test_id("git-panel")).to_be_visible(timeout=30000)
         time.sleep(3)
