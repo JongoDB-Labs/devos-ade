@@ -16,5 +16,11 @@
   "control": "link:Terminal Claude Code, full screen. An external keyboard helps; closing it keeps your session.",
   "why": "More now opens the Terminal as a tab of the portal (with the key bar); its entry for the terminal alone in its own window is named 'Terminal, full screen' and says it has no key bar.",
   "changelog": "v0.48.0"
+ },
+ {
+  "state": "code-menu-new-project-*",
+  "control": "checkbox:Start a git repository (git init)",
+  "why": "While 'Keep it on your local git server' is ticked (its default with the git server on), keeping the project starts its git repository, so this box shows ticked and cannot be unticked; the Keep box says '(this starts a git repository)'. Unticking Keep makes it a choice again, as before.",
+  "changelog": "v0.56.0"
  }
 ]
