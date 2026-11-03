@@ -186,7 +186,7 @@ export class Session {
   }
   gitRestart() {
     if (typeof this.gitNote !== 'string') return false;
-    const now = this.mgr.gitNoteNow({ strict: true });
+    const now = this.mgr.gitNoteNow({ strict: true, cwd: this.cwd });
     return now !== null && now !== this.gitNote;
   }
 
@@ -265,7 +265,7 @@ export class Session {
     this.settings = settings;
     this.settingsDirty = false;
     // how git gets a login here, and the Git hosts Claude may use now (gitnote.mjs): at the end of the system prompt
-    this.gitNote = this.mgr.gitNoteNow();
+    this.gitNote = this.mgr.gitNoteNow({ cwd: this.cwd });
     const options = {
       cwd: this.cwd,
       pathToClaudeCodeExecutable: '/usr/local/bin/claude',   // a path in the sandbox: only the arguments travel
@@ -959,17 +959,18 @@ export class SessionManager {
   // watchRootOf(cwd) -> {rel, abs} of the project folder that holds a session's folder (its watchlist's), or null: the
   // workspace's
   // gitHosts() -> the Git hosts as the page sees them (GitHosts.list: no secret), for the note at the end of every
-  // process's system prompt (gitnote.mjs); none: no note
+  // process's system prompt (gitnote.mjs); none: no note. gitKept(cwd) -> 'owner/name' when the project a working folder is in
+  // is kept on the built-in git server (keep.mjs), else null: the note says so
   // spawnAgent({tool, mode, cwd}, {onStderr}) -> a process of a subscription's agent in the sandbox (spawn-client's
   // sandboxAgent); agentStore: the page's record of those sessions (agents/store.mjs); planAllowed: CODE_CLAUDE_PLAN
   // (Claude on your plan may be used here); plainPaths(root, paths) -> bn-coded's paths.plain RESULT ({plain: [bool]}):
   // whether an agent's change may go through without asking in Accept edits
   constructor({ query, spawn, broker, log = () => {}, onEvent = () => {}, onState = () => {}, onReload = () => {}, onReset = () => {},
     transcriptExists = async () => false, maxOpen = LIMITS.maxOpen, idleMs = LIMITS.idleMinutes * 60000, allowBypass = false, allowAuto = false, watcher = null,
-    watchRootOf = () => null, decideSettings = null, gitHosts = null, spawnAgent = null, agentStore = null, planAllowed = false, versions = {},
+    watchRootOf = () => null, decideSettings = null, gitHosts = null, gitKept = null, spawnAgent = null, agentStore = null, planAllowed = false, versions = {},
     plainPaths = null }) {
     Object.assign(this, { query, spawn, broker, log, onEvent, onState, onReload, onReset, transcriptExists, maxOpen, idleMs, allowBypass: allowBypass === true,
-      allowAuto: allowAuto === true, watcher, watchRootOf, decideSettings, gitHosts, spawnAgent, agentStore, planAllowed: planAllowed === true, versions, plainPaths });
+      allowAuto: allowAuto === true, watcher, watchRootOf, decideSettings, gitHosts, gitKept, spawnAgent, agentStore, planAllowed: planAllowed === true, versions, plainPaths });
     this.decisions = new Map();   // cwd -> {d, at}: made just before a start (prepare), taken by it (takeSettings)
     this.sessions = new Map();
     this.stderrSeen = new Map();   // session -> {from, n, dropped}
@@ -1014,15 +1015,18 @@ export class SessionManager {
           : a.part === 'agents' ? `${what} are not trusted (the project's Claude Code settings may be, alone: its dialog says why)` : `${what} are not trusted`;
     throw new SessionError(`${name} does not start here: ${why} — it would read them as they are (hooks, MCP servers, rules that approve by themselves). Review and trust them first: the project's ⋯ › Claude Code settings…`, 409);
   }
-  // gitNoteNow({strict}) -> the Git note for a process starting now, or null (no gitHosts; strict: not read just now)
-  gitNoteNow({ strict = false } = {}) {
+  // gitNoteNow({strict, cwd}) -> the Git note for a process starting now in that working folder, or null (no gitHosts; strict: not
+  // read just now)
+  gitNoteNow({ strict = false, cwd = null } = {}) {
     if (typeof this.gitHosts !== 'function') return null;
     let hosts = null;
     try { hosts = this.gitHosts(); } catch (e) {
       if (strict) return null;
       this.log(`git note: the Git hosts could not be read (${short(e?.message || String(e), 200)})`);
     }
-    return gitNote(hosts);
+    let kept = null;
+    try { kept = typeof this.gitKept === 'function' && typeof cwd === 'string' ? this.gitKept(cwd) : null; } catch { kept = null; }
+    return gitNote(hosts, kept);
   }
   list() { return [...this.sessions.values()].map((s) => s.info()); }
 

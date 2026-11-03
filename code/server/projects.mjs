@@ -97,7 +97,29 @@ export const absOf = (rel) => (rel.startsWith('/') ? rel : rel ? `${WS}/${rel}` 
 // the folder holds the working folder (itself, or a folder below it)
 const holds = (rel, cwd) => cwd === absOf(rel) || cwd.startsWith(`${absOf(rel)}/`);
 
-const empty = () => ({ version: 1, projects: [], filed: {}, archived: {}, hostTrust: {}, gone: [], seen: [] });
+// Whether a project is kept on the built-in git server (keep.mjs), by project id (the Workspace's and a folder of this
+// computer's too): {state: 'declined'} — asked, and no; or {state: 'kept', repo: 'owner/name', remote, auto, pushedAt,
+// lastError, heads, rejected} — heads: the commit each branch had when it was last pushed; rejected: a branch the server
+// would not take (it has commits this one does not), by the commit it had then — left alone until it moves
+const OWNER_REPO = /^[A-Za-z0-9][A-Za-z0-9._@+-]{0,99}\/[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+const REMOTE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+const BRANCH = /^[A-Za-z0-9_][A-Za-z0-9._/+-]{0,199}$/;
+export const LOCALGIT_BRANCHES_MAX = 200;
+const commits = (m) => {
+  const out = {};
+  for (const [k, c] of Object.entries(m && typeof m === 'object' && !Array.isArray(m) ? m : {}).slice(0, LOCALGIT_BRANCHES_MAX)) if (BRANCH.test(k) && /^[0-9a-f]{40}([0-9a-f]{24})?$/.test(c)) out[k] = c;
+  return out;
+};
+/** localgitRecord(v) -> the record checked (a copy), or null when it does not fit. */
+export function localgitRecord(r) {
+  if (!r || typeof r !== 'object') return null;
+  if (r.state === 'declined') return { state: 'declined' };
+  if (r.state !== 'kept' || typeof r.repo !== 'string' || !OWNER_REPO.test(r.repo) || typeof r.remote !== 'string' || !REMOTE.test(r.remote)) return null;
+  return { state: 'kept', repo: r.repo, remote: r.remote, auto: r.auto !== false, pushedAt: Number.isInteger(r.pushedAt) && r.pushedAt > 0 ? r.pushedAt : null,
+    lastError: typeof r.lastError === 'string' && r.lastError && !ODD.test(r.lastError) ? r.lastError.slice(0, 300) : null, heads: commits(r.heads), rejected: commits(r.rejected) };
+}
+
+const empty = () => ({ version: 1, projects: [], filed: {}, archived: {}, hostTrust: {}, gone: [], seen: [], localgit: {} });
 const WORKSPACE = Object.freeze({ id: WORKSPACE_ID, name: 'Workspace', root: '', created: null, workspace: true });
 
 export class Projects {
@@ -159,7 +181,13 @@ export class Projects {
     const archived = {};
     const ar = v.archived && typeof v.archived === 'object' && !Array.isArray(v.archived) ? v.archived : {};
     for (const [k, at] of Object.entries(ar).slice(0, FILED_MAX)) if (isUuid(k) && Number.isInteger(at) && at > 0) archived[k] = at;
-    return { version: 1, projects, filed, archived, hostTrust, gone, seen };
+    const localgit = {};
+    const lg = v.localgit && typeof v.localgit === 'object' && !Array.isArray(v.localgit) ? v.localgit : {};
+    for (const [k, r] of Object.entries(lg).slice(0, PROJECTS_MAX + HOSTS_MAX + 1)) {
+      const rec = projectIdOk(k) ? localgitRecord(r) : null;
+      if (rec) localgit[k] = rec;
+    }
+    return { version: 1, projects, filed, archived, hostTrust, gone, seen, localgit };
   }
   write(v) {
     fs.mkdirSync(this.dir, { recursive: true, mode: 0o700 });
@@ -250,6 +278,7 @@ export class Projects {
     if (h) {
       return this.update((v) => {
         v.gone = v.gone.filter((g) => g.id !== id);
+        delete v.localgit[id];
         for (const [k, pid] of Object.entries(v.filed)) if (pid === id) delete v.filed[k];
         return { ...h };
       });
@@ -258,6 +287,7 @@ export class Projects {
       const i = v.projects.findIndex((x) => x.id === id);
       if (i < 0) throw new ProjectError(404, 'no such project (it was removed?)');
       const [p] = v.projects.splice(i, 1);
+      delete v.localgit[id];
       for (const [k, pid] of Object.entries(v.filed)) if (pid === id) delete v.filed[k];
       return p;
     });
@@ -312,6 +342,27 @@ export class Projects {
       if (!p || !same(p.trust)) return null;
       p.trust = carried();
       return { ...p };
+    });
+  }
+  /** localgit(id) -> a project's record of the built-in git server (keep.mjs): {state: 'kept' | 'declined', …}, or null (not asked) */
+  localgit(id) {
+    const r = projectIdOk(id) ? this.read().localgit[id] : null;
+    return r ? { ...r, ...(r.state === 'kept' ? { heads: { ...r.heads }, rejected: { ...r.rejected } } : {}) } : null;
+  }
+  /** keptIds() -> the ids of the projects kept on the built-in git server */
+  keptIds() { return Object.entries(this.read().localgit).filter(([, r]) => r.state === 'kept').map(([id]) => id); }
+  /** setLocalgit(id, fn) -> the new record: fn(the record now, or null) returns the next one (null: none). Read and written in
+   *  one update, so a push's bookkeeping never undoes a Stop keeping it that came in between (fn sees that and returns null). */
+  setLocalgit(id, fn) {
+    if (!projectIdOk(id)) throw new ProjectError(400, 'bad project id');
+    if (id !== WORKSPACE_ID && !this.get(id)) throw new ProjectError(404, 'no such project (it was removed?)');
+    return this.update((v) => {
+      const next = fn(v.localgit[id] ? localgitRecord(v.localgit[id]) : null);
+      if (next === null || next === undefined) { delete v.localgit[id]; return null; }
+      const rec = localgitRecord(next);
+      if (!rec) throw new ProjectError(400, 'not a record of the built-in git server');
+      v.localgit[id] = rec;
+      return { ...rec };
     });
   }
   /** file(ids, pid): these sessions shown in that project (a label: each still runs in its own folder). */

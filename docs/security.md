@@ -1353,7 +1353,7 @@ spawn server, Claude Code or any file at will.
   ports, stopping one, the workspace's `.claude/launch.json`), Run & test's (below: the workspace's tasks, one run
   through a fixed wrapper, the runs, a run's window), the watchlist's two ops (below), the Review pane's
   `git.diff`, the Git panel's `git.status`, `git.log`, `git.file`, `git.stage`, `git.unstage`, `git.commit` and
-  `git.discard`, its remotes' `git.repos`, `git.remote.state`, `git.branch`, `git.remote.set`, `git.net`, `git.clone`,
+  `git.discard`, its remotes' `git.repos`, `git.remote.state`, `git.branch`, `git.remote.set`, `git.remote.remove`, `git.net`, `git.clone`,
   `git.test` and `git.broker` (below, "Git remotes and Git hosts"), and Search's `fs.grep` (below: fixed arguments, no program from the repository's configuration), and the
   Permissions view's, *Open in the terminal*'s and the resume check's ops (`perm.read`, `perm.remove`,
   `terminal.resume`, `sessions.running`: below, "Budgets, Permissions, Open in the terminal, links"), and @terminal's

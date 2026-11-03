@@ -320,6 +320,15 @@ export function makeGitRemote({ call: sandboxCall, openBroker = null, store = ne
     const { result } = await call({ op: 'git.branch', repo: b.repo ?? '', action: b.action, name: b.name, ...(b.action === 'track' ? { remote: b.remote } : {}) }, { timeoutMs: 60000 });
     return { ok: result?.ok === true, branch: b.name };
   }
+  // remoteRemove({repo, name, url}) — the remote goes (git remote remove: its tracking branches too), only while its URL is
+  // still the one named: a remote someone pointed elsewhere meanwhile is left
+  async function remoteRemove(b) {
+    if (!repoOk(b?.repo ?? '')) throw err(400, 'not a repository folder of the workspace');
+    if (!REMOTE_NAME.test(b?.name || '')) throw err(400, 'not a remote name');
+    try { parseRemoteUrl(b.url); } catch (e) { throw err(400, e.message); }
+    const { result } = await call({ op: 'git.remote.remove', repo: b.repo ?? '', name: b.name, url: b.url }, { timeoutMs: 45000 });
+    return { ok: result?.ok === true };
+  }
   async function remoteSet(b) {
     if (!repoOk(b?.repo ?? '')) throw err(400, 'not a repository folder of the workspace');
     if (!REMOTE_NAME.test(b?.name || '')) throw err(400, 'a remote name of letters, digits, ., _ and - (origin, usually)');
@@ -344,7 +353,11 @@ export function makeGitRemote({ call: sandboxCall, openBroker = null, store = ne
     if (!st.repo) throw st.said ? new SandboxSaid(400, st.said, 'git', st.reason) : err(400, st.reason);   // (git's own words apart)
     const push = action === 'push' || action === 'publish';
     if (st.state && action !== 'fetch') throw err(400, `a ${st.state} is in progress: finish it in the terminal`);
-    const cur = st.branch;
+    // (b.branch: a branch of the caller's naming, not the one checked out — keep.mjs pushes every branch that moved; a push
+    // of one goes to the branch of that name, and is the branch's commit as it is when it runs: nobody confirms it)
+    const named = push && b.branch !== undefined && b.branch !== null;
+    if (named && (!BRANCH_NAME.test(b.branch) || !st.branches.some((x) => x.name === b.branch))) throw err(400, 'not a local branch of this repository');
+    const cur = named ? b.branch : st.branch;
     if (action !== 'fetch' && !cur) throw err(400, 'no branch is checked out (a detached HEAD): switch to a branch first');
     const br = cur ? st.branches.find((x) => x.name === cur) : null;
     const name = b.remote || br?.upstream?.remote || (st.remotes.some((r) => r.name === 'origin') ? 'origin' : st.remotes.length === 1 ? st.remotes[0].name : null);
@@ -362,6 +375,7 @@ export function makeGitRemote({ call: sandboxCall, openBroker = null, store = ne
     needsSignIn(h);
     let dst = null;
     if (action === 'publish') dst = cur;
+    else if (action === 'push' && named) dst = cur;
     else if (action === 'push') {
       if (!br?.upstream || br.upstream.remote !== name) throw err(400, `${cur} tracks no branch of ${name} yet: publish it`);
       dst = br.upstream.branch;
@@ -374,7 +388,7 @@ export function makeGitRemote({ call: sandboxCall, openBroker = null, store = ne
     const summary = action === 'fetch' ? `Fetch ${name} ← ${p.display} via ${via(h)}`
       : action === 'pull' ? `Pull ${dst} of ${p.display} into ${cur} (a fast-forward only) via ${via(h)}`
         : `${verb} ${cur} → ${p.display} (${dst}${exists ? '' : ', a new branch there'}) via ${via(h)}`;
-    const planId = keep({ action, repo, remote: name, url, p, branch: cur, dst, hostId: h?.id ?? null, head: st.head });
+    const planId = keep({ action, repo, remote: name, url, p, branch: cur, dst, hostId: h?.id ?? null, head: named ? null : st.head });
     return { planId, action, repo, remote: name, url, display: p.display, scheme: p.scheme, branch: cur, dst, newBranch: !exists,
       host: hostRef(h), auth: h ? h.auth : 'none', summary,
       confirm: push || !store.fetchedBefore(fetchKey(h, url)), ahead: br?.ahead ?? null, behind: br?.behind ?? null, defaultBranch: st.remoteHeads[name] ?? null };
@@ -525,7 +539,7 @@ export function makeGitRemote({ call: sandboxCall, openBroker = null, store = ne
   }
   const close = () => { closing = true; clearTimeout(retry); oauth.close(); if (brokerConn) { const c = brokerConn; brokerConn = null; c.close(); } };
 
-  return { hostsView, addHost, setToken, newKey, setCa, addKnown, forgetKnown, removeHost, setClaude, testHost, repos, state, branch, remoteSet, plan, clonePlan, run, syncBroker, close,
+  return { hostsView, addHost, setToken, newKey, setCa, addKnown, forgetKnown, removeHost, setClaude, testHost, repos, state, branch, remoteSet, remoteRemove, plan, clonePlan, run, syncBroker, close,
     startSignIn, signInStatus, cancelSignIn, oauth, get brokerOpen() { return Boolean(brokerConn); } };
 }
 

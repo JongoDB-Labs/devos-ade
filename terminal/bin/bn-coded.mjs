@@ -44,7 +44,7 @@
 //                   (message on stdin), discarding a file's changes (its current version to the workspace trash) — the
 //                   same hardening, and no hook, signing program or editor ever runs; in /workspace or a repository
 //                   folder of it (repo)
-//   git.repos / git.remote.state / git.branch / git.remote.set / git.init / git.net / git.clone / git.test / git.broker
+//   git.repos / git.remote.state / git.branch / git.remote.set / git.remote.remove / git.init / git.net / git.clone / git.test / git.broker
 //                   its remotes: the repositories in a project, the remotes and branches (no network), a branch
 //                   switched or made, a remote's URL, a folder made a repository (git init, no template); fetch, pull (a
 //                   fast-forward), push, publish, clone and a test of
@@ -3665,6 +3665,20 @@ export async function gitRemoteSet(req, { git = GIT, deadlineMs = GIT_PANEL_DEAD
   return { ok: true, name, added: !urls.length };
 }
 
+// git.remote.remove {repo, name, url} — a remote taken away (git remote remove: its tracking branches and the branches' settings
+// for it go too), only while its URL is still the one the page showed; nothing of the remote's server is touched
+export async function gitRemoteRemove(req, { git = GIT, deadlineMs = GIT_PANEL_DEADLINE, procDir = '/proc', root } = {}) {
+  const name = req?.name, url = req?.url;
+  if (typeof name !== 'string' || !REMOTE_NAME.test(name)) throw new Error('a remote name of letters, digits, ., _ and -');
+  parseRemoteUrl(url);
+  const g = await gitPrep({ git, deadlineMs, procDir, root });
+  if (g.no) throw new Error(g.no);
+  await sameUrl(g, name, url, false);
+  const r = await g.run(['remote', 'remove', name], { maxOut: 64 << 10 });
+  if (r.code !== 0) gitFailed(r, 'git remote remove', g);
+  return { ok: true, name };
+}
+
 // The network command of one operation: its private folder, the credential channel or agent, the alias for the URL
 // (a random name only this run's configuration rewrites to the URL: url.<URL>.insteadOf and .pushInsteadOf), then
 // everything taken down again. ask: the code container's answer to a credential question (serve: the ASK frame).
@@ -5941,13 +5955,14 @@ export function serve(sock) {
         case 'git.remote.state':
         case 'git.branch':
         case 'git.remote.set':
+        case 'git.remote.remove':
         case 'git.init':
         case 'git.net': {
           const kind = req.op === 'git.remote.state' ? 'gitRead' : 'gitWrite';
           const o = { root: repoRoot(req.repo), ask };
           if (helpers[kind] >= (kind === 'gitRead' ? 2 : 1)) return fail(kind === 'gitRead' ? 'busy: try again in a moment' : 'busy: another git change is on its way');
           helpers[kind]++;
-          const job = { 'git.remote.state': () => gitRemoteState(o), 'git.branch': () => gitBranch(req, o), 'git.remote.set': () => gitRemoteSet(req, o), 'git.net': () => gitNet(req, o),
+          const job = { 'git.remote.state': () => gitRemoteState(o), 'git.branch': () => gitBranch(req, o), 'git.remote.set': () => gitRemoteSet(req, o), 'git.remote.remove': () => gitRemoteRemove(req, o), 'git.net': () => gitNet(req, o),
             'git.init': () => gitInit(req) }[req.op];
           Promise.resolve().then(job).then((r) => finish(T.RESULT, r), (e) => fail(e.message)).finally(() => { helpers[kind]--; });
           return undefined;

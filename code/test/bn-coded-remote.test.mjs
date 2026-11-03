@@ -594,6 +594,20 @@ test('repositories in the workspace, remote state, branches and a remote\'s URL 
   assert.equal(origin.fetch.display, 'github.com/o/r');
   assert.equal(r.result.remotes.find((x) => x.name === 'weird').fetch.ok, false);
   assert.equal(r.result.rewrites, 1);
+  // a remote taken away (Stop keeping it here): only while its URL is the one shown, and with its tracking branches
+  r = await op({ op: 'git.remote.set', repo: 'a/b', name: 'gone', url: 'https://example.org/g.git' });
+  assert.equal(r.result.added, true);
+  git(path.join(WS, 'a/b'), 'update-ref', 'refs/remotes/gone/main', 'HEAD');
+  for (const bad of [{ name: 'gone', url: 'https://example.org/else.git' }, { name: 'nope', url: 'https://example.org/g.git' }, { name: '-x', url: 'https://example.org/g.git' },
+    { name: 'gone', url: 'ext::sh -c touch% x' }]) {
+    r = await op({ op: 'git.remote.remove', repo: 'a/b', ...bad });
+    assert.ok(r.result.error, JSON.stringify(bad));
+  }
+  r = await op({ op: 'git.remote.remove', repo: 'a/b', name: 'gone', url: 'https://example.org/g.git' });
+  assert.equal(r.result.ok, true, JSON.stringify(r.result));
+  r = await op({ op: 'git.remote.state', repo: 'a/b' });
+  assert.ok(!r.result.remotes.some((x) => x.name === 'gone') && !r.result.remoteBranches.some((x) => x.remote === 'gone'));
+  assert.ok(r.result.remotes.some((x) => x.name === 'origin'), 'the others stay');
   // branches: create, switch, track a remote one
   r = await op({ op: 'git.branch', repo: 'a/b', action: 'create', name: 'topic' });
   assert.equal(r.result.ok, true, JSON.stringify(r.result));

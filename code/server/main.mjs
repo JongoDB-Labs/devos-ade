@@ -20,6 +20,7 @@ import { commandsOf, mcpOf, pluginsOf } from './normalize.mjs';
 import { GitHosts, HostError } from './githosts.mjs';
 import { makeGitRemote } from './gitremote.mjs';
 import { makeMirrors } from './mirrors.mjs';
+import { makeKeep, SWEEP_MS } from './keep.mjs';
 import { NEVER_ASKS, CLAUDE_SAID, sandboxWords } from './said.mjs';
 import { SandboxError } from './spawn-client.mjs';
 import { Projects, ProjectError, projectIdOk, WS, absOf } from './projects.mjs';
@@ -132,11 +133,13 @@ export function ownOrigin(req) {
 // (projects.mjs; made on first use: /var/lib/bn-code). imports: sessions of this computer copied into the sandbox
 // (import-sessions.mjs; made on first use). setup: your Claude Code setup of this computer copied into the sandbox
 // (import-setup.mjs; made on first use). userPrefs: your choices for new sessions, kept for your sign-in (userprefs.mjs;
-// made on first write: /var/lib/bn-code).
+// made on first write: /var/lib/bn-code). keepSweepMs: how often the projects kept on the built-in git server are looked at for
+// branches that moved (keep.mjs; 0: never).
 export function createServer({ secret, query, spawn, call, distDir = path.join(HERE, '../web/dist'), versions = {}, logger = log,
   reloadPollMs, reloadMaxMs, maxBufferedBytes = LIMITS.wsMaxBufferedBytes, maxSocketAgeMs = LIMITS.wsMaxAgeHours * 3600000, broker: brokerOpts = {},
   allowBypass = false, allowAuto = false, sandbox = {}, watch = true, gitHosts = null, openBroker = null, gitConnect = null, gitApps = {}, gitOAuthDelay = null,
-  projects = null, imports = null, setup = null, spawnAgent = null, agentStore = null, planAllowed = false, subsStatus = null, userPrefs = null }) {
+  projects = null, imports = null, setup = null, spawnAgent = null, agentStore = null, planAllowed = false, subsStatus = null, userPrefs = null,
+  keepSweepMs = SWEEP_MS }) {
   if (!/^[0-9a-f]{32,}$/.test(secret || '')) throw new Error('CODE_PROXY_SECRET missing or weak (32+ hex characters)');
   const want = Buffer.from(secret);
   const proxied = (req) => {
@@ -207,9 +210,13 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
     spawnAgent, agentStore: agents, planAllowed: planAllowed === true, versions: { server: versions.sdk || '0' },
     plainPaths: async (root, paths) => (await call({ op: 'paths.plain', root, paths }, { timeoutMs: 15000 })).result,
     gitHosts: () => hostStore.list(),
+    // (the repository a working folder's project is kept as on the built-in git server, for Claude's note: gitnote.mjs)
+    gitKept: (cwd) => keeper().keptRepo(cwd),
     // (at: when it happened, this computer's clock: the page rebuilds a reloaded session's turns at their own times)
     onEvent: (s, seq, ev, at) => {
       toAttached(s.id, { type: 'event', session: s.id, epoch: s.epoch, seq, ev, ...(Number.isFinite(at) ? { at } : {}) });
+      // a turn is over: a branch of the project may have moved — pushed to the built-in git server when it is kept there
+      if (ev.type === 'result') keeper().turnEnded(s.cwd);
       // a title given before the session had a transcript: written once its first turn is over
       if (ev.type === 'result' && s.pendingTitle && s.hasTranscript) {
         const title = s.pendingTitle;
@@ -288,9 +295,27 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
     try { return { available: true, mirrors: await mirrorsApi.list() }; } catch (e) { return { available: false, mirrors: [], why: short(e?.message, 200) }; }
   };
   let gitRemoteApi = null;
+  // keeping a project on the built-in git server (keep.mjs): the automatic pushes run from the first use of it, and every 10 minutes
+  let keepApi = null;
+  const keeper = () => {
+    if (!keepApi) { keepApi = makeKeep({ store: proj, remote: () => gitRemote(), mirrors: mirrorsApi, log: logger }); if (keepSweepMs > 0) keepApi.start(keepSweepMs); }
+    return keepApi;
+  };
+  // New project with keep: true — the folder is a git repository first (git init when it is not), then kept; a failure of the
+  // keeping is told beside the project (it is made either way)
+  async function keepNew(b, added) {
+    try {
+      if (added.git !== true) await api.projectGitInit(proj().rootOf(added.project.id));
+      return { keep: await keeper().keep(added.project.id, { name: typeof b.keepName === 'string' ? b.keepName : undefined }) };
+    } catch (e) {
+      const w = sandboxWords(e, '/api/git/');
+      return { keepError: w ? w.error : short(e?.message, 300), ...(w ? { said: w.said, saidBy: w.saidBy } : {}) };
+    }
+  }
   const gitRemote = () => (gitRemoteApi ??= makeGitRemote({ call, openBroker, store: hostStore, log: logger, connect: gitConnect, apps: gitApps,
     oauthDelay: gitOAuthDelay,
     onEvent: (event) => toAll({ type: 'git_event', event }) }));
+  keeper();
   if (openBroker) setTimeout(() => { gitRemote().syncBroker().catch((e) => logger(`git broker: ${short(e.message, 200)}`)); }, 1000).unref?.();
   // an MCP server's name as the session reports it (plugin servers: plugin:x:y; claude.ai ones may have spaces)
   const MCP_SERVER = /^[\x20-\x7e]{1,200}$/;
@@ -445,7 +470,24 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
     // projects (projects.mjs): the records, a new one (a new folder, or one that is there), a name, the sessions filed
     // there, removal (the record; its folder into the trash only when named again), its terminal, git init in it
     if (p === '/api/projects' && m === 'GET') return send(res, 200, await api.listProjects());
-    if (p === '/api/projects' && m === 'POST') return send(res, 200, await api.addProject(await readJson(req)));
+    if (p === '/api/projects' && m === 'POST') {
+      const b = await readJson(req);
+      if (b?.keep === true && b.kind === 'new') b.git = true;   // (kept: a repository, so git init)
+      const added = await api.addProject(b);
+      return send(res, 200, b?.keep === true ? { ...added, ...(await keepNew(b, added)) } : added);
+    }
+    // keeping a project on the built-in git server (keep.mjs): where it stands; keep it (a repository made there, its remote
+    // added, what it has pushed); push now; automatic pushes on or off; not for this project; stop keeping it
+    if ((mm = /^\/api\/projects\/(ws|p_[0-9a-f]{8})\/keep(?:\/(push|auto|decline))?$/.exec(p))) {
+      const id = mm[1], what = mm[2] || '';
+      recordOf(id);
+      if (!what && m === 'GET') return send(res, 200, await keeper().view(id));
+      if (!what && m === 'POST') return send(res, 200, await keeper().keep(id, await readJson(req)));
+      if (!what && m === 'DELETE') return send(res, 200, await keeper().stop(id));
+      if (what === 'push' && m === 'POST') return send(res, 200, await keeper().pushNow(id));
+      if (what === 'auto' && m === 'POST') return send(res, 200, await keeper().setAuto(id, (await readJson(req))?.on));
+      if (what === 'decline' && m === 'POST') return send(res, 200, await keeper().decline(id));
+    }
     if ((mm = /^\/api\/projects\/(ws|p_[0-9a-f]{8})(?:\/(sessions|terminal|git-init|settings|trust|export))?$/.exec(p))) {
       const id = mm[1], what = mm[2] || '';
       // its own Claude Code settings: what they set, and your trust in exactly these files (or no longer)
@@ -546,7 +588,12 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
     }
     if (p === '/api/git/stage' && m === 'POST') return send(res, 200, await api.gitStage(await readJson(req, 512 << 10)));
     if (p === '/api/git/unstage' && m === 'POST') return send(res, 200, await api.gitUnstage(await readJson(req, 512 << 10)));
-    if (p === '/api/git/commit' && m === 'POST') return send(res, 200, await api.gitCommit(await readJson(req, 512 << 10)));
+    if (p === '/api/git/commit' && m === 'POST') {
+      const b = await readJson(req, 512 << 10);
+      const done = await api.gitCommit(b);
+      if (done.ok) keeper().committed(typeof b?.repo === 'string' ? b.repo : '');   // (kept on the built-in git server: pushed in the background)
+      return send(res, 200, done);
+    }
     if (p === '/api/git/discard' && m === 'POST') return send(res, 200, await api.gitDiscard(await readJson(req)));
     if (p === '/api/git/draft' && m === 'POST') {
       const body = await readJson(req);
@@ -844,7 +891,7 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
     }
   }
 
-  return { server, wss, mgr, broker, site, closeGit: () => gitRemoteApi?.close() };
+  return { server, wss, mgr, broker, site, keeper, closeGit: () => { gitRemoteApi?.close(); keepApi?.close(); } };
 }
 
 // --- the container's entry point ---

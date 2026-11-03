@@ -50,8 +50,16 @@ function line(h) {
   return `${name} — you may use it: git over https gets the user's login through this sandbox's credential helper; each use is logged.${gh}`;
 }
 
-// gitNote(hosts) -> the note: hosts as GitHosts.public gives them (an array), or null (they could not be read)
-export function gitNote(hosts) {
+// What Claude is told of a project kept on the built-in git server (keep.mjs): it is there, pushed by itself, and not to be
+// published elsewhere unasked. Only the repository's name, as the server's (owner/name: plain characters) — never the project's.
+const KEPT = /^[A-Za-z0-9][A-Za-z0-9._@+-]{0,99}\/[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+const keptLine = (repo) => `This project is kept on the user's local git server as \`${repo}\`: ${PRODUCT} pushes its branches there by itself after a `
+  + 'commit and after each of your turns (never forced), and the user can open it in the Git page. Do not publish it to GitHub, GitLab or another host, '
+  + 'or add another remote, unless the user asks.';
+
+// gitNote(hosts, kept) -> the note: hosts as GitHosts.public gives them (an array), or null (they could not be read); kept: the
+// repository ('owner/name') the working folder's project is kept as on the built-in git server, else null
+export function gitNote(hosts, kept = null) {
   const out = [...HEAD, ''];
   if (!Array.isArray(hosts)) out.push(UNREAD);
   else if (!hosts.length) out.push(NONE);
@@ -62,6 +70,7 @@ export function gitNote(hosts) {
     const unnamed = sorted.length - lines.length;
     if (unnamed) out.push(`(${unnamed === 1 ? 'One host is' : `${unnamed} hosts are`} not named here: not a plain host name.)`);
   }
+  if (typeof kept === 'string' && KEPT.test(kept)) out.push('', keptLine(kept));
   out.push('', FOOT);
   return out.join('\n');
 }
