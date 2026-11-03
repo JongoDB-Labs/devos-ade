@@ -40,7 +40,7 @@ class Recorder:
         page.on("requestfailed", self._failed)
         page.on("console", lambda m: self.events.append({"t": "console", "type": m.type, "text": m.text})
                 if m.type in ("error", "warning") else None)
-        page.on("pageerror", lambda e: self.events.append({"t": "pageerror", "text": str(e)}))
+        page.on("pageerror", lambda e: self.events.append({"t": "pageerror", "text": str(e), "stack": str(getattr(e, "stack", "") or "")[:4000]}))
         page.on("websocket", lambda ws: self.events.append({"t": "ws", "url": ws.url}))
         return page
 
@@ -971,7 +971,8 @@ def update_progress_modal(ctx):
         expect((page.locator("#up-bar").get_attribute("aria-valuetext") or "").startswith("Step 5 of 6, Services"), f"valuetext: {page.locator('#up-bar').get_attribute('aria-valuetext')!r}")
         rows = page.locator("#up-rows > li")
         expect(rows.count() == 6, f"{rows.count()} rows, not 6")
-        names = [x.strip() for x in page.locator("#up-rows .up-name").all_inner_texts()]
+        # (each name's "Done:" is visually hidden, absolutely placed: innerText breaks the line after it, so the words are compared)
+        names = [" ".join(x.split()) for x in page.locator("#up-rows .up-name").all_inner_texts()]
         expect(names == ["Done: Backup", "Done: New code (git)", "Skipped: AWS key check", "Done: Images", "Running: Services", "Waiting: Smoke test"], f"rows: {names!r}")
         durs = [x.strip() for x in page.locator("#up-rows .up-dur").all_inner_texts()]
         expect(durs[:4] == ["4s", "<1s", "skipped", "21s"], f"durations: {durs!r}")
@@ -986,11 +987,11 @@ def update_progress_modal(ctx):
         shot(page, "06g-home-update-progress-modal")
         # slowest first
         page.click("#up-order .chip[data-order='slowest']")
-        first = [x.strip() for x in page.locator("#up-rows .up-name").all_inner_texts()]
+        first = [" ".join(x.split()) for x in page.locator("#up-rows .up-name").all_inner_texts()]
         expect(first[0] == "Done: Images" and first[1] == "Done: Backup", f"slowest first: {first!r}")
         expect(page.get_attribute("#up-order .chip[data-order='slowest']", "aria-pressed") == "true", "the chosen order is not pressed")
         page.click("#up-order .chip[data-order='order']")
-        expect(page.locator("#up-rows .up-name").first.inner_text().strip() == "Done: Backup", "in order did not restore the order")
+        expect(" ".join(page.locator("#up-rows .up-name").first.inner_text().split()) == "Done: Backup", "in order did not restore the order")
         states.append("slowest first sorts, in order restores")
         # phone width: nothing runs off the side
         wide = page.viewport_size
@@ -1243,10 +1244,22 @@ def _answer(side, nonce: str):
     side.evaluate("n => { const c = new BroadcastChannel('bn.app'); c.postMessage({ opened: n }); setTimeout(() => c.close(), 500); }", nonce)
 
 
+# Open WebUI's own bundle in Chat's frame (chat.<host>/_app/immutable/…)
+OWUI_CODE = re.compile(r"https?://chat\.[^/\s]+/_app/immutable/\S+")
+
+
+def _owui_own(e) -> bool:
+    """A page error thrown wholly in Open WebUI's own code: every frame of its stack is Open WebUI's bundle (Chat's frame
+    torn down mid-start by a navigation away throws there: its aborted fetches leave it nulls). One with no stack, or any
+    frame of ours, is not."""
+    frames = re.findall(r"https?://[^\s)]+", e.get("stack") or "")
+    return bool(frames) and all(OWUI_CODE.fullmatch(f) for f in frames)
+
+
 def _no_errors(rec, label: str):
-    errs = [e for e in rec.events if e["t"] == "pageerror"]
+    errs = [e for e in rec.events if e["t"] == "pageerror" and not _owui_own(e)]
     rec.save()
-    expect(not errs, f"[{label}] page errors {errs}")
+    expect(not errs, f"[{label}] page errors {[{'text': e['text'], 'stack': e.get('stack', '')[:600]} for e in errs]}")
 
 
 @check("browser", "pwa-installed-or-not")

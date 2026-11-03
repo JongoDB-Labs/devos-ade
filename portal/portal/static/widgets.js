@@ -387,7 +387,7 @@
   })();
   const hostKids = origin[0].kids.filter((k) => !k.widget);
   const wrappers = hostKids.filter((k) => k.querySelector && k.querySelector("[data-widget]"));   // .home-top and .grid: empty while the widgets are in #widgets
-  const anchored = hostKids.filter((k) => !wrappers.includes(k));                                      // the update's progress (#job): first, always as wide as the page
+  const anchored = hostKids.filter((k) => !wrappers.includes(k));                                      // the update's progress (#job): after the update card, always as wide as the page
 
   // --- what is kept ---
   let doc = parseDoc((() => { try { return localStorage.getItem(CACHE); } catch (_) { return null; } })());
@@ -497,13 +497,16 @@
     host.classList.toggle("wg-phone", device === "phone");
     host.classList.toggle("wg-tablet", device === "tablet");
     host.classList.toggle("wg-desktop", device === "desktop");
-    const nodes = [...anchored];
+    // (the update's progress follows the update card wherever it is, as in the page's own order: docs/design.md)
+    const nodes = [];
     for (const e of list) {
       const w = elOf(e.id);
       if (!w) continue;
       nodes.push(w);
       if (editing) nodes.push(overlayOf(e.id));
+      if (e.id === "update-card") nodes.push(...anchored);
     }
+    if (anchored.length && !nodes.includes(anchored[0])) nodes.unshift(...anchored);
     place([...nodes, ...wrappers]);
     if (ro) ro.observe(host);
     for (const j of anchored) if (ro) ro.observe(j);

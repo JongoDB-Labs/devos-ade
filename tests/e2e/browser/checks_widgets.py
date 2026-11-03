@@ -156,8 +156,8 @@ def widgets_customize_desktop(ctx):
         page.wait_for_selector("#home:not([hidden]) .spend")
         expect(not shown(page, "services"), "a reload showed Services again")
         expect(page.evaluate("() => document.getElementById('widgets').classList.contains('wg-custom')"), "the saved layout was not applied")
-        # the update's progress is no widget: first in the grid, as wide as the page
-        expect(page.evaluate("() => document.getElementById('widgets').firstElementChild.id === 'job'"), "the update's progress is not first in the grid")
+        # the update's progress is no widget: right after the update card in the grid, as in the page's own order
+        expect(page.evaluate("() => !!document.querySelector('#widgets > [data-widget=update-card] + #job')"), "the update's progress does not follow the update card in the grid")
         # the person's choice stays: Refresh brings Services new numbers and it stays hidden
         page.click("#refresh")
         page.wait_for_timeout(2500)

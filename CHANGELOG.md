@@ -46,7 +46,7 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 - **Home's update progress no longer disappears after Customize › Reset.** Leaving Customize with Home's own layout (Reset,
   then Done) dropped the update's progress card from the page until the next reload, so an update started then showed no
   progress, and with the card above Home's Refresh failed with "Could not load the latest numbers". It now stays where it
-  was, and with a layout of your own it comes first, as wide as the page, as intended. The end-to-end check
+  was, and with a layout of your own it follows the update card, as wide as the page, as in Home's own order. The end-to-end check
   `browser/widgets-customize-desktop` now checks both, and that Refresh works after Reset.
 - **No proxy secret in the main Caddy's log (JON-1011).** When a request the main Caddy passed on failed (a container
   restarting, a closed connection), its log line had the headers it sent on, and with them the secret ones it adds: the
