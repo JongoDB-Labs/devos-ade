@@ -22,6 +22,7 @@ import { basename, cleanPath, dirname, isUuid, joinPath, label, money, setHostTo
 import { sniff, viewFor, type FileView, type Sniffed } from './preview/sniff';
 import type { GitCommit, GitEntry, GitEvent, GitFile, GitNetAction, GitPlan, GitRemoteState, GitReview, GitScope, GitStatus, GrepResult, SandboxWords } from './types';
 import { findRepo, proposedMessage, type RepoFound } from './git';
+import { gitPlace, gitPlaceUrl, type KeepView } from './keep';
 import { buildReview, deletedText, reverseHunks, sessionStart, takesComments, undoBlocker, withComments, type ReviewComment, type ReviewFile, type ReviewHunk } from './review';
 import { promptTitle } from './mentions';
 import { crossed, nextBudget, rememberBudget, storedBudget, type Budget } from './budget';
@@ -363,6 +364,10 @@ export interface AppState {
   /** where each session runs and which project it is shown in (the backend's lists; one this page starts: its own) */
   where: Record<string, Where>;
   projectDialog: ProjectDialog | null;
+  /** keeping projects on the built-in git server (keep.ts), by project id: what the backend last said; busy: the action on its way
+   *  (a project id and its name); ask: the project whose offer was asked for from the menu (a No is not asked again, but it can be
+   *  kept from there); error: what the last action came to */
+  keep: { views: Record<string, KeepView>; busy: { id: string; what: string } | null; ask: string | null; error: Problem | null };
 }
 
 export const store: Store<AppState> = createStore<AppState>({
@@ -424,6 +429,7 @@ export const store: Store<AppState> = createStore<AppState>({
   project: WORKSPACE_ID,
   where: {},
   projectDialog: null,
+  keep: { views: {}, busy: null, ask: null, error: null },
 });
 
 const set = store.set;
@@ -2419,7 +2425,7 @@ export function openProjectDialog(d: ProjectDialog | null): void {
 /** What a project action came to when it did not work: ours, and the sandbox's own words apart when it is in them. */
 export type Problem = { text: string; said: SandboxWords | null };
 const problem = (text: string): Problem => ({ text, said: null });
-export async function createProject(b: { kind: 'new' | 'folder'; folder: string; name?: string; git?: boolean }): Promise<Problem | null> {
+export async function createProject(b: { kind: 'new' | 'folder'; folder: string; name?: string; git?: boolean; keep?: boolean }): Promise<Problem | null> {
   try {
     const r = await api.addProject(b);
     await refreshProjects();
@@ -2429,11 +2435,19 @@ export async function createProject(b: { kind: 'new' | 'folder'; folder: string;
     if (b.kind === 'folder') settingsHint(p.id);
     if (r.gitError) toast(r.said ? `${p.name}: the folder is there, but ${r.gitError}` : `${p.name}: the folder is there, but git init failed (${r.gitError}).`, 'error', undefined, r.said);
     else toast(b.kind === 'new' ? `New project ${p.name} in ${p.path}${r.git ? ', a git repository' : ''}` : `${p.name} (${p.path}) is a project now`, 'ok');
+    keptToast(p.name, r);
     void refreshSessions();
     return null;
   } catch (e) {
     return api.problemOf(e);
   }
+}
+
+/** What New project's "Keep it on your local git server" came to: told after the project is made (it is made either way). */
+function keptToast(name: string, r: { keep: KeepView | null; keepError: string; keepWords: SandboxWords | null; project: Project | null }): void {
+  if (r.project && r.keep) set((s) => ({ ...s, keep: { ...s.keep, views: { ...s.keep.views, [r.project?.id ?? '']: r.keep as KeepView } } }));
+  if (r.keepError) toast(`${name} is not kept on your local git server: ${label(r.keepError, 300)} (the Git panel offers it again)`, 'error', undefined, r.keepWords);
+  else if (r.keep?.state === 'kept') toast(`${name} is kept on your local git server as ${label(r.keep.repo, 120)}.`, 'ok');
 }
 
 /** A project that came with Claude Code settings of its own (a clone, a folder that was there): said once — they apply
@@ -2468,17 +2482,126 @@ export async function setProjectTrust(id: string, hash: string | null, trust: bo
 async function cloneBecomesProject(folder: string): Promise<void> {
   const had = get().projects.find((p) => p.root === folder);
   if (had) return setProject(had.id);
+  // (New project › Clone, with "Keep it on your local git server" on: the clone is added to the server as a second remote, local)
+  const keep = keepNextClone;
+  keepNextClone = false;
   try {
-    const r = await api.addProject({ kind: 'folder', folder });
+    const r = await api.addProject({ kind: 'folder', folder, keep });
     await refreshProjects();
     if (r.project) {
       setProject(r.project.id);
       settingsHint(r.project.id);
+      if (keep) keptToast(r.project.name, r);
     }
   } catch (e) {
     failed(e, `The clone is in ${folder}, but it did not become a project (New project › A folder in the workspace)`,
       (m) => `The clone is in ${folder}, but it did not become a project: ${m} (New project › A folder in the workspace).`);
   }
+}
+/** New project › Clone a repository, with the box on: the folder the Git panel's Clone makes is kept on the built-in git server too. */
+let keepNextClone = false;
+export function keepNextCloneOnLocalGit(on: boolean): void {
+  keepNextClone = on;
+}
+
+// --- keeping a project on the built-in git server (keep.ts; the Git panel's offer and its kept part) ---
+const setKeep = (fn: (k: AppState['keep']) => AppState['keep']): void => set((s) => ({ ...s, keep: fn(s.keep) }));
+const putKeep = (id: string, v: KeepView): void => setKeep((k) => ({ ...k, views: { ...k.views, [id]: v } }));
+/** The project's standing with the built-in git server, asked again (the panel shows it; a failure to ask shows nothing). */
+export async function refreshKeep(id: string = get().project): Promise<KeepView | null> {
+  try {
+    const v = await api.getProjectKeep(id);
+    putKeep(id, v);
+    return v;
+  } catch {
+    return null;
+  }
+}
+/** One action of the Git panel's kept part (or its offer): shown busy, the project's view taken from the answer, a failure said. */
+async function keepAct(id: string, what: string, fn: () => Promise<KeepView>): Promise<KeepView | null> {
+  if (get().keep.busy) return null;
+  setKeep((k) => ({ ...k, busy: { id, what }, error: null }));
+  try {
+    const v = await fn();
+    putKeep(id, v);
+    return v;
+  } catch (e) {
+    setKeep((k) => ({ ...k, error: api.problemOf(e) }));
+    void refreshKeep(id);
+    return null;
+  } finally {
+    setKeep((k) => ({ ...k, busy: null }));
+  }
+}
+/** Keep it there: a private repository of the project's name (or the one typed) on the built-in git server, its remote, and a push. */
+export async function keepOnLocalGit(id: string, name?: string): Promise<boolean> {
+  const v = await keepAct(id, 'keep', () => api.keepProject(id, name));
+  if (v?.state === 'kept') {
+    setKeep((k) => ({ ...k, ask: null }));
+    toast(`Kept on your local git server as ${label(v.repo, 120)}.`, 'ok');
+    void refreshGit();
+  }
+  return v?.state === 'kept';
+}
+/** Not for this project: not asked again (the project's menu still keeps it). */
+export const declineKeep = (id: string): Promise<KeepView | null> => keepAct(id, 'decline', () => api.keepDecline(id)).then((v) => { setKeep((k) => ({ ...k, ask: null })); return v; });
+/** Push now: everything that moved, the branches the server refused tried again. */
+export async function pushKept(id: string): Promise<void> {
+  const v = await keepAct(id, 'push', () => api.keepPushNow(id));
+  if (v && !v.lastError && !v.rejected.length) toast('Pushed to your local git server.', 'ok');
+  void refreshGit();
+}
+/** Automatic pushes on or off. */
+export const setKeepAuto = (id: string, on: boolean): Promise<KeepView | null> => keepAct(id, 'auto', () => api.keepAuto(id, on));
+/** Stop keeping it here: the remote and the record go; the repository stays on the server with what was pushed. */
+export async function stopKeeping(id: string): Promise<boolean> {
+  if (get().keep.busy) return false;
+  setKeep((k) => ({ ...k, busy: { id, what: 'stop' }, error: null }));
+  try {
+    const r = await api.keepStop(id);
+    toast(`${label(r.repo, 120)} is no longer kept from this project; it stays on your local git server.`, 'ok');
+    await refreshKeep(id);
+    void refreshGit();
+    return true;
+  } catch (e) {
+    setKeep((k) => ({ ...k, error: api.problemOf(e) }));
+    return false;
+  } finally {
+    setKeep((k) => ({ ...k, busy: null }));
+  }
+}
+/** The menu's "Keep on your local git server…": the Git panel with the offer, also for a project that said no. */
+export async function askToKeep(id: string): Promise<void> {
+  const v = await refreshKeep(id);
+  if (!v?.available) return toast(SETUP_LINKS['git-off'].says, 'info');
+  if (v.state === 'kept') return showGit();
+  setKeep((k) => ({ ...k, ask: id }));
+  if (get().project !== id) setProject(id);
+  showGit();
+}
+/** The portal's Git page at a kept repository (or its issues or pull requests): through the portal that frames this page — it opens
+ *  there, in the top window — else a tab of its own; with no portal known, the address is told. */
+export function openPortalGit(repo: string | null, sub: '' | 'issues' | 'pulls' = '', win: Window = window): void {
+  const place = gitPlace(repo, sub);
+  const origin = get().server?.portalOrigin ?? null;
+  if (!place) return;
+  let base: string | null = null;
+  try {
+    if (origin) base = new URL(origin).origin;
+  } catch {
+    base = null;
+  }
+  if (win.parent !== win && base) {
+    try {
+      win.parent.postMessage({ type: 'bn-code-git', place }, base);
+      return;
+    } catch {
+      /* not the portal's frame after all: a tab of its own */
+    }
+  }
+  const url = gitPlaceUrl(origin, place);
+  if (url) win.open(url, '_blank', 'noopener');
+  else toast(`Open ${label(place, 160)} in the Git page of ${PRODUCT}.`, 'info');
 }
 
 export async function renameProjectTo(id: string, name: string): Promise<void> {
@@ -3876,6 +3999,7 @@ export function cancelDraft(): void {
 // --- remotes: fetch, pull, push, publish and clone (git.net in the sandbox, the credential from Git hosts) ---
 
 export function openGitDialog(dialog: GitState['dialog']): void {
+  if (dialog === null) keepNextClone = false;   // (the Clone dialog was closed: New project's box does not carry over)
   setGit((g) => ({ ...g, dialog }));
   if (dialog === 'hosts') void loadGitHosts();
 }

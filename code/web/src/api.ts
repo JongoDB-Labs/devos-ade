@@ -28,6 +28,7 @@ import { parseLayout, type DeviceLayout } from './layout';
 import { normBudget, type Budget as SessionBudget } from './budget';
 import { promptTitle } from './mentions';
 import type { RecentReport } from './recent';
+import { normKeep, type KeepView } from './keep';
 import { normExportPlan, zipWhole, type ExportOptions, type ExportPlan } from './exportzip';
 import { cwdOk, goneCwdOk, normProject, normProjects, normSessionSettings, normSettingsView, projectIdOk, WORKSPACE_ID, WORKSPACE_PATH, type Project, type SettingsView } from './projects';
 
@@ -894,10 +895,33 @@ export async function getProjects(): Promise<Project[]> {
   const o = await request('GET', '/api/projects');
   return normProjects(o.projects ?? o.items);
 }
-/** A new project: a new folder of the workspace (git: `git init` in it) or a folder that is there. */
-export async function addProject(b: { kind: 'new' | 'folder'; folder: string; name?: string; git?: boolean }): Promise<{ project: Project | null; git: boolean; gitError: string; said: SandboxWords | null }> {
-  const o = await request('POST', '/api/projects', { kind: b.kind, folder: b.folder, ...(b.name ? { name: b.name } : {}), ...(b.kind === 'new' ? { git: b.git === true } : {}) });
-  return { project: normProject(o.project), git: o.git === true, gitError: label(o.gitError, 300), said: wordsOf(o) };
+/** A new project: a new folder of the workspace (git: `git init` in it) or a folder that is there. keep: it is kept on the built-in git
+ *  server too (a repository made there, its remote added, pushed) — keepError when that did not work (the project is made either way). */
+export async function addProject(b: { kind: 'new' | 'folder'; folder: string; name?: string; git?: boolean; keep?: boolean }): Promise<{ project: Project | null; git: boolean; gitError: string; said: SandboxWords | null;
+  keep: KeepView | null; keepError: string; keepWords: SandboxWords | null }> {
+  const o = await request('POST', '/api/projects', { kind: b.kind, folder: b.folder, ...(b.name ? { name: b.name } : {}), ...(b.kind === 'new' ? { git: b.git === true } : {}), ...(b.keep ? { keep: true } : {}) });
+  return { project: normProject(o.project), git: o.git === true, gitError: label(o.gitError, 300), said: wordsOf(o), keep: normKeep(o.keep), keepError: label(o.keepError, 400), keepWords: wordsOf(obj(o.keepWords)) };
+}
+// Keeping a project on the built-in git server (keep.mjs): where it stands, keep it, push now, automatic pushes, not for this one,
+// stop keeping it. Each answers the project's view.
+async function keepRequest(method: 'GET' | 'POST' | 'DELETE', id: string, what: string, body?: unknown): Promise<Obj> {
+  if (!projectIdOk(id)) throw new ApiError(400, 'bad project id');
+  return request(method, `/api/projects/${id}/keep${what}`, body);
+}
+async function keepView(method: 'GET' | 'POST', id: string, what: string, body?: unknown): Promise<KeepView> {
+  const v = normKeep(await keepRequest(method, id, what, body));
+  if (!v) throw new ApiError(502, 'The answer about the local git server does not fit.');
+  return v;
+}
+export const getProjectKeep = (id: string): Promise<KeepView> => keepView('GET', id, '');
+export const keepProject = (id: string, name?: string): Promise<KeepView> => keepView('POST', id, '', name ? { name } : {});
+export const keepPushNow = (id: string): Promise<KeepView> => keepView('POST', id, '/push', {});
+export const keepAuto = (id: string, on: boolean): Promise<KeepView> => keepView('POST', id, '/auto', { on });
+export const keepDecline = (id: string): Promise<KeepView> => keepView('POST', id, '/decline', {});
+/** Stop keeping it here: the remote goes, the repository stays on the server. */
+export async function keepStop(id: string): Promise<{ repo: string; removed: boolean }> {
+  const o = await keepRequest('DELETE', id, '');
+  return { repo: label(o.repo, 200), removed: o.removed === true };
 }
 export async function renameProject(id: string, name: string): Promise<void> {
   if (!projectIdOk(id)) throw new ApiError(400, 'bad project id');

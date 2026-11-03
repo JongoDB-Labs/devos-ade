@@ -37,6 +37,7 @@ import { ReadOnlyHunks } from './Review';
 import { Dialog, Dropdown, MenuItem, copyText, useMedia } from './ui';
 import { FoundNote, GitDialogs, NoRepoActions, RemoteBar, RepoPicker } from './GitRemote';
 import { SandboxSaid } from './Said';
+import { KeepBar } from './Keep';
 import { PRODUCT } from '../brand';
 
 type Kind = 'staged' | 'unstaged' | 'untracked' | 'conflicts';
@@ -87,6 +88,7 @@ export function GitPanel() {
         </div>
       ) : (
         <div class="gitp-body">
+          <KeepBar />
           <RemoteBar st={st} />
           {st.state && (
             <div class="banner subtle small" data-testid="git-state">

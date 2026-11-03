@@ -15,6 +15,8 @@ import {
   activate,
   addToProject,
   archiveSessionById,
+  askToKeep,
+  keepNextCloneOnLocalGit,
   closeSessionById,
   continueAfterSettings,
   continueHere,
@@ -46,6 +48,7 @@ import {
   goSetup,
 } from '../app';
 import * as api from '../api';
+import { boxShown, newProjectBody } from '../keep';
 import { GROUP_LABEL, groupOf, type Group } from '../groups';
 import { afterSettingsChoice, needsLook, RECHECK_TEXT, rootOk, sessionsByProject, settingsApplied, visibleWs, WORKSPACE_ID, type Project, type SettingsView } from '../projects';
 import type { SessionView } from '../session';
@@ -247,6 +250,11 @@ function ProjectMenu({ p, onRename }: { p: Project; onRename: () => void }) {
             onSelect={() => (close(), p.readOnly ? goSetup('folder-read-only') : void connectGitRepo(p.id))}>
             {p.readOnly ? 'Connect a git repository — read-only folder: Settings › Claude Code › Project folders' : 'Connect a git repository'}
           </MenuItem>
+          {!p.readOnly && (
+            <MenuItem icon="server" onSelect={() => (close(), void askToKeep(p.id))} testid="project-menu-keep">
+              Keep on your local git server…
+            </MenuItem>
+          )}
           <MenuItem icon="shield" onSelect={() => (close(), openProjectDialog({ kind: 'settings', id: p.id }))} testid="project-menu-settings">
             Claude Code settings…
           </MenuItem>
@@ -561,6 +569,11 @@ export function ProjectChip({ compact = false }: { compact?: boolean }) {
           <MenuItem icon="branch" onSelect={() => (close(), void connectGitRepo(p.id))}>
             Connect a git repository
           </MenuItem>
+          {!p.readOnly && (
+            <MenuItem icon="server" onSelect={() => (close(), void askToKeep(p.id))} testid="project-chip-keep">
+              Keep on your local git server…
+            </MenuItem>
+          )}
           <MenuItem icon="terminal" onSelect={() => (close(), void openProjectTerminal(p.id))}>
             Open a terminal here
           </MenuItem>
@@ -596,6 +609,9 @@ function NewProjectDialog({ tab, onClose }: { tab: Extract<ProjectDialog, { kind
   const [kind, setKind] = useState(tab);
   const [name, setName] = useState('');
   const [git, setGit] = useState(true);
+  // "Keep it on your local git server": asked once, here, when the built-in server is there (null: not known yet); on by default
+  const [available, setAvailable] = useState<boolean | null>(null);
+  const [keep, setKeep] = useState(true);
   const [folder, setFolder] = useState('');
   const [folders, setFolders] = useState<string[] | null>(null);
   const [err, setErr] = useState<Problem | null>(null);
@@ -621,6 +637,13 @@ function NewProjectDialog({ tab, onClose }: { tab: Extract<ProjectDialog, { kind
       gone = true;
     };
   }, []);
+  useEffect(() => {
+    let gone = false;
+    void api.getProjectKeep(WORKSPACE_ID).then((k) => !gone && setAvailable(k.available), () => !gone && setAvailable(false));
+    return () => {
+      gone = true;
+    };
+  }, []);
   const taken = new Set(projects.map((p) => p.root));
   const choices = (folders ?? []).filter((f) => !taken.has(f));
   const target = kind === 'empty' ? name.trim() : folder;
@@ -629,13 +652,14 @@ function NewProjectDialog({ tab, onClose }: { tab: Extract<ProjectDialog, { kind
     setErr(null);
     if (kind === 'clone') {
       // the Git panel's Clone (its plan shown first; the new folder becomes a project)
+      keepNextCloneOnLocalGit(boxShown(available, kind) && keep);
       onClose();
       showGit();
       openGitDialog('clone');
       return;
     }
     setBusy(true);
-    const e = await createProject(kind === 'empty' ? { kind: 'new', folder: target, git } : { kind: 'folder', folder: target });
+    const e = await createProject(newProjectBody(kind === 'empty' ? 'empty' : 'folder', target, { git, keep: boxShown(available, kind) && keep }));
     setBusy(false);
     if (e) setErr(e);
     else onClose();
@@ -655,7 +679,8 @@ function NewProjectDialog({ tab, onClose }: { tab: Extract<ProjectDialog, { kind
                     onInput={(e) => setName((e.currentTarget as HTMLInputElement).value)} onKeyDown={(e) => e.key === 'Enter' && valid && !busy && void go()} data-testid="new-project-name" />
                 </label>
                 <label class="gitr-check wide">
-                  <input type="checkbox" checked={git} onChange={(e) => setGit((e.currentTarget as HTMLInputElement).checked)} data-testid="new-project-git" />
+                  <input type="checkbox" checked={git || (available === true && keep)} disabled={available === true && keep}
+                    onChange={(e) => setGit((e.currentTarget as HTMLInputElement).checked)} data-testid="new-project-git" />
                   Start a git repository (git init)
                 </label>
               </span>
@@ -698,6 +723,20 @@ function NewProjectDialog({ tab, onClose }: { tab: Extract<ProjectDialog, { kind
           </span>
         </label>
       </div>
+      {boxShown(available, kind) && (
+        <label class="gitr-check np-keep" data-testid="new-project-keep-label">
+          <input type="checkbox" checked={keep} onChange={(e) => setKeep((e.currentTarget as HTMLInputElement).checked)} data-testid="new-project-keep" />
+          <span>
+            Keep it on your local git server
+            <span class="muted small np-keep-note">
+              {' '}
+              {kind === 'clone' ? 'A private repository there, added as a second remote (local), pushed by itself.'
+                : kind === 'folder' ? 'A private repository there, pushed by itself (git init first if the folder is not one).'
+                  : 'A private repository there, pushed by itself (this starts a git repository).'}
+            </span>
+          </span>
+        </label>
+      )}
       <p class="muted small">
         Claude Code runs a project's sessions in its folder, and the file tree, Search, Git, Review and Run & test show that folder. Every project is in the one
         sandbox: a session in one can read and change the others.

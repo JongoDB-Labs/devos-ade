@@ -309,7 +309,7 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
       return { keep: await keeper().keep(added.project.id, { name: typeof b.keepName === 'string' ? b.keepName : undefined }) };
     } catch (e) {
       const w = sandboxWords(e, '/api/git/');
-      return { keepError: w ? w.error : short(e?.message, 300), ...(w ? { said: w.said, saidBy: w.saidBy } : {}) };
+      return { keepError: w ? w.error : short(e?.message, 300), ...(w ? { keepWords: { said: w.said, saidBy: w.saidBy } } : {}) };
     }
   }
   const gitRemote = () => (gitRemoteApi ??= makeGitRemote({ call, openBroker, store: hostStore, log: logger, connect: gitConnect, apps: gitApps,

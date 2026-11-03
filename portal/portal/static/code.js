@@ -152,6 +152,16 @@
         else location.hash = hash;
         return;
       }
+      // A kept project's repository in the Git page ({type: "bn-code-git", place}: owner/name, or with /issues or /pulls — what the Code
+      // page's Git panel shows of a project kept on the built-in git server): this window goes there, as a #git deep link does
+      if (e.data.type === "bn-code-git") {
+        const place = e.data.place;
+        if (typeof place !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._@+-]{0,99}\/[A-Za-z0-9][A-Za-z0-9._-]{0,99}(\/(issues|pulls))?$/.test(place)) return;
+        const hash = `#git/${place}`;
+        if (location.hash === hash && typeof window.showTab === "function") window.showTab(hash.slice(1));
+        else location.hash = hash;
+        return;
+      }
       if (e.data.type !== "bn-code-setup") return;
       const reason = e.data.reason;
       if (typeof reason !== "string" || !Object.hasOwn(CODE_SETUP, reason)) return;

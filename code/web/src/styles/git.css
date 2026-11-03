@@ -140,3 +140,9 @@ p.said-never { margin: 6px 0 2px; }
 .gitr-mirrors { margin-top: 12px; }
 .gitr-mirrors h4 { margin: 0 0 4px; font-size: inherit; }
 .gitr-mirrors ul { margin: 6px 0 0; padding-left: 16px; display: grid; gap: 4px; }
+
+/* Keep it on your local git server (components/Keep.tsx): the Git panel's offer and kept part; New project's box */
+.keep .keep-name { display: inline-flex; align-items: center; gap: 4px; }
+.keep .keep-name input { min-width: 12ch; }
+.np-keep { margin: 8px 0 0; align-items: flex-start; }
+.np-keep-note { display: block; }
