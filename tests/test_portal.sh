@@ -170,6 +170,26 @@ test_compose_portal_state_and_caddy_hardening() {
   assert_contains "$(cat "$STACK_DIR/caddy/Caddyfile")" "max_size 16KB"
 }
 
+# A Caddy that adds a secret header logs no request headers (JON-1011): a failed proxied request's log has the headers sent
+# upstream (Caddy leaves out only Cookie and Authorization). The main Caddy adds the code container's, the portal's, the
+# terminal's, the preview's and the git server's; the terminal's gateway the terminal's. (ollama-gate.caddy adds none.)
+test_caddy_logs_have_no_request_headers() {
+  local f g
+  for f in Caddyfile terminal-gateway.caddy; do
+    g="$(awk '/^\{$/ { on = 1 } on { print } on && /^\}$/ { exit }' "$STACK_DIR/caddy/$f" | grep -v '^[[:space:]]*#' | tr -d '\t')"
+    assert_contains "$g" "log default {
+format filter {
+wrap json
+fields {
+request>headers delete
+}
+}
+}" || { echo "caddy/$f: its global options have no filter for request headers" >&2; return 1; }
+  done
+  # (and no site of its own logs otherwise)
+  assert_eq "$(grep -lE '^[[:space:]]*log( |$)' "$STACK_DIR/caddy/Caddyfile" "$STACK_DIR"/caddy/*.caddy | sed 's|.*/||' | tr '\n' ' ')" "Caddyfile terminal-gateway.caddy "
+}
+
 test_caddy_web_app_files_are_public_before_login() {
   # Browsers fetch the manifest, its icons and the service worker without the session cookie.
   local f="$STACK_DIR/caddy/Caddyfile" line

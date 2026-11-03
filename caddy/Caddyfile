@@ -39,6 +39,17 @@ import tls-{$LOCAL_TLS:off}.caddy
 	servers :8081 {
 		trusted_proxies static {$REMOTE_SIDECAR_IP}/32
 	}
+	# No request headers in its log (JON-1011): a failed proxied request's log has the headers sent upstream, and the
+	# secret ones are among them (X-Bn-Code-Proxy, X-Portal-Proxy, the terminal's, the preview's and the git server's
+	# sign-in header); Caddy itself leaves out only Cookie and Authorization. As terminal-gateway.caddy does.
+	log default {
+		format filter {
+			wrap json
+			fields {
+				request>headers delete
+			}
+		}
+	}
 }
 
 # Every local request: delete what only Caddy, the portal or the Tailscale sidecar may set, then add the shared

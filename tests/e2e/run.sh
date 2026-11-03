@@ -1130,12 +1130,23 @@ if part_on browser; then
     if [ "$st" = healthy ] && [ "$back" = ok ] && ! docker exec "$tc" test -e /run/bn-code/coded.real; then
       record code stand-in-removed PASS "$(( $(now) - t0 ))" "bn-coded answers on its socket again; the code container healthy, using $mem (limit 768 MiB)"
     else record code stand-in-removed FAIL "$(( $(now) - t0 ))" "code container $st, bn-coded's socket: $back"; fi
-    # The code container's secret never reached the main Caddy's log
-    sec="$(get_env CODE_PROXY_SECRET)"
-    n="$(docker logs "$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.service=caddy)" 2>&1 | grep -c "$sec" || true)"
-    unset sec
-    if [ "$n" = 0 ]; then record code caddy-log-no-secret PASS 0 "CODE_PROXY_SECRET appears 0 times in the main Caddy's log"
-    else record code caddy-log-no-secret FAIL 0 "CODE_PROXY_SECRET appears $n times in the main Caddy's log"; fi
+    # No proxy secret reached a Caddy's log (JON-1011): the main Caddy adds the code container's, the portal's, the
+    # terminal's, the preview's and the git server's sign-in header; the terminal's gateway the terminal's. (Only counts
+    # are said, never a secret.)
+    logs="$(for svc in caddy terminal-gateway; do
+      docker logs "$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter "label=com.docker.compose.service=$svc")" 2>&1; done)"
+    leaks="" keys=""
+    for k in CODE_PROXY_SECRET PORTAL_PROXY_SECRET TERMINAL_PROXY_SECRET PREVIEW_PROXY_SECRET LOCALGIT_SSO_HEADER; do
+      sec="$(get_env "$k")"
+      [ "${#sec}" -ge 16 ] || continue
+      keys="${keys:+$keys, }$k"
+      n="$(printf '%s\n' "$logs" | grep -cF -- "$sec" || true)"
+      [ "$n" = 0 ] || leaks="${leaks:+$leaks; }$k $n times"
+    done
+    unset sec logs
+    if [ -z "$keys" ]; then record code caddy-log-no-secret FAIL 0 "no proxy secret found in .env to look for"
+    elif [ -z "$leaks" ]; then record code caddy-log-no-secret PASS 0 "none of $keys in the main Caddy's or the terminal gateway's log"
+    else record code caddy-log-no-secret FAIL 0 "in the main Caddy's or the terminal gateway's log: $leaks"; fi
   fi
 fi
 

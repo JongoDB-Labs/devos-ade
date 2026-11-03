@@ -1239,7 +1239,9 @@ reaches is the container — with the three exceptions under *Threat model*.
   and only on its `terminal-link` address (`bind terminal-upstream`). The secret lives in the two Caddys'
   environments only: never on a command line (ttyd and its health check run without it; `/proc/*/cmdline` is
   readable by every user of a Linux host), never in the sandbox (the gateway removes the header before ttyd), and
-  never in the gateway's log (it drops request headers, which Caddy otherwise logs with a failed request). Caddy
+  never in either Caddy's log (both drop request headers, which Caddy otherwise logs with a failed request — the
+  headers it sent upstream, every secret one among them: `X-Bn-Code-Proxy`, `X-Portal-Proxy`, the preview's and the git
+  server's too; the main Caddy's log had them until v0.55.0, JON-1011). Caddy
   strips all cookies and any client-sent `X-Bn-Terminal-*` before ttyd. It may be framed only by the portal.
 - [x] **The terminal host's page policy is the main Caddy's, whoever answers.** Code in the sandbox runs as
   ttyd's user and could replace the listener on ttyd's socket; the gateway would pass it the unlocked browser's

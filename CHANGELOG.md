@@ -33,6 +33,13 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   progress, and with the card above Home's Refresh failed with "Could not load the latest numbers". It now stays where it
   was, and with a layout of your own it comes first, as wide as the page, as intended. The end-to-end check
   `browser/widgets-customize-desktop` now checks both, and that Refresh works after Reset.
+- **No proxy secret in the main Caddy's log (JON-1011).** When a request the main Caddy passed on failed (a container
+  restarting, a closed connection), its log line had the headers it sent on, and with them the secret ones it adds: the
+  code container's (`CODE_PROXY_SECRET`), the portal's, the terminal's, the preview's and the git server's sign-in header
+  (Caddy leaves out only Cookie and Authorization). Reading that log takes Docker on this computer, which reaches the
+  containers anyway, so it mattered for a log copied elsewhere, such as one pasted into an issue. The main Caddy now logs
+  no request headers, as the terminal's gateway already did. The end-to-end check `code/caddy-log-no-secret` now looks for all five in both Caddys' logs, and a unit test
+  checks both configurations.
 
 ## [0.54.0] - 2026-11-02
 
