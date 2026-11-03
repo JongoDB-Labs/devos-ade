@@ -282,12 +282,31 @@ test_e2e_aws_env_file_parsing() {
 }
 
 test_e2e_ports_skip_reserved_busy_and_chosen() {
-  AVOID_PORTS=" 80 4000 8765 "
+  AVOID_PORTS=" 80 4000 8765 "; PORT_HELD="$(mktemp -d)/held"; PROJECT=bne2e-a
   port_in_use() { [ "$1" = 18480 ] || [ "$1" = 18482 ]; }
   a=""; b=""; c=""; pick_port a 18480; pick_port b 18480; pick_port c 4000
   assert_eq "$a $b $c" "18481 18483 4001"
   port_in_use() { return 0; }
   if (pick_port d 20000) 2>/dev/null; then return 1; fi
+}
+
+test_e2e_ports_two_throwaways_set_up_at_once_never_choose_the_same_one() {
+  AVOID_PORTS=" "; PORT_HELD="$(mktemp -d)/held"
+  port_in_use() { return 1; }   # (neither stack listens yet)
+  CHOSEN=' '; PROJECT=bne2e-rel1; a=""; pick_port a 18480
+  CHOSEN=' '; PROJECT=bne2e-hf1; b=""; pick_port b 18480
+  assert_eq "$a $b" "18480 18481"
+  assert_eq "$(cat "$PORT_HELD/18480/project") $(cat "$PORT_HELD/18481/project")" "bne2e-rel1 bne2e-hf1"
+  # (the same project again — a rerun: its own port)
+  CHOSEN=' '; PROJECT=bne2e-rel1; c=""; pick_port c 18480
+  assert_eq "$c" 18480
+  # an entry over an hour old is taken over
+  touch -t 202001010000 "$PORT_HELD/18481"
+  CHOSEN=' '; PROJECT=bne2e-hs1; d=""; pick_port d 18481
+  assert_eq "$d $(cat "$PORT_HELD/18481/project")" "18481 bne2e-hs1"
+  # nowhere to hold them (a file where the folder would be): the first free port, as before
+  PORT_HELD="$(mktemp)"; CHOSEN=' '; PROJECT=bne2e-x; e=""; pick_port e 18480
+  assert_eq "$e" 18480
 }
 
 test_e2e_git_subnet_is_a_free_slash_28_in_10_254_and_skips_taken_ones() {

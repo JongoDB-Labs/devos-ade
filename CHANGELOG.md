@@ -22,6 +22,13 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   ("it had no prompts yet, so there was no transcript to remove"). A deleted session that was open no longer comes back as
   *ended* after a reload.
 
+### Tests
+- **Throwaways set up at once never take the same port.** The e2e harness chose the first port nothing listened on, minutes
+  before its stack listened there, so two release stages started together could choose the same one ("port is already
+  allocated"). A port chosen is now also held for its project until its stack listens.
+- **End to end:** `code-ui-session-delete-and-new-project` (a session with no prompt deleted; Add to project › New project…,
+  kept on the local git server, pushed from the project's menu).
+
 ## [0.56.0] - 2026-11-03
 
 ### Added

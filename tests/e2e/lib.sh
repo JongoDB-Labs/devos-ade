@@ -366,11 +366,24 @@ reuse_check() {
   OWNED=1
 }
 
-# --- ports: the first free one at or above START (never AVOID_PORTS, never one already chosen) ---
+# --- ports: the first free one at or above START (never AVOID_PORTS, never one already chosen, never one held) ---
 CHOSEN=' '
+# (throwaways set up at once — the release lanes — each choose their ports minutes before their stacks listen there: a
+# port chosen is also held, by an entry of PORT_HELD named for the project (mkdir: only one of them gets it); an entry
+# over an hour old is no longer needed — its stack listens by then, or never will — and may be taken over)
+PORT_HELD="${E2E_PORT_HELD:-${TMPDIR:-/tmp}/devos-ade-e2e-ports}"
+hold_port() { # hold_port P -> 0 when project PROJECT holds P now (a new entry, its own, or an old one taken over)
+  local d="$PORT_HELD/$1"
+  mkdir -p "$PORT_HELD" 2>/dev/null || return 0   # (nowhere to hold them: the first free port, as before)
+  if mkdir "$d" 2>/dev/null; then printf '%s\n' "$PROJECT" > "$d/project"; return 0; fi
+  [ "$(cat "$d/project" 2>/dev/null)" = "$PROJECT" ] && return 0
+  [ -n "$(find "$d" -maxdepth 0 -mmin +60 2>/dev/null)" ] || return 1
+  rm -f "$d/project"; rmdir "$d" 2>/dev/null; mkdir "$d" 2>/dev/null || return 1
+  printf '%s\n' "$PROJECT" > "$d/project"
+}
 pick_port() { # pick_port VAR START — sets VAR (no subshell, so CHOSEN is kept)
   local p="$2"
-  while port_in_use "$p" || case "$AVOID_PORTS$CHOSEN" in *" $p "*) true ;; *) false ;; esac; do
+  while port_in_use "$p" || case "$AVOID_PORTS$CHOSEN" in *" $p "*) true ;; *) false ;; esac || ! hold_port "$p"; do
     p=$((p + 1)); [ "$p" -le $(($2 + 200)) ] || die "no free port in $2..$(($2 + 200))"
   done
   CHOSEN="$CHOSEN$p "
