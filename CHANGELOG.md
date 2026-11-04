@@ -6,6 +6,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.58.0] - 2026-11-04
+
 ### Added
 - **Several accounts for each subscription tool (JON-1052, the sandbox side).** Claude Code, Codex, Gemini CLI, Copilot,
   Cursor and Grok can each have more than one signed-in account, up to 8 a tool. The first account is the tool itself, in
@@ -4523,7 +4525,8 @@ Initial public release.
 - `bin/claude-bedrock`: runs Claude Code against Bedrock through LiteLLM without touching plain `claude`.
 - Cost transparency: Bedrock prices in `./stack costs` and the Open WebUI model picker, spend per key.
 
-[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.57.2...HEAD
+[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.58.0...HEAD
+[0.58.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.57.2...v0.58.0
 [0.57.2]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.57.1...v0.57.2
 [0.57.1]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.57.0...v0.57.1
 [0.57.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.56.0...v0.57.0
