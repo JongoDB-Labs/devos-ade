@@ -20,6 +20,18 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 - **User-journey checks (JON-1058).** `browser/journey-code-to-git`, `journey-terminal-folder-to-git` and
   `journey-code-terminal-commit` follow one project through the Code page, the Terminal tab and the portal's Git tab by clicks
   and typing alone, as a person does.
+- **The Terminal's git reaches the built-in git server, and a repository made there is a Code project (JON-1059).**
+  - `git push`, `pull` and `fetch` to `https://gateway:8093/devos/REPO.git` work in the Terminal tab, Claude's own git included.
+    The sandbox's git trusts the server's certificate for that host and port alone (a folder with the certificate, never its key,
+    mounted read-only), and the login is what it always was: the Code page's token, handed over per operation, only for a host you
+    let Claude use. That switch (**Git hosts › Local git server › Let Claude use this host**) stays off by default; until it is on,
+    git says which switch gives it a login. This replaces the README's "not wired yet".
+  - `project add [DIR] [--name NAME] [--keep [--repo NAME]]`, `project new NAME [--keep]` and `project remote [REPO]` in the terminal:
+    list a folder of `/workspace` as a Code project, optionally keep it on the local git server (needs the same switch), make a
+    folder with `git init` and add it, or write the server as the repository's remote `local`. They reach the Code page over the
+    connection the code container already keeps open to the sandbox: no new port.
+  - The Projects tab offers git repositories of the workspace that are not projects, one line per folder: **Add as project** or
+    **Not now** (remembered for that folder).
 
 ## [0.58.0] - 2026-11-04
 

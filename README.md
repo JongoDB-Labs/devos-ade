@@ -1545,7 +1545,17 @@ uninstall` removes it, turning the server off keeps it).
   push opens the server's compare page. It works with the sandbox's internet **off** too: the sandbox reaches it through
   the terminal's gateway on a TLS listener that forwards only git's paths of a repository (never the web UI, the API or
   anything else), with a certificate `./stack` made for the name `gateway` and the Code page hands to git as the one CA it
-  trusts for that host. Claude's own `git` in the terminal is not wired to it yet (the Code page's operations are).
+  trusts for that host.
+- **From the Terminal** (yours and Claude's own `git` there): `git push`, `pull` and `fetch` to `https://gateway:8093/devos/REPO.git` work from the
+  Terminal tab. The terminal's git trusts the server's certificate for that host and port alone, and gets the login the way it gets any git host's:
+  from the Code page, per operation, never kept in the sandbox — and only for a host you let Claude use, which is **off by default**. Turn it on once:
+  **Git hosts › Local git server › Let Claude use this host** (on this computer; the dialog warns first). Until then git says so, in a line of its
+  own before its usual *could not read Username*. Then `project remote` in a repository adds the server as its remote `local`
+  (`https://gateway:8093/devos/<folder name>.git`), and `git push -u local main` makes the private repository with its first push.
+- **A repository made in the Terminal is a Code project.** `project add [DIR] [--name NAME]` lists a folder of `/workspace` (default: here) under the Code
+  page's Projects; `project add --keep [--repo NAME]` also keeps it on the local git server (needs the switch above, and a git repository);
+  `project new NAME [--keep]` makes `/workspace/NAME`, `git init` (branch `main`) and adds it. The Projects tab also offers any git repository of the
+  workspace (two levels down) that is not a project — one line per folder, **Add as project** or **Not now** (remembered for that folder).
 - **Keep a project on it (Code page).** Asked once per project: *New project* has **Keep it on your local git server**,
   ticked (an empty folder, a clone, a folder of the workspace; git init is implied), and a project that is not kept and has not
   said no gets a line at the top of its Git panel — *Keep this project on your local git server?* — with the repository's

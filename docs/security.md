@@ -1710,6 +1710,19 @@ only (never one of Claude Code's aliases, at most 128 characters), anything else
 - [x] **A project is not a boundary.** Every project is in the one sandbox: the same user, the same workspace, the
   same key and budget. A session started in one folder can read and change every other (Claude Code's working folder
   is where it starts, not a limit; `--add-dir` stays refused). Projects organise your work; they do not isolate it.
+- [x] **The terminal's `project` command can add a project, and that is the one thing the sandbox may start (JON-1059).** `project add`
+  and `project new` (terminal/bin/project) ask the code container through `/tmp/bn-project/link.sock`, which bn-coded keeps (op
+  `project.link`) on the one connection the code container holds open to it — no new port, and nothing in the sandbox is reachable from
+  outside. bn-coded checks the shape (a real folder under the workspace, never through a link, none starting with ".", a name and a
+  repository name of plain characters; at most 20 requests a minute) and the code container checks it again with the rules above (at most
+  64 projects, one project per folder) and adds the record: a name and a folder, the same record the page makes. It changes no trust: a
+  folder's own Claude Code settings still apply only once you trusted them, and a project is not a boundary anyway (above). What it
+  adds is that code in the sandbox can put entries in the project list (up to the limit); the Projects tab shows them and *Remove* takes
+  them off. `project add --keep` (a private repository on the built-in git server, the remote added, pushed) is done only while *Let
+  Claude use this host* is on for the Local git server — the same switch as the sandbox's git, since it is the same authority — and
+  otherwise adds the project and says what to turn on. The Projects tab also lists the git repositories it finds in the workspace
+  (`GET /api/projects/found`: bn-coded's `git.repos`, two levels down, no git run) that are not projects, and *Not now* is a list of
+  folders in the project records (`found`, at most 200); *Add as project* is the page's ordinary add of a folder.
 - [x] **The page names a project by its id, never by a folder.** Every call that works in a project takes
   `?project=<id>` (`ws`, or `p_` and 8 hex digits). The code container looks the id up in its own records and sends
   bn-coded that record's folder as the op's root (`root: /workspace/<folder>`); a malformed id is refused (400), one
@@ -2548,7 +2561,21 @@ one command that sets it, never on a command line).
   addresses on — this computer and your network stay out of reach. That is Forgejo's own check, not a network-level
   allowlist (an egress proxy like the sandbox's would be): while a mirror exists, a compromised Forgejo could reach any
   public address. Removing the last mirror removes the network.
-- **Not covered yet.** Claude's own `git` in the terminal (not the Code page's operations) has no CA for the host; a mirror
+- **The sandbox's own git — the terminal's, yours and Claude's (JON-1059).** Before: git there had no CA for `gateway:8093`, so it could not
+  reach the server at all. Now `/etc/gitconfig` (read-only in the image) trusts the server's certificate for that URL alone
+  (`[http "https://gateway:8093/"] sslCAInfo`, no setting for any other host and no `sslVerify` change), from a folder the terminal gets
+  read-only at `/etc/bn-localgit-ca` that holds the certificate and **never the key** (`.state/localgit/tls/ca`, copied by `./stack`;
+  the folder above it has the key the gateway serves with, and the sandbox is not given it). **The login is unchanged**: it is the Code
+  page's token for the host (the same one, `write:repository`, no wider), asked for by `bn-git-credential` through
+  `/tmp/bn-git/claude/cred.sock` — which exists only while some host lets Claude use it — and answered by the code container only for a
+  host with *Let Claude use this host* on (off by default; turned on only from this computer, after a warning), at most 30 a minute, each
+  use in Activity, nothing written to a file or the environment. The local server is a host like the others, so the sandbox's git
+  cannot tell yours from Claude's: with the switch on, git in the terminal — a command of yours, Claude's, or text Claude read — can
+  push to, create, and force-push or delete branches in any repository of the owner account `devos` on this computer's git server
+  (including a kept project's repository: the Code page's own pushes never force, a push from the terminal can). That is the cost of
+  the switch and the reason it is not on by default; with it off, git says which switch gives it a login. Nothing else changed:
+  the carve-out still passes only git's smart HTTP paths, and the token never enters the sandbox.
+- **Not covered yet.** A mirror
   to a GitLab or Gitea of your own behind a private CA (Forgejo has one CA store, not one per remote); remote access
   (Tailscale / your domain) has no git site; `forgejo dump` is not part of `./stack backup`.
 
