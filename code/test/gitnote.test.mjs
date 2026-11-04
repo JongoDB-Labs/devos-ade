@@ -136,3 +136,11 @@ test('every process gets the note as the hosts are when it starts; a change rest
   mgr.closeAll(); plain.mgr.closeAll();
   void t;
 });
+
+test('the note of a kept project says to commit finished work, because the kept project pushes commits and not uncommitted changes; a project that is not kept gets no such line', () => {
+  const kept = gitNote([], 'devos/my-app');
+  assert.match(kept, /This project is kept on the user's local git server as `devos\/my-app`/);
+  assert.match(kept, /Commit finished work at the end of a task, with a short message: the kept project pushes commits, not uncommitted changes\./);
+  assert.doesNotMatch(gitNote([]), /Commit finished work/);
+  assert.doesNotMatch(gitNote([], 'not a repo name'), /Commit finished work/);
+});

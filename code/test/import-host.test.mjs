@@ -242,6 +242,7 @@ test('the built-in git server: its host made once with the certificate as the CA
   assert.deepEqual([h.kind, h.host, h.port, h.auth, h.username, h.token, h.builtin, h.ca], ['other', 'gateway', 8093, 'token', 'devos', tok, 'localgit', ca]);
   const view = GitHosts.public(h);
   assert.deepEqual([view.builtin, view.hasToken, view.ca, view.port], ['localgit', true, true, 8093]);
+  assert.equal(view.claude, true, 'Let Claude use this host is on for a new built-in git server');
   assert.ok(!JSON.stringify(store.list()).includes(tok) && !JSON.stringify(store.events(5)).includes(tok));
   // the CA again (every ./stack up): the host is there, nothing created, its token kept
   r = run(dir, JSON.stringify({ source: 'localgit', ca, account: 'devos' }));
@@ -262,4 +263,36 @@ test('the built-in git server: its host made once with the certificate as the CA
   assert.equal(run(path.join(ROOT, 'localgit-bad'), JSON.stringify({ source: 'localgit', ca, token: tok })).status, 1);   // (no account)
   // a host list with it: the same host name and port is refused to the page's own add (one credential per host)
   assert.throws(() => store.add({ kind: 'other', host: 'gateway', port: 8093, auth: 'token', token: tok, username: 'x' }), /connected with an access token already/);
+});
+
+test('Let Claude use this host: on by default for the built-in git server only; an older host that has it off is turned on once, a choice the user made is kept, and a later off sticks', () => {
+  const ca = fs.readFileSync(path.resolve(import.meta.dirname, '../../tests/fixtures/localgit-ca.pem'), 'utf8');
+  const tok = ['lg', 'tok_', 'W'.repeat(20), Date.now()].join('');
+  const hand = (dir, extra = {}) => JSON.parse(run(dir, JSON.stringify({ source: 'localgit', ca, account: 'devos', ...extra })).stdout);
+  // a host made before the default (off, nothing marked): the next hand-over turns it on once, and says so in Activity
+  const old = path.join(ROOT, 'claude-old');
+  hand(old, { token: tok });
+  const s1 = new GitHosts({ dir: old });
+  const id = s1.read().hosts[0].id;
+  s1.change(id, (h) => { h.claude = false; h.claudeSince = null; delete h.claudeDefault; });
+  hand(old);
+  assert.equal(new GitHosts({ dir: old }).read().hosts[0].claude, true);
+  assert.ok(new GitHosts({ dir: old }).events(5).some((e) => e.action === 'claude' && /on by default/.test(e.text)));
+  // then the user turns it off (setClaude leaves its mark): every later ./stack up leaves it off
+  new GitHosts({ dir: old }).setClaude(id, false);
+  hand(old); hand(old, { token: tok });
+  assert.equal(new GitHosts({ dir: old }).read().hosts[0].claude, false, 'a later off sticks');
+  // a choice made before the mark existed: the Activity line of the change tells (action claude, this host)
+  const chose = path.join(ROOT, 'claude-chose');
+  hand(chose, { token: tok });
+  const s2 = new GitHosts({ dir: chose });
+  const id2 = s2.read().hosts[0].id;
+  s2.change(id2, (h) => { h.claude = false; delete h.claudeDefault; delete h.claudeSet; });
+  s2.event({ action: 'claude', host: 'Local git server', target: 'gateway', text: 'Claude may no longer use this host' });
+  hand(chose);
+  assert.equal(new GitHosts({ dir: chose }).read().hosts[0].claude, false, 'the user set it themselves: kept');
+  assert.equal(new GitHosts({ dir: chose }).read().hosts[0].claudeDefault, true, 'and marked: this is not looked at again');
+  // other hosts stay off by default
+  const other = new GitHosts({ dir: path.join(ROOT, 'claude-other') });
+  assert.equal(other.add({ kind: 'github', auth: 'token', token: tok }).claude, false);
 });

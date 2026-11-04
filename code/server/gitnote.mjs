@@ -55,7 +55,7 @@ function line(h) {
 const KEPT = /^[A-Za-z0-9][A-Za-z0-9._@+-]{0,99}\/[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
 const keptLine = (repo) => `This project is kept on the user's local git server as \`${repo}\`: ${PRODUCT} pushes its branches there by itself after a `
   + 'commit and after each of your turns (never forced), and the user can open it in the Git page. Do not publish it to GitHub, GitLab or another host, '
-  + 'or add another remote, unless the user asks.';
+  + 'or add another remote, unless the user asks. Commit finished work at the end of a task, with a short message: the kept project pushes commits, not uncommitted changes.';
 
 // gitNote(hosts, kept) -> the note: hosts as GitHosts.public gives them (an array), or null (they could not be read); kept: the
 // repository ('owner/name') the working folder's project is kept as on the built-in git server, else null

@@ -5,7 +5,7 @@
 // side's answer to them, and the code container checks it all again: the folder is a project's by projects.mjs's rules and
 // the sandbox's own look (a real folder, never through a link), and nothing here changes a project's trust or settings.
 //   info   whether the built-in server is connected (its account, the address of a repository there) and whether the
-//          sandbox's git may use it: the same switch as Claude's own git anywhere (Let Claude use this host, off by default)
+//          sandbox's git may use it: the same switch as Claude's own git anywhere (Let Claude use this host: on by default for the Local git server, off for every other host)
 //   add    a folder of the workspace becomes a project (a record: a name and a folder; one that is a project already is told so)
 //   keep   add, then keep it on the built-in git server (a private repository, the remote added, the first push) — only while
 //          that switch is on: pushing for the sandbox's git is the same thing that switch lets Claude do, so it is not

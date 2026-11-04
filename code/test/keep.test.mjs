@@ -73,7 +73,7 @@ function sandbox() {
 
 let n = 0;
 // a whole setup: records, Git hosts (the built-in one connected), a stand-in Forgejo, the Git panel's remote operations, keep
-function setup({ connected = true, existsName = null, createFails = null } = {}) {
+function setup({ connected = true, badDefault = null, existsName = null, createFails = null, protectFails = null, defaultBranch = 'main' } = {}) {
   const dir = path.join(ROOT, `s${++n}`);
   const hosts = new GitHosts({ dir });
   if (connected) hosts.addLocalGit({ ca: CA, token: LTOK, account: 'devos' });
@@ -81,6 +81,8 @@ function setup({ connected = true, existsName = null, createFails = null } = {})
   const sb = sandbox();
   const api = [];
   const made = new Set();
+  const rules = new Set();
+  const state = { def: defaultBranch };
   const fetchImpl = async (url, opts = {}) => {
     const u = new URL(url);
     api.push({ method: opts.method || 'GET', path: u.pathname, headers: opts.headers, body: opts.body ?? null });
@@ -91,7 +93,15 @@ function setup({ connected = true, existsName = null, createFails = null } = {})
       made.add(u.pathname.split('/')[2].replace(/\.git$/, ''));
       return { ok: true, status: 200, text: async () => '' };
     }
-    if ((opts.method || 'GET') === 'GET' && u.pathname.startsWith('/api/v1/repos/devos/') && made.has(u.pathname.split('/')[5])) return { ok: true, status: 200, text: async () => '{"private":true,"empty":true}' };
+    // (the protection rule of a kept repository's default branch: 201 the first time, 403 "already exist" after; protectFails: the status instead)
+    if ((opts.method || 'GET') === 'POST' && /^\/api\/v1\/repos\/devos\/[^/]+\/branch_protections$/.test(u.pathname)) {
+      if (protectFails) return { ok: false, status: protectFails, text: async () => '{"message":"no"}' };
+      const key = `${u.pathname}:${JSON.parse(opts.body).rule_name}`;
+      if (rules.has(key)) return { ok: false, status: 403, text: async () => '{"message":"Branch protection already exist"}' };
+      rules.add(key);
+      return { ok: true, status: 201, text: async () => opts.body };
+    }
+    if ((opts.method || 'GET') === 'GET' && u.pathname.startsWith('/api/v1/repos/devos/') && made.has(u.pathname.split('/')[5])) return { ok: true, status: 200, text: async () => JSON.stringify({ private: true, empty: true, default_branch: badDefault ?? state.def }) };
     // (the one question asked of the server: is there a repository of that name already? 200 yes, 404 no)
     if ((opts.method || 'GET') === 'GET' && u.pathname.startsWith('/api/v1/repos/devos/') && existsName !== null && u.pathname === `/api/v1/repos/devos/${existsName}`) {
       return { ok: true, status: 200, text: async () => JSON.stringify({ name: existsName }) };
@@ -102,7 +112,7 @@ function setup({ connected = true, existsName = null, createFails = null } = {})
   const remote = makeGitRemote({ call: sb.call, store: hosts });
   const logs = [];
   const keep = makeKeep({ store: () => projects, remote: () => remote, mirrors, log: (m) => logs.push(m) });
-  return { dir, hosts, projects, sb, api, keep, logs, mirrors };
+  return { dir, hosts, projects, sb, api, keep, logs, mirrors, rules, made, state };
 }
 const project = (s, name = 'My App', root = 'app', git = {}) => { s.sb.make(root, git); return s.projects.add({ name, root }).id; };
 
@@ -130,8 +140,9 @@ test('Keep it there: the name is checked, the empty private repository made at o
   const s = setup();
   const id = project(s);
   const v = await s.keep.keep(id, {});
-  assert.deepEqual(s.api.map((c) => [c.method, c.path]), [['GET', '/api/v1/repos/devos/My-App'], ['POST', '/devos/My-App.git/git-receive-pack'], ['GET', '/api/v1/repos/devos/My-App']],
-    'a look at the name, then the repository made (a receive-pack request with no commands: private and empty by the server\'s own push-to-create), then a look that it is there');
+  assert.deepEqual(s.api.map((c) => [c.method, c.path]), [['GET', '/api/v1/repos/devos/My-App'], ['POST', '/devos/My-App.git/git-receive-pack'], ['GET', '/api/v1/repos/devos/My-App'],
+    ['GET', '/api/v1/repos/devos/My-App'], ['POST', '/api/v1/repos/devos/My-App/branch_protections'], ['GET', '/api/v1/repos/devos/My-App'], ['POST', '/api/v1/repos/devos/My-App/branch_protections']],
+    'a look at the name, then the repository made (a receive-pack request with no commands: private and empty by the server\'s own push-to-create), then a look that it is there, then its default branch protected (before the first push, and again after it)');
   assert.equal(s.api[0].headers.Authorization, `token ${LTOK}`);
   assert.equal(s.api[1].body, '0000');
   assert.equal(s.api[1].headers.Authorization, `Basic ${Buffer.from(`devos:${LTOK}`).toString('base64')}`);
@@ -167,7 +178,7 @@ test('a name another kept project holds is a 409 too, before either has pushed; 
   const b = project(s, 'Other', 'other');
   const v = await s.keep.keep(a, { name: 'shared' });
   assert.deepEqual([v.state, v.repo, v.made, v.pushedAt, s.sb.nets().length], ['kept', 'devos/shared', true, null, 0]);
-  assert.deepEqual(s.api.filter((c) => c.method === 'POST').map((c) => c.path), ['/devos/shared.git/git-receive-pack'], 'made once, for the first');
+  assert.deepEqual(s.api.filter((c) => c.method === 'POST' && !/branch_protections/.test(c.path)).map((c) => c.path), ['/devos/shared.git/git-receive-pack'], 'made once, for the first');
   await assert.rejects(s.keep.keep(b, { name: 'shared' }), (e) => e.status === 409 && e.message === 'devos/shared is on the git server already, so pick another name');
   assert.equal(s.projects.localgit(b), null);
   assert.deepEqual(s.sb.repos.get('other').remotes, {});
@@ -189,7 +200,7 @@ test('a project that has a remote gets local beside it, pushed without upstream;
   const id2 = project(s, 'Two', 'two', { remotes: { origin: 'https://github.com/o/r.git', local: 'https://example.org/x.git' } });
   await assert.rejects(s.keep.keep(id2, {}), (e) => e.status === 409 && /remote named local already/.test(e.message));
   assert.equal(s.sb.repos.get('two').remotes.local, 'https://example.org/x.git');
-  assert.deepEqual(s.api.filter((c) => c.method === 'POST').map((c) => c.path), ['/devos/Cloned.git/git-receive-pack'], 'only the one kept is made: the refused keep made nothing');
+  assert.deepEqual(s.api.filter((c) => c.method === 'POST' && !/branch_protections/.test(c.path)).map((c) => c.path), ['/devos/Cloned.git/git-receive-pack'], 'only the one kept is made: the refused keep made nothing');
 });
 
 test('not a repository, not connected, a read-only folder: refused before anything is made', async () => {
@@ -548,4 +559,65 @@ test('a repository the server will not make: nothing is kept, the remote just ad
   const rec = s.projects.setLocalgit(id, () => ({ state: 'kept', repo: 'devos/old', remote: 'origin', pushedAt: null, heads: {}, rejected: {} }));
   assert.equal(rec.made, false);
   assert.equal((await s.keep.view(id)).made, false);
+});
+
+test('the default branch of a kept repository is protected on the server: a rule by its name (no force-push, no deletion by the server\'s own rule), pushes left open, asked once more after the first push, and a repeat is not an error', async () => {
+  const s = setup({ defaultBranch: 'trunk' });
+  const id = project(s);
+  await s.keep.keep(id, {});
+  const posts = s.api.filter((c) => c.method === 'POST' && /branch_protections$/.test(c.path));
+  assert.equal(posts.length, 2, 'before the first push and after it; the second is the server saying "already exist", which is done');
+  assert.deepEqual([...s.rules], ['/api/v1/repos/devos/My-App/branch_protections:trunk']);
+  const b = JSON.parse(posts[0].body);
+  assert.equal(b.rule_name, 'trunk');
+  assert.equal(b.enable_push, true, 'ordinary pushes stay allowed');
+  assert.equal(b.enable_push_whitelist, false, 'no allow-list: the token that pushes today still can');
+  assert.ok(!('branch_name' in b) && !('enable_force_push' in b), 'only the fields Forgejo 17.0.1 has');
+  assert.equal(posts[0].headers.Authorization, `token ${LTOK}`);
+  assert.deepEqual(s.logs.filter((l) => /could not protect/.test(l)), []);
+});
+
+test('a protection the server would not make is logged and the keep still succeeds; the next start (guardAll) and sweep try again, and a repository known to be protected is not asked again', async () => {
+  const s = setup({ protectFails: 403 });
+  const id = project(s);
+  const v = await s.keep.keep(id, {});
+  assert.equal(v.state, 'kept', 'kept all the same');
+  assert.ok(s.logs.some((l) => /could not protect the default branch of devos\/My-App/.test(l)));
+  assert.equal(s.projects.localgit(id).state, 'kept');
+  // the server now answers: the start's pass makes the rule (a project kept before this version is in the same case)
+  const ok = setup();
+  const id2 = project(ok);
+  await ok.keep.keep(id2, {});
+  const before = ok.api.length;
+  await ok.keep.guardAll();
+  assert.equal(ok.api.length - before, 1, 'a look at the default branch: it is protected already (this start remembers), so no rule again');
+  const s2 = setup();
+  const id3 = project(s2);
+  s2.projects.setLocalgit(id3, () => ({ state: 'kept', repo: 'devos/Old', remote: 'origin', auto: false, made: true, pushedAt: null, lastError: null, heads: {}, rejected: {} }));
+  s2.made.add("Old"); s2.api.length = 0;
+  await s2.keep.sweep();
+  assert.deepEqual(s2.api.map((c) => `${c.method} ${c.path}`), ['GET /api/v1/repos/devos/Old', 'GET /api/v1/repos/devos/Old', 'POST /api/v1/repos/devos/Old/branch_protections']);
+  await s2.keep.sweep();
+  assert.equal(s2.api.length, 4, 'known to be protected: one look at the default branch, no rule again');
+});
+
+test('a default branch that is not a plain name is not guarded and is said once; a default branch that moves later (the first push picks it) is protected at the next sweep', async () => {
+  const s = setup({ badDefault: 'a*' });
+  const id = project(s);
+  const v = await s.keep.keep(id, {});
+  assert.equal(v.state, 'kept');
+  assert.equal(s.rules.size, 0, 'no rule in place of the real one');
+  assert.equal(s.logs.filter((l) => /could not protect/.test(l)).length, 1, 'said once, not at each try');
+  await s.keep.sweep(); await s.keep.sweep();
+  assert.equal(s.logs.filter((l) => /could not protect/.test(l)).length, 1);
+  const m = setup();
+  const id2 = project(m);
+  await m.keep.keep(id2, {});
+  assert.deepEqual([...m.rules], ['/api/v1/repos/devos/My-App/branch_protections:main']);
+  m.state.def = 'trunk';   // (changed on the server)
+  await m.keep.sweep();
+  assert.deepEqual([...m.rules].sort(), ['/api/v1/repos/devos/My-App/branch_protections:main', '/api/v1/repos/devos/My-App/branch_protections:trunk']);
+  const n = m.api.length;
+  await m.keep.sweep();
+  assert.deepEqual(m.api.slice(n).map((c) => c.method), ['GET'], 'known to be protected: one look at the default branch, nothing more');
 });

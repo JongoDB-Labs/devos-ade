@@ -1558,9 +1558,10 @@ uninstall` removes it, turning the server off keeps it).
   trusts for that host.
 - **From the Terminal** (yours and Claude's own `git` there): `git push`, `pull` and `fetch` to `https://gateway:8093/devos/REPO.git` work from the
   Terminal tab. The terminal's git trusts the server's certificate for that host and port alone, and gets the login the way it gets any git host's:
-  from the Code page, per operation, never kept in the sandbox — and only for a host you let Claude use, which is **off by default**. Turn it on once:
-  **Git hosts › Local git server › Let Claude use this host** (on this computer; the dialog warns first). Until then git says so, in a line of its
-  own before its usual *could not read Username*. Then `project remote` in a repository adds the server as its remote `local`
+  from the Code page, per operation, never kept in the sandbox — and only for a host you let Claude use. For the Local git server that switch
+  (**Git hosts › Local git server › Let Claude use this host**) is **on by default**: a new install has it on, and an install from before
+  gets it turned on once by `./stack up` unless you had set it yourself (a later *off* stays off). It is off by default for every other host.
+  With it off (turn it back on on this computer; the dialog warns first), git says so in a line of its own before its usual *could not read Username*. Then `project remote` in a repository adds the server as its remote `local`
   (`https://gateway:8093/devos/<folder name>.git`), and `git push -u local main` makes the private repository with its first push.
 - **A repository made in the Terminal is a Code project.** `project add [DIR] [--name NAME]` lists a folder of `/workspace` (default: here) under the Code
   page's Projects; `project add --keep [--repo NAME]` also keeps it on the local git server (needs the switch above, and a git repository);
@@ -1578,13 +1579,15 @@ uninstall` removes it, turning the server off keeps it).
   repository `devos/<name>` on the server at once (empty, so the project is in the Git tab from the start, before any commit),
   adds it as the project's remote (`origin`, or `local` beside a remote it has), and pushes what the project has. After that the project is pushed by itself — after a commit
   made in the panel, after a session's turn, and every 10 minutes for what moved — each branch to the branch of that name,
-  **never forced**: a branch the server would not take (it has commits the project does not) is shown as *the local git server has
+  **never forced**: the default branch of every kept repository is also **protected on the server** (no force-push and no deletion; ordinary pushes
+  are unaffected), so nothing a terminal or Claude does can rewrite it there. A branch the server would not take (it has commits the project does not) is shown as *the local git server has
   commits this project doesn't — pull first* and left alone. Automatic pushes stop, and the panel says why, if the remote is
   ever pointed anywhere but that repository. The panel shows where it is kept, when it was last pushed and what has not been,
   **Push now**, **Open in Git** (the portal's Git page), **Issues** and **Pull requests**, a switch for the automatic
   pushes and **Stop keeping it here** (the remote goes; the repository stays on the server). *Not for this project* is
   remembered; the project's menu still has *Keep on your local git server…*. Claude is told a kept project is pushed by itself
-  and not to publish it elsewhere unless asked.
+  and not to publish it elsewhere unless asked, and to commit finished work at the end of a task: **a kept project pushes commits, not
+  uncommitted changes**, so a file that was only saved in the editor or the terminal is not on the server until it is committed.
 - **Search.** The global search's **Git** group lists repositories (name, description) and issues and pull requests
   (titles). The portal server asks Forgejo's API for them with a **read-only token** of the owner account (`read:repository`,
   `read:issue`; `LOCALGIT_READ_TOKEN` in `.env`, made by `./stack up` and made again if the server stops accepting it): only
@@ -1679,7 +1682,7 @@ credentials ever being kept in the sandbox.
   branch of a remote one. **The remote's URL** (the pencil) adds `origin` to a repository you started with `git init`,
   or changes it — to publish to a new repository, create it on the host first (empty), then put its URL there.
 - **What Claude's own git gets: nothing, by default.** Claude's `git push` in the sandbox, or yours in the terminal,
-  has no credential from Git hosts. **Let Claude use this host** (a switch on each host, off by default, turned on only
+  has no credential from Git hosts. **Let Claude use this host** (a switch on each host: off by default, except for the Local git server, where it is on; turned on only
   from the computer running DevOS ADE) changes that: git and ssh in the sandbox then get that host's token or key
   logins too — so Claude, or text it reads and follows, could push to any repository the token or key reaches — and
   each use is listed in the host's *Recent use* and in Activity. Prefer a fine-grained token or a deploy key for that.

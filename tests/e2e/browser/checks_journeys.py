@@ -29,7 +29,7 @@ import checks_terminal as T
 from checks_browser import Recorder, frame_of, login, shot
 from checks_code import (ANSWERED, Code, _asked, _drop_projects, _last_session, _proj, _terminal_frame, _term_wait, _unfold, ask, csp_clean,
                          need_haiku, saved, ui_page)
-from checks_journey_terminal import let_claude_use_local_git
+from checks_journey_terminal import claude_may_use_local_git
 from common import ENV, Skip, check, expect, origin
 
 J1 = "e2e-j1-code"
@@ -297,10 +297,9 @@ def terminal_folder_to_git(ctx):
     j = Journey("journey-terminal-folder-to-git")
     c = clean(ctx, c, page, rec, (J2, J4))
     msg = "Commit from the terminal"
-    turned_on = False
     try:
-        # 0. Git hosts › Let Claude use this host is on (the stack's default; turned on here when it is not, and put back after)
-        turned_on = let_claude_use_local_git(page, True)
+        # 0. Git hosts › Let Claude use this host is on: the stack's default for the built-in git server (expected, never changed here)
+        expect(claude_may_use_local_git(page), "Git hosts › Local git server › Let Claude use this host is off: it is on by default for the built-in git server")
         # 1. the Terminal tab: a folder under /workspace, git init, a file, a commit (typed as a person types); and a folder with a package.json
         tp, trec, f = terminal_tab(ctx, "journey-terminal-folder-to-git-term")
         say(tp, f, f"mkdir /workspace/{J2} && cd /workspace/{J2}", rf"^terminal /workspace/{J2} \$")
@@ -369,8 +368,6 @@ def terminal_folder_to_git(ctx):
         csp_clean(page, rec)
     finally:
         try:
-            if turned_on:
-                let_claude_use_local_git(page, False)
             _drop_projects(c, (J2, J4))
             for d in (J2, J4):
                 c.api("DELETE", f"/api/fs?path={d}")

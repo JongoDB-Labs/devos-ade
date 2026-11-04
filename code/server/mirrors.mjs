@@ -19,6 +19,8 @@ import { short } from './validate.mjs';
 
 export const API = process.env.LOCALGIT_API || 'http://caddy:8099';
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+// (a plain branch name: no glob characters, which would make a rule that matches more than one branch)
+const BRANCH = /^[A-Za-z0-9][A-Za-z0-9._\/-]{0,99}$/;
 const INTERVAL = /^(?:[1-9][0-9]{0,2})(?:m|h)$|^0$/;   // 10m … 999h (Forgejo's minimum is 10m); 0: only on a push here (push mirrors)
 const err = (status, m) => new HostError(status, m);
 const ago = (t) => (typeof t === 'string' && /^\d{4}-\d\d-\d\dT[\d:.]+(Z|[+-]\d\d:\d\d)$/.test(t) ? t : null);
@@ -174,11 +176,41 @@ export function makeMirrors({ store = new GitHosts(), fetchImpl = globalThis.fet
     return { owner: o, name, repo: `${o}/${name}` };
   }
 
+  // protect(name) -> the branch protected: the repository's default branch (what the server says it is just now: "main" while it is
+  // empty, the branch of the first push after that) gets a protection rule that refuses a force-push and a deletion of it (Forgejo
+  // 17.0.1: any protected branch refuses both in its pre-receive hook, for every account, an admin's too; the rule has no field for
+  // that, so none is sent). Ordinary pushes stay allowed: enable_push on, no allow-list, so the token that pushes today still can.
+  // A rule by plain branch name may exist before the branch does (checked in Forgejo's CreateBranchProtection: the branch is looked
+  // up only to set a flag), so an empty repository is protected from its first push. One that exists already is a 403 "already exist"
+  // and counts as done. The token needs write:repository and the account to own the repository (the route asks for its admin), both
+  // true of the built-in host; the call is the one POST Caddy's internal site lets through for it (caddy/localgit-on.caddy @protect).
+  // defaultBranch(name) -> the repository's default branch as the server says it, or null while it says none (an empty repository before
+  // its first push); a name that is not a plain branch name is an error, never a guess: a rule for another branch would pass for this one's.
+  async function defaultBranch(name) {
+    const { owner: o } = local();
+    if (typeof name !== 'string' || !NAME.test(name)) throw err(400, 'a repository name of letters, digits, . _ and - (at most 100)');
+    const repo = await api('GET', `/repos/${o}/${name}`);
+    const b = repo?.default_branch;
+    if (b === undefined || b === null || b === '') return null;
+    if (typeof b !== 'string' || !BRANCH.test(b)) throw err(502, `the default branch of ${o}/${name} is not a plain branch name, so it was not protected`);
+    return b;
+  }
+  async function protect(name) {
+    const { owner: o } = local();
+    // (BRANCH has no glob characters, so the rule name is one branch and can never become a pattern that matches several)
+    const branch = (await defaultBranch(name)) ?? 'main';   // (none yet: "main" is the branch the first push is expected to make; the caller checks later)
+    try {
+      await api('POST', `/repos/${o}/${name}/branch_protections`, { rule_name: branch, enable_push: true, enable_push_whitelist: false, enable_merge_whitelist: false,
+        enable_status_check: false, required_approvals: 0 });
+    } catch (e) { if (!/already exist/i.test(e.message)) throw e; }
+    return branch;
+  }
+
   // hosts() -> the host names the mirrors reach (the egress the git server gets is limited to them)
   async function hosts() {
     const set = new Set();
     for (const m of await list()) { try { set.add(new URL(m.remote).hostname); } catch { /* not a URL */ } }
     return [...set].sort();
   }
-  return { list, add, sync, remove, hosts, owner, nameFree, create };
+  return { list, add, sync, remove, hosts, owner, nameFree, create, protect, defaultBranch };
 }

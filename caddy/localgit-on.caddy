@@ -30,7 +30,7 @@
 # hosts' credentials and makes the mirrors, from ./stack git-server mirror …; the Code page lists their status). Port 8099 is
 # not published; it answers on Caddy's container networks — the code container reaches it over the network it shares with
 # Caddy. A few API paths of this one service and nothing else (a repository's own record, its push mirrors, a mirror sync,
-# a migration that makes a pull mirror, the owner's repository list, and the one POST of git's that makes an empty private repository for a kept project); Forgejo needs the owner's own access token for
+# a migration that makes a pull mirror, the owner's repository list, the one POST of git's that makes an empty private repository for a kept project, and the one POST that protects a kept repository's default branch); Forgejo needs the owner's own access token for
 # every one (this site adds none), and nothing that signs in for the portal, Tailscale or a reverse proxy goes through.
 # The portal's Git search (portal/portal/gitsearch.py) comes this way too, with a read-only token of its own: two GET searches.
 http://:8099 {
@@ -75,11 +75,20 @@ http://:8099 {
 			path_regexp ^/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+\.git/git-receive-pack$
 			header Content-Type application/x-git-receive-pack-request
 		}
+		# (the one rule that keeps a kept repository's default branch from a force-push and a deletion, code/server/mirrors.mjs protect: a POST
+		# of a branch protection to one repository, nothing of the rules already there — no read, change or delete of one — so the
+		# call is made once and a rule that exists answers "already exist"; Forgejo asks for the token's write:repository scope and for the
+		# token's account to own the repository, which it does)
+		@protect {
+			method POST
+			path_regexp ^/api/v1/repos/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+/branch_protections$
+		}
 		@mirrors path_regexp ^/api/v1/repos/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+/(push_mirrors(/[A-Za-z0-9._-]+)?|push_mirrors-sync|mirror-sync)$
 		reverse_proxy @read forgejo:3000
 		reverse_proxy @search forgejo:3000
 		reverse_proxy @migrate forgejo:3000
 		reverse_proxy @create forgejo:3000
+		reverse_proxy @protect forgejo:3000
 		reverse_proxy @mirrors forgejo:3000
 		respond 404
 	}
