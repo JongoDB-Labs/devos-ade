@@ -7,6 +7,10 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 ## [Unreleased]
 
 ### Fixed
+- **The version link on the tablet rail is big enough to tap (JON-1049).** On the icon rail (tablets, or a collapsed
+  sidebar) a release's version under the logo was a 14 px target right above Search in a short window, under the 24 px
+  that touch needs (WCAG 2.5.8). It is at least 24 px tall now, its words where they were. The layout check now measures
+  the label a release shows (one line), not a test build's (two lines, which hid it).
 - **`./stack clean` works on a busy Docker host.** It said "could not list the images in use" and removed nothing when other
   containers on the same Docker host (another stack's, or a CI job's) came and went while it looked: a container that is
   gone uses no image, so it is left out now. Any other Docker error still means nothing is removed.

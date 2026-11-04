@@ -90,6 +90,32 @@ def device_widths(device: str, widths: list[int], mode: str) -> list[int]:
     return [w for w in widths if w > lo]
 
 
+BUILD = re.compile(r"^(v\d+\.\d+\.\d+)-\d+-g[0-9a-f]{4,40}$")   # a commit after a release (app.js BUILD)
+
+
+def as_release(body):
+    """/api/summary's or /api/update/check's answer as a release build gives it: a candidate's version ("v0.57.0-2-g1a2b3c4",
+    labelled "v0.57.0 +2" on two lines in the rail) as the release's ("v0.57.0", one line), which is what users run
+    (JON-1049: only the one-line label was a 14 px target)."""
+    u = body.get("update") if isinstance(body, dict) else None
+    m = BUILD.match(u.get("installed") or "") if isinstance(u, dict) and isinstance(u.get("installed"), str) else None
+    if m:
+        body = {**body, "update": {**u, "installed": m.group(1)}}
+    return body
+
+
+def release_label(route):
+    try:
+        resp = route.fetch()
+    except Exception:   # (no stack behind a replayed run: the recording's answer)
+        return route.fallback()
+    try:
+        body = as_release(resp.json())
+    except ValueError:   # (not JSON: a sign-in page, an error)
+        return route.fulfill(response=resp)
+    route.fulfill(response=resp, json=body)
+
+
 @dataclass
 class Cfg:
     origin: str
@@ -183,6 +209,7 @@ class Sweep:
         if self.cfg.har_replay:
             # (nothing else of the stack is there: the apps' frames stay empty, their chrome is what is measured)
             c.route(re.compile(r"^https?://(chat|admin|files|terminal)\."), lambda r: r.fulfill(status=200, body="", headers={"content-type": "text/html"}))
+        c.route(re.compile(re.escape(o) + r"/api/(summary|update/check)(\?.*)?$"), release_label)
         c.add_init_script(f"(() => {{ const s = document.createElement('style'); s.textContent = {json.dumps(STILL)}; "
                           "document.addEventListener('DOMContentLoaded', () => document.head.appendChild(s)); })();")
         p = c.new_page()

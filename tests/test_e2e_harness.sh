@@ -1091,6 +1091,12 @@ c = L.Cfg(origin="http://x", password="p", out=None)
 check(c.widths == L.FAST_WIDTHS and c.heights == [800], "fast by default")
 c = L.Cfg(origin="http://x", password="p", out=None, mode="full")
 check(c.heights == [600, 1000], "full heights")
+# a candidate's version as its release's (JON-1049): the one-line label users see is the one measured
+b = {"update": {"installed": "v0.57.0-2-g1a2b3c4", "latest": "v0.57.0"}, "x": 1}
+check(L.as_release(b) == {"update": {"installed": "v0.57.0", "latest": "v0.57.0"}, "x": 1}
+      and b["update"]["installed"] == "v0.57.0-2-g1a2b3c4", "a candidate as its release")
+for same in ({"update": {"installed": "v0.57.0"}}, {"update": {"installed": "main"}}, {"update": None}, {}, [], {"update": {"installed": 3}}):
+    check(L.as_release(same) == same, f"left as it is: {same}")
 # every reviewed entry: a reason and a check the sweep reports; its patterns compile
 rows = json.loads(open(sys.argv[1] + "/layout-allowlist.json").read())
 check(isinstance(rows, list), "the allowlist is a list")
