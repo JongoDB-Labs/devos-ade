@@ -788,6 +788,12 @@ function HostCard({ h, local, remote }: { h: GitHostView; local: boolean; remote
           {result.said !== null && <SandboxSaid words={result.said} />}
         </div>
       )}
+      {h.builtin && !h.claude && !h.claudeSet && local && (
+        <div class="small gitr-result" role="status" data-testid="git-host-claude-offer">
+          Git in the Terminal and Claude's pushes to your local git server need this switch.{' '}
+          <button type="button" class="btn small" onClick={() => setClaudeAsk(true)} data-testid="git-host-claude-offer-on">Turn it on</button>
+        </div>
+      )}
       <div class="gitr-claude small">
         <button type="button" class={`switch${h.claude ? ' on' : ''}`} role="switch" aria-checked={h.claude} aria-label="Let Claude use this host" disabled={!h.claude && !local}
           onClick={() => (h.claude ? void gitHostChange(() => api.setGitHostClaude(h.id, false), 'Claude can no longer use this host') : setClaudeAsk(true))} data-testid="git-host-claude">
@@ -796,7 +802,7 @@ function HostCard({ h, local, remote }: { h: GitHostView; local: boolean; remote
         <span>
           Let Claude use this host {h.claude ? <strong>(on{h.claudeSince ? `, since ${ago(h.claudeSince)}` : ''})</strong> : '(off)'} — its own git{ghToo ? ' and gh' : ''} in the sandbox {ghToo ? 'get' : 'gets'} this {h.auth === 'token' ? 'token' : h.auth === 'oauth' ? 'sign-in\'s token' : 'key\'s logins'} too, each use in Activity.
           {!local && !h.claude && <span class="muted"> Turned on only from the computer running {PRODUCT}.</span>}
-          {h.builtin && <span class="muted"> On by default for this host (the Terminal's git needs it); every other host starts off.</span>}
+          {h.builtin && <span class="muted"> New installs start with it on for this host (the Terminal's git needs it); every other host starts off.</span>}
         </span>
       </div>
       {claudeAsk && (

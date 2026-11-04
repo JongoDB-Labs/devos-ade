@@ -2437,7 +2437,7 @@ operation you started, sent only where you saw it go.
   template (no hooks), no submodules, nothing of the sandbox's git configuration, into a new folder of the workspace
   (or the workspace folder while it is empty).
 - [x] **Claude's own git gets nothing — unless you let it, per host.** Neither `~/.git-credentials` nor an agent of
-  the Code page is anywhere in the sandbox by default. *Let Claude use this host* (off by default for every host except the Local git server, where it is on, so the Terminal's git works at once: Claude, or text it
+  the Code page is anywhere in the sandbox by default. *Let Claude use this host* (off by default for every host except a newly made Local git server host, where it starts on so the Terminal's git works at once; an updated install keeps its setting, and Git hosts only offers a **Turn it on** button while it is off and undecided: Claude, or text it
   reads, can then push to the owner's repositories on the built-in server, though not force-push or delete the default branch of a kept one; turned on only from
   the computer running DevOS ADE, after a warning that Claude, or text it reads, could then push to any repository
   the token or key reaches) makes the code container keep `git.broker` open: bn-coded then answers

@@ -236,3 +236,9 @@ test('the built-in git server\'s mirrors: only what the page may show — checke
   assert.equal(normGitMirror({ ...ok, lastSync: 'yesterday' })!.lastSync, null);
   for (const bad of [null, 7, { ...ok, direction: 'both' }, { ...ok, repo: '../x' }, { ...ok, repo: 'a/b/c' }, { ...ok, repo: 7 }]) assert.equal(normGitMirror(bad), null, JSON.stringify(bad));
 });
+
+test('a host: claudeSet says the user decided the switch (only a true counts)', () => {
+  assert.equal(normGitHost({ ...host(), claudeSet: true })?.claudeSet, true);
+  assert.equal(normGitHost({ ...host(), claudeSet: 'yes' })?.claudeSet, false);
+  assert.equal(normGitHost({ ...host() })?.claudeSet, false);
+});

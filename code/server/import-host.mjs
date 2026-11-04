@@ -20,8 +20,7 @@ export function importLogin(input, store = new GitHosts()) {
   // host is not there yet; never from the page)
   if (b.source === 'localgit') {
     const r = store.addLocalGit({ ca: b.ca, token: b.token, account: b.account });
-    if (r.created) store.event({ action: 'host', host: r.host.label, target: r.host.host, text: 'the built-in git server connected (./stack)' });
-    if (r.turnedOn) store.event({ action: 'claude', host: r.host.label, target: r.host.host, text: 'Claude may use this host\'s credential for its own git (on by default for the built-in git server; ./stack turned it on once)' });
+    if (r.created) store.event({ action: 'host', host: r.host.label, target: r.host.host, text: 'the built-in git server connected (./stack); Let Claude use this host starts on for it' });
     return { label: r.host.label, host: r.host.host, account: r.host.username, scopes: [], source: 'localgit', created: r.created };
   }
   const source = b.source === 'gh' || b.source === 'glab' ? b.source : null;
