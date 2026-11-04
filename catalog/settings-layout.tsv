@@ -85,7 +85,7 @@ OWUI_TASK_MODEL	chat	with	CHAT_TASK_MODEL	-
 @code	Claude Code	The Code page (Claude Code in the browser, with a chat and your files), the browser Terminal, and the models Claude Code uses. The Code page runs in the Terminal's sandbox: one folder, one key, one budget. Both are on by default.	README.md#the-code-page
 CODE_ENABLED	code	main	-	The Code tab: Claude Code in the browser with a chat, permission prompts and your workspace's files (on by default).
 CODE_ALLOW_BYPASS	code	main	CODE_ENABLED	Offer Bypass permissions: Claude runs every command and edit in the sandbox without asking.
-CODE_AUTO_MODE	code	main	CODE_ENABLED	Offer Auto mode on the Code page: a reviewer model approves routine actions and blocks risky ones (it costs extra). The Terminal has its own switch, below.
+CODE_AUTO_MODE	code	main	CODE_ENABLED	Offer Auto mode on the Code page: a reviewer model approves routine actions (costs extra). The Terminal has its own.
 +git-hosts	code	main	CODE_ENABLED	Git hosts for the Code page's push, pull and clone: GitHub, GitLab or any git server — a sign-in, a token or an SSH key.
 +project-folders	code	main	CODE_ENABLED	Folders of this computer as Code page projects: mounted into its sandbox, read-write or read-only.
 +sessions-consent	code	main	CODE_ENABLED	What DevOS ADE may read of your Claude Code and devos-claude sessions and setup on this computer.
@@ -100,7 +100,7 @@ LOCALGIT_SUBNET	code	more	LOCALGIT	The git server's small Docker network; change
 TERMINAL_EGRESS	code	main	TERMINAL_ENABLED	The sandbox's internet: public addresses only (the default), with this computer's services too, or off.
 TERMINAL_EGRESS_ALLOW	code	more	TERMINAL_ENABLED	Only these names on the internet, and other ports (blank: every public name on 80, 443 and 22).
 TERMINAL_EGRESS_DENY	code	more	TERMINAL_ENABLED	Never these names on the internet.
-TERMINAL_AUTO_MODE	code	main	TERMINAL_ENABLED	Auto mode for claude typed in the Terminal too (it costs extra).
+TERMINAL_AUTO_MODE	code	main	TERMINAL_ENABLED	Auto mode for claude typed in the Terminal, apart from the Code page's (it costs extra).
 CLAUDE_MODEL_OPUS	code	main	-	The model Claude Code works with: devos-claude's main (opus) slot.
 CLAUDE_BEDROCK_OPUS_MODEL	code	with	CLAUDE_MODEL_OPUS	-
 CODE_MODELS	code	main	-	The models the Code page's picker and the terminal's /model list: all enabled, Anthropic only, or a list you pick.
