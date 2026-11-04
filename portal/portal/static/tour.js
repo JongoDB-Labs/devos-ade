@@ -439,7 +439,7 @@
             b("Allow write access"), " to push)."],
           ["Already use gh or glab on this computer? ", code("./stack git-host import gh"), " (or ", code("glab"), "), in the DevOS ADE folder, imports that login as the token (glab: a personal access token only)."],
           [b("Test connection"), " lists a repository's branches with it."]]),
-        note("Claude's own git gets nothing from it unless you turn on ", b("Let Claude use this host"), " (off by default; each use shows in Activity). Adding a host, a sign-in, a token or a key works only from the computer running DevOS ADE",
+        note("Claude's own git gets nothing from it unless you turn on ", b("Let Claude use this host"), " (off by default for GitHub and every other host, on for your Local git server; each use shows in Activity). Adding a host, a sign-in, a token or a key works only from the computer running DevOS ADE",
           onlyHere(), ". ", doc("remote-repositories-git-hosts-clone-push-and-pull", "More")),
       ],
       actions: () => [openGit("hosts")],

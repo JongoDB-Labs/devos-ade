@@ -796,6 +796,7 @@ function HostCard({ h, local, remote }: { h: GitHostView; local: boolean; remote
         <span>
           Let Claude use this host {h.claude ? <strong>(on{h.claudeSince ? `, since ${ago(h.claudeSince)}` : ''})</strong> : '(off)'} — its own git{ghToo ? ' and gh' : ''} in the sandbox {ghToo ? 'get' : 'gets'} this {h.auth === 'token' ? 'token' : h.auth === 'oauth' ? 'sign-in\'s token' : 'key\'s logins'} too, each use in Activity.
           {!local && !h.claude && <span class="muted"> Turned on only from the computer running {PRODUCT}.</span>}
+          {h.builtin && <span class="muted"> On by default for this host (the Terminal's git needs it); every other host starts off.</span>}
         </span>
       </div>
       {claudeAsk && (

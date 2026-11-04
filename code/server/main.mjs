@@ -325,6 +325,9 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
     keeper, mirrors: mirrorsApi, hosts: () => hostStore.read().hosts, log: logger, words: (e) => sandboxWords(e, '/api/git/') }) }) : null;
   if (termLink) setTimeout(() => { termLink.start().catch(() => {}); }, 1500).unref?.();
   if (openBroker) setTimeout(() => { gitRemote().syncBroker().catch((e) => logger(`git broker: ${short(e.message, 200)}`)); }, 1000).unref?.();
+  // (./stack turns Let Claude use this host on for the built-in git server in the hosts file while this server runs — import-host.mjs, a
+  // process of its own — so the broker is looked at again now and then: nothing happens while no host lets Claude in or it is open already)
+  if (openBroker) setInterval(() => { gitRemote().syncBroker().catch(() => {}); }, 30000).unref?.();
   // an MCP server's name as the session reports it (plugin servers: plugin:x:y; claude.ai ones may have spaces)
   const MCP_SERVER = /^[\x20-\x7e]{1,200}$/;
   const mcpName = (v) => { if (typeof v !== 'string' || !MCP_SERVER.test(v)) throw new SessionError('bad MCP server name'); return v; };

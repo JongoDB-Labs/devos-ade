@@ -260,11 +260,18 @@ export class GitHosts {
   // addLocalGit({account, token, ca}) -> {host (public), created}: the built-in local git server as a host — made once, then
   // kept in step: its CA (the certificate ./stack made) and, when one is sent, its token and account. A host that is there
   // without a token to send (the CA only) is left as it is; one that is missing needs the token (400 "no token").
+  // Let Claude use this host is ON for this host and no other (the user's own repositories on their own server; every other host
+  // starts off). A new host is made with it on. A host made before that was off by default: it is turned on once — claudeDefault marks
+  // that this was done — unless the user set the switch themselves, which the store can tell by the mark setClaude leaves (claudeSet)
+  // or, for a choice made before the mark, by the Activity line a change of the switch always wrote (action "claude", this host's
+  // label). Once marked, a later "off" is never undone.
   addLocalGit(b) {
     const ca = checkCa(b?.ca);
     const account = typeof b?.account === 'string' && ACCOUNT.test(b.account) ? b.account : null;
     const have = this.read().hosts.find((x) => x.builtin === LOCALGIT.id);
     if (have) {
+      const saidSo = this.read().events.some((e) => e.action === 'claude' && e.host === (have.label || LOCALGIT.label));
+      let turnedOn = false;
       const out = this.change(have.id, (h) => {
         h.ca = ca; h.label = h.label || LOCALGIT.label;
         if (typeof b?.token === 'string') {
@@ -272,13 +279,17 @@ export class GitHosts {
           h.token = b.token; h.tokenSetAt = this.now();
         }
         if (account) h.username = account;
+        if (!h.claudeDefault) {
+          h.claudeDefault = true;
+          if (h.claude !== true && !h.claudeSet && !saidSo) { h.claude = true; h.claudeSince = this.now(); turnedOn = true; }
+        }
       });
-      return { host: out, created: false };
+      return { host: out, created: false, turnedOn };
     }
     if (typeof b?.token !== 'string') throw new HostError(400, 'no token');
     if (!account) throw new HostError(400, 'the account the token belongs to, please');
     const host = this.add({ kind: 'other', host: LOCALGIT.host, port: LOCALGIT.port, label: LOCALGIT.label, auth: 'token', username: account, token: b.token, ca }, { builtin: LOCALGIT.id });
-    return { host, created: true };
+    return { host: this.change(host.id, (h) => { h.claude = true; h.claudeSince = this.now(); h.claudeDefault = true; }), created: true };
   }
   // addOAuth({kind, host, port, label, ca, oauth}) -> the new host (public): a sign-in (oauth.mjs) — one https
   // credential per host and port, like a token
@@ -357,7 +368,7 @@ export class GitHosts {
     });
   }
   setClaude(id, on) {
-    return this.change(id, (h) => { h.claude = on === true; h.claudeSince = on === true ? this.now() : null; });
+    return this.change(id, (h) => { h.claude = on === true; h.claudeSince = on === true ? this.now() : null; h.claudeSet = true; });
   }
   setCa(id, ca) {
     return this.change(id, (h) => { if (!httpsAuth(h.auth)) throw new HostError(400, 'a CA certificate is for https'); h.ca = ca === null || ca === '' ? null : checkCa(ca); });
