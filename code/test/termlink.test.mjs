@@ -130,13 +130,13 @@ test('the link answers at most LINK_PER_MINUTE questions a minute', async () => 
 });
 
 // --- the code container's answer ---
-const fakes = ({ owner = 'devos', claude = false, projects = [], keepFail = null, isGit = true } = {}) => {
+const fakes = ({ owner = 'devos', claude = false, projects = [], keepFail = null, isGit = true, notices = new Set() } = {}) => {
   const list = [...projects];
   const calls = { add: [], keep: [] };
   const answer = makeProjectAnswer({
     addProject: async (b) => { calls.add.push(b); const p = { id: `p_0000000${list.length + 1}`, name: b.name || b.folder.split('/').pop(), root: b.folder }; list.push(p); return { project: p, git: isGit }; },
     projects: () => ({ list: () => list, rename: (id, name) => { const p = list.find((x) => x.id === id); p.name = name; return { ...p }; },
-      dismissNotice: (id) => { calls.dismissed = [...(calls.dismissed || []), id]; return true; } }),
+      dismissNotice: (id) => { calls.dismissed = [...(calls.dismissed || []), id]; return notices.delete(id); } }),
     keeper: () => ({ keep: async (id, b) => { calls.keep.push([id, b]); if (keepFail) throw new Error(keepFail); return { repo: `${owner}/${b.name || 'x'}` }; }, view: async () => ({ repo: 'devos/known' }) }),
     mirrors: { owner: () => owner },
     hosts: () => [{ builtin: 'localgit', claude }, { builtin: null, claude: true }],
@@ -153,11 +153,17 @@ test('answer: info, add (idempotent), and keeping only while the sandbox\'s git 
   a = await f.answer({ kind: 'project', op: 'add', folder: 'app' });
   assert.deepEqual([a.ok, a.existing, a.name], [true, true, 'App']);
   assert.equal(f.calls.add.length, 1, 'a project already: not added twice');
-  // a project already (made by itself a moment before, autoproj.mjs) with a name typed now: renamed, its notice gone
-  a = await f.answer({ kind: 'project', op: 'add', folder: 'app', name: 'My app' });
+  // a project with no notice up (named by you, or its notice dismissed): a name typed in the sandbox changes nothing
+  a = await f.answer({ kind: 'project', op: 'add', folder: 'app', name: 'Renamed by the sandbox' });
+  assert.deepEqual([a.ok, a.existing, a.name], [true, true, 'App']);
+  assert.equal(f.list[0].name, 'App');
+  // one made by itself a moment before (autoproj.mjs), its notice still up, with a name typed now: renamed, its notice gone — once
+  const auto = fakes({ projects: [{ id: 'p_00000001', name: 'app', root: 'app' }], notices: new Set(['p_00000001']) });
+  a = await auto.answer({ kind: 'project', op: 'add', folder: 'app', name: 'My app' });
   assert.deepEqual([a.ok, a.existing, a.name], [true, true, 'My app']);
-  assert.equal(f.list[0].name, 'My app');
-  assert.deepEqual(f.calls.dismissed, [f.list[0].id, f.list[0].id]);
+  a = await auto.answer({ kind: 'project', op: 'add', folder: 'app', name: 'Again' });
+  assert.deepEqual([a.existing, a.name], [true, 'My app']);
+  assert.equal(auto.calls.add.length, 0);
   // keep without the switch: the project is added, the answer says what to do, nothing is pushed
   a = await f.answer({ kind: 'project', op: 'keep', folder: 'other' });
   assert.deepEqual([a.ok, a.kept], [true, false]);

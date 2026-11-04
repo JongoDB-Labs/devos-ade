@@ -57,11 +57,13 @@ export function makeProjectAnswer({ addProject, projects, keeper, mirrors, hosts
   async function ensure(folder, name) {
     const had = projects().list().find((p) => p.root === folder);
     if (had) {
-      // (a folder the Code server made a project by itself a moment before — autoproj.mjs, while a page is open — is the user's now:
-      // its "Added from the workspace" notice goes, and a name typed here is its name)
+      // (a folder the Code server made a project by itself a moment before — autoproj.mjs, while a page is open — and whose "Added from
+      // the workspace" notice is still up is the user's now: the notice goes, and a name typed here is its name. Any other project — named
+      // by you, or its notice dismissed — is left as it is: the sandbox renames no project of yours)
       const store = projects();
-      try { store.dismissNotice?.(had.id); } catch { /* no notice, or not a project of the list's any more */ }
-      if (name && name !== had.name && typeof store.rename === 'function') return { project: store.rename(had.id, name), existing: true };
+      let fresh = false;
+      try { fresh = store.dismissNotice?.(had.id) === true; } catch { fresh = false; }
+      if (fresh && name && name !== had.name && typeof store.rename === 'function') return { project: store.rename(had.id, name), existing: true };
       return { project: had, existing: true };
     }
     const added = await addProject({ kind: 'folder', folder, ...(name ? { name } : {}) });
