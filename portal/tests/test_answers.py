@@ -162,7 +162,10 @@ TOK = "1792760000-0123456789abcdef-" + "0" * 32   # a launch token's form (not a
     (["view", "2", TOK, "/workspace/app"], False),
     # an account of a tool (TOOL:NAME: lowercase letters, digits and -, 1 to 20, the first not a -); add takes a bare tool, no folder
     (["open", "claude:work", TOK], True),
-    (["chat", "codex:personal-2", TOK, "/workspace/app"], True),
+    # (Chat stays at one account a tool: no word for another account of it)
+    (["chat", "codex:personal-2", TOK, "/workspace/app"], False),
+    (["chat", "claude:work", TOK], False),
+    (["chat", "codex", TOK, "/workspace/app"], True),
     (["open", "grok:a", TOK], True),
     (["open", "cursor:" + "a" * 20, TOK], True),
     (["add", "codex", TOK], True),

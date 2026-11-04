@@ -329,6 +329,8 @@ def terminal_words(mode: str, tool: str, folder: str | None = None, roots=()) ->
         return [mode, tool] if ok and folder in (None, "") else None
     if mode not in ("open", "chat") or not tool_ok(tool):
         return None
+    if mode == "chat" and ":" in tool:
+        return None   # (Chat: one account a tool)
     words = [mode, tool]
     if folder not in (None, ""):
         if not folder_ok(folder, roots):

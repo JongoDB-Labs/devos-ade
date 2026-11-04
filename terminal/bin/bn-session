@@ -70,7 +70,7 @@ case "$mode" in open | chat | add | rename | remove | logout) ;; *) plain ;; esa
 case "$tool" in
   bedrock | shell) ;;
   claude | codex | gemini | copilot | cursor | grok) ;;
-  claude:* | codex:* | gemini:* | copilot:* | cursor:* | grok:*) [ "$mode" != add ] && [[ ${tool#*:} =~ $ACCT ]] || plain ;;
+  claude:* | codex:* | gemini:* | copilot:* | cursor:* | grok:*) [ "$mode" != add ] && [ "$mode" != chat ] && [[ ${tool#*:} =~ $ACCT ]] || plain ;;   # (Chat: one account a tool)
   *) plain ;;
 esac
 # (add takes a bare tool and no folder: it makes the account's, and its window is in the workspace)
@@ -115,6 +115,10 @@ win_id() { tmux list-windows -t "=$S" -F '#{window_id} #{@bn-open}' 2>/dev/null 
 take "$token"
 ensure
 wid="$(win_id)"
+# (add, rename, remove and logout run once and end in a shell: a second click makes a new window, never lands in the old, finished
+# one — and a cancelled add leaves none to find)
+case "$mode" in add | rename | remove | logout)
+  if [ "$fresh" = 1 ] && [ -n "$wid" ]; then tmux kill-window -t "=$S:$wid" 2>/dev/null || true; wid=''; fi ;; esac
 if [ "$fresh" = 1 ] && [ -z "$wid" ]; then
   # (the command is fixed words — TOOL[:NAME] is checked above — and the image's own subscriptions by its full path:
   # never one put in ~/.local/bin, which comes first on PATH; the folder with its "#" doubled: tmux reads -c as a format)

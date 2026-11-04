@@ -278,8 +278,10 @@ kind_window() {
 # account's own name, else the tool and its kind (claude-max) once known. Until then it keeps the name bn-session gave it.
 # Letters, digits, _ and - only; the folder part bn-session put on (@bn-suffix) stays. Windows are found by their option
 # @bn-open, never by name, so the rename costs nothing.
+KEEP_WINDOW=0   # (add run by hand in another window: that window keeps its name)
 rename_window() {
   local base fn suf
+  [ "$KEEP_WINDOW" = 0 ] || return 0
   [ -n "${TMUX:-}" ] && [ -n "${TMUX_PANE:-}" ] && [ -x "$TMUX_BIN" ] || return 0
   if [ -n "$A" ]; then base="$T-$A"
   else
@@ -349,9 +351,12 @@ cmd_add() {
   mkdir "$d" && chmod 700 "$d" || die "could not make $d"
   printf 'Account %s made (%s). Its sign-in:\n\n' "$T:$name" "$d"
   # (the window this runs in was found by "add:TOOL"; now it is the account's, as if open had made it)
-  if [ -n "${TMUX:-}" ] && [ -n "${TMUX_PANE:-}" ] && [ -x "$TMUX_BIN" ]; then
+  # (only that window: run by hand in another — the shell window — it leaves that window alone)
+  if [ -n "${TMUX:-}" ] && [ -n "${TMUX_PANE:-}" ] && [ -x "$TMUX_BIN" ] \
+    && [ "$("$TMUX_BIN" show-options -wqv -t "$TMUX_PANE" @bn-open 2>/dev/null | head -n 1)" = "add:$T" ]; then
     "$TMUX_BIN" set-option -w -t "$TMUX_PANE" @bn-open "$T:$name" >/dev/null 2>&1 || true
     "$TMUX_BIN" set-option -w -t "$TMUX_PANE" @bn-suffix '' >/dev/null 2>&1 || true
+  else KEEP_WINDOW=1
   fi
   cmd_open "$T:$name"
 }
@@ -415,6 +420,6 @@ case "$sub" in
   add) cmd_add "$@" ;;
   remove) cmd_remove "$@" ;;
   rename) cmd_rename "$@" ;;
-  -h | --help | help) sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//' ;;
+  -h | --help | help) sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//' ;;
   *) die "unknown: subscriptions $sub (subscriptions --help)" ;;
 esac

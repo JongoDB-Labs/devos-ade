@@ -20,14 +20,16 @@ for v in $(compgen -e); do
 done
 # BN_SUB_ACCOUNT=NAME (subscriptions open copilot:NAME): another account of this tool, its login in a folder of its own,
 # ~/.subscriptions/copilot/NAME — Copilot CLI reads its folder (default ~/.copilot) from COPILOT_HOME (its bundled code at the pinned 1.0.103). A name that is not one, or a folder that is not there
-# (or is a link), is refused: never a path from outside. Without it, the first account, exactly as before.
+# (or is a link, or ~/.subscriptions is), is refused: never a path from outside. Without it, the first account, exactly as before.
 if [ -n "${BN_SUB_ACCOUNT:-}" ]; then
   adir="${BN_SUBS_ROOT:-$HOME/.subscriptions}/copilot/$BN_SUB_ACCOUNT"
-  if ! [[ $BN_SUB_ACCOUNT =~ ^[a-z0-9][a-z0-9-]{0,19}$ ]] || [ ! -d "$adir" ] || [ -L "$adir" ] || [ -L "${adir%/*}" ]; then
+  if ! [[ $BN_SUB_ACCOUNT =~ ^[a-z0-9][a-z0-9-]{0,19}$ ]] || [ ! -d "$adir" ] || [ -L "$adir" ] || [ -L "${adir%/*}" ] || [ -L "${adir%/*/*}" ]; then
     echo "copilot: no account called '${BN_SUB_ACCOUNT//[^a-z0-9-]/?}' here (subscriptions accounts copilot)" >&2; exit 2
   fi
   export COPILOT_HOME="$adir"
 fi
+# (it names the account for this launcher only: a program the tool runs — Claude Code's Bash running codex — picks its own)
+unset BN_SUB_ACCOUNT
 # A tmux pane running it is marked as one of your subscriptions' tools (pane option @bn-sub): the Code page's @terminal
 # leaves its screen alone, where a sign-in's code may show. A guard against an accidental read, not a boundary.
 if [ -n "${TMUX:-}" ] && [ -n "${TMUX_PANE:-}" ] && [ "${BN_SUB_NOMARK:-0}" != 1 ] && [ -x "${BN_TMUX_BIN:-/usr/bin/tmux}" ]; then

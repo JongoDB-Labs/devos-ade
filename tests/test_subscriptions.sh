@@ -404,8 +404,10 @@ EOF
   assert_contains "$out" "-n claude-work -c $ws /usr/local/bin/subscriptions open claude:work; exec bash"
   assert_contains "$out" "@bn-open claude:work"
   assert_contains "$out" "@bn-sub 1"
+  # Chat stays at one account a tool: no word for another
   out="$(_run chat codex:personal-2 "$A2")"
-  assert_contains "$out" "-n codex-personal-2 -c $ws /usr/local/bin/subscriptions open codex:personal-2; exec bash"
+  case "$out" in *new-window*) echo "chat took an account: $out" >&2; return 1 ;; esac
+  assert_eq "$(printf '%s\n' "$out" | tail -n 1)" "tmux new-session -A -s claude -n bedrock -c $ws devos-claude; exec bash"
   for args in "open bedrock:x $A3" "open shell:x $A3" "open claude: $A3" "open claude:Work $A3" "open claude:-w $A3" "open claude:a_b $A3" \
     "open claude:abcdefghijklmnopqrstu $A3" "open claude:a:b $A3" "open evil:work $A3" "add claude:work $A3" "add shell $A3" "add bedrock $A3" "add claude $A3 $ws"; do
     # shellcheck disable=SC2086
@@ -434,6 +436,17 @@ EOF
     out="$(_run $args)"
     case "$out" in *new-window*) echo "refused words made a window: $args -> $out" >&2; return 1 ;; esac
   done
+  # one-shot windows: a second click makes a new window (the old one, finished, is closed); a plain open is only selected
+  local R4="$now-b4b4b4b4b4b4b4b4-$M" R5="$now-b5b5b5b5b5b5b5b5-$M" R6="$now-b6b6b6b6b6b6b6b6-$M" R7="$now-b7b7b7b7b7b7b7b7-$M"
+  out="$(_run remove codex:personal "$R4")"
+  assert_contains "$out" "tmux kill-window -t =claude:@"
+  assert_contains "$out" "new-window"
+  out="$(_run add grok "$R5")"
+  out="$(_run add grok "$R6")"
+  assert_contains "$out" "tmux kill-window -t =claude:@"
+  assert_contains "$out" "-n grok-new "
+  out="$(_run open codex "$R7")"
+  assert_not_contains "$out" "kill-window"
   out="$(_run logout grok:alt "$R3")"
   assert_contains "$out" "/usr/local/bin/subscriptions logout grok:alt; exec bash"
   # a folder with "#" (tmux reads -c as a format) and a "." in its name (a pane in a target): doubled, mapped
@@ -774,7 +787,7 @@ test_a_window_is_named_after_what_runs_in_it() {
   cat > "$TMP/tmux-stub" <<'EOF'
 #!/bin/sh
 echo "tmux $*" >> "$TMP/tmux.log"
-case "$1" in show-options) printf '%s\n' "${SUFFIX:-}" ;; esac
+case "$1" in show-options) case "$*" in *@bn-open*) printf '%s\n' "${OPEN:-}" ;; *) printf '%s\n' "${SUFFIX:-}" ;; esac ;; esac
 exit 0
 EOF
   chmod +x "$TMP/tmux-stub"
@@ -807,9 +820,20 @@ EOF
   : > "$TMP/tmux.log"; env -u TMUX -u TMUX_PANE bash "$S" open codex:work >/dev/null 2>&1 </dev/null || true
   assert_not_contains "$(cat "$TMP/tmux.log")" "rename-window"
   # add: the window found by "add:TOOL" becomes the account's (found by TOOL:NAME), named after it
-  : > "$TMP/tmux.log"; printf 'travel\n' | bash "$S" add codex >/dev/null 2>&1 || true
+  : > "$TMP/tmux.log"; printf 'travel\n' | OPEN=add:codex bash "$S" add codex >/dev/null 2>&1 || true
   assert_contains "$(cat "$TMP/tmux.log")" "tmux set-option -w -t %5 @bn-open codex:travel"
   assert_contains "$(cat "$TMP/tmux.log")" "tmux rename-window -t %5 codex-travel"
+  # run by hand in another window (the shell's, or one for another tool): that window is left alone
+  for w in shell add:grok codex:work ''; do
+    : > "$TMP/tmux.log"; printf 'byhand\n' | OPEN="$w" bash "$S" add codex >/dev/null 2>&1 || true
+    assert_not_contains "$(cat "$TMP/tmux.log")" "set-option -w"
+    assert_not_contains "$(cat "$TMP/tmux.log")" "rename-window"
+    rm -rf "$BN_SUBS_ROOT/codex/byhand"
+  done
+  # --help prints the header comment and not the first line of code
+  out="$(bash "$S" --help)"
+  assert_contains "$out" "subscriptions rename ID NEW"
+  assert_not_contains "$out" "set -uo pipefail"
 }
 
 test_each_launcher_runs_the_account_it_is_told_in_that_accounts_folder_only() {
@@ -830,7 +854,8 @@ test_each_launcher_runs_the_account_it_is_told_in_that_accounts_folder_only() {
     # an account: its own folder in the tool's variable
     out="$(BN_SUB_ACCOUNT=work bash "$STACK_DIR/terminal/bin/$pair" x 2>&1)"
     assert_contains "$out" "$var=$r/$tool/work"
-    assert_contains "$out" "BN_SUB_ACCOUNT=work"
+    # (the launcher names the account for itself only: a program the tool runs — Claude Code's Bash running codex — does not see it)
+    assert_not_contains "$out" "BN_SUB_ACCOUNT"
     # none: the first account, exactly as before (no variable set; claude-sub its own folder)
     out="$(bash "$STACK_DIR/terminal/bin/$pair" x 2>&1)"
     if [ "$tool" = claude ]; then assert_contains "$out" "CLAUDE_CONFIG_DIR=$HOME/.claude-subscription"; else assert_not_contains "$out" "$var="; fi
@@ -852,6 +877,13 @@ test_each_launcher_runs_the_account_it_is_told_in_that_accounts_folder_only() {
   assert_contains "$out" "no account called 'work'"
   # the stack's variables are still left out beside it
   rm "$r/codex"; mv "$TMP/codex-real" "$r/codex"
+  # ~/.subscriptions itself a link: refused too
+  mv "$r" "$TMP/subs-real"; ln -s "$TMP/subs-real" "$r"
+  for t in codex claude-sub cursor-agent; do
+    out="$(BN_SUB_ACCOUNT=work bash "$STACK_DIR/terminal/bin/$t" x 2>&1)" && { echo "$t took an account below a linked ~/.subscriptions" >&2; return 1; }
+    assert_contains "$out" "no account called 'work'"
+  done
+  rm "$r"; mv "$TMP/subs-real" "$r"
   out="$(ANTHROPIC_AUTH_TOKEN=k BN_SUB_ACCOUNT=work bash "$STACK_DIR/terminal/bin/codex" x 2>&1)"
   assert_not_contains "$out" "ANTHROPIC"
   assert_contains "$out" "CODEX_HOME=$r/codex/work"

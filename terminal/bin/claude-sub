@@ -37,15 +37,17 @@ fi
 umask 077
 # BN_SUB_ACCOUNT=NAME (subscriptions open claude:NAME): another Claude account, its own config folder
 # ~/.subscriptions/claude/NAME (CLAUDE_CONFIG_DIR, as for the first). A name that is not one, or a folder that is not there
-# (or is a link), is refused: never a path from outside. Without it, the first account, ~/.claude-subscription, as before.
+# (or is a link, or ~/.subscriptions is), is refused: never a path from outside. Without it, the first account, ~/.claude-subscription, as before.
 acct='' shown='~/.claude-subscription'
 if [ -n "${BN_SUB_ACCOUNT:-}" ]; then
   acct="$BN_SUB_ACCOUNT" shown="~/.subscriptions/claude/$BN_SUB_ACCOUNT"
   dir="${BN_SUBS_ROOT:-$HOME/.subscriptions}/claude/$acct"
-  if ! [[ $acct =~ ^[a-z0-9][a-z0-9-]{0,19}$ ]] || [ ! -d "$dir" ] || [ -L "$dir" ] || [ -L "${dir%/*}" ]; then
+  if ! [[ $acct =~ ^[a-z0-9][a-z0-9-]{0,19}$ ]] || [ ! -d "$dir" ] || [ -L "$dir" ] || [ -L "${dir%/*}" ] || [ -L "${dir%/*/*}" ]; then
     echo "claude-sub: no account called '${acct//[^a-z0-9-]/?}' here (subscriptions accounts claude)" >&2; exit 2
   fi
 fi
+# (it names the account for this launcher only: a program the tool runs — Claude Code's Bash running codex — picks its own)
+unset BN_SUB_ACCOUNT
 mkdir -p "$dir"
 export CLAUDE_CONFIG_DIR="$dir" DISABLE_AUTOUPDATER=1
 
