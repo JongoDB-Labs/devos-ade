@@ -100,7 +100,12 @@ if [ -n "$COMPARE" ]; then   # the sweep twice (REF and the candidate, at once) 
   else
     # REF on a throwaway of its own (PROJECT-ref) while the candidate is swept; what it says goes to ref.log, shown after
     say "compare: sweeping $COMPARE ($(git -C "$REFWT" rev-parse --short HEAD)) as $PROJECT-ref, beside the candidate (log: $CMP/ref.log)"
-    "$HERE/ui-sweep.sh" --aws-env "$AWS_ENV_FILE" --src "$REFWT" --project "$PROJECT-ref" --out "$CMP/ref" ${more[@]+"${more[@]}"} > "$CMP/ref.log" 2>&1 &
+    # Before v0.56.0 the git server's network had a fixed subnet: one such stack at a time on a Docker host (other
+    # sweeps' REF wait for it; flock, where there is one)
+    lock=()
+    grep -q LOCALGIT_SUBNET "$REFWT/compose.yaml" 2>/dev/null || ! command -v flock >/dev/null ||
+      { mkdir -p "$HOME/.cache/ade-e2e" && lock=(flock "$HOME/.cache/ade-e2e/fixed-localgit-subnet.lock"); }
+    ${lock[@]+"${lock[@]}"} "$HERE/ui-sweep.sh" --aws-env "$AWS_ENV_FILE" --src "$REFWT" --project "$PROJECT-ref" --out "$CMP/ref" ${more[@]+"${more[@]}"} > "$CMP/ref.log" 2>&1 &
     ref_pid=$!
   fi
   say "compare: sweeping the candidate ($(git -C "$SRC" rev-parse --short HEAD))"

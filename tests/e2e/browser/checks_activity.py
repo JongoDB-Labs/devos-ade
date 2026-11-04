@@ -470,16 +470,20 @@ def global_search_timing(ctx):
     page, rec = ctx.page("search-timing")
     login(page)
     page.wait_for_selector("#search-btn:not([hidden])")
-    ms = page.evaluate("""() => {
-      const F = window.bnFuzzy, S = window.bnSearch._pure;
-      const cands = Array.from({length: 5000}, (_, i) => 'a'.repeat(1024) + i);
-      const t0 = performance.now();
-      F.rank(cands, 'a'.repeat(63) + 'b', (x) => x, (x) => x);
-      F.rank(cands.map((c) => c.replace(/a/g, 'ab')), 'ab'.repeat(31) + 'c', (x) => x);
-      S.shownText('\\u202E'.repeat(200000), 120);
-      return performance.now() - t0;
-    }""")
-    expect(ms < 2000, f"hostile matching took {ms:.0f} ms")
+    # up to 3 tries, until one is in time: a slow algorithm is slow every time, a busy test host only some of the time
+    for _ in range(3):
+        ms = page.evaluate("""() => {
+          const F = window.bnFuzzy, S = window.bnSearch._pure;
+          const cands = Array.from({length: 5000}, (_, i) => 'a'.repeat(1024) + i);
+          const t0 = performance.now();
+          F.rank(cands, 'a'.repeat(63) + 'b', (x) => x, (x) => x);
+          F.rank(cands.map((c) => c.replace(/a/g, 'ab')), 'ab'.repeat(31) + 'c', (x) => x);
+          S.shownText('\\u202E'.repeat(200000), 120);
+          return performance.now() - t0;
+        }""")
+        if ms < 2000:
+            break
+    expect(ms < 2000, f"hostile matching took {ms:.0f} ms (3 tries)")
     page.keyboard.press(f"{MOD}+k")
     page.wait_for_selector("#search[open]")
     t0 = time.time()

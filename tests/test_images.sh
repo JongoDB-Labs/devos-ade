@@ -242,6 +242,25 @@ test_cleanup_removes_nothing_when_it_cannot_tell_what_is_in_use() {
   assert_contains "$(cut -f1 "$TMP/imgs" | tr '\n' ' ')" "D2"
 }
 
+test_a_container_that_goes_away_meanwhile_uses_no_image() {   # a busy Docker host: other stacks' containers come and go
+  _setup
+  eval "_ok_$(declare -f docker)"
+  # as the real one: the found containers' images, "no such object: ID" on stderr for the others, exit 1
+  docker() { case "$*" in "inspect --format {{.Image}} "*) shift 3; local a bad=0
+      for a in "$@"; do case "$a" in ctr-GONE*) echo "error: no such object: $a" >&2; bad=1 ;; *) printf '%s\n' "${a#ctr-}" ;; esac; done
+      return "$bad" ;; esac; _ok_docker "$@"; }
+  CTR_IMAGES="$(printf 'P1\nGONE1\nL1\nGONE2')"
+  out="$(images_used_by_containers)" || { echo "failed: $out" >&2; return 1; }
+  assert_eq "$(printf '%s\n' "$out" | tr '\n' ' ')" "P1 L1 "
+  CTR_IMAGES=GONE1
+  out="$(images_used_by_containers)" || return 1
+  assert_eq "$out" ""
+  # any other error still means it cannot tell
+  docker() { case "$*" in "inspect --format {{.Image}} "*) echo "Cannot connect to the Docker daemon" >&2; return 1 ;; esac; _ok_docker "$@"; }
+  CTR_IMAGES=P1
+  if images_used_by_containers > /dev/null 2>&1; then return 1; fi
+}
+
 test_labels_say_unused_build_unless_it_still_is_the_previous_build() {
   _setup
   _fake_update 2 L2 P2 2>/dev/null

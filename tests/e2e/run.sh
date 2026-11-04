@@ -328,11 +328,13 @@ cli() {
   record cli "$id" PASS "$(( $(now) - t0 ))" "exit $rc"
 }
 
-# follow_logs ID SERVICE — ./stack logs SVC follows forever: read 6 s of it (notty --timeout ends the whole group)
+# follow_logs ID SERVICE — ./stack logs SVC follows forever: read 6 s of it (notty --timeout ends the whole group);
+# nothing in 6 s (a busy test host: Compose alone can take that long to start) reads 30 s once more
 follow_logs() {
   local id="$1" svc="$2" log t0
   log="$LOGS/cli-$id.log"; t0="$(now)"
   ST_TIMEOUT=6 st logs "$svc" > "$log" 2>&1
+  grep -q "$svc" "$log" 2>/dev/null || ST_TIMEOUT=30 st logs "$svc" > "$log" 2>&1
   redact "$log"
   if [ -s "$log" ] && grep -q "$svc" "$log"; then record cli "$id" PASS "$(( $(now) - t0 ))" "$(wc -l < "$log" | tr -d ' ') lines"
   else record cli "$id" FAIL "$(( $(now) - t0 ))" "no log lines for $svc"; fi
@@ -979,11 +981,20 @@ if ! part_on cli; then record cli read-only SKIP 0 "--only $ONLY"; else
   cli models 0 'Model access for your AWS key' models
   cli test 0 'all checks passed' test
   for s in portal caddy litellm; do follow_logs "logs-$s" "$s"; done
-  imgs_before="$(docker image ls -q --no-trunc | sort)"
+  # (this project's images: its containers' and its builds'; other stacks on the Docker host build and remove theirs meanwhile)
+  own_images() {
+    local ids; ids="$(docker ps -aq --no-trunc --filter "label=com.docker.compose.project=$PROJECT")"
+    # shellcheck disable=SC2086  # one argument per container id
+    { [ -z "$ids" ] || docker inspect --format '{{.Image}}' $ids
+      docker image ls -q --no-trunc --filter "label=com.docker.compose.project=$PROJECT"; } 2>/dev/null | sort -u
+  }
+  imgs_before="$(own_images)"
   if st clean --help 2>&1 | grep -- '--dry-run' >/dev/null; then
     cli clean-dry-run 0 'nothing to clean|Would remove' clean --dry-run
-    if [ "$(docker image ls -q --no-trunc | sort)" = "$imgs_before" ]; then record cli clean-dry-run-removes-nothing PASS 0 "image list unchanged"
-    else record cli clean-dry-run-removes-nothing FAIL 0 "images changed during clean --dry-run"; fi
+    gone="$(printf '%s\n' "$imgs_before" | grep -vxF -f <(docker image ls -aq --no-trunc 2>/dev/null) || true)"
+    if [ -z "$imgs_before" ]; then record cli clean-dry-run-removes-nothing FAIL 0 "found none of this project's images to watch"
+    elif [ -z "$gone" ]; then record cli clean-dry-run-removes-nothing PASS 0 "this project's $(printf '%s\n' "$imgs_before" | wc -l | tr -d ' ') images all still there"
+    else record cli clean-dry-run-removes-nothing FAIL 0 "images gone during clean --dry-run: $(printf '%s' "$gone" | tr '\n' ' ')"; fi
   else record cli clean-dry-run SKIP 0 "no clean --dry-run on this branch"; fi
   cli helper-status 0 'Update helper: not installed' helper status
   # setup --yes turns Bedrock speech-to-text on when Voxtral's check succeeded (the throwaway's key can use it); since

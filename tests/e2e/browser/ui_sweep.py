@@ -276,7 +276,7 @@ def capture(page, state: str, full: bool = True, frame_hosts: tuple[str, ...] = 
         try:   # the control inventory: every visible control, and the hidden ones with an id (see ui_inventory.py)
             raw = f.evaluate(ui_inventory.COLLECT_CONTROLS)
             ui_inventory.merge_state(CONTROLS, f"{CUR['page']}-{state}-{CUR['width']}-{CUR['theme']}".replace("/", "_"),
-                                     *ui_inventory.normalize_controls(raw, "" if top else urlsplit(d["url"]).hostname or ""))
+                                     *ui_inventory.normalize_controls(raw, "" if top else urlsplit(d["url"]).hostname or "", HOST))
             count("controls recorded", len(raw["visible"]))
         except PwError as e:
             find("collect", f"controls of {f.url[:120]}: {str(e)[:200]}")

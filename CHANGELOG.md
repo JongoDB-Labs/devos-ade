@@ -6,7 +6,20 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Fixed
+- **`./stack clean` works on a busy Docker host.** It said "could not list the images in use" and removed nothing when other
+  containers on the same Docker host (another stack's, or a CI job's) came and went while it looked: a container that is
+  gone uses no image, so it is left out now. Any other Docker error still means nothing is removed.
+
 ### Tests
+- **Checks that a busy test host made fail now wait for what they check.** Typing into a terminal waits for its prompt, the
+  update card for the line about the next release, the install offer for the browser's event, `./stack logs` up to 30 s
+  for its first line, and the search timing tries up to three times. The "dry run removes nothing" check watches this
+  stack's images only, not the ones other stacks on the host build and remove.
+- **The UI sweep's comparison matches controls inside frames across two stacks.** A frame was named by its host, which
+  carries the stack's name, so with the old release on a throwaway of its own every control in Chat, Code or the
+  Terminal looked lost. An old release whose git server has a fixed subnet (before v0.56.0) waits for any other one on
+  the same Docker host.
 - **The long end-to-end runs can be split across test stacks.** `E2E_SHARD=K/N` runs part K of the browser suite's
   checks, split by file into N parts that take about the same time (settings, sign-out and the checks that run once go to
   part 1), so several throwaways share the full run. The UI sweep now sweeps the release it compares against at the same

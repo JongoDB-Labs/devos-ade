@@ -56,6 +56,17 @@ class Normalize(unittest.TestCase):
         inv.merge_state(b, "k", vis, hid)
         self.assertEqual(len(b["k"]["visible"]), 1)
 
+    def test_two_stacks_frames_and_names_match(self):
+        # each stack has its own host (PROJECT.localhost): the old release's throwaway and the candidate's differ
+        raw = {"visible": [{"role": "link", "name": "Open chat.bne2e-sw1-ref.localhost", "disabled": False, "id": "x"}], "hidden": ["gone"]}
+        vis, hid = inv.normalize_controls(raw, "chat.bne2e-sw1-ref.localhost", host="bne2e-sw1-ref.localhost")
+        self.assertEqual((vis[0]["frame"], vis[0]["name"]), ("chat.<stack>", "Open chat.<stack>"))
+        self.assertEqual(hid, ["chat.<stack>#gone"])
+        raw2 = {"visible": [{"role": "link", "name": "Open chat.bne2e-sw1.localhost", "disabled": False, "id": "x"}], "hidden": ["gone"]}
+        self.assertEqual(inv.normalize_controls(raw2, "chat.bne2e-sw1.localhost", host="bne2e-sw1.localhost"), (vis, hid))
+        self.assertEqual(inv.normalize_controls(raw, "", host="bne2e-sw1-ref.localhost")[0][0]["frame"], "")
+        self.assertEqual(inv.normalize_controls(raw, "other.example")[0][0]["frame"], "other.example")
+
 
 class Diff(unittest.TestCase):
     def run_(self, old, new, allow=()):

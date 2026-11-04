@@ -621,6 +621,7 @@ def focus_view(page, n: int):
 
 def run_in(page, n: int, line: str):
     f = focus_view(page, n)
+    wait_text(f, r"\$ ?$")   # its shell's prompt: keys typed before the terminal is connected are lost
     f.locator(".xterm-helper-textarea").focus()
     page.keyboard.type(line, delay=15)
     page.keyboard.press("Enter")

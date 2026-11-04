@@ -478,6 +478,10 @@ def update_now_after_a_failed_update(ctx):
         # 2. that card dismissed: both in the update card's place, which says what is left and what comes after
         page.click("#job-dismiss")
         page.wait_for_selector("#update-now:visible", timeout=5000)
+        try:   # (what comes after is the release list's, which can be read after the card shows: a busy host is slow)
+            page.wait_for_function("() => document.getElementById('update-steps').innerText.includes('Then Update now installs')", timeout=10000)
+        except PwError:
+            pass   # (said below, with what the card says)
         card = {k: page.inner_text(sel) for k, sel in (("title", "#update-title"), ("meta", "#update-meta"), ("now", "#update-now"),
                                                         ("back", "#update-rollback"), ("steps", "#update-steps"))}
         expect(card["title"] == "The last update did not finish" and card["now"] == "Finish the update" and card["back"] == "Roll back to v0.4.1",
@@ -1354,6 +1358,10 @@ def pwa_app_states(ctx):
 
     # 3. Installed from another tab while this one offered Install: the app's mark appears, Open replaces Install.
     page, rec = _app_page(ctx, "pwa-installed-elsewhere", BIP_SOON)
+    try:   # (the browser's install offer comes 0.3 s after the page's script starts: on a busy host, later than 3 s)
+        page.wait_for_function(f"() => {APP_STATE} === 'install'", timeout=10000)
+    except PwError:
+        pass   # (said below, with what the page decided)
     got = _settled(page)
     expect(got["state"] == "install" and got["install"] == 2, f"[before] {got}")
     side = _side(page)

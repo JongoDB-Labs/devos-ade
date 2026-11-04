@@ -109,15 +109,17 @@ EOF
 _ids() { local f; for f in "$@"; do [ -f "$f" ] && cut -f1 "$f"; done; return 0; }
 
 # images_used_by_containers -> IDs of the images of every container on this machine (any project, any state).
-# Fails (nothing may be removed then) when Docker cannot say: docker ps fails, or docker inspect twice (a container
-# that goes away between the two calls makes one attempt fail).
+# Fails (nothing may be removed then) when Docker cannot say: docker ps fails, or docker inspect twice. A container
+# that went away between the two calls (a busy Docker host: other stacks' come and go) uses no image: its "no such
+# object" is left out, not a failure. (Any other line stays in: more kept, never less.)
 images_used_by_containers() {
   local ids out _
   for _ in 1 2; do
     ids="$(docker ps -aq --no-trunc 2>/dev/null)" || return 1
     [ -n "$ids" ] || return 0
     # shellcheck disable=SC2086  # one argument per container id
-    if out="$(docker inspect --format '{{.Image}}' $ids 2>/dev/null)"; then printf '%s\n' "$out"; return 0; fi
+    if out="$(docker inspect --format '{{.Image}}' $ids 2>&1)"; then printf '%s\n' "$out"; return 0; fi
+    case "$out" in *[Nn]o\ such\ object*) printf '%s\n' "$out" | grep -iv 'no such object'; return 0 ;; esac
   done
   return 1
 }

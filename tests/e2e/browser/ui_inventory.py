@@ -93,9 +93,13 @@ def normalize_name(name: str) -> str:
     return s
 
 
-def normalize_controls(raw: dict, frame: str = "") -> tuple[list[dict], list[str]]:
-    """A frame's COLLECT_CONTROLS answer -> (visible controls with normalized names, hidden ids), FRAME ("" for the page)."""
-    vis = [{"role": c["role"], "name": normalize_name(c["name"]), "disabled": bool(c["disabled"]), "id": c["id"], "frame": frame}
+def normalize_controls(raw: dict, frame: str = "", host: str = "") -> tuple[list[dict], list[str]]:
+    """A frame's COLLECT_CONTROLS answer -> (visible controls with normalized names, hidden ids), FRAME ("" for the page).
+    HOST, the stack's own (PROJECT.localhost), is <stack> in FRAME and the names: two stacks' controls match."""
+    def own(s: str) -> str:
+        return s.replace(host, "<stack>") if host else s
+    frame = own(frame)
+    vis = [{"role": c["role"], "name": normalize_name(own(c["name"] or "")), "disabled": bool(c["disabled"]), "id": c["id"], "frame": frame}
            for c in raw.get("visible", [])]
     return vis, [f"{frame}#{i}" if frame else f"#{i}" for i in raw.get("hidden", [])]
 
