@@ -6,6 +6,12 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Tests
+- **The long end-to-end runs can be split across test stacks.** `E2E_SHARD=K/N` runs part K of the browser suite's
+  checks, split by file into N parts that take about the same time (settings, sign-out and the checks that run once go to
+  part 1), so several throwaways share the full run. The UI sweep now sweeps the release it compares against at the same
+  time as the candidate, each on its own throwaway, not one after the other.
+
 ## [0.57.0] - 2026-11-03
 
 ### Added

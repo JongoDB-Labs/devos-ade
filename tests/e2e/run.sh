@@ -33,6 +33,11 @@
 #                    tests/e2e/docker-reuse; the cache keeps the images of one tree; setup/image-cache says what it did)
 #   E2E_CHECKS=REGEX only the browser checks whose suite/id matches (a Python regex, on top of each pass's own
 #                    filter): a focused run that spends less on Bedrock, e.g. E2E_CHECKS='code-settings-row|code-auto'
+#   E2E_SHARD=K/N    the browser suite's main pass split by file into N parts of about the same time
+#                    (browser/common.py shard_parts), for N throwaways at once: this run does part K's checks; settings/*
+#                    (with --helper), final/* and the stand-ins on ttyd's and bn-coded's sockets after the passes run in
+#                    part 1 only. K=0: no main pass, no settings/* or final/* (the other parts' own browser checks, as
+#                    voice's and the subscriptions' pickers, still run). Each part's --only says what else it runs.
 #   (default)        the Code page and its browser terminal are on, as on a new install: setup turns them on by
 #                    default, in a workspace folder next to the checkout (TERMINAL_WORKSPACE, seeded): the terminal's
 #                    isolation probe, the browser suite's terminal checks and, with the claude part, one
@@ -205,6 +210,15 @@ for part in $(printf '%s' "$ONLY" | tr ',' ' '); do
   case "$part" in cli | browser | voice | claude | websearch | mutating) ;; *) echo "--only: unknown part '$part' (cli, browser, voice, claude, websearch, mutating)" >&2; exit 2 ;; esac
 done
 part_on() { case ",$ONLY," in *",$1,"*) return 0 ;; esac; return 1; }   # part_on PART -> 0 when --only includes it
+SHARD_K='' SHARD_N=''
+if [ -n "${E2E_SHARD:-}" ]; then
+  case "$E2E_SHARD" in */*) SHARD_K="${E2E_SHARD%%/*}" SHARD_N="${E2E_SHARD#*/}" ;; esac
+  case "$SHARD_K" in '' | *[!0-9]*) SHARD_N='' ;; esac   # (no slash, or no number before it)
+  case "$SHARD_N" in '' | *[!0-9]*) echo "E2E_SHARD=$E2E_SHARD: want K/N (0 <= K <= N)" >&2; exit 2 ;; esac
+  SHARD_K=$((10#$SHARD_K)) SHARD_N=$((10#$SHARD_N))   # (01/4 is part 1, as common.py reads it)
+  [ "$SHARD_N" -ge 1 ] && [ "$SHARD_K" -le "$SHARD_N" ] || { echo "E2E_SHARD=$E2E_SHARD: want K/N (0 <= K <= N)" >&2; exit 2; }
+fi
+part1() { [ -z "$SHARD_K" ] || [ "$SHARD_K" = 1 ]; }   # this run does what only one of E2E_SHARD's parts does
 # The terminal's devos-claude -p (browser suite) is a second Claude Code run, on the terminal's own key.
 if [ "$TERMINAL" = 1 ]; then BUDGETS="$BUDGETS BUDGET_TERMINAL=0.06"; SPEND_LIMIT="0.16"; fi
 # The Code page's checks: a few dozen Haiku turns (each new session writes ~26k tokens of prompt cache) on that key —
@@ -1046,6 +1060,7 @@ browser_run() {
   # the terminal's one real Claude Code call (browser/terminal-devos-claude-inside) only with the claude part
   E2E_TERMINAL_CLAUDE="$( [ "$TERMINAL" = 1 ] && part_on claude && [ "$NO_CLAUDE" = 0 ] && echo 1 || echo 0)" \
     E2E_TERMINAL_HOSTILE="${HOSTILE:-0}" E2E_CODE_HOSTILE="${CODE_HOSTILE:-0}" E2E_HELPER_ON="${HELPER_ON:-0}" E2E_TAG="$tag" \
+    E2E_PASS_SHARD="${PASS_SHARD:-}" \
     "$HERE/browser.sh" "$STACK" "$OUT" "$PROJECT" "$PW_IMAGE" "$filter"; rc=$?
   got="$(grep -c . "$OUT/browser/results.tsv" 2>/dev/null || true)"; got="${got:-0}"
   want="$(cat "$OUT/browser/expected.txt" 2>/dev/null || echo '?')"
@@ -1058,15 +1073,22 @@ browser_run() {
 if ! part_on browser; then
   record browser suite SKIP 0 "--only $ONLY"
   [ "$HELPER" = 0 ] || record helper update-helper SKIP 0 "--helper: not started (no browser part in --only $ONLY)"
+elif [ "$SHARD_K" = 0 ]; then
+  record browser suite SKIP 0 "E2E_SHARD=$E2E_SHARD: the main pass, settings/* and final/* are the parts 1 to $SHARD_N's"
+  [ "$HELPER" = 0 ] || record helper update-helper SKIP 0 "--helper: not started (E2E_SHARD=$E2E_SHARD: part 1 runs it)"
 elif [ "$HELPER" = 0 ]; then
-  say "browser suite (Playwright container)"
-  browser_run "full suite"
+  say "browser suite (Playwright container)${SHARD_K:+: part $SHARD_K of $SHARD_N}"
+  PASS_SHARD="${E2E_SHARD:-}" browser_run "full suite${SHARD_K:+, part $SHARD_K of $SHARD_N}"
   record helper update-helper SKIP 0 "not started: the settings/* checks skip (tests/e2e/run.sh --helper runs them)"
+elif ! part1; then
+  say "browser suite (Playwright container): part $SHARD_K of $SHARD_N, without settings/* and final/* (part 1's)"
+  PASS_SHARD="$E2E_SHARD" browser_run "part $SHARD_K of $SHARD_N, without settings/* and final/*" '^(?!settings/|final/)'
+  record helper update-helper SKIP 0 "--helper: not started (E2E_SHARD=$E2E_SHARD: settings/* are part 1's)"
 else
   # Three passes, in the order of one run: the checks that fake the helper's heartbeat or need it absent; settings/*
   # with the real helper; final/ (sign-out revokes every session) last
-  say "browser suite (Playwright container): every check but settings/* and final/*"
-  browser_run "without settings/* and final/*" '^(?!settings/|final/)'
+  say "browser suite (Playwright container): every check but settings/* and final/*${SHARD_K:+ (part 1 of $SHARD_N)}"
+  PASS_SHARD="${E2E_SHARD:-}" browser_run "without settings/* and final/*${SHARD_K:+ (part 1 of $SHARD_N)}" '^(?!settings/|final/)'
   say "update helper: $STACK/bin/devos-ade-helper in the foreground ($HELPER_KNOBS; log: $LOGS/helper.log)"
   if e2e_helper_start 2> "$LOGS/helper-start.log"; then   # (not in a $( ) subshell: it keeps HELPER_PID)
     say "browser suite: settings/* (the update helper running)"
@@ -1084,7 +1106,7 @@ else
   say "browser suite: final/* (sign-out)"
   browser_run "final/* (sign-out)" '^final/' '' runner-final
 fi
-if part_on browser; then
+if part_on browser && part1; then
   # The terminal host whoever answers on ttyd's socket: as code in the sandbox could, a stand-in (terminal-stub.py)
   # takes the socket's path (ttyd's own moved aside: ttyd keeps listening on it), the browser check runs against it,
   # then the stand-in puts ttyd's socket back. The gateway restarts each time, so it keeps no connection to the other.
@@ -1760,6 +1782,7 @@ fi
 
 # --- 4. devos-claude (the throwaway's wrapper, never the ~/.local/bin link), and claude-bedrock, its old name ---
 if ! part_on claude; then record claude devos-claude SKIP 0 "--only $ONLY"
+elif ! part1; then record claude devos-claude SKIP 0 "E2E_SHARD=$E2E_SHARD: part 1's"
 elif [ "$NO_CLAUDE" = 1 ]; then record claude devos-claude SKIP 0 "--no-claude"
 elif ! command -v claude >/dev/null 2>&1; then record claude devos-claude SKIP 0 "Claude Code (claude) is not installed"
 else

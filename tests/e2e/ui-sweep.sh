@@ -73,13 +73,15 @@ done
 . "$ROOT/lib/ports.sh"   # port_in_use
 # shellcheck source=browser-net.sh
 . "$HERE/browser-net.sh"   # the Linux browser's own network
-if [ -n "$COMPARE" ]; then   # the sweep twice (REF, then the candidate) and the diff; each run is this script, as a plain run
+if [ -n "$COMPARE" ]; then   # the sweep twice (REF and the candidate, at once) and the diff; each run is this script, as a plain run
   { [ -z "$LAYOUT" ] && [ "$REUSE$TEARDOWN_ONLY" = 00 ]; } || die "--compare does not combine with --layout, --reuse or --teardown"
   [ -n "$AWS_ENV_FILE" ] || die "--aws-env FILE is required"
   git -C "$ROOT" rev-parse --verify -q "$COMPARE^{commit}" >/dev/null || die "--compare: no such tag or commit: $COMPARE"
   CMP="${OUT_DIR:-$ROOT/tests/e2e/out/ui-sweep}/compare"; mkdir -p "$CMP"; CMP="$(cd "$CMP" && pwd -P)"
   REFWT="$ROOT/tests/e2e/work/compare-ref-$$"; mkdir -p "$(dirname "$REFWT")"
-  trap 'git -C "$ROOT" worktree remove --force "$REFWT" >/dev/null 2>&1; rm -rf "$REFWT"' EXIT
+  # (REF's sweep, if it still runs, ended first: its own exit tears its throwaway down)
+  trap '[ -z "${ref_pid:-}" ] || { kill "$ref_pid" 2>/dev/null; wait "$ref_pid" 2>/dev/null; }
+    git -C "$ROOT" worktree remove --force "$REFWT" >/dev/null 2>&1; rm -rf "$REFWT"' EXIT
   git -C "$ROOT" worktree add -q --detach "$REFWT" "$COMPARE" || die "cannot make a worktree of $COMPARE"
   rm -rf "$CMP/ref" "$CMP/candidate" "$CMP/inventory-diff.json"
   more=(); [ "$LONG" = 0 ] || more=(--long-path)
@@ -96,15 +98,21 @@ if [ -n "$COMPARE" ]; then   # the sweep twice (REF, then the candidate) and the
     mkdir -p "$CMP/ref/run/sweep" && cp "$ref_cache/controls.json" "$CMP/ref/run/sweep/controls.json"
     say "compare: $COMPARE's inventory from the cache ($ref_key, swept $(cat "$ref_cache/when" 2>/dev/null || echo '?')): not swept again"
   else
-    say "compare: sweeping $COMPARE ($(git -C "$REFWT" rev-parse --short HEAD))"
-    "$HERE/ui-sweep.sh" --aws-env "$AWS_ENV_FILE" --src "$REFWT" --project "$PROJECT" --out "$CMP/ref" ${more[@]+"${more[@]}"}
+    # REF on a throwaway of its own (PROJECT-ref) while the candidate is swept; what it says goes to ref.log, shown after
+    say "compare: sweeping $COMPARE ($(git -C "$REFWT" rev-parse --short HEAD)) as $PROJECT-ref, beside the candidate (log: $CMP/ref.log)"
+    "$HERE/ui-sweep.sh" --aws-env "$AWS_ENV_FILE" --src "$REFWT" --project "$PROJECT-ref" --out "$CMP/ref" ${more[@]+"${more[@]}"} > "$CMP/ref.log" 2>&1 &
+    ref_pid=$!
+  fi
+  say "compare: sweeping the candidate ($(git -C "$SRC" rev-parse --short HEAD))"
+  "$HERE/ui-sweep.sh" --aws-env "$AWS_ENV_FILE" --src "$SRC" --project "$PROJECT" --out "$CMP/candidate" ${more[@]+"${more[@]}"}
+  if [ -n "${ref_pid:-}" ]; then
+    wait "$ref_pid"; rrc=$?; ref_pid=''
+    say "compare: $COMPARE's sweep ended (exit $rrc); its last lines:"; tail -n 15 "$CMP/ref.log"
     if [ -s "$CMP/ref/run/sweep/controls.json" ] && [ "${SWEEP_REF_CACHE:-1}" != 0 ]; then
       mkdir -p "$ref_cache.tmp$$" && cp "$CMP/ref/run/sweep/controls.json" "$ref_cache.tmp$$/" && date -u '+%F %TZ' > "$ref_cache.tmp$$/when" &&
         { rm -rf "$ref_cache"; mv "$ref_cache.tmp$$" "$ref_cache"; } || rm -rf "$ref_cache.tmp$$"
     fi
   fi
-  say "compare: sweeping the candidate ($(git -C "$SRC" rev-parse --short HEAD))"
-  "$HERE/ui-sweep.sh" --aws-env "$AWS_ENV_FILE" --src "$SRC" --project "$PROJECT" --out "$CMP/candidate" ${more[@]+"${more[@]}"}
   for w in ref candidate; do [ -s "$CMP/$w/run/sweep/controls.json" ] || die "the $w sweep wrote no controls.json (see $CMP/$w/logs and run/sweep.log)"; done
   python3 "$HERE/ui_inventory_diff.py" "$CMP/ref/run/sweep/controls.json" "$CMP/candidate/run/sweep/controls.json" --out "$CMP"
   exit $?

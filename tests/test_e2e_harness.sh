@@ -1315,6 +1315,68 @@ PY
   assert_contains "$(cat "$TMP/out")" "ok"
 }
 
+test_e2e_shards_give_each_browser_check_one_part_of_about_the_same_time() {
+  # E2E_SHARD=K/N (common.shard_parts and in_shard, taken out of common.py as above; stand-in checks, each file's
+  # function named as common.CHECKS holds them): every check in one part of 1..N, none in part 0, settings/* and final/*
+  # in part 1, the same parts whatever the order, the real files' parts within 10% of each other; a bad K/N refused by
+  # common.py and by run.sh before anything is set up (no docker, no setup)
+  cat > "$TMP/shard.py" <<'PY'
+import ast, re, sys
+src = open(sys.argv[1], encoding="utf-8").read()
+want = {"SHARD_WEIGHTS", "SHARD_PART1_S", "shard_parts", "in_shard"}
+nodes = [n for n in ast.parse(src).body if (isinstance(n, ast.FunctionDef) and n.name in want)
+         or (isinstance(n, ast.Assign) and any(getattr(t, "id", "") in want for t in n.targets))]
+ns = {"re": re}
+exec(compile(ast.Module(nodes, []), "common.py", "exec"), ns)
+shard_parts, in_shard, W, P1 = ns["shard_parts"], ns["in_shard"], ns["SHARD_WEIGHTS"], ns["SHARD_PART1_S"]
+
+def check(cond, what):
+    if not cond:
+        print("FAIL:", what); sys.exit(1)
+
+def fn(module):
+    def f(ctx):
+        return "ok"
+    f.__module__ = module
+    return f
+
+checks = [("browser", f"{m}-{i}", fn(m)) for m in W for i in (1, 2)]
+checks += [("new", f"new-{i}", fn("checks_new")) for i in range(3)]   # a file not in SHARD_WEIGHTS: 15 s a check
+checks += [("settings", "settings-page", fn("checks_settings")), ("final", "sign-out", fn("checks_final"))]
+check(all(in_shard(checks, "")(c) for c in checks), "no E2E_SHARD: every check")
+for n in range(1, 10):
+    tests = [in_shard(checks, f"{k}/{n}") for k in range(n + 1)]
+    for c in checks:
+        got = [k for k in range(n + 1) if tests[k](c)]
+        check(got == [1] if c[0] in ("settings", "final") else len(got) == 1 and got[0] >= 1, (n, c[:2], got))
+    check(shard_parts(list(reversed(checks)), n) == shard_parts(checks, n), f"{n} parts: not the same in another order")
+real = [c for c in checks if c[2].__module__ in W]
+for n in (2, 3, 4):
+    parts = shard_parts(real, n)
+    load = [P1 if k == 1 else 0 for k in range(1, n + 1)]
+    for m, k in parts.items():
+        load[k - 1] += W[m]
+    check(max(load) <= 1.1 * sum(load) / n, f"{n} parts: {load}")
+for bad in ("4", "5/4", "1/0", "a/2", "1/2/3", "-1/2", "/2", "2/"):
+    try:
+        in_shard(checks, bad)
+    except SystemExit as e:
+        check("want K/N" in str(e), (bad, e))
+    else:
+        check(False, f"E2E_SHARD={bad} taken")
+print("ok")
+PY
+  python3 -I "$TMP/shard.py" "$STACK_DIR/tests/e2e/browser/common.py" > "$TMP/out" 2>&1 || { cat "$TMP/out" >&2; return 1; }
+  assert_contains "$(cat "$TMP/out")" "ok"
+  local out rc bad
+  for bad in 4 5/4 1/0 a/2 1/2/3 /2 2/; do
+    rc=0
+    out="$(cd "$TMP" && E2E_SHARD="$bad" bash "$STACK_DIR/tests/e2e/run.sh" --only browser --project bne2e-shard --aws-env /nonexistent 2>&1)" || rc=$?
+    assert_eq "$rc" 2
+    assert_contains "$out" "E2E_SHARD=$bad: want K/N"
+  done
+}
+
 # _relay_echo — a TCP echo server on a free 127.0.0.1 port (ECHO_PORT; ECHO_PID), each connection's bytes sent back until
 # its end, then its own end (half-close); it ends by itself after 60 s. client.py — the bytes each way through it.
 # RELAY_DIR: a short folder for the sockets (TMP's path is too long for one: at most 104 bytes on macOS).

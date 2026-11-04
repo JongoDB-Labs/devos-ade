@@ -40,6 +40,15 @@ CLAUDE_CODE_VERSION = os.environ.get("E2E_CLAUDE_CODE_VERSION", "")
 FILTER = os.environ.get("E2E_FILTER", "")
 # tests/e2e/run.sh: E2E_CHECKS narrows every pass further (a focused run that spends less on Bedrock)
 CHECKS_RE = os.environ.get("E2E_CHECKS", "")
+# tests/e2e/run.sh: E2E_SHARD=K/N — the checks split by file into N parts of about the same time (SHARD_WEIGHTS), this
+# pass keeps part K's; settings/* and final/* belong to part 1. K=0: none of them (run.sh's other passes run there).
+SHARD = os.environ.get("E2E_SHARD", "")
+# Seconds each file's checks took in a full run's main pass (v0.57.0's 057c); a file not listed counts 15 s a check.
+# Part 1 also has settings/* with the update helper and final/*: about SHARD_PART1_S more.
+SHARD_WEIGHTS = {"checks_browser": 474, "checks_code": 415, "checks_layout": 287, "checks_models": 93, "checks_terminal": 88,
+                 "checks_widgets": 31, "checks_activity": 27, "checks_artifact": 21, "checks_preview": 19, "checks_mentions": 17,
+                 "checks_run": 15, "checks_git": 13, "checks_api": 8, "checks_voice": 4, "checks_http": 2, "checks_subscriptions": 1}
+SHARD_PART1_S = 500
 # The app versions the app-specific selectors were written against (compose.yaml pins them; browser.sh passes the
 # pinned tags). Checks that drive these UIs skip, saying why, on any other version instead of failing obscurely.
 TESTED_WITH = {"open-webui": "v0.12.4-slim", "litellm": "1.106.3", "rustfs": "1.0.3"}
@@ -283,9 +292,40 @@ def _tidy(ctx, suite: str, cid: str, ok: bool) -> None:
             print(f"  {'tidy':<5} {suite}/{cid}: {redact(said).replace(chr(10), ' ')[:600]}", flush=True)
 
 
+def shard_parts(checks, n: int) -> dict[str, int]:
+    """Each file of the checks -> its part (1..n): the heaviest first, each to the part with the least time so far
+    (part 1 starting at SHARD_PART1_S); the same for every part, as it reads all the checks, not the selected ones."""
+    weight: dict[str, float] = {}
+    for _, _, fn in checks:
+        m = fn.__module__
+        weight[m] = SHARD_WEIGHTS[m] if m in SHARD_WEIGHTS else weight.get(m, 0) + 15
+    load = [0.0] * (n + 1)
+    load[1] = SHARD_PART1_S
+    parts = {}
+    for m in sorted(weight, key=lambda m: (-weight[m], m)):
+        k = min(range(1, n + 1), key=lambda i: (load[i], i))
+        parts[m] = k
+        load[k] += weight[m]
+    return parts
+
+
+def in_shard(checks, shard: str):
+    """The test for E2E_SHARD=K/N (all when empty): a check of part K (settings/* and final/*: part 1)."""
+    if not shard:
+        return lambda c: True
+    m = re.fullmatch(r"(\d+)/(\d+)", shard)
+    if not m or int(m.group(2)) < 1 or int(m.group(1)) > int(m.group(2)):
+        raise SystemExit(f"E2E_SHARD={shard!r}: want K/N with 0 <= K <= N")
+    k, n = int(m.group(1)), int(m.group(2))
+    parts = shard_parts(checks, n)
+    return lambda c: k == 1 if c[0] in ("settings", "final") else parts[c[2].__module__] == k
+
+
 def run_all(ctx) -> int:
     fails = 0
-    selected = [c for c in CHECKS if (not FILTER or re.search(FILTER, f"{c[0]}/{c[1]}")) and (not CHECKS_RE or re.search(CHECKS_RE, f"{c[0]}/{c[1]}"))]
+    mine = in_shard(CHECKS, SHARD)
+    selected = [c for c in CHECKS if (not FILTER or re.search(FILTER, f"{c[0]}/{c[1]}")) and (not CHECKS_RE or re.search(CHECKS_RE, f"{c[0]}/{c[1]}"))
+                and mine(c)]
     (OUT / "expected.txt").write_text(f"{len(selected)}\n", encoding="ascii")   # run.sh: every check must report
     for suite, cid, fn in selected:
         t0 = time.time()
