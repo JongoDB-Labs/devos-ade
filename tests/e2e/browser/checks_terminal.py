@@ -257,13 +257,15 @@ def survives(ctx):
             page.wait_for_timeout(500)
         else:
             type_line(page, f, "tmux list-windows -t claude -F '#{window_index}:#W' | tr '\\n' ' '; echo")
-            out = wait_text(f, re.escape(mark), 20)
+            # (INDEX:mark is in the list only: the mark alone is on the screen already, in the line the first browser typed)
+            out = wait_text(f, rf"\d+:{re.escape(mark)}", 20)
         rec.save()
     # the list is one line, but other checks' windows (Run, Start, Open in the terminal) can make it wrap in xterm
     names = " ".join(out.split())
-    # (the first window, index 0, is bedrock — Claude Code on Bedrock; the tmux session is still claude. By tmux's list, not its
-    # status line, which drops the leftmost windows when there are many)
-    expect(re.search(r"(^|\s)0:bedrock(\s|$)", names), f"window 0 is not bedrock in {names[:300]!r}")
+    # (the first window — the lowest index, 1 by terminal/tmux.conf's base-index — is bedrock: Claude Code on Bedrock; the tmux
+    # session is still claude. By tmux's list, not its status line, which drops the leftmost windows when there are many)
+    wins = {int(i): w for i, w in re.findall(r"(?<!\S)(\d+):(\S+)", names)}
+    expect(wins and wins[min(wins)] == "bedrock", f"the first window is not bedrock in {names[-300:]!r}")
     return f"a window made in one browser ({mark}) is still there from the next one: {names[-120:]}"
 
 
