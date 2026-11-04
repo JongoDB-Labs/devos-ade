@@ -1047,6 +1047,16 @@ sessions from before projects are listed under it.
 
   A project's folder is 1 to 4 levels below `/workspace`, no name in it starts with `.`, at most 160 bytes. At most
   64 projects.
+- **Make it a project, from a chat** (JON-1060). Chat deliberately has no workspace: its sandbox cannot touch your files.
+  Under each Chat answer a **Make it a project** button hands the conversation to the Code page instead (installed by
+  `./stack setup`; Open WebUI's Admin Panel › Functions can turn it off). The Code tab opens a *New project* dialog with
+  the chat read-only above its fields: a name from the chat's title, an empty folder of the workspace,
+  *Keep it on your local git server* ticked, and *Continue this chat here*. **Nothing is created until you press
+  Create.** Then the project is made and kept, and a new session starts in it on your usual default model, in Manual
+  mode, with the conversation as its first message — quoted as text from the chat, not as instructions from you. It
+  writes the files; the kept project pushes them to the local git server (the Git tab shows them). A hand-off is used
+  once and lasts ten minutes; a chat over 200,000 characters is refused, and the dialog says so.
+  [docs/security.md](docs/security.md#make-it-a-project-from-chat)
 - **A project's own Claude Code configuration** (everything under its `.claude/` — settings, skills, commands, agents
   —, its `.mcp.json`, and the skills, commands and agents of the folders above it up to the git root, a monorepo's
   for instance; a cloned repository may bring it) applies only once you trusted it as it is: until then a session
@@ -3118,7 +3128,7 @@ code/                         the Code page: its backend (server/, Agent SDK pin
                               tests: code/test.sh, code/web/e2e/run.sh
 shared-mcp/                   MCP server for shared files and knowledge (Python; tests: docker build --target test shared-mcp)
 stt/                          the speech-to-text service for Voxtral on Bedrock (Python, ffmpeg; tests in stt/tests)
-owui/functions/               the Open WebUI cost filter (tests in owui/tests)
+owui/functions/               the Open WebUI cost filter and the Make it a project action (tests in owui/tests)
 open-webui/                   our Open WebUI image: the pinned one, with the Python runner's packages (packages.txt,
                               vendor.py; tests in tests/test_openwebui.sh)
 catalog/                      models, prices, display names, icons, AWS price map; settings.tsv: every setting

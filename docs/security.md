@@ -2064,6 +2064,45 @@ server, read-only, and both read files a hostile repository or sandbox shapes.
   and 5,000 candidates per search — a session title or file name from the sandbox cannot make it slow. It runs nothing
   you would not run from the page's menus.
 
+### Make it a project, from a chat
+
+Chat has no workspace and its sandbox cannot touch your files, and that does not change. *Make it a project* (JON-1060;
+`owui/functions/make_project.py`, an Open WebUI **Action** installed and kept current by `./stack setup` like the cost
+filter: enabled and global once, turned off for good in Admin Panel › Functions) puts a conversation in front of you on the
+Code page and nothing more. What an Action can do: it receives the chat's messages when its button is clicked, may send the
+Chat page a notification, and may ask the Chat page itself to run a snippet (Open WebUI's `execute` event, allowed by Chat's own
+policy). The path chosen is the one that gives Open WebUI **no new reach**:
+
+1. The action formats the chat as plain text (turns, without the cost line or reasoning blocks), takes its title from Open
+   WebUI (this user's own chat only) and asks the Chat page to run one short snippet: `window.parent.postMessage({type:
+   "bn-chat-handoff", id, title, text}, <the framing origin>)`. The chat is a JSON string literal in that snippet, parsed
+   there; it is never code. The action holds **no key, no address and no network call** (a unit test checks the file for
+   them); Open WebUI never reaches the portal or the Code page, and the Code page and the portal gain no route into Open WebUI.
+   A chat over 200,000 characters is not sent at all.
+2. The portal page (`static/code.js`) takes the message **only from the Chat tab's own frame and Chat's origin** (Chat can be
+   framed by the portal alone: `frame-ancestors`), one at a time, and POSTs it to `/api/chat-handoff` — the portal session and
+   `X-Requested-With`, the same-origin guard, at most 5 in 10 s, at most 1 MB on the wire (Caddy) and 200,000 characters
+   (the portal) — and tells the frame how it went. The portal (`portal/chathandoff.py`) keeps the title and text **in memory
+   only**, never on disk or in a log, under a random 192-bit id, for the sign-in that made it, for **10 minutes**, at most 8 at
+   once, and forgets them all at Sign out.
+3. The Code tab opens at `?handoff=<id>` (kept through the Code page's unlock like the other deep links, rebuilt from what
+   checks out: an id's shape, or `too-big` / `failed`). The Code page redeems it with `POST /.bn/handoff` on its own host —
+   the Code page's own script (its Origin, `X-Requested-With: bn-code`, the unlock), Caddy's `/.bn/handoff` route to
+   `/auth/code-handoff`, 1 KB at most — which returns the text **once**, for the same sign-in. A second try, a wrong sign-in, an
+   old or unknown id: 404. The link leaves the address bar at once.
+4. The dialog shows the conversation **read-only**, every invisible or direction-changing character shown as `⟨U+…⟩`, as
+   everything untrusted on this page; the title is only a suggestion for the folder name (`a-z0-9._-`, always a name the page
+   takes). Nothing is created until **Create**. The session that continues the chat starts in **Manual** mode (every command
+   and file change waits for your OK), on the page's default model, and its first message quotes the chat between two tags
+   with a random mark of their own, states that it is text from the chat and not instructions from you, and defangs
+   every role-like tag and every `@`-mention in it (`@~/.codex/auth.json` would otherwise attach a file) — the same rules as
+   the other quoted conversations (`code/server/agents/quote.mjs`).
+
+What a compromised or prompt-injected Chat can therefore do: put a chat of the signed-in user's in a dialog that user must
+read and confirm, up to 8 times in 10 minutes. It cannot create a project, start a session, read or write a file, or learn
+anything from the Code page. Tests: `owui/tests/test_make_project.py`, `portal/tests/test_chat_handoff.py`,
+`portal/tests/js/chathandoff.test.mjs`, `code/web/test/handoff.test.ts`, the e2e `journey-chat-to-git`.
+
 ### Export to Files
 
 *Export to Files* (Projects menu, ⌘K) puts a project's files, zipped, into the Files app. The path keeps the sandbox's
@@ -3877,7 +3916,7 @@ never reads, copies, keeps, passes on or relays a login.**
   (`subs-chat-internal`), never the stack's default one; and bn-coded in Chat's role does not start where one of the
   stack's own names resolves — or where a lookup of one does not answer in time, twice: not known to be out of reach
   counts as reachable. Its one program
-  is bn-coded in Chat's role, which runs Chat's conversations and nothing else (no file, Git, project or session op);
+  is bn-coded in Chat's role, which runs Chat's conversations and nothing else (no file, Git, project or session op; Make it a project hands a chat to the Code page through the browser, [above](#make-it-a-project-from-chat), and gives Chat no such op);
   the workspace's bn-coded refuses a Chat conversation. The code container reaches it on one socket of its own
   (`chat-socket`).
 - [x] **No tools in Chat.** Each conversation runs in an empty folder of its own (`~/.bn-chat/<32 hex>`, made by

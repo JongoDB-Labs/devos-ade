@@ -32,6 +32,15 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
     connection the code container already keeps open to the sandbox: no new port.
   - The Projects tab offers git repositories of the workspace that are not projects, one line per folder: **Add as project** or
     **Not now** (remembered for that folder).
+- **Make it a project, from a chat (JON-1060).** A **Make it a project** button under each Chat answer (an Open WebUI action,
+  installed by `./stack setup`; Admin Panel › Functions turns it off) carries the conversation to the Code page: a *New
+  project* dialog with the chat read-only above a name from its title, an empty folder, *Keep it on your local git server*
+  ticked and *Continue this chat here*. Nothing is created until Create; then the project is made and kept and a new session
+  starts in it (your default model, Manual mode) with the conversation as quoted text from the chat, not instructions from
+  you; it writes the files and the kept project pushes them. Chat itself still cannot touch your files: the hand-off crosses
+  only in the browser (Chat's page → the portal's page), is kept by the portal in memory, once, for 10 minutes, and a chat over
+  200,000 characters is refused (the dialog says so). Open WebUI gets no key, address or route to the portal or the Code page.
+  New: `POST /api/chat-handoff` and `POST /.bn/handoff`, `?handoff=` on the Code page's links; e2e `journey-chat-to-git`.
 
 ## [0.58.0] - 2026-11-04
 
