@@ -17,6 +17,7 @@ const SECRET = 'ab'.repeat(16);
 const SID = '3f2a1b4c-5d6e-4f70-8192-a3b4c5d6e7f8';
 const calls = [];
 // the stand-in sandbox's answers, by op
+const transcriptWritten = new Set();   // (sessions whose transcript file the fake sandbox has: the rest answer 'no such session' to a title)
 const answers = {
   'sessions.list': () => ({ result: { sessions: [
     { id: SID, mtimeMs: 1700000000000, size: 10, firstPrompt: '<img src=x onerror=alert(1)>' },
@@ -33,7 +34,7 @@ const answers = {
   'fs.write': (req) => (req.ifMtimeMs === 1 ? Promise.reject(new SandboxError('changed on disk since it was opened', 'refused'))
     : { result: { path: req.path, size: req.size, mtimeMs: 2 } }),
   'fs.delete': () => ({ result: { trash: '.devos-ade-trash/x/a' } }),
-  'sessions.title': () => ({ result: { ok: true } }),
+  'sessions.title': (req) => (req.title === 'Named mid-turn' && !transcriptWritten.has(req.id) ? Promise.reject(new SandboxError('no such session', 'refused')) : { result: { ok: true } }),
   'fs.find': (req) => ({ result: { paths: [`src/${req.q}.ts`, '../../etc/passwd', '/abs', 'a\u0000b', 7, 'src/'], truncated: true } }),
   'memory.read': () => ({ result: { path: '~/.claude/CLAUDE.md', exists: true, size: 6, mtimeMs: 3, truncated: false }, stdout: Buffer.from('# mine') }),
   'memory.write': (req) => ({ result: { path: '~/.claude/CLAUDE.md', size: req.size, mtimeMs: 4 } }),
@@ -590,6 +591,16 @@ test('the @-picker over the workspace, memory files, a never-prompted session\'s
   srv.mgr.get(json.id).prompt({ text: 'hi' });
   for (let i = 0; i < 50 && !calls.some(([c]) => c.op === 'sessions.title' && c.id === json.id); i++) await new Promise((res) => setTimeout(res, 20));
   assert.ok(calls.some(([c]) => c.op === 'sessions.title' && c.id === json.id && c.title === 'Named early'));
+  // prompted, but its transcript file not written yet (a chat handed over from Chat, renamed just after its first prompt): kept, and
+  // written once a turn is over
+  r = await req('POST', `/api/sessions/${json.id}/title`, { body: { title: 'Named mid-turn' } });
+  assert.deepEqual([r.status, r.json], [200, { ok: true, pending: true }]);
+  assert.equal(srv.mgr.get(json.id).title, 'Named mid-turn');
+  transcriptWritten.add(json.id);
+  srv.mgr.get(json.id).prompt({ text: 'again' });
+  const written = () => calls.filter(([c]) => c.op === 'sessions.title' && c.id === json.id && c.title === 'Named mid-turn').length;
+  for (let i = 0; i < 50 && written() < 2; i++) await new Promise((res) => setTimeout(res, 20));
+  assert.equal(written(), 2, 'refused once (no transcript yet), then written after the turn');
   // the history's tail: the last N messages, more = earlier ones exist
   r = await req('GET', `/api/sessions/${SID}/messages?tail=1`);
   assert.deepEqual([r.json.total, r.json.offset, r.json.limit, r.json.more], [2, 1, 1, true]);

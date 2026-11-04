@@ -365,6 +365,7 @@ def terminal_folder_to_git(ctx):
             page.wait_for_timeout(4000)    # (the backend looks at the workspace after every list, at most every 3 s)
             page.reload()
             see(page.get_by_test_id("conn")).to_have_text("Connected", timeout=30000)
+        c = Code.on(page, rec, goto=False)   # (a reload takes the page's test hooks away: put back)
         gone = not any(x["root"] == J2 for x in c.api("GET", "/api/projects")["json"]["projects"])
         j.step(gone, f"{J2} was added again after Remove from Code")
         csp_clean(page, rec)

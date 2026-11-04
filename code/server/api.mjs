@@ -282,7 +282,14 @@ export function makeApi({ call, sessions, projects = null, reloadPollMs = 1000, 
     if (s) s.title = t;
     if (agentStore?.get(id)) { agentStore.put(id, { title: t }); return { ok: true }; }
     if (s && !s.hasTranscript) { s.pendingTitle = t; return { ok: true, pending: true }; }
-    await call({ op: 'sessions.title', id, title: t, ...cwdField(await cwdFor(id)), ...storeField(id) });
+    try {
+      await call({ op: 'sessions.title', id, title: t, ...cwdField(await cwdFor(id)), ...storeField(id) });
+    } catch (e) {
+      // (a session whose first prompt is on its way — a chat handed over from Chat is renamed just after it — has no transcript file
+      // until Claude Code writes it as that turn runs: the title is kept and written once the turn is over, as before any prompt)
+      if (s && e instanceof SandboxError && e.kind === 'refused' && e.message === 'no such session') { s.pendingTitle = t; return { ok: true, pending: true }; }
+      throw e;
+    }
     return { ok: true };
   }
 

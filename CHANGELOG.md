@@ -19,6 +19,9 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   project's folder (and its `git init`) waited for the same one-at-a-time slot as every git change in the workspace, so a push of another
   project refused it; it touches no repository but the new folder, so it now has a slot of its own. And one keep of a project runs at a
   time: the terminal's `project new --keep` and a project kept by itself at the same moment make one repository, not two attempts.
+- **Renaming a session while its first turn runs no longer fails with "Rename failed".** Until Claude Code has written the session's
+  transcript, the sandbox has no file to put the title in; the title is now kept and written once that turn is over, as it already was
+  before the first prompt. A chat handed over from Chat hit this every time it was named "From the chat: …" just after its first message.
 
 ### Added
 - **User-journey checks (JON-1058).** `browser/journey-code-to-git`, `journey-terminal-folder-to-git` and
