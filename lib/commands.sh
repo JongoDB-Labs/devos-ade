@@ -1167,6 +1167,7 @@ _setup_owui_syncs() {
   explabs_sync_owui      # optional; lib/explabs.sh
   stt_sync_owui          # optional; lib/stt.sh
   owui_install_cost_filter
+  owui_install_handoff_action   # lib/owui.sh: Chat's Make it a project button (JON-1060)
   sync_budget_banner
   portal_session_end
 }
@@ -1203,6 +1204,7 @@ models_recheck() {
   explabs_sync_owui      # optional; lib/explabs.sh
   stt_sync_owui          # lib/stt.sh
   owui_install_cost_filter
+  owui_install_handoff_action   # lib/owui.sh: Chat's Make it a project button (JON-1060)
   portal_session_end
 }
 

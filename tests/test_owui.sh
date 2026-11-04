@@ -259,6 +259,84 @@ test_install_cost_filter_never_fails() {
   assert_contains "$(cat "$TMP/err")" "prices not updated"
 }
 
+# --- Chat's "Make it a project" action (owui/functions/make_project.py; JON-1060) ---
+
+# The action stub: a tiny module whose installed copy matches when $FUNC_REPLY's content is its text.
+_stub_action() {
+  _stub_owui
+  HANDOFF_ACTION_FILE="$TMP/a.py"; printf 'y = 2\n' > "$HANDOFF_ACTION_FILE"
+  get_reply() { echo "$FUNC_REPLY"; }
+}
+
+test_install_handoff_action_first_install_enables_and_makes_it_global() {
+  _need_python || return 77
+  _stub_action
+  FUNC_REPLY='401 {"detail":"not found"}'
+  POST_BODY='{"id":"make_project","is_active":false,"is_global":false}' owui_install_handoff_action 2> "$TMP/err"
+  p="$(cat "$TMP/posts")"
+  assert_contains "$p" '/api/v1/functions/create {"id": "make_project", "name": "Make it a project", "content": "y = 2\n"'
+  assert_contains "$p" '/api/v1/functions/id/make_project/toggle {}'
+  assert_contains "$p" '/api/v1/functions/id/make_project/toggle/global {}'
+  assert_not_contains "$p" "valves"
+  assert_contains "$(cat "$TMP/err")" "Make it a project button"
+}
+
+test_install_handoff_action_is_idempotent() {
+  _need_python || return 77
+  _stub_action
+  FUNC_REPLY='200 {"id":"make_project","content":"y = 2\n","is_active":true,"is_global":true}'
+  owui_install_handoff_action 2> "$TMP/err"
+  assert_eq "$(cat "$TMP/posts")" ""
+  assert_eq "$(cat "$TMP/err")" ""
+}
+
+test_install_handoff_action_updates_changed_code_and_respects_admin_switches() {
+  _need_python || return 77
+  _stub_action
+  # the admin turned it off: a new version of the code goes in, the switches stay where the admin put them
+  FUNC_REPLY='200 {"id":"make_project","content":"y = 1\n","is_active":false,"is_global":false}'
+  POST_BODY='{"id":"make_project","is_active":false,"is_global":false}' owui_install_handoff_action 2>/dev/null
+  p="$(cat "$TMP/posts")"
+  assert_contains "$p" '/api/v1/functions/id/make_project/update {"id": "make_project"'
+  assert_not_contains "$p" "toggle"
+}
+
+test_install_handoff_action_reinstalls_a_deleted_action() {
+  _need_python || return 77
+  _stub_action
+  FUNC_REPLY='401 {"detail":"not found"}'
+  POST_BODY='{"id":"make_project","is_active":true,"is_global":true}' owui_install_handoff_action 2>/dev/null
+  p="$(cat "$TMP/posts")"
+  assert_contains "$p" "/api/v1/functions/create"
+  assert_not_contains "$p" "toggle"   # (the answer says it is on and global already)
+}
+
+test_install_handoff_action_never_fails() {
+  _stub_action
+  : > "$ENV_FILE"
+  owui_install_handoff_action 2> "$TMP/err"
+  assert_contains "$(cat "$TMP/err")" "no Open WebUI API key"
+  _stub_action
+  HANDOFF_ACTION_FILE="$TMP/missing.py"
+  owui_install_handoff_action 2> "$TMP/err"
+  assert_contains "$(cat "$TMP/err")" "missing"
+  _need_python || return 77
+  _stub_action
+  FUNC_REPLY='401 {}'; POST_CODE=500
+  owui_install_handoff_action 2> "$TMP/err"
+  assert_contains "$(cat "$TMP/err")" "could not install Make it a project (HTTP 500"
+}
+
+test_the_real_handoff_action_is_an_action_with_no_settings_or_address() {
+  a="$(cat "$STACK_DIR/owui/functions/make_project.py")"
+  assert_contains "$a" "class Action:"
+  assert_contains "$a" "icon_url: data:image/svg+xml;base64,"
+  assert_not_contains "$a" "class Filter"
+  assert_not_contains "$a" "http://"
+  assert_not_contains "$a" "https://"
+  assert_eq "$HANDOFF_ACTION_ID" make_project
+}
+
 test_file_sha256_matches_python_hash() {
   _need_python || return 77
   _stub_owui

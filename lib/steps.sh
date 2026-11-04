@@ -393,7 +393,7 @@ upd_in_syncs() {
   catalog_rows 2>/dev/null | cksum; prices_identity 2>/dev/null
   _upd_files "$STACK_DIR/litellm/enabled-models.txt" "$STATE_DIR/openrouter-owui-synced" "$STATE_DIR/explabs-owui-synced" "$STACK_DIR"/lib/owui.sh
   _upd_tree "$STACK_DIR/owui"
-  _upd_fn _setup_owui_syncs sync_openwebui_models owui_install_cost_filter sync_budget_banner openrouter_sync_owui explabs_sync_owui stt_sync_owui
+  _upd_fn _setup_owui_syncs sync_openwebui_models owui_install_cost_filter owui_install_handoff_action sync_budget_banner openrouter_sync_owui explabs_sync_owui stt_sync_owui
 }
 # The built-in SearXNG and the git server (Forgejo): their settings, compose files and code. The compose files carry their
 # pinned images; compose itself recreates a container whose image or settings changed (config_sums), the step only checks.

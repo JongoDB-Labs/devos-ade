@@ -8,6 +8,8 @@
 DISPLAY_CATALOG="${DISPLAY_CATALOG:-$STACK_DIR/catalog/display.tsv}"
 COST_FILTER_ID=bedrock_cost
 COST_FILTER_FILE="${COST_FILTER_FILE:-$STACK_DIR/owui/functions/bedrock_cost.py}"
+HANDOFF_ACTION_ID=make_project
+HANDOFF_ACTION_FILE="${HANDOFF_ACTION_FILE:-$STACK_DIR/owui/functions/make_project.py}"
 LITELLM_DB_ADMIN_ID=bedrock-now-admin
 
 
@@ -315,12 +317,12 @@ d = json.load(sys.stdin) or {}
 print(hashlib.sha256((d.get("content") or "").encode("utf-8")).hexdigest())'
 }
 
-# owui_function_json DESCRIPTION < function source -> FunctionForm JSON (Python does the escaping)
+# owui_function_json DESCRIPTION [NAME [ID]] < function source -> FunctionForm JSON (Python does the escaping); the cost filter's by default
 owui_function_json() {
   # shellcheck disable=SC2016  # Python source, not shell
   _owui_py 'import json, sys
-print(json.dumps({"id": sys.argv[1], "name": "Bedrock cost", "content": sys.stdin.read(), "meta": {"description": sys.argv[2]}}))' \
-    "$COST_FILTER_ID" "$1"
+print(json.dumps({"id": sys.argv[1], "name": sys.argv[3], "content": sys.stdin.read(), "meta": {"description": sys.argv[2]}}))' \
+    "${3:-$COST_FILTER_ID}" "$1" "${2:-Bedrock cost}"
 }
 
 # owui_merge_valves < "PRICES_JSON<newline>current valves JSON (or null)" -> valves with only prices_json replaced
@@ -384,6 +386,44 @@ owui_install_cost_filter() {
   fi
   rm -f "$tmp"
   log "Open WebUI shows the cost of each answer (and of the chat) under every reply"
+}
+
+# owui_install_handoff_action — installs the "Make it a project" action (owui/functions/make_project.py: a button under each
+# Chat answer that hands the chat to the Code page as text, JON-1060) and keeps its code current. It has no settings, no
+# key and no address of anything: the button only asks the Chat page to say the chat to the portal's page (docs/security.md).
+# Like the cost filter: enabled and made global once, when it is first installed (or installed again after it was deleted);
+# after that, turning it off in Admin Panel → Functions sticks. Idempotent; never fatal.
+owui_install_handoff_action() {
+  local tmp code body path='' first=0
+  [ -n "$(get_env OPENWEBUI_API_KEY)" ] || { warn "no Open WebUI API key — skipping Chat's Make it a project button"; return 0; }
+  [ -r "$HANDOFF_ACTION_FILE" ] || { warn "missing $HANDOFF_ACTION_FILE — skipping Chat's Make it a project button"; return 0; }
+  tmp="$(mktemp)"
+  code="$(_owui_get "/api/v1/functions/id/$HANDOFF_ACTION_ID" "$tmp")"
+  if [ "$code" = 200 ]; then
+    [ "$(owui_function_hash < "$tmp" 2>/dev/null)" = "$(file_sha256 "$HANDOFF_ACTION_FILE")" ] || path="/api/v1/functions/id/$HANDOFF_ACTION_ID/update"
+  else
+    path=/api/v1/functions/create; first=1
+  fi
+  if [ -n "$path" ]; then
+    if ! body="$(owui_function_json "Carries this chat over to the Code page as a new project, kept on your local git server" "Make it a project" "$HANDOFF_ACTION_ID" < "$HANDOFF_ACTION_FILE")" || [ -z "$body" ]; then
+      rm -f "$tmp"; warn "Open WebUI: could not prepare Make it a project — the button won't show"; return 0
+    fi
+    code="$(_owui_post "$path" "$body" "$tmp")"
+    [ "$code" = 200 ] || { warn "Open WebUI: could not install Make it a project (HTTP $code: $(head -c 200 "$tmp" | tr '\n' ' '))"; rm -f "$tmp"; return 0; }
+  fi
+  if [ "$first" = 1 ]; then
+    # toggle endpoints flip the flag, so only call them when it is off
+    if ! grep -qF '"is_active":true' "$tmp"; then
+      code="$(_owui_post "/api/v1/functions/id/$HANDOFF_ACTION_ID/toggle" '{}' "$tmp")"
+      [ "$code" = 200 ] || warn "Open WebUI: could not enable Make it a project (HTTP $code)"
+    fi
+    if ! grep -qF '"is_global":true' "$tmp"; then
+      code="$(_owui_post "/api/v1/functions/id/$HANDOFF_ACTION_ID/toggle/global" '{}' "$tmp")"
+      [ "$code" = 200 ] || warn "Open WebUI: could not make Make it a project global (HTTP $code)"
+    fi
+  fi
+  rm -f "$tmp"
+  [ -z "$path" ] || log "Chat has a Make it a project button under each answer (it hands the chat to the Code page)"
 }
 
 # --- budget banner in Open WebUI ---
