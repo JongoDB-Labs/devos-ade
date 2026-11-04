@@ -16,6 +16,7 @@ import checks_browser  # noqa: F401
 import checks_code  # noqa: F401
 import checks_git  # noqa: F401
 import checks_http  # noqa: F401
+import checks_journeys  # noqa: F401
 import checks_layout  # noqa: F401
 import checks_mentions  # noqa: F401
 import checks_models  # noqa: F401
