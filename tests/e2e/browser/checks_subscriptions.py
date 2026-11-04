@@ -132,8 +132,8 @@ def terminal_open(ctx):
     expect([v for v in values if not v.startswith("add:")] == ["bedrock", "shell"] + TOOLS, f"the Open menu offers {values}")
     expect(set(v for v in values if v.startswith("add:")) <= {f"add:{t}" for t in TOOLS}, f"the Open menu's Add entries {values}")
     expect(len([v for v in values if v.startswith("add:")]) >= 1, f"no Add an account… in the Open menu {values}")
-    # (the first window is called bedrock, a tool's after what runs in it: codex)
-    wait_text(terminal_frame(page), r"\bbedrock\b", 30)
+    # (the windows' names — bedrock first, a tool's after what runs in it — are checked by tmux's own list: run.sh's picker-windows;
+    # the status line drops the leftmost windows when the session has many)
     page.select_option("#answers-terminal", "codex")
     page.click("#answers-terminal-open")
     # (a launch token the portal made on this click: <iat>-<16 hex>-<32 hex>)
@@ -142,7 +142,6 @@ def terminal_open(ctx):
     wait_xterm(f)
     screen = wait_text(f, CODEX_SIGNIN, 60)
     expect(re.search(r"\bcodex\b", screen), "no codex window in tmux's status line")
-    expect(re.search(r"\bbedrock\b", screen), "the first window is not called bedrock")
     shot(page, "s3-terminal-open-codex")
     probs = rec.problems(allow=LOCKED_OK)
     rec.save()

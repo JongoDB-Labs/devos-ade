@@ -1642,9 +1642,12 @@ JS
     else
       wins="$(docker exec "$tc" tmux list-windows -a -F '#{session_name}:#{window_name}' 2>/dev/null | tr '\n' ' ')"
       # (a window is named after what runs in it: codex until `subscriptions open` knows the kind — codex-chatgpt once signed in —, so both the bare name and a "-kind" one count)
-      case " $wins " in *" claude:codex"*) case " $wins " in *" chat-grok:grok"*) wins="ok $wins" ;; esac ;; esac
+      first="$(docker exec "$tc" tmux list-windows -t claude -F '#{window_index} #W #{@bn-open}' 2>/dev/null | head -n 1)"
+      opened="$(docker exec "$tc" tmux list-windows -t claude -F '#W #{@bn-open}' 2>/dev/null | tr '\n' ';')"
+      # (window 0 is bedrock; the Open menu's Codex window is found by its option @bn-open = codex, whatever it is named now)
+      case "$first" in "0 bedrock "*) case "$opened" in *" codex;"*) case " $wins " in *" claude:codex"*) case " $wins " in *" chat-grok:grok"*) wins="ok $wins" ;; esac ;; esac ;; esac ;; esac
       case "$wins" in ok*) record subscriptions picker-windows PASS 0 "tmux: ${wins#ok }" ;;
-        *) record subscriptions picker-windows FAIL 0 "tmux: $wins (want claude:codex[-kind] and chat-grok:grok[-kind])" ;; esac
+        *) record subscriptions picker-windows FAIL 0 "tmux: $wins (want window 0 bedrock, a codex window with @bn-open codex [$first / $opened], claude:codex[-kind] and chat-grok:grok[-kind])" ;; esac
     fi
   fi
 fi
