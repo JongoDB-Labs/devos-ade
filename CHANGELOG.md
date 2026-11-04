@@ -6,6 +6,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.59.0] - 2026-11-04
+
 ### Fixed
 - **A `git commit` in the terminal or by Claude no longer stops at "unable to auto-detect email address" (JON-1058).** The
   sandbox had no git identity, so a project made in the Terminal or by a Claude session could not be committed — and so never
@@ -4596,7 +4598,8 @@ Initial public release.
 - `bin/claude-bedrock`: runs Claude Code against Bedrock through LiteLLM without touching plain `claude`.
 - Cost transparency: Bedrock prices in `./stack costs` and the Open WebUI model picker, spend per key.
 
-[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.58.0...HEAD
+[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.59.0...HEAD
+[0.59.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.58.0...v0.59.0
 [0.58.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.57.2...v0.58.0
 [0.57.2]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.57.1...v0.57.2
 [0.57.1]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.57.0...v0.57.1
