@@ -195,8 +195,10 @@
   .gs-step.done .gs-text { display: none; }
   .logins > .note { display: none; }
   .meters { gap: 12px; }
-  .cont-head .cont-actions { flex: 1 1 100%; flex-wrap: nowrap; }
-  .cont-actions a.action { flex: 1 1 auto; text-align: center; }
+  /* (one row while both fit; a long project name in "New session in …" puts New chat on a row of its own rather than cutting either
+     short — a name longer than the row itself still ends in an ellipsis) */
+  .cont-head .cont-actions { flex: 1 1 100%; flex-wrap: wrap; }
+  .cont-actions a.action { flex: 1 0 auto; text-align: center; }
   /* (a row's title across the row, three lines at most; its verb next to the time) */
   .cont-row { grid-template-columns: 32px minmax(0, 1fr) auto; grid-template-rows: auto auto; row-gap: 2px; align-items: start; }
   .cont-main { display: contents; }

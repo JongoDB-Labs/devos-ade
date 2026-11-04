@@ -22,6 +22,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 - **Renaming a session while its first turn runs no longer fails with "Rename failed".** Until Claude Code has written the session's
   transcript, the sandbox has no file to put the title in; the title is now kept and written once that turn is over, as it already was
   before the first prompt. A chat handed over from Chat hit this every time it was named "From the chat: …" just after its first message.
+- **On a phone, Home's *New session in …* and *New chat* no longer cut each other short.** With a longer project name both buttons were
+  squeezed onto one row and ended in an ellipsis; they now share the row while they fit and wrap to two rows when they do not.
 
 ### Added
 - **User-journey checks (JON-1058).** `browser/journey-code-to-git`, `journey-terminal-folder-to-git` and
