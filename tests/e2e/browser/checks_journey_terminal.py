@@ -79,7 +79,8 @@ def journey_terminal_git(ctx):
                f"git push from the terminal to the local git server: {out[-700:]!r}")
         type_line(page, f, f'project add --name "{NAME_A}"; echo ADDED-$((1+1))')
         out = wait_text(f, r"^ADDED-2$", 60)
-        expect(re.search(r"^(Added as a project|Already a project): ", out, re.M), f"project add: {out[-500:]!r}")
+        # (Already: the Code page, open since step 0, may have made the folder a project by itself a moment before — then the name typed is its name)
+        expect(re.search(r"^(Added as a project|Already a project): " + re.escape(NAME_A) + r"\.", out, re.M), f"project add: {out[-500:]!r}")
         # a folder with a package.json and no git: a project by itself too, but not kept (nothing to keep before git)
         type_line(page, f, f"cd /workspace && mkdir {E} && echo '{{}}' > {E}/package.json; echo NODE-$((1+1))")
         wait_text(f, r"^NODE-2$", 30)
@@ -118,7 +119,17 @@ def journey_terminal_git(ctx):
         # 4. the Code page: A (project add) and D (kept) are listed; B, C and E were registered by nobody and appear by themselves, no click
         page, rec = ui_page(ctx, "journey-terminal-git-code")
         for name in (NAME_A, D):
-            see(page.get_by_test_id("project").filter(has_text=name).first).to_be_visible(timeout=30000)
+            try:
+                see(page.get_by_test_id("project").filter(has_text=name).first).to_be_visible(timeout=30000)
+            except AssertionError:
+                # (what the page shows and what the Code server lists, so a failure here says which of the two is wrong)
+                shot(page, "journey-terminal-git-fail-projects")
+                try:
+                    listed = [(p.get("name"), p.get("root"), p.get("folder")) for p in Code.on(page, rec, goto=False).api("GET", "/api/projects")["json"]["projects"]]
+                except Exception as e:  # noqa: BLE001 — the diagnosis must not hide the failure
+                    listed = f"(not read: {e})"
+                shown = page.get_by_test_id("project").all_inner_texts()
+                raise AssertionError(f"{name!r} is not on the Code page's Projects; the page shows {shown!r}; the Code server lists {listed!r}") from None
         added = page.get_by_test_id("added-project")
         for n in (B, C, E):
             see(added.filter(has_text=n)).to_have_count(1, timeout=60000)

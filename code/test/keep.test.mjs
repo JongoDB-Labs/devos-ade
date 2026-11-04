@@ -159,6 +159,18 @@ test('Keep it there: the name is checked, the empty private repository made at o
   assert.ok(!JSON.stringify([v, s.logs]).includes(LTOK));
 });
 
+test('two keeps of one project at once (the terminal and the automatic projects): one repository, one remote; the second is told it is kept', async () => {
+  const s = setup();
+  const id = project(s);
+  const [a, b] = await Promise.allSettled([s.keep.keep(id, {}), s.keep.keep(id, {})]);
+  assert.equal(a.status, 'fulfilled');
+  assert.equal(b.status, 'rejected');
+  assert.match(b.reason.message, /keeps this project already/);
+  assert.equal(s.api.filter((c) => c.method === 'POST' && /git-receive-pack$/.test(c.path)).length, 1, 'the repository made once');
+  assert.deepEqual(Object.keys(s.sb.repos.get('app').remotes), ['origin']);
+  assert.equal(s.projects.localgit(id).repo, 'devos/My-App');
+});
+
 test('a name of your own is checked; one on the server already is a plain 409 and nothing is changed, no remote, no record', async () => {
   const s = setup({ existsName: 'taken' });
   const id = project(s);

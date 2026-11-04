@@ -108,7 +108,16 @@ export function makeKeep({ store, remote, mirrors, now = () => Date.now(), log =
   // changed), the empty private repository made on the server at once (so the project is in the Git tab from the start, before
   // any commit), its remote added (origin when the project has none, else local), and what it has pushed. A project without commits
   // is kept with its repository empty; its first commit fills it. A repository that could not be made leaves nothing changed.
-  async function keep(id, b = {}) {
+  // (one keep of a project at a time: the terminal's `project new --keep` and the automatic projects' keeping, autoproj.mjs, can ask for
+  // the same project at once — the second waits for the first, then finds it kept: 409 "keeps this project already")
+  const keeping = new Map();   // project id -> the keep in progress
+  function keep(id, b = {}) {
+    const run = (keeping.get(id) || Promise.resolve()).catch(() => {}).then(() => keepOnce(id, b));
+    keeping.set(id, run);
+    run.finally(() => { if (keeping.get(id) === run) keeping.delete(id); }).catch(() => {});
+    return run;
+  }
+  async function keepOnce(id, b = {}) {
     const owner = mirrors.owner();
     if (owner === null) throw err(409, 'the built-in git server is not connected as a Git host yet: ./stack up connects it');
     const had = store().localgit(id);

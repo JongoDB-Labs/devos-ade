@@ -135,7 +135,8 @@ const fakes = ({ owner = 'devos', claude = false, projects = [], keepFail = null
   const calls = { add: [], keep: [] };
   const answer = makeProjectAnswer({
     addProject: async (b) => { calls.add.push(b); const p = { id: `p_0000000${list.length + 1}`, name: b.name || b.folder.split('/').pop(), root: b.folder }; list.push(p); return { project: p, git: isGit }; },
-    projects: () => ({ list: () => list }),
+    projects: () => ({ list: () => list, rename: (id, name) => { const p = list.find((x) => x.id === id); p.name = name; return { ...p }; },
+      dismissNotice: (id) => { calls.dismissed = [...(calls.dismissed || []), id]; return true; } }),
     keeper: () => ({ keep: async (id, b) => { calls.keep.push([id, b]); if (keepFail) throw new Error(keepFail); return { repo: `${owner}/${b.name || 'x'}` }; }, view: async () => ({ repo: 'devos/known' }) }),
     mirrors: { owner: () => owner },
     hosts: () => [{ builtin: 'localgit', claude }, { builtin: null, claude: true }],
@@ -150,8 +151,13 @@ test('answer: info, add (idempotent), and keeping only while the sandbox\'s git 
   let a = await f.answer({ kind: 'project', op: 'add', folder: 'app', name: 'App' });
   assert.deepEqual([a.ok, a.name, a.existing, a.git], [true, 'App', false, true]);
   a = await f.answer({ kind: 'project', op: 'add', folder: 'app' });
-  assert.deepEqual([a.ok, a.existing], [true, true]);
+  assert.deepEqual([a.ok, a.existing, a.name], [true, true, 'App']);
   assert.equal(f.calls.add.length, 1, 'a project already: not added twice');
+  // a project already (made by itself a moment before, autoproj.mjs) with a name typed now: renamed, its notice gone
+  a = await f.answer({ kind: 'project', op: 'add', folder: 'app', name: 'My app' });
+  assert.deepEqual([a.ok, a.existing, a.name], [true, true, 'My app']);
+  assert.equal(f.list[0].name, 'My app');
+  assert.deepEqual(f.calls.dismissed, [f.list[0].id, f.list[0].id]);
   // keep without the switch: the project is added, the answer says what to do, nothing is pushed
   a = await f.answer({ kind: 'project', op: 'keep', folder: 'other' });
   assert.deepEqual([a.ok, a.kept], [true, false]);
