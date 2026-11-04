@@ -1994,6 +1994,55 @@
     if (window.bnLocal) window.bnLocal.mount(rw, { askPassword, canChange });
     return rw;
   }
+  // openInTerminal(MODE, TOOL) — a window of the terminal running that account's command: open (its sign-in first), add (asks
+  // for the name), rename, remove, logout (the last three ask what they need there). A launch token for exactly these words,
+  // made on this click (answers.js launch).
+  function openInTerminal(mode, tool) {
+    if (!window.bnAnswers || !window.bnAnswers.launch) return;
+    window.bnAnswers.launch(mode, tool).then((url) => {
+      showTab("terminal");
+      const f = document.querySelector('#frames iframe[data-app="terminal"]');
+      if (f) f.src = url;
+    }, (e) => { if (e.message !== "signed out") toast(`Could not open it: ${e.message}`); });
+  }
+  // accountsBlock(T, STATEOF, TERMHERE) -> the tool's accounts: the first, then each other with Sign in / Sign out / Rename /
+  // Remove (they open the terminal running the command: no helper action), and Add an account…; Chat has one a tool
+  function accountsBlock(t, stateOf, termHere) {
+    const accts = Array.isArray(t.accounts) && t.accounts.length ? t.accounts : [{ name: "", signed_in: t.signed_in, kind: t.kind, kind_words: t.kind_words }];
+    const box = el("div", { class: "set-subs-where set-subs-accounts", "data-where": "accounts", "data-tool": t.id });
+    box.append(el("span", { class: "note", text: accts.length > 1 ? "Accounts: " : "Accounts: just the first. " }));
+    const ul = el("ul", { class: "set-subs-account-list" });
+    accts.forEach((a, i) => {
+      const id = i === 0 ? t.id : `${t.id}:${a.name}`;
+      const st = stateOf(t, { installed: t.installed, signed_in: a.signed_in, kind_words: a.kind_words, how: t.how });
+      const who = i === 0 ? (a.name ? `${a.name} (the first)` : "the first account") : a.name;
+      const li = el("li", { "data-account": id }, el("span", { class: "set-project-name", text: who }), " ", el("span", { class: `badge ${st[1]}`.trim(), text: st[0] }), " ");
+      const acts = el("span", { class: "set-project-actions" });
+      const btn = (text, act, mode, label, primary) => {
+        const b = el("button", { type: "button", class: primary ? "action primary" : "action", text, "data-act": act, "aria-label": `${label}: ${t.name}${a.name ? ` · ${a.name}` : ""}` });
+        b.disabled = !termHere;
+        b.addEventListener("click", () => openInTerminal(mode, id));
+        return b;
+      };
+      if (t.installed !== false && i > 0) {
+        acts.append(btn(a.signed_in === "yes" ? "Open" : "Sign in", "subscriptions-account-open", "open", a.signed_in === "yes" ? "Open in the terminal" : "Sign in (terminal)", a.signed_in !== "yes"));
+        if (t.signout === "cli") acts.append(btn("Sign out", "subscriptions-account-signout", "logout", "Sign out (in the terminal)"));
+      }
+      if (t.installed !== false) acts.append(btn("Rename", "subscriptions-account-rename", "rename", "Rename (in the terminal)"));
+      if (t.installed !== false && i > 0) acts.append(btn("Remove", "subscriptions-account-remove", "remove", "Remove (in the terminal)"));
+      li.append(acts);
+      ul.append(li);
+    });
+    box.append(ul);
+    if (t.installed !== false && accts.length < 8) {
+      const add = el("button", { type: "button", class: "action", text: "Add an account…", "data-act": "subscriptions-account-add", "aria-label": `Add an account: another ${t.name} sign-in, named in the terminal` });
+      add.disabled = !termHere;
+      add.addEventListener("click", () => openInTerminal("add", t.id));
+      box.append(el("span", { class: "set-project-actions" }, add));
+    }
+    if (t.chat) box.append(el("p", { class: "note", text: "Chat uses one account a tool (its own sign-in below); the terminal and the Code page use any of these." }));
+    return box;
+  }
   function subscriptionsRow(r) {
     const rw = ownFrame(r, "Your AI subscriptions");
     const sb = data.subscriptions || { tools: [], sandbox: null, checked_at: null };
@@ -2043,15 +2092,7 @@
         const open = el("button", { type: "button", class: signedIn ? "action" : "action primary", text: signedIn ? "Open in the terminal" : "Sign in",
           // (its name as shown first, then where it goes)
           "aria-label": signedIn ? `Open in the terminal: ${t.name}` : `Sign in (terminal and Code page): ${t.name} opens in the terminal, where its own sign-in starts`, "data-act": "subscriptions-open" });
-        open.addEventListener("click", () => {
-          // (a launch token for exactly this, made on this click: answers.js launch)
-          if (!window.bnAnswers || !window.bnAnswers.launch) return;
-          window.bnAnswers.launch("open", t.id).then((url) => {
-            showTab("terminal");
-            const f = document.querySelector('#frames iframe[data-app="terminal"]');
-            if (f) f.src = url;
-          }, (e) => { if (e.message !== "signed out") toast(`Could not open it: ${e.message}`); });
-        });
+        open.addEventListener("click", () => openInTerminal("open", t.id));
         acts.append(open);
       }
       // (shown whenever the tool is there: a sandbox that says "signed out" may still hold a login — its sign-out removes it)
@@ -2069,6 +2110,7 @@
         term.append(el("p", { class: "note", text: `${t.name} signs out inside it: ${t.id === "gemini" ? "/auth signout" : "/logout"} (Open in the terminal).` }));
       }
       li.append(term);
+      if (t.installed !== false) li.append(accountsBlock(t, stateOf, termHere));
       // Chat's own sign-in (a Chat model only: catalog chat_model yes)
       if (t.chat) {
         const cs = stateOf(t, t.chat);

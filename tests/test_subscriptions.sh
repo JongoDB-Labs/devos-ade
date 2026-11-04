@@ -420,6 +420,22 @@ EOF
   assert_contains "$out" "@bn-open add:grok"
   assert_contains "$out" "@bn-sub 1"
   assert_eq "$(printf '%s\n' "$out" | tail -n 1)" "tmux attach-session -t =claude"
+  # rename, remove, logout (Settings' account rows): the command in a window of its own, found by "MODE:TOOL"; remove and
+  # logout need an account name, a shell and Bedrock have none
+  local R1="$now-b1b1b1b1b1b1b1b1-$M" R2="$now-b2b2b2b2b2b2b2b2-$M" R3="$now-b3b3b3b3b3b3b3b3-$M"
+  out="$(_run rename claude:work "$R1")"
+  assert_contains "$out" "-n claude-work-rename -c $ws /usr/local/bin/subscriptions rename claude:work; exec bash"
+  assert_contains "$out" "@bn-open rename:claude:work"
+  out="$(_run remove codex:personal "$R2")"
+  assert_contains "$out" "/usr/local/bin/subscriptions remove codex:personal; exec bash"
+  assert_contains "$out" "@bn-open remove:codex:personal"
+  for args in "remove codex $R3" "logout codex $R3" "rename shell $R3" "remove bedrock:x $R3" "remove evil:x $R3" "rename claude:Work $R3" "remove codex:x $R3 $ws"; do
+    # shellcheck disable=SC2086
+    out="$(_run $args)"
+    case "$out" in *new-window*) echo "refused words made a window: $args -> $out" >&2; return 1 ;; esac
+  done
+  out="$(_run logout grok:alt "$R3")"
+  assert_contains "$out" "/usr/local/bin/subscriptions logout grok:alt; exec bash"
   # a folder with "#" (tmux reads -c as a format) and a "." in its name (a pane in a target): doubled, mapped
   mkdir -p "$ws/a#b.c"
   out="$(_run open codex "$N4" "$ws/a#b.c")"

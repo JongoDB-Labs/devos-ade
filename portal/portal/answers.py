@@ -316,12 +316,17 @@ def tool_ok(tool) -> bool:
 
 def terminal_words(mode: str, tool: str, folder: str | None = None, roots=()) -> list[str] | None:
     """[MODE, TOOL(, FOLDER)] when each word passes bn-session's rules and FOLDER is one the pickers may name, else None.
-    A view (MODE view, TOOL 2 to 4) takes no folder; nor does add (MODE add, TOOL a bare tool: `subscriptions add TOOL`,
+    A view (MODE view, TOOL 2 to 4) takes no folder; nor do rename|remove|logout (an account's) or add (MODE add, TOOL a bare tool: `subscriptions add TOOL`,
     which asks for the account's name in the window)."""
     if mode == "view":
         return [mode, tool] if tool in VIEWS and folder in (None, "") else None
     if mode == "add":
         return [mode, tool] if tool in TOOL_IDS and folder in (None, "") else None
+    if mode in ("rename", "remove", "logout"):
+        # (Settings' account rows: `subscriptions MODE TOOL[:NAME]` in a window; it asks the rest itself. remove and logout
+        # name an account of a tool besides its first)
+        ok = isinstance(tool, str) and tool_ok(tool) and tool.partition(":")[0] in TOOL_IDS and (mode == "rename" or ":" in tool)
+        return [mode, tool] if ok and folder in (None, "") else None
     if mode not in ("open", "chat") or not tool_ok(tool):
         return None
     words = [mode, tool]

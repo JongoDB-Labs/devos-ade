@@ -185,6 +185,16 @@ TOK = "1792760000-0123456789abcdef-" + "0" * 32   # a launch token's form (not a
     (["add", "bedrock", TOK], False),
     (["add", "evil", TOK], False),
     (["add", "codex", TOK, "/workspace/app"], False),
+    (["remove", "claude:work", TOK], True),
+    (["logout", "grok:a", TOK], True),
+    (["rename", "codex:work", TOK], True),
+    (["rename", "codex", TOK], True),
+    (["remove", "codex", TOK], False),
+    (["logout", "codex", TOK], False),
+    (["remove", "bedrock", TOK], False),
+    (["rename", "shell", TOK], False),
+    (["rename", "codex:Work", TOK], False),
+    (["remove", "codex:work", TOK, "/workspace/app"], False),
     (["open", "2", TOK], False),
     (["chat", "3", TOK], False),
     (["run", "codex", TOK], False),
@@ -440,6 +450,19 @@ def test_the_code_pages_open_menu_goes_through_the_hand_off(s):
         assert c.post("/auth/code-terminal-launch", json={"tool": "codex"}, headers={"Host": CODE_HOST, "Origin": CODE, "X-Requested-With": "bn-code"}).status_code == 401
         assert mint({"tool": "evil"}).status_code == 400
         assert mint({"tool": "codex", "dir": "/etc"}).status_code == 400
+        # an account of a tool, and "Add an account…" (mode add: a bare tool, no folder), through the same hand-off
+        url = mint({"tool": "codex:work"}).json()["url"]
+        assert url.startswith("/.bn/terminal?open=codex%3Awork&launch=")
+        url = mint({"tool": "codex", "mode": "add"}).json()["url"]
+        assert url.startswith("/.bn/terminal?add=codex&launch=")
+        r = c.get("/auth/code-terminal", params=dict(parse_qsl(url.split("?", 1)[1])) | {"t": "4"}, headers=hdr)
+        assert r.status_code == 303 and f"&arg={answers.ASK_TOKEN}&" not in r.headers["location"]
+        r = c.get("/auth/code-terminal", params={"add": "codex", "t": "5"}, headers=hdr)   # (no token: the question)
+        assert r.status_code == 303
+        for body in ({"tool": "codex:work", "mode": "add"}, {"tool": "shell", "mode": "add"}, {"tool": "codex", "mode": "run"},
+                     {"tool": "bedrock:x"}, {"tool": "codex", "mode": "add", "dir": "/workspace"}):
+            assert mint(body).status_code == 400, body
+        assert c.get("/auth/code-terminal", params={"add": "claude:x"}, headers=hdr).status_code == 400
         r = c.post("/auth/code-terminal-launch", content=b'{"tool": "codex", "dir": "/workspace/\\ud800"}',
                    headers={"Host": CODE_HOST, "Cookie": hdr["Cookie"], "Origin": CODE, "X-Requested-With": "bn-code", "Content-Type": "application/json"})
         assert r.status_code == 400

@@ -20,7 +20,7 @@ const data = { terminal: { here: true }, basics: [{ id: "bedrock", name: "Claude
 
 test("the Terminal tab: Bedrock and a shell, then each tool with its state; one that cannot open is greyed with why", () => {
   const g = plain(A.terminalOptions(data));
-  assert.deepEqual(g.map((x) => x.items.map((i) => i.value)), [["bedrock", "shell"], ["claude", "codex", "copilot", "cursor", "grok"]]);
+  assert.deepEqual(g.map((x) => x.items.map((i) => i.value)), [["bedrock", "shell"], ["claude", "add:claude", "codex", "add:codex", "copilot", "add:copilot", "cursor", "grok"]]);
   const by = Object.fromEntries(g[1].items.map((i) => [i.value, i]));
   assert.equal(by.claude.label, "Claude Code (claude-sub) · signed in · Claude Max");
   assert.equal(by.codex.label, "Codex (codex) · sign in first");
@@ -32,6 +32,32 @@ test("the Terminal tab: Bedrock and a shell, then each tool with its state; one 
   const off = plain(A.terminalOptions({ ...data, terminal: { here: false } }));
   assert.ok(off.every((x) => x.items.every((i) => i.disabled)));
   assert.match(off[1].items[0].title, /REMOTE_TERMINAL/);
+});
+
+test("the Terminal tab: one entry for each account of a tool, then Add an account… (a tool that cannot open has neither)", () => {
+  const withAccts = [
+    { ...tools[0], accounts: [{ name: "", signed_in: "yes", kind_words: "Claude Max" }, { name: "work", signed_in: "yes", kind_words: "Claude Team" }, { name: "home", signed_in: "no", kind_words: "" }] },
+    { ...tools[1], accounts: [{ name: "personal", signed_in: "yes", kind_words: "ChatGPT" }] },
+    tools[3], tools[4]];
+  const g = plain(A.terminalOptions({ ...data, tools: withAccts }));
+  const by = Object.fromEntries(g[1].items.map((i) => [i.value, i]));
+  assert.deepEqual(g[1].items.map((i) => i.value), ["claude", "claude:work", "claude:home", "add:claude", "codex", "add:codex", "cursor", "grok"]);
+  // (an unnamed first account as before; the others by name; the first with a name of its own: its name, its tool's own id)
+  assert.equal(by.claude.label, "Claude Code (claude-sub) · signed in · Claude Max");
+  assert.equal(by["claude:work"].label, "Claude Code · work (claude-sub) · signed in · Claude Team");
+  assert.equal(by["claude:home"].label, "Claude Code · home (claude-sub) · sign in first");
+  assert.equal(by.codex.label, "Codex · personal (codex) · signed in · ChatGPT");
+  assert.equal(by["add:claude"].label, "Add an account… — Claude Code");
+  assert.ok(Object.values(by).every((i) => i.disabled === false || i.value === "cursor"));
+  // the phone's closed menu keeps the account's name
+  assert.equal(A.shortLabel(by["claude:work"].label), "Claude Code · work");
+  assert.equal(A.shortLabel(by["add:claude"].label), "Add an account…");
+  assert.equal(A.shortLabel(by.claude.label), "Claude Code (claude-sub)");
+  // eight accounts: no more to add; the terminal off: everything greyed, no Add
+  const eight = { ...tools[1], accounts: Array.from({ length: 8 }, (_, i) => ({ name: i ? `a${i}` : "", signed_in: "no", kind_words: "" })) };
+  assert.deepEqual(plain(A.terminalOptions({ ...data, tools: [eight] }))[1].items.map((i) => i.value).filter((v) => v.startsWith("add:")), []);
+  const off = plain(A.terminalOptions({ ...data, tools: withAccts, terminal: { here: false } }));
+  assert.ok(off[1].items.every((i) => !i.value.startsWith("add:")));
 });
 
 test("the Chat tab: Open WebUI first, the models, your keys next, the tools themselves, and the subscriptions as models greyed", () => {

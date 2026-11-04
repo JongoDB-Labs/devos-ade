@@ -49,6 +49,7 @@
     if (!s) return { ...item, disabled: true };
     return { value: `setup:${reason}:${/^[a-z]{2,10}$/.test(tool || "") ? tool : ""}`, label: `${name} — ${s.says}`, disabled: false, title: s.says, setup: s };
   }
+  const MAX_ACCOUNTS = 8;   // (accounts a tool may have: terminal/bin/subscriptions, answers.py)
   const termReasonOf = (d) => (d && d.terminal && typeof d.terminal.reason === "string" ? d.terminal.reason : "");
   // terminalOptions(DATA) -> [{label, items: [{value, label, disabled, title}]}] for the Terminal tab
   function terminalOptions(d) {
@@ -58,11 +59,22 @@
       const item = { value: b.id, label: `${b.name} — ${b.command}`, disabled: false, title: "" };
       return here ? item : greyed(d, off.reason, "", b.name, item);
     });
-    const tools = (d && Array.isArray(d.tools) ? d.tools : []).map((t) => {
-      const s = toolState(t, here, termReasonOf(d));
-      const item = { value: t.id, label: `${t.name} (${t.command}) · ${s.word}`, disabled: false, title: s.why || `${t.provider}: ${t.plan}` };
-      return s.ok ? item : greyed(d, s.reason, t.id, `${t.name} (${t.command})`, item);
-    });
+    // one entry for each account of a tool (the first is the tool's own id; another is TOOL:NAME), then "Add an account…"
+    // (value add:TOOL: it opens `subscriptions add TOOL` in the terminal)
+    const tools = [];
+    for (const t of d && Array.isArray(d.tools) ? d.tools : []) {
+      const accts = Array.isArray(t.accounts) && t.accounts.length ? t.accounts : [{ name: "", signed_in: t.signed_in, kind_words: t.kind_words }];
+      const probe = toolState(t, here, termReasonOf(d));
+      accts.forEach((a, i) => {
+        const s = toolState({ ...t, signed_in: a.signed_in, kind_words: a.kind_words }, here, termReasonOf(d));
+        const who = a.name ? ` · ${a.name}` : "";
+        const item = { value: i === 0 ? t.id : `${t.id}:${a.name}`, label: `${t.name}${who} (${t.command}) · ${s.word}`, disabled: false, title: s.why || `${t.provider}: ${t.plan}` };
+        tools.push(s.ok ? item : greyed(d, s.reason, t.id, `${t.name}${who} (${t.command})`, item));
+      });
+      if (probe.ok && t.installed !== null && t.installed !== undefined && accts.length < MAX_ACCOUNTS) {
+        tools.push({ value: `add:${t.id}`, label: `Add an account… — ${t.name}`, disabled: false, title: `Another ${t.name} account, with its own sign-in: ${t.id === "gemini" ? "a window of its own asks for its name" : "a window of its own in the terminal asks for its name, then signs it in"}.` });
+      }
+    }
     return [{ label: "Claude Code on Bedrock, and a shell", items: basics },
       { label: "Your AI subscriptions — each signs in with its own flow", items: tools }].filter((g) => g.items.length);
   }
@@ -147,6 +159,9 @@
   // the menu itself lists the whole of each): "Open WebUI — its own model menu" -> "Open WebUI"
   function shortLabel(text) {
     const t = String(text || "");
+    // (an account's entry keeps its name: "Claude Code · work (claude-sub) · …" -> "Claude Code · work")
+    const acct = /^(.+?) · ([a-z0-9][a-z0-9-]{0,19}) \(/.exec(t);
+    if (acct) return `${acct[1]} · ${acct[2]}`.slice(0, 60);
     const cut = [" — ", " · "].map((sep) => t.indexOf(sep)).filter((i) => i > 0);
     return (cut.length ? t.slice(0, Math.min(...cut)) : t).trim().slice(0, 60);
   }
@@ -253,7 +268,10 @@
     const f = document.querySelector('#frames iframe[data-app="terminal"]');
     if (!f || !tSelect.value || tSelect.selectedOptions[0]?.disabled) return;
     tOpen.disabled = true;
-    launch("open", tSelect.value).then((url) => { f.src = url; f.focus(); }, failed).finally(() => { tOpen.disabled = false; });
+    // ("Add an account…" is add:TOOL: `subscriptions add TOOL` in a window of its own; the menu goes back to what it was)
+    const add = /^add:([a-z]{2,10})$/.exec(tSelect.value);
+    if (add) tSelect.value = tLast, tLabel(), tPickSync();
+    launch(add ? "add" : "open", add ? add[1] : tSelect.value).then((url) => { f.src = url; f.focus(); }, failed).finally(() => { tOpen.disabled = false; });
   });
 
   // Chat tab: Who answers [▾]  in [folder ▾]. On a phone the closed menu shows the choice's name only ("Open WebUI ▾":

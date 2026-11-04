@@ -251,6 +251,10 @@ def _launch_page(s: Settings, rem: bool, mode: str, tool: str, folder: str) -> H
     if mode == "add":
         name = f"a new {t['name']} account"
         what = f"A new {t['name']} account in a window of its own in this terminal (the sandbox): it asks for a name, then its own sign-in; {brand.NAME} never sees the login"
+    elif mode in ("rename", "remove", "logout"):
+        verb = {"rename": "Rename", "remove": "Remove", "logout": "Sign out"}[mode]
+        name = f"{verb} {t['name']}{' · ' + acct if acct else ''}"
+        what = f"`subscriptions {mode} {tool}` in a window of its own in this terminal (the sandbox); it asks what it needs there"
     elif mode == "view":
         name = f"view {tool}"
         what = f"Another view of this terminal (view {tool}): the same windows, with a window of its own in front, in the sandbox"
@@ -671,15 +675,17 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
         # hand-off (answers.py). The token is made only by the panel's own POST (code_terminal_launch): an address
         # alone — a link in an answer, a preview — never makes one, and without one the terminal asks "Open … here?"
         nxt = ""
-        if "open" in request.query_params:
-            tool, folder = request.query_params.get("open", ""), request.query_params.get("dir")
-            words = answers.terminal_words("open", tool, folder, roots())
+        if "open" in request.query_params or "add" in request.query_params:
+            # (?add=TOOL: the panel's "Add an account…" — `subscriptions add TOOL` in a window of its own)
+            mode = "add" if "add" in request.query_params else "open"
+            tool, folder = request.query_params.get(mode, ""), request.query_params.get("dir")
+            words = answers.terminal_words(mode, tool, folder, roots())
             if words is None:
                 return _no_store(PlainTextResponse("no such tool, or a folder that is not one", status_code=400))
             launch = request.query_params.get("launch", "")
             if not launches.valid(launch, login, words, sessions.not_before):
                 launch = answers.ASK_TOKEN
-            nxt = "&next=" + quote(answers.terminal_link(answers.terminal_args("open", tool, launch, folder, roots())), safe="")
+            nxt = "&next=" + quote(answers.terminal_link(answers.terminal_args(mode, tool, launch, folder, roots())), safe="")
         resp = RedirectResponse(f"{settings.origin(TERMINAL, rem)}/.bn/unlock-callback?t={quote(token, safe='')}{nxt}", status_code=303)
         resp.headers["Referrer-Policy"] = "no-referrer"
         return _no_store(resp)
@@ -707,11 +713,12 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
         if not isinstance(data, dict):
             return _no_store(JSONResponse({"error": "not a JSON object"}, status_code=400))
         tool, folder = data.get("tool"), data.get("dir") or None
-        words = answers.terminal_words("open", tool, folder, roots()) if isinstance(tool, str) else None
+        mode = data.get("mode") or "open"
+        words = answers.terminal_words(mode, tool, folder, roots()) if isinstance(tool, str) and mode in ("open", "add") else None
         if words is None:
             return _no_store(JSONResponse({"error": "no such tool, or a folder that is not one"}, status_code=400))
         token = launches.issue(session_login(request.headers, settings), words)
-        q = [("open", tool)] + ([("dir", folder)] if folder else []) + [("launch", token)]
+        q = [(mode, tool)] + ([("dir", folder)] if folder else []) + [("launch", token)]
         return _no_store(JSONResponse({"url": "/.bn/terminal?" + urlencode(q)}))
 
     # --- the Code page's Import sheet asks the computer: POST /.bn/sessions on the code host (Caddy → here, after the

@@ -380,8 +380,9 @@ cmd_remove() {
 # rename ID NEW — the account's new name; the first account's is kept in $ROOT/TOOL/.first-name
 cmd_rename() {
   local id="${1:-}" new="${2:-}" fn
-  [ $# -eq 2 ] || die "usage: subscriptions rename TOOL[:NAME] NEW"
+  [ $# -ge 1 ] && [ $# -le 2 ] || die "usage: subscriptions rename TOOL[:NAME] NEW"
   split_id "$id"
+  if [ $# -eq 1 ]; then printf 'A new name for %s (lowercase letters, digits and -): ' "$(label "$id")"; read -r new || die "no name given"; fi
   name_ok "$new" || die "'$new' is not an account name: lowercase letters and digits, and - inside (1 to 20 characters)"
   fn="$(first_name "$T")"
   [ "$new" != "$fn" ] && [ "$new" != "$A" ] || die "'$new' is the name it has"

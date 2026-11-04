@@ -13,6 +13,9 @@
 #                           name, which `subscriptions open` changes and you may too
 #   chat TOOL[:NAME] TOKEN [DIR]   the same window, shown alone in a session of its own grouped with "claude"
 #                           (chat-TOOL…: the Chat tab's embedded tool; "claude"'s current window stays what it was)
+#   rename|remove|logout TOOL[:NAME] TOKEN   `subscriptions rename|remove|logout …` for that account in a window of its own
+#                           (Settings' account rows; it asks for the new name, or y/N, itself; remove and logout need
+#                           an account's TOOL:NAME)
 #   add TOOL TOKEN          a window running `subscriptions add TOOL`: it asks for the new account's name, makes its
 #                           folder and signs in (the window is then named after the account)
 #   view N TOKEN            the Terminal tab's Nth view (N 2 to 4; the first is "claude" itself): a session of its own
@@ -63,7 +66,7 @@ if [ "$mode" = view ]; then
   fi
   exec tmux attach-session -t "=$view"
 fi
-case "$mode" in open | chat | add) ;; *) plain ;; esac
+case "$mode" in open | chat | add | rename | remove | logout) ;; *) plain ;; esac
 case "$tool" in
   bedrock | shell) ;;
   claude | codex | gemini | copilot | cursor | grok) ;;
@@ -72,6 +75,13 @@ case "$tool" in
 esac
 # (add takes a bare tool and no folder: it makes the account's, and its window is in the workspace)
 if [ "$mode" = add ]; then [ $# -eq 3 ] || plain; case "$tool" in claude | codex | gemini | copilot | cursor | grok) ;; *) plain ;; esac; fi
+# (rename, remove and logout — Settings' account rows — run that subscriptions command in a window of its own, in the workspace,
+# for one account: remove and logout need a TOOL:NAME, rename may be the first account's TOOL; the command asks for what it
+# needs — the new name, y/N — itself)
+case "$mode" in rename | remove | logout)
+  [ $# -eq 3 ] || plain
+  case "$tool" in bedrock | shell) plain ;; esac
+  [ "$mode" = rename ] || [[ $tool == *:* ]] || plain ;; esac
 [[ $token =~ ^[0-9]{10}-[0-9a-f]{16}-[0-9a-f]{32}$ ]] || plain
 # the folder: as it resolves, inside the workspace or a project folder of your computer
 case "$dir" in /*) ;; *) plain ;; esac
@@ -93,6 +103,7 @@ fi
 # folder part for the rename.
 name="${tool//:/-}"; key="$tool"; suffix=''
 [ "$mode" != add ] || { name="$tool-new"; key="add:$tool"; }
+case "$mode" in rename | remove | logout) name="${tool//:/-}-$mode"; key="$mode:$tool" ;; esac
 if [ "$real" != "$WS" ]; then
   h="$(printf '%s' "$real" | sha256sum | cut -c1-6)"
   suffix="-$(printf '%s' "${real##*/}" | LC_ALL=C tr -c 'A-Za-z0-9_-' '-' | cut -c1-20)-$h"
@@ -108,7 +119,7 @@ if [ "$fresh" = 1 ] && [ -z "$wid" ]; then
   # (the command is fixed words — TOOL[:NAME] is checked above — and the image's own subscriptions by its full path:
   # never one put in ~/.local/bin, which comes first on PATH; the folder with its "#" doubled: tmux reads -c as a format)
   cmd="/usr/local/bin/subscriptions open $tool; exec bash"
-  [ "$mode" != add ] || cmd="/usr/local/bin/subscriptions add $tool; exec bash"
+  case "$mode" in add | rename | remove | logout) cmd="/usr/local/bin/subscriptions $mode $tool; exec bash" ;; esac
   wid="$(tmux new-window -d -P -F '#{window_id}' -t "=$S:" -n "$name" -c "${real//#/##}" "$cmd" 2>/dev/null)" || plain
   if [[ $wid =~ ^@[0-9]+$ ]]; then
     tmux set-option -w -t "=$S:$wid" @bn-open "$key" 2>/dev/null || true
