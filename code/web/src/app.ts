@@ -1014,7 +1014,7 @@ function handle(m: ServerMsg): void {
       if (!get().views[m.session]) {
         // a session another tab or device opened: it gets a view (attached, so its prompts reach this page too)
         if (m.state === 'ended' || m.state === 'closed') return;
-        ensureView(m.session, { state: m.state, model: m.model ?? '', mode: m.mode ?? 'default', budget: m.budget ?? null, harness: m.harness ?? 'bedrock', plan: m.plan ?? null });
+        ensureView(m.session, { state: m.state, model: m.model ?? '', mode: m.mode ?? 'default', budget: m.budget ?? null, harness: m.harness ?? 'bedrock', account: m.account ?? null, plan: m.plan ?? null });
         attach(m.session);
         announce();
         return;
@@ -1026,7 +1026,7 @@ function handle(m: ServerMsg): void {
         const w = over ? endedMidTurn(v) : v;
         return { ...w, state: m.state, seq: over ? 0 : w.seq, model: m.model ?? w.model, mode: m.mode ?? w.mode, budget: m.budget === undefined ? w.budget : m.budget,
           lastActive: m.lastActive ?? w.lastActive, settings: m.settings === undefined ? w.settings : m.settings,
-          harness: m.harness ?? w.harness, plan: m.plan === undefined ? w.plan : m.plan };
+          harness: m.harness ?? w.harness, account: m.account === undefined ? w.account : m.account, plan: m.plan === undefined ? w.plan : m.plan };
       });
       // the backend's budget is the one its stop uses: this browser remembers it (another device may have changed it)
       if (m.budget !== undefined) keepBudget(m.session, m.budget);
@@ -1491,13 +1491,13 @@ export function planOf(h: Harness, s: AppState = get()): string | null {
 
 /** The picker's switch of who answers: a new session with that harness in the project shown — with the conversation
  *  of the session shown, when it has one, carried over (it goes with the first prompt there). */
-export function switchHarness(h: Harness): Promise<string | null> {
+export function switchHarness(h: Harness, account?: string): Promise<string | null> {
   const s = get();
   const v = activeView(s);
-  const carry = v && v.items.some((it) => it.t === 'user') && v.harness !== h ? v.id : undefined;
+  const carry = v && v.items.some((it) => it.t === 'user') && (v.harness !== h || (v.account ?? '') !== (account ?? '')) ? v.id : undefined;
   const mode = v?.mode && v.mode !== 'auto' && v.mode !== 'bypassPermissions' ? v.mode : undefined;
   // (a project's own settings not trusted: shown first — an agent of your subscriptions starts there only once they are)
-  return newSession({ harness: h, carry, ...(mode ? { mode } : {}) }).then((id) => {
+  return newSession({ harness: h, ...(account ? { account } : {}), carry, ...(mode ? { mode } : {}) }).then((id) => {
     if (id && carry) toast(`${harnessName(h)} answers in a new session here; your conversation so far goes with your first prompt.`, 'info');
     return id;
   });
@@ -1507,6 +1507,8 @@ export function switchHarness(h: Harness): Promise<string | null> {
 export interface NewSessionOptions {
   /** who answers (none: Claude Code on Bedrock); carry: a session whose conversation goes with the first prompt */
   harness?: Harness;
+  /** another account of that harness than the first (its name) */
+  account?: string;
   carry?: string;
   model?: string;
   mode?: Mode;
@@ -1620,10 +1622,10 @@ async function openNew(opts: NewSessionOptions): Promise<string | null> {
     const proj = s.projects.find((p) => p.id === (opts.project ?? s.project)) ?? currentProject(s);
     if (proj.id !== s.project) setProject(proj.id, { keepSession: true });
     const { id } = await api.openSession({ model: bedrock ? sendModel(model, s) : model || undefined, mode, effort, budget, project: proj.id,
-      ...(bedrock ? {} : { harness }), ...(opts.carry ? { carry: opts.carry } : {}) });
+      ...(bedrock ? {} : { harness, ...(opts.account ? { account: opts.account } : {}) }), ...(opts.carry ? { carry: opts.carry } : {}) });
     set((x) => ({ ...x, startWith: null, where: { ...x.where, [id]: { project: proj.id, cwd: proj.path } } }));
     loadedHistory.add(id);
-    ensureView(id, { state: 'idle', model, mode, effort, budget, harness });
+    ensureView(id, { state: 'idle', model, mode, effort, budget, harness, ...(!bedrock && opts.account ? { account: opts.account } : {}) });
     if (missed) toast(`${label(missed, 60)} is not available here now: this session starts on ${label(s.models?.models.find((m) => m.id === model)?.name ?? model, 60)}.`, 'info');
     if (budget) rememberBudget(id, budget);
     set((x) => ({ ...x, active: id, sheet: null }));

@@ -56,7 +56,7 @@ import { SearchPanel } from './Search';
 import { CommandPalette, openPaletteFromMenu } from './CommandPalette';
 import { useReviewList } from './Review';
 import { shortcuts, keysFor } from '../shortcuts';
-import { getAnswers, terminalLaunch, type BnAnswers, type BnTool } from '../api';
+import { getAnswers, terminalLaunch, MAX_ACCOUNTS, type BnAnswers, type BnTool } from '../api';
 import { basename, label, perMtok } from '../text';
 import { modeName } from '../permission';
 import { ChatPane } from './Chat';
@@ -283,7 +283,13 @@ function ToolMenu({ onOpen }: { onOpen: (src: string) => void }) {
     return m && Object.hasOwn(SETUP_LINKS, m[1]) ? { reason: m[1] as SetupReason, tool: m[2] } : null;
   };
   const setup = setupOf(choice);
-  const named = (id: string) => (id === 'bedrock' ? 'Claude Code (Bedrock)' : id === 'shell' ? 'a shell' : answers?.tools.find((t) => t.id === id)?.name ?? id);
+  const named = (id: string) => {
+    if (id === 'bedrock') return 'Claude Code (Bedrock)';
+    if (id === 'shell') return 'a shell';
+    const [tool, acct] = (id.startsWith('add:') ? id.slice(4) : id).split(':');
+    const nm = answers?.tools.find((t) => t.id === tool)?.name ?? tool;
+    return id.startsWith('add:') ? `a new ${nm} account` : acct ? `${nm} (${acct})` : nm;
+  };
   const act = () => {
     const id = choice;
     setChoice('');
@@ -291,7 +297,8 @@ function ToolMenu({ onOpen }: { onOpen: (src: string) => void }) {
     const s = setupOf(id);
     if (s) { goSetup(s.reason, s.tool); return; }
     if (id.startsWith('setup:')) return;
-    terminalLaunch(id, folder && folder !== '/workspace' ? folder : null).then(
+    const add = id.startsWith('add:');
+    terminalLaunch(add ? id.slice(4) : id, add || !folder || folder === '/workspace' ? null : folder, add ? 'add' : 'open').then(
       (url) => onOpen(`${url}&t=${Date.now()}`),   // (the same tool again loads again: its window is selected anew)
       (e: unknown) => toast(`Not opened: ${e instanceof Error ? e.message : String(e)}`, 'error'),
     );
@@ -320,9 +327,19 @@ function ToolMenu({ onOpen }: { onOpen: (src: string) => void }) {
                 {`${t.name} (${t.command}) — ${SETUP_LINKS[r].says}`}
               </option>
             ) : (
-              <option value={t.id} title={`${t.plan}`}>
-                {`${t.name} (${t.command}) · ${state(t)}`}
-              </option>
+              <>
+                <option value={t.id} title={`${t.plan}`}>
+                  {`${t.name}${t.firstName ? ` — ${t.firstName}` : ''} (${t.command}) · ${state(t)}`}
+                </option>
+                {t.accounts.map((a) => (
+                  <option value={`${t.id}:${a.name}`} title={`${t.plan}`}>
+                    {`${t.name} — ${a.name} (${t.command}) · ${a.signedIn === 'yes' ? `signed in${a.kindWords ? ` · ${a.kindWords}` : ''}` : a.signedIn === 'no' ? 'sign in first' : 'sign-in not known'}`}
+                  </option>
+                ))}
+                {t.installed !== false && t.accounts.length + 1 < MAX_ACCOUNTS && (
+                  <option value={`add:${t.id}`} title={`Another ${t.name} login, in a folder of its own`}>{`${t.name} — Add an account…`}</option>
+                )}
+              </>
             );
           })}
         </optgroup>

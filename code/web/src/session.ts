@@ -98,6 +98,8 @@ export interface SessionView {
   /** who answers in it (bedrock: Claude Code on Bedrock), and what a session on your plan used */
   harness: Harness;
   plan: PlanUsage | null;
+  /** another account of that tool than the first (its name), when the session runs on one */
+  account?: string | null;
   /** the backend's last activity of this session (its lastActive), for the cold-cache line */
   lastActive: number | null;
   /** the session's spend when it was last looked at (budget warnings fire when it crosses a level) */

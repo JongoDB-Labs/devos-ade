@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { harnessOf, normEvent, normPlan, normServerMsg } from '../src/api';
+import { harnessOf, normAnswers, normEvent, normPlan, normServerMsg } from '../src/api';
 import { planText, harnessState, answerers, claudePlanModels } from '../src/components/Pickers';
 import { SETUP_LINKS, settingsRoute, setupTarget, type SetupReason } from '../src/setuplinks';
 import { applyEvent, newView } from '../src/session';
@@ -38,7 +38,7 @@ test('an agent\'s init says who answers and its models; the session view takes t
 });
 
 test('the picker: a subscription that can start, and why one cannot', () => {
-  const h = { id: 'codex' as const, name: 'Codex', provider: 'OpenAI', plan: 'your ChatGPT plan', installed: true, signed: 'yes' as const, allowed: true };
+  const h = { id: 'codex' as const, name: 'Codex', provider: 'OpenAI', plan: 'your ChatGPT plan', installed: true, signed: 'yes' as const, allowed: true, accounts: [] };
   assert.deepEqual(harnessState(h), { ok: true, says: 'signed in' });
   assert.deepEqual(harnessState({ ...h, signed: 'unknown' }), { ok: true, says: 'sign-in not known here' });
   // (one that cannot start: why, as setuplinks.ts says it — its item goes where that is turned on)
@@ -50,7 +50,7 @@ test('the picker: a subscription that can start, and why one cannot', () => {
 
 test('the picker: the subscriptions you can use shown, the ones to sign in to folded under one row (UX-06)', () => {
   const h = (id: 'claude' | 'codex' | 'copilot' | 'cursor' | 'grok', signed: 'yes' | 'no' | 'unknown', more: { installed?: boolean; allowed?: boolean } = {}) =>
-    ({ id, name: id, provider: id, plan: `your ${id} plan`, installed: more.installed ?? true, signed, allowed: more.allowed ?? true });
+    ({ id, name: id, provider: id, plan: `your ${id} plan`, installed: more.installed ?? true, signed, allowed: more.allowed ?? true, accounts: [] });
   // the audit's stack: none signed in, Copilot's sign-in not known, Claude on your plan off
   const list = [h('claude', 'yes', { allowed: false }), h('codex', 'no'), h('copilot', 'unknown'), h('cursor', 'no'), h('grok', 'no', { installed: false })];
   const a = answerers(list, 'bedrock');
@@ -88,7 +88,8 @@ test("the terminal panel's Open…: every choice acts on the button beside it, n
   // the buttons act: Open (a launch) or Go to Settings (where it is turned on), each named for what it does
   const act = menu.split('const act = () => {')[1].split('\n  };')[0];
   assert.match(act, /goSetup\(s\.reason, s\.tool\)/);
-  assert.match(act, /terminalLaunch\(id,/);
+  assert.match(act, /terminalLaunch\(add \? id\.slice\(4\) : id,/);
+  assert.match(act, /add \? 'add' : 'open'/);
   assert.equal((menu.match(/onClick=\{act\}/g) ?? []).length, 2);
   assert.match(menu, /aria-label=\{`Go to \$\{SETUP_LINKS\[setup\.reason\]\.where\}`\}/);
   assert.match(menu, /aria-label=\{`Open \$\{named\(choice\)\} in the terminal`\}/);
@@ -120,4 +121,17 @@ test('Claude on your plan: the models Claude Code reports for it; its four alias
   assert.deepEqual(claudePlanModels([m('default', 'Default (recommended)'), m('sonnet[1m]', 'Sonnet (1M context)'), m('opus', ''), m('opus', 'again'), m('', 'x')]),
     [{ id: 'default', name: 'Default (recommended)' }, { id: 'sonnet[1m]', name: 'Sonnet (1M context)' }, { id: 'opus', name: 'opus' }]);
   assert.deepEqual(claudePlanModels([]).map((x) => x.id), ['default', 'opus', 'sonnet', 'haiku']);
+});
+
+test('the terminal menu: one entry per account (the first, then the others by name), and Add an account', () => {
+  const a = normAnswers({ terminal: { here: true }, tools: [
+    { id: 'claude', name: 'Claude', command: 'claude', plan: 'p', installed: true, signed_in: 'yes', kind_words: 'Max', first_name: 'max',
+      accounts: [{ name: 'max', signed_in: 'yes', kind_words: 'Max' }, { name: 'work', signed_in: 'no', kind_words: '' }, { name: 'Bad/../x', signed_in: 'yes' }, { name: 'team-2', signed_in: 'yes', kind_words: 'Team' }] },
+    { id: 'codex', name: 'Codex', command: 'codex', plan: 'p', installed: true, signed_in: 'yes', kind_words: '' }] });
+  assert.deepEqual(a.tools[0].accounts.map((x) => [x.name, x.signedIn]), [['work', 'no'], ['team-2', 'yes']]);
+  assert.equal(a.tools[0].firstName, 'max');
+  assert.deepEqual([a.tools[1].firstName, a.tools[1].accounts], ['', []]);
+  const menu = readFileSync(new URL('../src/components/Shell.tsx', import.meta.url), 'utf8');
+  assert.match(menu, /value=\{`add:\$\{t\.id\}`\}/);
+  assert.match(menu, /value=\{`\$\{t\.id\}:\$\{a\.name\}`\}/);
 });

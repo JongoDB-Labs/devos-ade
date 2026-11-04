@@ -57,6 +57,10 @@ export interface HarnessInfo {
   installed: boolean;
   signed: 'yes' | 'no' | 'unknown';
   allowed: boolean;
+  /** the first account's name, when it has one */
+  first?: string;
+  /** the other accounts of the tool (a session can start on one), by name */
+  accounts: { name: string; signed: 'yes' | 'no' | 'unknown' }[];
 }
 /** A plan's own limit as its tool reports it (Codex's 5-hour and weekly windows, Claude's) */
 export interface PlanLimit {
@@ -484,6 +488,8 @@ export interface OpenSession {
   settings: SessionSettings | null;
   /** who answers in it, and (on your plan) what it used */
   harness: Harness;
+  /** another account of that tool than the first (its name in ~/.subscriptions), when the session runs on one */
+  account?: string | null;
   plan: PlanUsage | null;
 }
 
@@ -580,7 +586,7 @@ export type ServerMsg =
   | { kind: 'permission'; req: PermissionReq }
   | { kind: 'permission_done'; id: string; session: string | null }
   | { kind: 'session_state'; session: string; state: SessionState; model: string | null; mode: Mode | null; budget?: Budget | null; lastActive?: number;
-      settings?: SessionSettings | null; harness?: Harness; plan?: PlanUsage | null }
+      settings?: SessionSettings | null; harness?: Harness; account?: string | null; plan?: PlanUsage | null }
   /** the answer to `attach`: replayed events start at `from`; `gap`: some after the page's `since` are gone (or the
    *  process changed: another `epoch`); now: the backend's clock (ms; null: an older backend) */
   | { kind: 'attached'; session: string; from: number; last: number; gap: boolean; epoch: string | null; now: number | null }

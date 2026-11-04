@@ -173,6 +173,8 @@ function normEdit(v: unknown): EditInfo | null {
 }
 
 const HARNESS_SET = new Set<string>(HARNESS_IDS);
+/** an account's name (subscriptions): a folder of the sandbox's ~/.subscriptions/TOOL */
+export const ACCOUNT_NAME = /^[a-z0-9][a-z0-9-]{0,19}$/;
 export const harnessOf = (v: unknown): Harness => (typeof v === 'string' && HARNESS_SET.has(v) ? (v as Harness) : 'bedrock');
 /** a session's use of your plan, as the backend counts it: tokens and turns (never dollars), the plan's own limits */
 export function normPlan(v: unknown): PlanUsage | null {
@@ -494,7 +496,8 @@ export function normServerMsg(raw: string): ServerMsg | null {
           // (an older backend says nothing about budgets: no key, not "none")
           ...(o.budget === undefined ? {} : { budget: normBudget(o.budget) }), ...(time(o.lastActive) ? { lastActive: time(o.lastActive) } : {}),
           ...(o.settings === undefined ? {} : { settings: normSessionSettings(o.settings) }),
-          ...(o.harness === undefined ? {} : { harness: harnessOf(o.harness) }), ...(o.plan === undefined ? {} : { plan: normPlan(o.plan) }) }
+          ...(o.harness === undefined ? {} : { harness: harnessOf(o.harness) }), ...(typeof o.account === 'string' && ACCOUNT_NAME.test(o.account) ? { account: o.account } : {}),
+          ...(o.plan === undefined ? {} : { plan: normPlan(o.plan) }) }
         : null;
     }
     case 'reset': {
@@ -700,7 +703,9 @@ export async function getHarnesses(fresh = false): Promise<HarnessInfo[]> {
     const id = harnessOf(h?.id);
     if (!h || id === 'bedrock' || out.some((x) => x.id === id)) continue;
     const signed = h.signed === 'yes' || h.signed === 'no' ? h.signed : 'unknown';
-    out.push({ id, name: label(h.name, 40) || id, provider: label(h.provider, 40), plan: label(h.plan, 80), installed: h.installed === true, signed, allowed: h.allowed === true });
+    out.push({ id, name: label(h.name, 40) || id, provider: label(h.provider, 40), plan: label(h.plan, 80), installed: h.installed === true, signed, allowed: h.allowed === true,
+      ...(typeof h.first === 'string' && ACCOUNT_NAME.test(h.first) ? { first: h.first } : {}),
+      accounts: arr(h.accounts, 8).flatMap((a) => { const x = obj(a); return x && typeof x.name === 'string' && ACCOUNT_NAME.test(x.name) ? [{ name: x.name, signed: (x.signed === 'yes' || x.signed === 'no' ? x.signed : 'unknown') as 'yes' | 'no' | 'unknown' }] : []; }) });
   }
   return out;
 }
@@ -780,6 +785,8 @@ export interface OpenOptions {
   project?: string;
   /** who answers in a new session (none: Claude Code on Bedrock); carry: a session whose conversation goes with it */
   harness?: Harness;
+  /** with a harness of your plan or a subscription: another account of it than the first (its name) */
+  account?: string;
   carry?: string;
 }
 /** POST /api/sessions -> its id, and `existing` when the backend already had that session open (then it is the
@@ -795,6 +802,7 @@ export async function openSession(opts: OpenOptions): Promise<{ id: string; exis
   if (opts.budget) body.budget = { usd: opts.budget.usd, hard: opts.budget.hard, ...(opts.budget.spent !== undefined ? { spent: opts.budget.spent } : {}) };
   if (!opts.resume && opts.project && opts.project !== WORKSPACE_ID && projectIdOk(opts.project)) body.project = opts.project;
   if (!opts.resume && opts.harness && opts.harness !== 'bedrock') body.harness = opts.harness;
+  if (!opts.resume && opts.harness && opts.harness !== 'bedrock' && opts.account && ACCOUNT_NAME.test(opts.account)) body.account = opts.account;
   if (!opts.resume && opts.carry && isUuid(opts.carry)) body.carry = opts.carry;
   // this page has a Stop per background task, so an interrupt spares them (the backend's taskStop)
   body.taskStop = true;
@@ -1901,7 +1909,18 @@ export interface BnTool {
   installed: boolean | null;
   signedIn: 'yes' | 'no' | 'unknown';
   kindWords: string;
+  /** the first account's name when it has one ('' : none) */
+  firstName: string;
+  /** the other accounts of the tool (at most 7), by name */
+  accounts: BnAccount[];
 }
+export interface BnAccount {
+  name: string;
+  signedIn: 'yes' | 'no' | 'unknown';
+  kindWords: string;
+}
+/** at most this many accounts a tool (the first and 7 more) */
+export const MAX_ACCOUNTS = 8;
 export interface BnAnswers {
   here: boolean;
   tools: BnTool[];
@@ -1923,6 +1942,13 @@ export function normAnswers(raw: unknown): BnAnswers {
       id: str(r.id), name: plain(r.name, 60) || str(r.id), command: plain(r.command, 30), plan: plain(r.plan, 120),
       installed: r.installed === true ? true : r.installed === false ? false : null,
       signedIn: signed === 'yes' || signed === 'no' ? signed : 'unknown', kindWords: plain(r.kind_words, 40),
+      firstName: /^[a-z0-9][a-z0-9-]{0,19}$/.test(str(r.first_name)) ? str(r.first_name) : '',
+      accounts: (Array.isArray(r.accounts) ? r.accounts.slice(1, MAX_ACCOUNTS) : []).flatMap((a): BnAccount[] => {
+        const x = obj(a);
+        const n = x ? str(x.name) : '';
+        const sg = x ? str(x.signed_in) : '';
+        return x && /^[a-z0-9][a-z0-9-]{0,19}$/.test(n) ? [{ name: n, signedIn: sg === 'yes' || sg === 'no' ? sg : 'unknown', kindWords: plain(x.kind_words, 40) }] : [];
+      }),
     });
   }
   return { here: obj(o.terminal)?.here === true, tools };
@@ -1934,10 +1960,11 @@ export async function reportRecent(report: RecentReport): Promise<void> {
 }
 /** A launch token for the terminal panel's Open menu (POST /.bn/terminal-launch: the portal makes it only for this
  *  page's own request, X-Requested-With) -> the panel's address with it (/.bn/terminal?open=…&launch=…). */
-export async function terminalLaunch(tool: string, dir: string | null): Promise<string> {
-  const o = await request('POST', '/.bn/terminal-launch', { tool, ...(dir ? { dir } : {}) }, { 'X-Requested-With': 'bn-code' });
+export async function terminalLaunch(tool: string, dir: string | null, mode: 'open' | 'add' = 'open'): Promise<string> {
+  const o = await request('POST', '/.bn/terminal-launch', { tool, ...(dir ? { dir } : {}), ...(mode === 'add' ? { mode } : {}) }, { 'X-Requested-With': 'bn-code' });
   const url = str(o.url);
-  if (!/^\/\.bn\/terminal\?open=[A-Za-z]{1,20}(&dir=[^&#]{1,2000})?&launch=[0-9]{10}-[0-9a-f]{16}-[0-9a-f]{32}$/.test(url)) throw new ApiError(502, 'The portal gave no address for the terminal.');
+  // (open=TOOL, or TOOL:NAME for another account of it; add=TOOL: `subscriptions add TOOL` asks for the name)
+  if (!/^\/\.bn\/terminal\?(open|add)=[A-Za-z]{1,20}(:[a-z0-9][a-z0-9-]{0,19})?(&dir=[^&#]{1,2000})?&launch=[0-9]{10}-[0-9a-f]{16}-[0-9a-f]{32}$/.test(url)) throw new ApiError(502, 'The portal gave no address for the terminal.');
   return url;
 }
 export async function getModels(): Promise<BnModels> {

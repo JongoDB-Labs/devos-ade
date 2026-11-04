@@ -78,6 +78,7 @@ export function answerers(list: HarnessInfo[], current: Harness): { ready: Harne
  *  first under one row that opens them */
 function WhoAnswers({ current, close }: { current: Harness; close: () => void }) {
   const list = useSel(store, (s) => s.harnesses);
+  const account = useSel(store, (s) => activeView(s)?.account ?? null);
   const agents = useSel(store, (s) => s.server?.agents === true);
   const [more, setMore] = useState(false);
   if (!agents) return null;
@@ -85,12 +86,23 @@ function WhoAnswers({ current, close }: { current: Harness; close: () => void })
   const item = (h: HarnessInfo) => {
     const st = harnessState(h);
     // (one that cannot start here: a choice that goes where that is turned on — at once, its words saying where)
+    // (another account of the tool than the first: its own item, started in a new session on that account)
+    const others = st.ok ? h.accounts.filter((a) => a.signed === 'yes' || (current === h.id && account === a.name)) : [];
     return (
-      <MenuItem key={h.id} checked={current === h.id} testid={`harness-${h.id}`} setup={!st.ok && current !== h.id ? st.reason : undefined}
-        onSelect={() => { close(); if (current === h.id) return; if (st.ok) void switchHarness(h.id); else if (st.reason) goSetup(st.reason, h.id); }}>
-        <span class="mi-title">{h.id === 'claude' ? 'Claude · your plan' : h.name}<span class="mp-badge tone-info">your plan</span></span>
+      <>
+      <MenuItem key={h.id} checked={current === h.id && !account} testid={`harness-${h.id}`} setup={!st.ok && current !== h.id ? st.reason : undefined}
+        onSelect={() => { close(); if (current === h.id && !account) return; if (st.ok) void switchHarness(h.id); else if (st.reason) goSetup(st.reason, h.id); }}>
+        <span class="mi-title">{h.id === 'claude' ? 'Claude · your plan' : h.name}{h.first ? ` — ${h.first}` : ''}<span class="mp-badge tone-info">your plan</span></span>
         <span class="mi-desc">{h.plan} · {st.says}</span>
       </MenuItem>
+      {others.map((a) => (
+        <MenuItem key={`${h.id}:${a.name}`} checked={current === h.id && account === a.name} testid={`harness-${h.id}-${a.name}`}
+          onSelect={() => { close(); if (current === h.id && account === a.name) return; void switchHarness(h.id, a.name); }}>
+          <span class="mi-title">{h.id === 'claude' ? 'Claude' : h.name} — {a.name}<span class="mp-badge tone-info">your plan</span></span>
+          <span class="mi-desc">{h.plan} · another account, signed in</span>
+        </MenuItem>
+      ))}
+      </>
     );
   };
   return (
@@ -115,7 +127,7 @@ function WhoAnswers({ current, close }: { current: Harness; close: () => void })
       {list === null && <div class="panel-note">Your subscriptions are being listed…</div>}
       {(more || ready.length > 0 || list === null) && (
         <div class="panel-note">
-          Each answers through its own app in the sandbox, signed in there with its own sign-in; usage counts against your plan (no $). Switching starts a new session in
+          Each answers through its own app in the sandbox, signed in there with its own sign-in; usage counts against your plan (no $). More accounts of a tool: Add an account in the terminal's Open menu, or Settings. Switching starts a new session in
           this project's folder with your conversation so far.{' '}
           <button type="button" class="link" role="menuitem" onClick={() => void refreshHarnesses(true)}>Check again</button>
         </div>
