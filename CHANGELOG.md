@@ -16,6 +16,9 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   - Each launcher reads `BN_SUB_ACCOUNT=NAME` and points its tool at that folder with the variable the tool reads
     (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GEMINI_CLI_HOME`, `COPILOT_HOME`, `GROK_HOME`; Cursor keeps its login under
     `XDG_CONFIG_HOME`, so that one); a name that is not one, or a folder that is not there, is refused.
+    A named Cursor account keeps `gh`, `glab` and git's identity where they were: the launcher pins `GH_CONFIG_DIR` and
+    `GLAB_CONFIG_DIR` and adds the old `~/.config/git/config` as an include in the process's environment (command scope,
+    so it outranks `~/.gitconfig`).
   - The status file gains `account` and `first_name`; `/api/answers` lists each tool's `accounts`, the first first; the
     launch words accept `open|chat TOOL[:NAME]` and `add TOOL`. Chat's sandbox stays at one account a tool.
 - **Accounts in the pickers, Settings and the Code page (JON-1052).** The Terminal tab's and the Code page terminal's
@@ -37,11 +40,6 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 ## [0.57.2] - 2026-11-04
 
 ### Fixed
-- **A named Cursor account no longer moves `gh`, `glab` and git's identity (JON-1052).** Cursor keeps its login under
-  `XDG_CONFIG_HOME`, so a second Cursor account pointed that at its own folder, and everything else that reads
-  `~/.config` there lost sight of GitHub's and GitLab's logins and git's `~/.config/git/config`. The launcher now pins
-  `GH_CONFIG_DIR` and `GLAB_CONFIG_DIR` to where they were and adds the old git config as an include in the process's
-  environment (command scope outranks `~/.gitconfig`). The first account is untouched.
 - **Claude Code on Bedrock signs in to no Claude account (JON-1050).** A `/login` in the terminal's Claude Code on
   Bedrock saved a Claude account login in its folder. Nothing used it — the stack's key comes first, so no request
   went to that account and its claude.ai connectors were not loaded (the notice said so) — but it stayed there. Now, in
