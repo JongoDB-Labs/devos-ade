@@ -904,6 +904,7 @@ export interface GitHostView {
   ca: boolean;
   /** Claude's own git may use this host's credential (off by default) */
   claude: boolean;
+  claudeSet: boolean;
   claudeSince: number | null;
   createdAt: number | null;
   /** 'localgit': the built-in git server's host, made by ./stack (lib/localgit.sh) — there by itself, not one you connected */

@@ -27,9 +27,10 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
     let Claude use. That switch (**Git hosts › Local git server › Let Claude use this host**) is on by default for this host (see below);
     where it is off, git says which switch gives it a login. This replaces the README's "not wired yet".
   - **The Local git server is on for Claude and the terminal by default, and the default branch of a kept repository cannot be force-pushed or deleted
-    on the server.** *Let Claude use this host* is now on for the Local git server and for no other host (GitHub and the rest stay off), so
-    a new install's terminal can `git push` at once. `./stack up` turns it on once for an install from before, unless you set the switch yourself
-    (the hosts file's mark of your change, or the Activity line a change always wrote); after that mark a later *off* stays off. Every kept
+    on the server.** *Let Claude use this host* now starts on for a newly made Local git server host and for no other host (GitHub and the rest stay off), so
+    a new install's terminal can `git push` at once. An install that is updated keeps its setting — nothing turns the switch on for you,
+    because a credential you once refused must not come back unasked — and while it is off and you have not decided, **Git hosts** shows a
+    notice on the Local git server with a **Turn it on** button (the normal switch, so your choice is kept either way). Every kept
     repository's default branch gets a Forgejo branch protection (no force-push, no deletion; ordinary pushes by the same token are
     unchanged, no allow-list): made when a project is kept, again after its first push (the first push of an empty repository picks the
     default branch), and for repositories kept before this version when the Code page starts, then at each 10-minute sweep if the

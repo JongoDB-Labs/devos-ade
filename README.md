@@ -1559,9 +1559,9 @@ uninstall` removes it, turning the server off keeps it).
 - **From the Terminal** (yours and Claude's own `git` there): `git push`, `pull` and `fetch` to `https://gateway:8093/devos/REPO.git` work from the
   Terminal tab. The terminal's git trusts the server's certificate for that host and port alone, and gets the login the way it gets any git host's:
   from the Code page, per operation, never kept in the sandbox — and only for a host you let Claude use. For the Local git server that switch
-  (**Git hosts › Local git server › Let Claude use this host**) is **on by default**: a new install has it on, and an install from before
-  gets it turned on once by `./stack up` unless you had set it yourself (a later *off* stays off). It is off by default for every other host.
-  With it off (turn it back on on this computer; the dialog warns first), git says so in a line of its own before its usual *could not read Username*. Then `project remote` in a repository adds the server as its remote `local`
+  (**Git hosts › Local git server › Let Claude use this host**) is **on by default for a new install**; an install that is updated keeps
+  its setting (nothing turns it on for you), and while it is off and you have not decided, Git hosts shows a notice on that host with a
+  **Turn it on** button. It is off by default for every other host. With it off (turn it on from this computer; the dialog warns first), git says so in a line of its own before its usual *could not read Username*. Then `project remote` in a repository adds the server as its remote `local`
   (`https://gateway:8093/devos/<folder name>.git`), and `git push -u local main` makes the private repository with its first push.
 - **A repository made in the Terminal is a Code project.** `project add [DIR] [--name NAME]` lists a folder of `/workspace` (default: here) under the Code
   page's Projects; `project add --keep [--repo NAME]` also keeps it on the local git server (needs the switch above, and a git repository);

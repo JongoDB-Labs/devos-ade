@@ -265,34 +265,31 @@ test('the built-in git server: its host made once with the certificate as the CA
   assert.throws(() => store.add({ kind: 'other', host: 'gateway', port: 8093, auth: 'token', token: tok, username: 'x' }), /connected with an access token already/);
 });
 
-test('Let Claude use this host: on by default for the built-in git server only; an older host that has it off is turned on once, a choice the user made is kept, and a later off sticks', () => {
+test('Let Claude use this host: a NEW built-in git server host starts on, other hosts off; a host that exists is never turned on by ./stack — off stays off with or without claudeSet, on stays on', () => {
   const ca = fs.readFileSync(path.resolve(import.meta.dirname, '../../tests/fixtures/localgit-ca.pem'), 'utf8');
   const tok = ['lg', 'tok_', 'W'.repeat(20), Date.now()].join('');
   const hand = (dir, extra = {}) => JSON.parse(run(dir, JSON.stringify({ source: 'localgit', ca, account: 'devos', ...extra })).stdout);
-  // a host made before the default (off, nothing marked): the next hand-over turns it on once, and says so in Activity
-  const old = path.join(ROOT, 'claude-old');
-  hand(old, { token: tok });
-  const s1 = new GitHosts({ dir: old });
-  const id = s1.read().hosts[0].id;
-  s1.change(id, (h) => { h.claude = false; h.claudeSince = null; delete h.claudeDefault; });
-  hand(old);
-  assert.equal(new GitHosts({ dir: old }).read().hosts[0].claude, true);
-  assert.ok(new GitHosts({ dir: old }).events(5).some((e) => e.action === 'claude' && /on by default/.test(e.text)));
-  // then the user turns it off (setClaude leaves its mark): every later ./stack up leaves it off
-  new GitHosts({ dir: old }).setClaude(id, false);
-  hand(old); hand(old, { token: tok });
-  assert.equal(new GitHosts({ dir: old }).read().hosts[0].claude, false, 'a later off sticks');
-  // a choice made before the mark existed: the Activity line of the change tells (action claude, this host)
-  const chose = path.join(ROOT, 'claude-chose');
-  hand(chose, { token: tok });
-  const s2 = new GitHosts({ dir: chose });
-  const id2 = s2.read().hosts[0].id;
-  s2.change(id2, (h) => { h.claude = false; delete h.claudeDefault; delete h.claudeSet; });
-  s2.event({ action: 'claude', host: 'Local git server', target: 'gateway', text: 'Claude may no longer use this host' });
-  hand(chose);
-  assert.equal(new GitHosts({ dir: chose }).read().hosts[0].claude, false, 'the user set it themselves: kept');
-  assert.equal(new GitHosts({ dir: chose }).read().hosts[0].claudeDefault, true, 'and marked: this is not looked at again');
-  // other hosts stay off by default
-  const other = new GitHosts({ dir: path.join(ROOT, 'claude-other') });
-  assert.equal(other.add({ kind: 'github', auth: 'token', token: tok }).claude, false);
+  const made = path.join(ROOT, 'claude-new');
+  assert.equal(hand(made, { token: tok }).host.created, true);
+  assert.equal(new GitHosts({ dir: made }).read().hosts[0].claude, true, 'new: on');
+  assert.equal(GitHosts.public(new GitHosts({ dir: made }).read().hosts[0]).claudeSet, false);
+  const id = new GitHosts({ dir: made }).read().hosts[0].id;
+  for (const [name, set] of [['claude-off', false], ['claude-off-set', true]]) {
+    const dir = path.join(ROOT, name);
+    hand(dir, { token: tok });
+    const st = new GitHosts({ dir });
+    st.change(st.read().hosts[0].id, (h) => { h.claude = false; h.claudeSince = null; if (set) h.claudeSet = true; });
+    hand(dir); hand(dir, { token: tok });
+    const h = new GitHosts({ dir }).read().hosts[0];
+    assert.equal(h.claude, false, `${name}: an existing off host stays off`);
+    assert.equal(GitHosts.public(h).claudeSet, set);
+    assert.ok(!new GitHosts({ dir }).events(5).some((e) => e.action === 'claude'), 'no line says it was turned on');
+  }
+  hand(made); hand(made, { token: tok });
+  assert.equal(new GitHosts({ dir: made }).read().hosts[0].claude, true, 'an existing on host stays on');
+  // setClaude leaves the mark either way: the page stops offering
+  const st = new GitHosts({ dir: made });
+  assert.equal(st.setClaude(id, false).claudeSet, true);
+  assert.equal(st.setClaude(id, true).claudeSet, true);
+  assert.equal(new GitHosts({ dir: path.join(ROOT, 'claude-other') }).add({ kind: 'github', auth: 'token', token: tok }).claude, false, 'other hosts start off');
 });

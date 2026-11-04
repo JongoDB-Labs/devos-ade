@@ -186,7 +186,7 @@ export class GitHosts {
       imported: h.auth === 'token' && h.imported ? { ...h.imported } : null, builtin: h.builtin === LOCALGIT.id ? LOCALGIT.id : null, oauth: h.auth === 'oauth' ? GitHosts.publicOAuth(h.oauth) : null,
       publicKey: h.ssh?.publicKey ?? null, fingerprint: h.ssh?.fingerprint ?? null, keySetAt: h.ssh?.createdAt ?? null,
       knownHosts: (h.knownHosts || []).map(knownHostFingerprint).filter(Boolean), builtinHostKeys: (KNOWN_HOSTS[h.host] || []).length > 0,
-      ca: typeof h.ca === 'string', claude: h.claude === true, claudeSince: h.claudeSince ?? null, createdAt: h.createdAt };
+      ca: typeof h.ca === 'string', claude: h.claude === true, claudeSince: h.claudeSince ?? null, claudeSet: h.claudeSet === true, createdAt: h.createdAt };
   }
   // publicOAuth(o) -> what the page may see of a sign-in: never its tokens
   static publicOAuth(o) {
@@ -260,18 +260,15 @@ export class GitHosts {
   // addLocalGit({account, token, ca}) -> {host (public), created}: the built-in local git server as a host — made once, then
   // kept in step: its CA (the certificate ./stack made) and, when one is sent, its token and account. A host that is there
   // without a token to send (the CA only) is left as it is; one that is missing needs the token (400 "no token").
-  // Let Claude use this host is ON for this host and no other (the user's own repositories on their own server; every other host
-  // starts off). A new host is made with it on. A host made before that was off by default: it is turned on once — claudeDefault marks
-  // that this was done — unless the user set the switch themselves, which the store can tell by the mark setClaude leaves (claudeSet)
-  // or, for a choice made before the mark, by the Activity line a change of the switch always wrote (action "claude", this host's
-  // label). Once marked, a later "off" is never undone.
+  // Let Claude use this host is ON for a NEW built-in host and for no other host (the user's own repositories on their own server; every
+  // other host starts off). A host that exists is never turned on from here, whatever it says: the Activity log is capped and the user's
+  // old "off" may be gone from it, and a credential they refused must not come back unasked. The Code page offers the switch instead
+  // (a notice on the host while claude is off and claudeSet — the mark setClaude leaves when the user decides either way — is not).
   addLocalGit(b) {
     const ca = checkCa(b?.ca);
     const account = typeof b?.account === 'string' && ACCOUNT.test(b.account) ? b.account : null;
     const have = this.read().hosts.find((x) => x.builtin === LOCALGIT.id);
     if (have) {
-      const saidSo = this.read().events.some((e) => e.action === 'claude' && e.host === (have.label || LOCALGIT.label));
-      let turnedOn = false;
       const out = this.change(have.id, (h) => {
         h.ca = ca; h.label = h.label || LOCALGIT.label;
         if (typeof b?.token === 'string') {
@@ -279,17 +276,13 @@ export class GitHosts {
           h.token = b.token; h.tokenSetAt = this.now();
         }
         if (account) h.username = account;
-        if (!h.claudeDefault) {
-          h.claudeDefault = true;
-          if (h.claude !== true && !h.claudeSet && !saidSo) { h.claude = true; h.claudeSince = this.now(); turnedOn = true; }
-        }
       });
-      return { host: out, created: false, turnedOn };
+      return { host: out, created: false };
     }
     if (typeof b?.token !== 'string') throw new HostError(400, 'no token');
     if (!account) throw new HostError(400, 'the account the token belongs to, please');
     const host = this.add({ kind: 'other', host: LOCALGIT.host, port: LOCALGIT.port, label: LOCALGIT.label, auth: 'token', username: account, token: b.token, ca }, { builtin: LOCALGIT.id });
-    return { host: this.change(host.id, (h) => { h.claude = true; h.claudeSince = this.now(); h.claudeDefault = true; }), created: true };
+    return { host: this.change(host.id, (h) => { h.claude = true; h.claudeSince = this.now(); }), created: true };
   }
   // addOAuth({kind, host, port, label, ca, oauth}) -> the new host (public): a sign-in (oauth.mjs) — one https
   // credential per host and port, like a token
