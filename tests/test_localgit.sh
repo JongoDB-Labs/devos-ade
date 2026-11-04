@@ -87,6 +87,10 @@ test_the_certificate_is_made_once_for_the_name_gateway_and_is_its_own_ca() {
   before="$(cksum < "$d/tls.crt")"
   localgit_tls_ensure || return 1
   [ "$(cksum < "$d/tls.crt")" != "$before" ] || { echo "an ending certificate was kept" >&2; return 1; }
+  # the sandbox's folder holds the certificate and never the key, and follows the certificate when it is made again
+  [ "$(cat "$d/ca/tls.crt")" = "$(cat "$d/tls.crt")" ] || { echo "the sandbox's CA is not the new certificate" >&2; return 1; }
+  [ ! -e "$d/ca/tls.key" ] && [ "$(ls "$d/ca" | tr '\n' ' ')" = "tls.crt " ] || { echo "the sandbox's folder: $(ls "$d/ca")" >&2; return 1; }
+  [ "$(perm_of "$d/ca/tls.crt")" = 644 ] && [ "$(perm_of "$d/ca")" = 755 ] || { echo "modes of the CA folder" >&2; return 1; }
   # no openssl, no certificate: the overlay is left out rather than a compose file that cannot mount
   rm -rf "$STATE_DIR/localgit"; mkdir -p "$TMP/noopenssl"; printf '#!/bin/sh\nexit 127\n' > "$TMP/noopenssl/openssl"; chmod +x "$TMP/noopenssl/openssl"
   printf 'TERMINAL_ENABLED=true\nTERMINAL_WORKSPACE=/w\n' > "$ENV_FILE"
@@ -260,6 +264,14 @@ test_the_gateways_listener_forwards_git_smart_http_only() {
   assert_contains "$c" "read_only: true"
   assert_contains "$c" "create_host_path: false"
   assert_contains "$c" "localgit: {}"
+  # the sandbox's own git: the certificate's folder alone (never the key's), read-only, for gateway:8093 only (terminal/gitconfig)
+  assert_contains "$c" 'source: ${BN_LOCALGIT_TLS:?run ./stack up}/ca'
+  assert_contains "$c" "target: /etc/bn-localgit-ca"
+  assert_eq "$(grep -c BN_LOCALGIT_TLS "$T_ROOT/compose.localgit.yaml" | tr -d " ")" "2"   # (the gateway's folder and the sandbox's: no third)
+  gc="$(cat "$T_ROOT/terminal/gitconfig")"
+  assert_contains "$gc" '[http "https://gateway:8093/"]'
+  assert_contains "$gc" "sslCAInfo = /etc/bn-localgit-ca/tls.crt"
+  assert_eq "$(grep -c 'sslCAInfo' "$T_ROOT/terminal/gitconfig" | tr -d ' ')" "1"
 }
 
 test_the_web_site_is_behind_the_portal_and_framed_by_it_only() {

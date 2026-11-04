@@ -6,7 +6,18 @@
 # TERMINAL_EGRESS=internet, host or off alike — never the internet, never another service. TLS: the certificate ./stack made
 # for the name "gateway" (lib/localgit.sh localgit_tls_ensure, a folder of .state read-only here), which the code container
 # hands the sandbox's git as the one CA it trusts for that host.
+#
+# The sandbox's own git (Claude's and yours in the terminal) trusts that certificate for gateway:8093 alone (terminal/gitconfig):
+# the terminal gets a folder with the certificate and never the key (.state/localgit/tls/ca, lib/common.sh localgit_ca_publish).
+# Its login is not here: it comes from the Code page's broker per operation, only for a host you let Claude use (bn-git-credential).
 services:
+  terminal:
+    volumes:
+      - type: bind
+        source: ${BN_LOCALGIT_TLS:?run ./stack up}/ca
+        target: /etc/bn-localgit-ca
+        read_only: true
+        bind: { create_host_path: false, selinux: z }
   terminal-gateway:
     environment:
       BN_LOCALGIT_GATEWAY: "on"   # caddy/terminal-gateway.caddy imports localgit-gateway-on.caddy

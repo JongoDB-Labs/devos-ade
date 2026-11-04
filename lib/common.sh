@@ -714,7 +714,7 @@ localgit_tls_dir() { printf '%s/localgit/tls\n' "$STATE_DIR"; }
 localgit_tls_ensure() {
   local d crt key cfg rc=0
   d="$(localgit_tls_dir)"; crt="$d/tls.crt"; key="$d/tls.key"
-  if [ -s "$crt" ] && [ -s "$key" ] && openssl x509 -in "$crt" -noout -checkend 2592000 >/dev/null 2>&1; then return 0; fi
+  if [ -s "$crt" ] && [ -s "$key" ] && openssl x509 -in "$crt" -noout -checkend 2592000 >/dev/null 2>&1; then localgit_ca_publish; return $?; fi
   command -v openssl >/dev/null 2>&1 || return 1
   mkdir -p "$d" 2>/dev/null || return 1
   cfg="$(mktemp)" || return 1
@@ -737,7 +737,19 @@ EOF
     mv "$key.new" "$key" && mv "$crt.new" "$crt" || rc=1
   else rc=1; rm -f "$key.new" "$crt.new"; fi
   rm -f "$cfg"
+  [ "$rc" = 0 ] && { localgit_ca_publish || rc=1; }
   return "$rc"
+}
+
+# localgit_ca_publish -> 0 with the certificate (never the key) copied to .state/localgit/tls/ca/tls.crt: the one folder the
+# sandbox gets (compose.localgit.yaml, read-only), because its git trusts that certificate for the name gateway:8093 alone
+# (terminal/gitconfig) — the folder above it also holds the key the gateway serves with, which the sandbox never sees.
+localgit_ca_publish() {
+  local d ca; d="$(localgit_tls_dir)"; ca="$d/ca"
+  [ -s "$d/tls.crt" ] || return 1
+  cmp -s "$d/tls.crt" "$ca/tls.crt" 2>/dev/null && return 0
+  mkdir -p "$ca" 2>/dev/null || return 1
+  cp "$d/tls.crt" "$ca/tls.crt.new" && chmod 644 "$ca/tls.crt.new" && chmod 755 "$ca" && mv "$ca/tls.crt.new" "$ca/tls.crt" || { rm -f "$ca/tls.crt.new"; return 1; }
 }
 
 # compose_overlays -> extra compose files for this checkout: remote access (REMOTE_MODE in .env, lib/remote.sh)

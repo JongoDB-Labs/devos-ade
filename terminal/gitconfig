@@ -13,3 +13,8 @@
 [user]
 	name = DevOS ADE
 	email = ade@devos-ade.invalid
+# The built-in git server (https://gateway:8093, the terminal gateway's TLS listener; compose.localgit.yaml): its certificate is
+# the one CA git trusts for that host and port alone (the folder holds the certificate, never its key), so git push, pull and
+# fetch work there from the terminal. A login is still the Code page's to give: only for a host you let Claude use.
+[http "https://gateway:8093/"]
+	sslCAInfo = /etc/bn-localgit-ca/tls.crt
