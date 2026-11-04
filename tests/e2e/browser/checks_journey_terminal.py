@@ -2,9 +2,10 @@
 
 The owner's journey: in the Terminal tab, mkdir under /workspace, git init, a commit, then the terminal's git to the built-in git
 server (`project remote`, `git push -u local main`: the sandbox's git trusts the server's certificate for gateway:8093 and gets
-its login from the Code page, which the owner gives with Git hosts › Let Claude use this host — turned on here through its warning
-and put back after) and `project add` (a Code project) or `project new NAME --keep` (a project kept on the server). Then the portal's
-Git tab shows the repository with that commit, and the Code page lists the project; a repository nobody registered is offered under
+its login from the Code page, which the owner gives with Git hosts › Let Claude use this host — ON by default for the Local git server, which
+this check expects and never changes) and `project add` (a Code project) or `project new NAME --keep` (a project kept on the server). Then the portal's
+Git tab shows the repository with that commit; in the kept repository a normal push works and `git push --force` to its default branch is refused
+by the server (protected branch: no force-push), the server's commits unchanged; and the Code page lists the project; a repository nobody registered is offered under
 Projects (Add as project) and another is declined (Not now: not offered again after a reload). The git server's API
 (checks_git.forgejo) only verifies and tidies. No model calls. Runs when the terminal, the Code page and the git server are on."""
 
@@ -37,21 +38,13 @@ def local_host_row(page):
     return dlg, row
 
 
-def let_claude_use_local_git(page, on: bool) -> bool:
-    """Git hosts › Local git server › Let Claude use this host, to `on` (through its warning when turning on). -> whether it changed."""
+def claude_may_use_local_git(page) -> bool:
+    """Git hosts › Local git server › Let Claude use this host: whether it is on (read only; it is on by default for this host)."""
     palette(page, "git: git hosts")
     dlg, row = local_host_row(page)
-    sw = row.get_by_test_id("git-host-claude")
-    now = sw.get_attribute("aria-checked") == "true"
-    if now == on:
-        dlg.get_by_role("button", name="Close").click()
-        return False
-    sw.click()
-    if on:
-        page.get_by_test_id("git-claude-confirm").click()
-    see(sw).to_have_attribute("aria-checked", "true" if on else "false", timeout=30000)
+    on = row.get_by_test_id("git-host-claude").get_attribute("aria-checked") == "true"
     dlg.get_by_role("button", name="Close").click()
-    return True
+    return on
 
 
 @check("browser", "journey-terminal-git")
@@ -59,12 +52,11 @@ def journey_terminal_git(ctx):
     if not (TERMINAL_ON and checks_git.ON):
         raise Skip("needs the terminal and the built-in git server (tests/e2e/run.sh --terminal; LOCALGIT on)")
     need_code()
-    turned_on = False
     made_repos = [A, D]
     try:
-        # 1. the owner lets the terminal's git use the local git server (off by default), on the Code page
+        # 1. the switch that lets the terminal's git use the local git server is ON by default (nothing is clicked here), on the Code page
         page, rec = ui_page(ctx, "journey-terminal-git-hosts")
-        turned_on = let_claude_use_local_git(page, True)
+        expect(claude_may_use_local_git(page), "Git hosts › Local git server › Let Claude use this host is off: it is on by default for the built-in git server")
 
         # 2. in the Terminal tab: folders, git init, a commit each; the terminal's git to the server; the project command
         page, rec = ctx.page("journey-terminal-git-term")
@@ -90,6 +82,19 @@ def journey_terminal_git(ctx):
         out = wait_text(f, r"^KEPT-2$", 90)
         expect(re.search(r"^Kept on the local git server as " + OWNER + "/" + re.escape(D), out, re.M), f"project new --keep: {out[-600:]!r}")
         shot(page, "journey-terminal-git-1-terminal")
+        # (the kept repository D: two commits pushed the ordinary way work; a forced push of a rewritten main is refused by the server, which keeps its commits)
+        ident = "git -c user.name=e2e -c user.email=e2e@example.invalid"
+        type_line(page, f, f"cd /workspace/{D} && R=$(git remote | head -n 1) && BR=$(git branch --show-current) && echo one > f1 && git add f1 && {ident} commit -q -m 'ok-one {STAMP}'"
+                  f" && echo two > f2 && git add f2 && {ident} commit -q -m 'ok-two {STAMP}' && git push $R $BR 2>&1 | tail -3; echo NORMAL-$((1+1))")
+        out = wait_text(f, r"^NORMAL-2$", 90)
+        expect("fatal" not in out and "rejected" not in out and "no login" not in out, f"a normal push to the kept repository: {out[-600:]!r}")
+        type_line(page, f, f"git reset -q --hard HEAD~1 && echo alt > f3 && git add f3 && {ident} commit -q -m 'rewritten {STAMP}' && git push --force $R $BR 2>&1 | tail -6; echo FORCED-$((1+1))")
+        out = wait_text(f, r"^FORCED-2$", 90)
+        expect(re.search(r"protected|remote rejected|pre-receive hook declined|denied", out, re.I) and not re.search(r"\+ [0-9a-f]+\.\.\.[0-9a-f]+", out),
+               f"git push --force to the kept repository's default branch is refused by the server: {out[-700:]!r}")
+        st, commits = checks_git.forgejo(ctx, "GET", f"/api/v1/repos/{OWNER}/{D}/commits?limit=10")
+        msgs = " | ".join(c["commit"]["message"] for c in commits) if st == 200 else ""
+        expect(st == 200 and f"ok-two {STAMP}" in msgs and f"rewritten {STAMP}" not in msgs, f"the server kept its commits after the refused force-push: HTTP {st} {msgs[:300]!r}")
 
         # 3. the portal's Git tab shows the repository with the commit (the page of its address, in the frame)
         page.goto("about:blank")
@@ -130,11 +135,9 @@ def journey_terminal_git(ctx):
         return (f"in the Terminal: git init + commit in /workspace/{A}, `project remote` and `git push -u local main` to {OWNER}/{A} (shown in the Git tab "
                 f"with the commit), `project add` ({NAME_A}), `project new {D} --keep`; the Code page lists them; {B} offered and added, {C} declined and not offered again")
     finally:
-        # put it all back: the switch, the projects, the repositories on the server, the folders
+        # put it all back: the projects, the repositories on the server, the folders
         try:
             page, rec = ui_page(ctx, "journey-terminal-git-tidy")
-            if turned_on:
-                let_claude_use_local_git(page, False)
             c = Code.on(page, rec, goto=False)
             _drop_projects(c, {A, B, C, D})
             for n in (A, B, C, D):
