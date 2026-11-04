@@ -43,6 +43,7 @@ export const GIT_REFUSALS = Object.freeze([
   'no such folder in the workspace (or a link on its way)',
   'that folder of this computer is not here (the sandbox restarts to see it)',
   'not a folder of the project',
+  'no such account',
   'no such folder in the project (or a link on its way)',
   'scope: staged, unstaged or untracked',
   'not a path in the workspace',
