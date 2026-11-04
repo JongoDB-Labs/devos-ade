@@ -49,6 +49,20 @@ def claude_may_use_local_git(page) -> bool:
     return on
 
 
+def show_projects(page):
+    """The left dock's Projects tab, shown and still shown a moment later. A browser keeps the dock's last tab (an earlier check may have
+    left Explorer or Git there), and the tab was seen to change back to Git after one click (062b): each time that happens it is said in
+    the log, so a run tells whether the page itself takes the click back."""
+    for attempt in range(4):
+        page.get_by_test_id("side-sessions").click()
+        see(page.get_by_test_id("project").first).to_be_visible(timeout=15000)
+        page.wait_for_timeout(1500)
+        if page.get_by_test_id("project").first.is_visible():
+            return
+        print(f"  show_projects: the Projects tab did not stay shown after a click (try {attempt + 1})", flush=True)
+    see(page.get_by_test_id("project").first).to_be_visible(timeout=5000)
+
+
 @check("browser", "journey-terminal-git")
 def journey_terminal_git(ctx):
     if not (TERMINAL_ON and checks_git.ON):
@@ -118,6 +132,7 @@ def journey_terminal_git(ctx):
 
         # 4. the Code page: A (project add) and D (kept) are listed; B, C and E were registered by nobody and appear by themselves, no click
         page, rec = ui_page(ctx, "journey-terminal-git-code")
+        show_projects(page)
         for name in (NAME_A, D):
             try:
                 see(page.get_by_test_id("project").filter(has_text=name).first).to_be_visible(timeout=30000)
@@ -154,6 +169,7 @@ def journey_terminal_git(ctx):
             page.wait_for_timeout(4000)
             page.reload()
             see(page.get_by_test_id("conn")).to_have_text("Connected", timeout=30000)
+            show_projects(page)
             see(page.get_by_test_id("project").filter(has_text=B).first).to_be_visible(timeout=30000)
         expect(page.get_by_test_id("project").filter(has_text=C).count() == 0 and page.get_by_test_id("added-project").filter(has_text=C).count() == 0,
                "a folder removed from Code was added again")

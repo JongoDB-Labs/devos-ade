@@ -29,7 +29,7 @@ import checks_terminal as T
 from checks_browser import Recorder, frame_of, login, shot
 from checks_code import (ANSWERED, Code, _asked, _drop_projects, _last_session, _proj, _terminal_frame, _term_wait, _unfold, ask, csp_clean,
                          need_haiku, saved, ui_page)
-from checks_journey_terminal import claude_may_use_local_git
+from checks_journey_terminal import claude_may_use_local_git, show_projects
 from common import ENV, Skip, check, expect, origin
 
 J1 = "e2e-j1-code"
@@ -315,7 +315,7 @@ def terminal_folder_to_git(ctx):
         page.reload()
         see(page.get_by_test_id("conn")).to_have_text("Connected", timeout=30000)
         c = Code.on(page, rec, goto=False)
-        page.get_by_test_id("side-sessions").click()
+        show_projects(page)
         added = page.get_by_test_id("added-project")
         try:
             see(added.filter(has_text=J2)).to_have_count(1, timeout=60000)
@@ -329,11 +329,13 @@ def terminal_folder_to_git(ctx):
         try:
             see(added.filter(has_text=J4).get_by_test_id("added-text")).to_contain_text("no git yet", timeout=60000)
             added.filter(has_text=J4).get_by_test_id("added-git").click()
+            show_projects(page)   # (the notice is on the Projects tab)
             see(added.filter(has_text=J4).get_by_test_id("added-text")).to_contain_text("kept on your local git server", timeout=120000)
         except AssertionError:
             j.step(False, f"{J4} (a package.json, no git) was not added with Start git here, or Start git here did not lead to keeping it")
         shot(page, "j2-2-added-node")
         if pid:
+            show_projects(page)   # (the project's row is on the Projects tab)
             _proj(page, pid).get_by_test_id("project-show").click()
             see(page.get_by_test_id("project-chip-name")).to_have_text(J2, timeout=30000)
         open_git_panel(page)
