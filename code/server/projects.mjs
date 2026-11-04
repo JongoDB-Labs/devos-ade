@@ -119,10 +119,14 @@ export function localgitRecord(r) {
     lastError: typeof r.lastError === 'string' && r.lastError && !ODD.test(r.lastError) ? r.lastError.slice(0, 300) : null, heads: commits(r.heads), rejected: commits(r.rejected) };
 }
 
-// found: folders of the workspace with a git repository in them that the Projects tab offered as projects and you said "Not now"
-// to (found.mjs) — remembered by folder, so the line does not come back; the folder itself is never touched
-export const FOUND_MAX = 200;
-const empty = () => ({ version: 1, projects: [], filed: {}, archived: {}, hostTrust: {}, gone: [], seen: [], localgit: {}, found: [] });
+// removed: folders of the workspace you took out of the Code page (Remove from Code) — remembered by folder, so the automatic
+// projects (autoproj.mjs: a repository or a project folder made in the terminal is a project by itself) never add them again; an
+// explicit add of the folder (New project, the terminal's `project add`) forgets it. It also holds the folders of the first
+// version's "Not now" (the file's `found` list, read as removed and no longer written). The folder itself is never touched.
+// auto: the notices of the Projects tab, one per project added by itself — {id, at, tried}: tried — the automatic keeping on the
+// built-in git server was decided for it (done, or not applicable: it has a remote already), so it is not decided again every time
+export const REMOVED_MAX = 200, AUTO_MAX = 64;
+const empty = () => ({ version: 1, projects: [], filed: {}, archived: {}, hostTrust: {}, gone: [], seen: [], localgit: {}, removed: [], auto: [] });
 const WORKSPACE = Object.freeze({ id: WORKSPACE_ID, name: 'Workspace', root: '', created: null, workspace: true });
 
 export class Projects {
@@ -190,8 +194,12 @@ export class Projects {
       const rec = projectIdOk(k) ? localgitRecord(r) : null;
       if (rec) localgit[k] = rec;
     }
-    const found = [...new Set(Array.isArray(v.found) ? v.found.filter((x) => rootOk(x)) : [])].slice(0, FOUND_MAX);
-    return { version: 1, projects, filed, archived, hostTrust, gone, seen, localgit, found };
+    const removed = [...new Set([...(Array.isArray(v.removed) ? v.removed : []), ...(Array.isArray(v.found) ? v.found : [])].filter((x) => rootOk(x)))].slice(-REMOVED_MAX);
+    const auto = [];
+    for (const a of Array.isArray(v.auto) ? v.auto.slice(0, AUTO_MAX) : []) {
+      if (a && ID.test(a.id) && projects.some((p) => p.id === a.id) && !auto.some((x) => x.id === a.id)) auto.push({ id: a.id, at: Number.isInteger(a.at) && a.at > 0 ? a.at : null, tried: a.tried === true });
+    }
+    return { version: 1, projects, filed, archived, hostTrust, gone, seen, localgit, removed, auto };
   }
   write(v) {
     fs.mkdirSync(this.dir, { recursive: true, mode: 0o700 });
@@ -259,6 +267,7 @@ export class Projects {
       do id = `p_${crypto.randomBytes(4).toString('hex')}`; while (v.projects.some((p) => p.id === id));
       const p = { id, name: n, root, created: this.now() };
       v.projects.push(p);
+      v.removed = v.removed.filter((x) => x !== root);   // (asked for by hand: no longer a folder taken out)
       return { ...p };
     });
   }
@@ -274,8 +283,10 @@ export class Projects {
       return { ...p };
     });
   }
-  /** remove(id) -> the record that went (with it, the sessions filed there go back to where their folder is). */
-  remove(id) {
+  /** remove(id, {remember}) -> the record that went (with it, the sessions filed there go back to where their folder is). A folder
+   *  of the workspace is remembered as taken out (remember: false when its folder went to the trash with it) so that the
+   *  automatic projects do not add it again. */
+  remove(id, { remember = true } = {}) {
     if (id === WORKSPACE_ID) throw new ProjectError(400, 'the Workspace is always there');
     const h = this.hostRecords().find((x) => x.id === id);
     if (h && !h.gone) throw new ProjectError(400, 'a folder of this computer is removed on this computer: Settings › Claude Code › Project folders, or ./stack project remove NAME');
@@ -291,6 +302,8 @@ export class Projects {
       const i = v.projects.findIndex((x) => x.id === id);
       if (i < 0) throw new ProjectError(404, 'no such project (it was removed?)');
       const [p] = v.projects.splice(i, 1);
+      if (remember && !v.removed.includes(p.root)) v.removed = [...v.removed, p.root].slice(-REMOVED_MAX);
+      v.auto = v.auto.filter((a) => a.id !== id);
       delete v.localgit[id];
       for (const [k, pid] of Object.entries(v.filed)) if (pid === id) delete v.filed[k];
       return p;
@@ -353,15 +366,24 @@ export class Projects {
     const r = projectIdOk(id) ? this.read().localgit[id] : null;
     return r ? { ...r, ...(r.state === 'kept' ? { heads: { ...r.heads }, rejected: { ...r.rejected } } : {}) } : null;
   }
-  /** foundDeclined() -> the folders you said "Not now" to when the Projects tab offered them as projects */
-  foundDeclined() { return this.read().found; }
-  /** declineFound(root) -> the list: this folder is not offered again (a folder of the workspace, as a project's root is) */
-  declineFound(root) {
-    if (!rootOk(root)) throw new ProjectError(400, 'a folder of the workspace: 1 to 4 levels of names (none starting with "."), at most 160 bytes');
+  /** removedRoots() -> the folders of the workspace you took out of the Code page (never added again by themselves) */
+  removedRoots() { return this.read().removed; }
+  /** notices() -> [{id, at, tried}]: the projects added by themselves that the Projects tab still tells of */
+  notices() { return this.read().auto.map((a) => ({ ...a })); }
+  /** addNotice(id) — a project added by itself is told of (once); false: no such project */
+  addNotice(id) {
     return this.update((v) => {
-      if (!v.found.includes(root)) v.found = [...v.found, root].slice(-FOUND_MAX);
-      return [...v.found];
+      if (!v.projects.some((p) => p.id === id)) return false;
+      if (!v.auto.some((a) => a.id === id)) v.auto = [...v.auto, { id, at: this.now(), tried: false }].slice(-AUTO_MAX);
+      return true;
     });
+  }
+  /** noticeTried(id) — the automatic keeping was decided for it (see auto above) */
+  noticeTried(id) { this.update((v) => { const a = v.auto.find((x) => x.id === id); if (a) a.tried = true; }); }
+  /** dismissNotice(id) -> whether there was one: the notice goes, the project stays */
+  dismissNotice(id) {
+    if (!projectIdOk(id)) throw new ProjectError(400, 'bad project id');
+    return this.update((v) => { const n = v.auto.length; v.auto = v.auto.filter((a) => a.id !== id); return v.auto.length !== n; });
   }
   /** keptIds() -> the ids of the projects kept on the built-in git server */
   keptIds() { return Object.entries(this.read().localgit).filter(([, r]) => r.state === 'kept').map(([id]) => id); }

@@ -21,6 +21,7 @@ import { GitHosts, HostError } from './githosts.mjs';
 import { makeGitRemote } from './gitremote.mjs';
 import { makeMirrors } from './mirrors.mjs';
 import { makeKeep, SWEEP_MS } from './keep.mjs';
+import { makeAutoProjects, AUTO_MS } from './autoproj.mjs';
 import { makeTermLink, makeProjectAnswer } from './termlink.mjs';
 import { NEVER_ASKS, CLAUDE_SAID, sandboxWords } from './said.mjs';
 import { SandboxError } from './spawn-client.mjs';
@@ -136,12 +137,13 @@ export function ownOrigin(req) {
 // (import-sessions.mjs; made on first use). setup: your Claude Code setup of this computer copied into the sandbox
 // (import-setup.mjs; made on first use). userPrefs: your choices for new sessions, kept for your sign-in (userprefs.mjs;
 // made on first write: /var/lib/bn-code). keepSweepMs: how often the projects kept on the built-in git server are looked at for
-// branches that moved (keep.mjs; 0: never).
+// branches that moved (keep.mjs; 0: never). autoProjectMs: how often, while a page is connected, the workspace is looked at for
+// repositories and project folders made in the terminal (autoproj.mjs; the entry point below passes AUTO_MS; 0: only when the project list is asked for; null: never).
 export function createServer({ secret, query, spawn, call, distDir = path.join(HERE, '../web/dist'), versions = {}, logger = log,
   reloadPollMs, reloadMaxMs, maxBufferedBytes = LIMITS.wsMaxBufferedBytes, maxSocketAgeMs = LIMITS.wsMaxAgeHours * 3600000, broker: brokerOpts = {},
   allowBypass = false, allowAuto = false, sandbox = {}, watch = true, gitHosts = null, openBroker = null, gitConnect = null, gitApps = {}, gitOAuthDelay = null,
   projects = null, imports = null, setup = null, spawnAgent = null, agentStore = null, planAllowed = false, subsStatus = null, userPrefs = null,
-  keepSweepMs = SWEEP_MS }) {
+  keepSweepMs = SWEEP_MS, autoProjectMs = null }) {
   if (!/^[0-9a-f]{32,}$/.test(secret || '')) throw new Error('CODE_PROXY_SECRET missing or weak (32+ hex characters)');
   const want = Buffer.from(secret);
   const proxied = (req) => {
@@ -250,9 +252,10 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
   });
   function onStateBoth(a, b) { toAll(stateMsg(a)); toAll(stateMsg(b)); }
   const api = makeApi({ call, sessions: mgr, projects: { list: () => proj().list(), get: (id) => proj().get(id), add: (b) => proj().add(b), rename: (id, n) => proj().rename(id, n),
-    remove: (id) => proj().remove(id), file: (ids, pid) => proj().file(ids, pid), placer: () => proj().placer(), syncHosts: () => proj().syncHosts(),
+    remove: (id, o) => proj().remove(id, o), file: (ids, pid) => proj().file(ids, pid), placer: () => proj().placer(), syncHosts: () => proj().syncHosts(),
       archive: (ids, on) => proj().archive(ids, on), archivedIds: () => proj().archivedIds(), forgetSession: (id) => proj().forgetSession(id), hosts: () => proj().hosts(),
-      foundDeclined: () => proj().foundDeclined(), declineFound: (root) => proj().declineFound(root) },
+      removedRoots: () => proj().removedRoots(), notices: () => proj().notices(), dismissNotice: (id) => proj().dismissNotice(id), localgit: (id) => proj().localgit(id) },
+    autoScan: autoProjectMs === null ? null : () => auto().scan(),
     reloadPollMs, reloadMaxMs, log: logger,
     settingsKnown: (id) => trust.known(id), agentStore: agents, plan: () => planAllowed === true,
     planAccounts: async () => ((await subs()).tools?.claude?.accounts ?? []).map((a) => a.name) });
@@ -320,6 +323,13 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
     oauthDelay: gitOAuthDelay,
     onEvent: (event) => toAll({ type: 'git_event', event }) }));
   keeper();
+  // projects made by themselves (autoproj.mjs): looked for when the project list is asked for (api.listProjects) and, while a page is
+  // connected, every AUTO_MS — so a project made in the terminal shows up without a click. Idle with no page: nothing runs.
+  let autoApi = null;
+  const auto = () => (autoApi ??= makeAutoProjects({ call, projects: proj, addProject: (b) => api.addProject(b), keeper, mirrors: mirrorsApi, hosts: () => hostStore.read().hosts,
+    remoteState: (rel) => gitRemote().state(rel), log: logger }));
+  const autoTimer = autoProjectMs !== null && autoProjectMs > 0 ? setInterval(() => { if (clients.size) void auto().scan({ force: true }); }, autoProjectMs) : null;
+  autoTimer?.unref?.();
   // the terminal's `project` command (termlink.mjs): a folder of the workspace made a project, or kept on the built-in git server
   const termLink = openBroker ? makeTermLink({ open: openBroker, log: logger, answer: makeProjectAnswer({ addProject: (b) => api.addProject(b), projects: proj,
     keeper, mirrors: mirrorsApi, hosts: () => hostStore.read().hosts, log: logger, words: (e) => sandboxWords(e, '/api/git/') }) }) : null;
@@ -488,9 +498,8 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
     // projects (projects.mjs): the records, a new one (a new folder, or one that is there), a name, the sessions filed
     // there, removal (the record; its folder into the trash only when named again), its terminal, git init in it
     if (p === '/api/projects' && m === 'GET') return send(res, 200, await api.listProjects());
-    // git repositories of the workspace that are not projects (made in the terminal, cloned): offered by the Projects tab; "Not now" is remembered
-    if (p === '/api/projects/found' && m === 'GET') return send(res, 200, await api.foundProjects());
-    if (p === '/api/projects/found/decline' && m === 'POST') return send(res, 200, api.declineFound(await readJson(req)));
+    // (and the notices of the ones added by themselves — autoproj.mjs, in the list above — dismissed: the project stays)
+    if (p === '/api/projects/added/dismiss' && m === 'POST') return send(res, 200, api.dismissAdded(await readJson(req)));
     if (p === '/api/projects' && m === 'POST') {
       const b = await readJson(req);
       if (b?.keep === true && b.kind === 'new') b.git = true;   // (kept: a repository, so git init)
@@ -912,7 +921,7 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
     }
   }
 
-  return { server, wss, mgr, broker, site, keeper, closeGit: () => { gitRemoteApi?.close(); keepApi?.close(); termLink?.close(); } };
+  return { server, wss, mgr, broker, site, keeper, closeGit: () => { clearInterval(autoTimer); gitRemoteApi?.close(); keepApi?.close(); termLink?.close(); } };
 }
 
 // --- the container's entry point ---
@@ -931,7 +940,7 @@ if (process.argv[1] && fs.realpathSync(process.argv[1]) === fileURLToPath(import
   const egress = (v) => { const s = String(v ?? '').trim().toLowerCase(); return s === 'host' ? 'host' : /^(false|0|no|off)$/.test(s) ? 'off' : 'internet'; };
   // which of your subscriptions' tools are signed in: one cache for the Code page and Chat
   const status = makeStatus({ call: sandboxCall, log });
-  const { server, mgr, closeGit } = createServer({ secret: process.env.CODE_PROXY_SECRET, query, spawn: sandboxProcess, call: sandboxCall, versions: readVersions(), openBroker: sandboxBroker,
+  const { server, mgr, closeGit } = createServer({ secret: process.env.CODE_PROXY_SECRET, query, spawn: sandboxProcess, call: sandboxCall, versions: readVersions(), openBroker: sandboxBroker, autoProjectMs: AUTO_MS,
     // (a Git host sign-in reaches its provider through the sandbox's way out; Settings' application IDs, public values)
     gitConnect: (host, port) => sandboxTunnel({ host, port }),
     gitApps: { github: { clientId: process.env.GIT_GITHUB_CLIENT_ID || '', appSlug: process.env.GIT_GITHUB_APP_SLUG || '' }, gitlab: { clientId: process.env.GIT_GITLAB_CLIENT_ID || '' } },
