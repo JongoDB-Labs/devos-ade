@@ -28,5 +28,17 @@
   "control": "switch:Auto mode",
   "why": "Renamed, not removed: Settings › Claude Code's switch for the Code page's Auto mode is now 'Auto mode on the Code page', so it isn't taken for the Terminal's own switch, 'Auto mode in the terminal'.",
   "changelog": "v0.57.2"
+ },
+ {
+  "state": "code-*",
+  "control": "button:Add as project",
+  "why": "Gone with the offer under Projects: a git repository or a project folder made in the workspace (by an agent in the Terminal, a clone) is now a project by itself, with no click, and the Projects tab says so ('Added from the workspace: NAME — kept on your local git server') with Remove from Code, which is remembered. Only a repository with a remote of its own (Keep it on your local git server) or a folder without git (Start git here) has a button on its line.",
+  "changelog": "v0.59.0"
+ },
+ {
+  "state": "code-*",
+  "control": "button:Not now",
+  "why": "Gone with the offer under Projects (see 'Add as project'): nothing is offered, so there is nothing to put off. A folder you took out of Code with Remove from Code is remembered and not added again; the 'Not now' folders of the first version are read as removed.",
+  "changelog": "v0.59.0"
  }
 ]

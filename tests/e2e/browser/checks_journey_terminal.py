@@ -4,9 +4,11 @@ The owner's journey: in the Terminal tab, mkdir under /workspace, git init, a co
 server (`project remote`, `git push -u local main`: the sandbox's git trusts the server's certificate for gateway:8093 and gets
 its login from the Code page, which the owner gives with Git hosts › Let Claude use this host — turned on here through its warning
 and put back after) and `project add` (a Code project) or `project new NAME --keep` (a project kept on the server). Then the portal's
-Git tab shows the repository with that commit, and the Code page lists the project; a repository nobody registered is offered under
-Projects (Add as project) and another is declined (Not now: not offered again after a reload). The git server's API
-(checks_git.forgejo) only verifies and tidies. No model calls. Runs when the terminal, the Code page and the git server are on."""
+Git tab shows the repository with that commit, and the Code page lists the project. Repositories and folders nobody registered
+become projects by themselves, with no click: two repositories (kept on the local git server, the switch being on) and a folder with a
+package.json (no git yet: Start git here); the Projects tab says "Added from the workspace" for each. One is dismissed (the project
+stays), one is removed (Remove from Code) and is not added again after a reload. The git server's API (checks_git.forgejo) only
+verifies and tidies. No model calls. Runs when the terminal, the Code page and the git server are on."""
 
 from __future__ import annotations
 
@@ -22,7 +24,7 @@ from checks_terminal import ON as TERMINAL_ON, new_shell_window, terminal_frame,
 from common import ENV, Skip, check, expect, origin
 
 STAMP = str(int(time.time()))
-A, B, C, D = (f"jt-{x}-{STAMP}" for x in "abcd")     # pushed + registered by `project add`; offered, added; offered, declined; `project new --keep`
+A, B, C, D, E = (f"jt-{x}-{STAMP}" for x in "abcde")   # pushed + registered by `project add`; added by itself, dismissed; added by itself, removed; `project new --keep`; a package.json folder
 NAME_A = f"Terminal journey {STAMP}"
 COMMIT = f"journey commit {STAMP}"
 OWNER = checks_git.OWNER
@@ -85,7 +87,10 @@ def journey_terminal_git(ctx):
                f"git push from the terminal to the local git server: {out[-700:]!r}")
         type_line(page, f, f'project add --name "{NAME_A}"; echo ADDED-$((1+1))')
         out = wait_text(f, r"^ADDED-2$", 60)
-        expect(re.search(r"^Added as a project: " + re.escape(NAME_A) + r"\.", out, re.M), f"project add: {out[-500:]!r}")
+        expect(re.search(r"^(Added as a project|Already a project): ", out, re.M), f"project add: {out[-500:]!r}")
+        # a folder with a package.json and no git: a project by itself too, but not kept (nothing to keep before git)
+        type_line(page, f, f"cd /workspace && mkdir {E} && echo '{{}}' > {E}/package.json; echo NODE-$((1+1))")
+        wait_text(f, r"^NODE-2$", 30)
         type_line(page, f, f"cd /workspace && project new {D} --keep; echo KEPT-$((1+1))")
         out = wait_text(f, r"^KEPT-2$", 90)
         expect(re.search(r"^Kept on the local git server as " + OWNER + "/" + re.escape(D), out, re.M), f"project new --keep: {out[-600:]!r}")
@@ -105,30 +110,41 @@ def journey_terminal_git(ctx):
         st, _ = checks_git.forgejo(ctx, "GET", f"/api/v1/repos/{OWNER}/{D}")
         expect(st in (200, 404), f"the kept project's repository: HTTP {st}")   # (404: appears with its first commit)
 
-        # 4. the Code page: the project made by `project add` and the kept one are listed; B and C are offered, B is added, C declined
+        # 4. the Code page: A (project add) and D (kept) are listed; B, C and E were registered by nobody and appear by themselves, no click
         page, rec = ui_page(ctx, "journey-terminal-git-code")
         for name in (NAME_A, D):
             see(page.get_by_test_id("project").filter(has_text=name).first).to_be_visible(timeout=30000)
-        found = page.get_by_test_id("found-repo")
-        see(found.filter(has_text=B)).to_have_count(1, timeout=30000)
-        see(found.filter(has_text=C)).to_have_count(1)
-        expect(found.filter(has_text=A).count() == 0 and found.filter(has_text=D).count() == 0, "a project is offered as one")
+        added = page.get_by_test_id("added-project")
+        for n in (B, C, E):
+            see(added.filter(has_text=n)).to_have_count(1, timeout=60000)
+            see(page.get_by_test_id("project").filter(has_text=n).first).to_be_visible(timeout=30000)
+        expect(added.filter(has_text=D).count() == 0, "a project made with project new is told of as added by itself")
+        # (the switch is on and B, C have no remote: kept; E has no git: Start git here, nothing kept)
+        for n in (B, C):
+            see(added.filter(has_text=n).get_by_test_id("added-text")).to_contain_text("kept on your local git server", timeout=90000)
+        made_repos += [B, C]
+        see(added.filter(has_text=E).get_by_test_id("added-text")).to_contain_text("no git yet")
+        see(added.filter(has_text=E).get_by_test_id("added-git")).to_be_visible()
         shot(page, "journey-terminal-git-3-code")
-        found.filter(has_text=C).get_by_test_id("found-decline").click()
-        see(found.filter(has_text=C)).to_have_count(0, timeout=15000)
-        found.filter(has_text=B).get_by_test_id("found-add").click()
-        see(page.get_by_test_id("project").filter(has_text=B).first).to_be_visible(timeout=30000)
-        see(found.filter(has_text=B)).to_have_count(0, timeout=15000)
-        made_repos.append(B)
-        # Not now is remembered: after a reload C is not offered again
-        page.reload()
-        see(page.get_by_test_id("conn")).to_have_text("Connected", timeout=30000)
-        see(page.get_by_test_id("project").filter(has_text=B).first).to_be_visible(timeout=30000)
-        page.wait_for_timeout(1500)
-        expect(page.get_by_test_id("found-repo").filter(has_text=C).count() == 0, "a repository said Not now to is offered again")
+        # Dismiss B's notice: the project stays. Remove C from Code: it is gone, and not added again.
+        added.filter(has_text=B).get_by_test_id("added-dismiss").click()
+        see(added.filter(has_text=B)).to_have_count(0, timeout=15000)
+        see(page.get_by_test_id("project").filter(has_text=B).first).to_be_visible()
+        added.filter(has_text=C).get_by_test_id("added-remove").click()
+        see(page.get_by_test_id("project").filter(has_text=C)).to_have_count(0, timeout=30000)
+        see(added.filter(has_text=C)).to_have_count(0)
+        # (a look at the workspace follows every list; let the backend's minimum gap pass, reload twice, and C is still not a project)
+        for _ in range(2):
+            page.wait_for_timeout(4000)
+            page.reload()
+            see(page.get_by_test_id("conn")).to_have_text("Connected", timeout=30000)
+            see(page.get_by_test_id("project").filter(has_text=B).first).to_be_visible(timeout=30000)
+        expect(page.get_by_test_id("project").filter(has_text=C).count() == 0 and page.get_by_test_id("added-project").filter(has_text=C).count() == 0,
+               "a folder removed from Code was added again")
+        expect(added.filter(has_text=B).count() == 0, "a dismissed notice came back")
         csp_clean(page, rec)
         return (f"in the Terminal: git init + commit in /workspace/{A}, `project remote` and `git push -u local main` to {OWNER}/{A} (shown in the Git tab "
-                f"with the commit), `project add` ({NAME_A}), `project new {D} --keep`; the Code page lists them; {B} offered and added, {C} declined and not offered again")
+                f"with the commit), `project add` ({NAME_A}), `project new {D} --keep`; the Code page lists them; {B}, {C} and {E} became projects with no click ({B}, {C} kept on the server; {E} offers Start git here), {B}'s notice dismissed, {C} removed and not added again")
     finally:
         # put it all back: the switch, the projects, the repositories on the server, the folders
         try:
@@ -136,8 +152,8 @@ def journey_terminal_git(ctx):
             if turned_on:
                 let_claude_use_local_git(page, False)
             c = Code.on(page, rec, goto=False)
-            _drop_projects(c, {A, B, C, D})
-            for n in (A, B, C, D):
+            _drop_projects(c, {A, B, C, D, E})
+            for n in (A, B, C, D, E):
                 c.api("DELETE", f"/api/fs?path={n}")
         except Exception as e:  # noqa: BLE001 — a tidy-up that fails must not hide the check's own result
             print(f"  journey-terminal-git: tidy-up: {e}", flush=True)

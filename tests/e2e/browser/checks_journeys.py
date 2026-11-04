@@ -7,8 +7,10 @@ unless they cannot happen without it); Haiku only, short prompts.
   journey-code-to-git                 Code › New project (empty folder, kept on the local git server) › a Haiku session makes README.md and
                                       commits it › the project is pushed by itself › the portal's Git tab shows devos/<name> with README.md ›
                                       the Git panel's Push now (automatic pushes off, a commit made in the panel) says so and the file is there
-  journey-terminal-folder-to-git      Terminal tab: mkdir, git init, a file, git commit › Code › New project › A folder in the workspace
-                                      (kept) › the Git tab shows the repository with the terminal's commit
+  journey-terminal-folder-to-git      Terminal tab: mkdir, git init, a file, git commit › the Code page lists the folder as a project with no
+                                      click and says it is kept on the local git server › the Git tab shows the repository with the
+                                      terminal's commit › Remove from Code, and it does not come back; a folder with a package.json (no git)
+                                      is a project too, with Start git here, and Start git here keeps it
   journey-code-terminal-commit        a kept project's ⋯ › Open a terminal here (the shell is in the project's folder) › a commit made
                                       there › the Git panel shows it › Push now › the Git tab shows it
 
@@ -27,11 +29,13 @@ import checks_terminal as T
 from checks_browser import Recorder, frame_of, login, shot
 from checks_code import (ANSWERED, Code, _asked, _drop_projects, _last_session, _proj, _terminal_frame, _term_wait, _unfold, ask, csp_clean,
                          need_haiku, saved, ui_page)
+from checks_journey_terminal import let_claude_use_local_git
 from common import ENV, Skip, check, expect, origin
 
 J1 = "e2e-j1-code"
 J2 = "e2e-j2-term"
 J3 = "e2e-j3-kept"
+J4 = "e2e-j4-node"
 
 
 class Journey:
@@ -291,10 +295,13 @@ def terminal_folder_to_git(ctx):
     page, rec = ui_page(ctx, "journey-terminal-folder-to-git")
     c = Code.on(page, rec, goto=False)
     j = Journey("journey-terminal-folder-to-git")
-    c = clean(ctx, c, page, rec, (J2,))
+    c = clean(ctx, c, page, rec, (J2, J4))
     msg = "Commit from the terminal"
+    turned_on = False
     try:
-        # 1. the Terminal tab: a folder under /workspace, git init, a file, a commit (typed as a person types)
+        # 0. Git hosts › Let Claude use this host is on (the stack's default; turned on here when it is not, and put back after)
+        turned_on = let_claude_use_local_git(page, True)
+        # 1. the Terminal tab: a folder under /workspace, git init, a file, a commit (typed as a person types); and a folder with a package.json
         tp, trec, f = terminal_tab(ctx, "journey-terminal-folder-to-git-term")
         say(tp, f, f"mkdir /workspace/{J2} && cd /workspace/{J2}", rf"^terminal /workspace/{J2} \$")
         say(tp, f, "git init -q -b main && echo hello > hello.txt && git add hello.txt", r"\$\s*$")
@@ -303,18 +310,33 @@ def terminal_folder_to_git(ctx):
         shot(tp, "j2-1-terminal-commit")
         j.step("commit-exit-0" in out, f"git commit in the terminal failed: {out[-300:]!r}")
         say(tp, f, "git log --oneline | head -n 3", re.escape(msg))
+        say(tp, f, f"mkdir /workspace/{J4} && echo '{{}}' > /workspace/{J4}/package.json", r"\$\s*$")
         trec.save()
-        # 2. Code › New project › A folder in the workspace, that folder, Keep ticked
+        # 2. the Code page, with no click: the folder is a project by itself, and the Projects tab says it is kept on the local git server
         page.reload()
         see(page.get_by_test_id("conn")).to_have_text("Connected", timeout=30000)
         c = Code.on(page, rec, goto=False)
-        dlg = new_project(page, kind="folder", folder=J2)
-        shot(page, "j2-2-new-project-folder")
-        page.get_by_test_id("new-project-create").click()
-        see(dlg).to_have_count(0, timeout=60000)
-        see(page.get_by_test_id("project-chip-name")).to_have_text(J2, timeout=30000)
+        page.get_by_test_id("side-sessions").click()
+        added = page.get_by_test_id("added-project")
+        try:
+            see(added.filter(has_text=J2)).to_have_count(1, timeout=60000)
+            see(added.filter(has_text=J2).get_by_test_id("added-text")).to_contain_text("kept on your local git server", timeout=90000)
+        except AssertionError:
+            j.step(False, f"the Projects tab does not say {J2} was added from the workspace and kept on the local git server, with no click")
         pid = next((x["id"] for x in c.api("GET", "/api/projects")["json"]["projects"] if x["root"] == J2), None)
-        j.step(pid is not None, f"no project of {J2}/ after New project")
+        j.step(pid is not None, f"no project of {J2}/ without a click")
+        shot(page, "j2-2-added-from-workspace")
+        # (the folder with a package.json: a project, no git yet, Start git here — then the same rule keeps it)
+        try:
+            see(added.filter(has_text=J4).get_by_test_id("added-text")).to_contain_text("no git yet", timeout=60000)
+            added.filter(has_text=J4).get_by_test_id("added-git").click()
+            see(added.filter(has_text=J4).get_by_test_id("added-text")).to_contain_text("kept on your local git server", timeout=120000)
+        except AssertionError:
+            j.step(False, f"{J4} (a package.json, no git) was not added with Start git here, or Start git here did not lead to keeping it")
+        shot(page, "j2-2-added-node")
+        if pid:
+            _proj(page, pid).get_by_test_id("project-show").click()
+            see(page.get_by_test_id("project-chip-name")).to_have_text(J2, timeout=30000)
         open_git_panel(page)
         try:
             see(page.get_by_test_id("keep-repo")).to_have_text(f"{owner}/{J2}", timeout=30000)
@@ -331,15 +353,32 @@ def terminal_folder_to_git(ctx):
         j.step(msg in text, f"the Git tab's page of {owner}/{J2} does not show the terminal's commit message {msg!r}")
         shot(gp, "j2-4-git-tab")
         gp.close()
+        # 4. Remove from Code (the notice's button): the project goes, and it is not added again by the next looks
+        page.get_by_test_id("side-sessions").click()
+        added.filter(has_text=J2).get_by_test_id("added-remove").click()
+        try:
+            see(added.filter(has_text=J2)).to_have_count(0, timeout=30000)
+        except AssertionError:
+            j.step(False, f"Remove from Code did not take the notice of {J2} away")
+        for _ in range(2):
+            page.wait_for_timeout(4000)    # (the backend looks at the workspace after every list, at most every 3 s)
+            page.reload()
+            see(page.get_by_test_id("conn")).to_have_text("Connected", timeout=30000)
+        gone = not any(x["root"] == J2 for x in c.api("GET", "/api/projects")["json"]["projects"])
+        j.step(gone, f"{J2} was added again after Remove from Code")
         csp_clean(page, rec)
     finally:
         try:
-            _drop_projects(c, (J2,))
-            c.api("DELETE", f"/api/fs?path={J2}")
-            checks_git.forgejo(ctx, "DELETE", f"/api/v1/repos/{owner}/{J2}")
+            if turned_on:
+                let_claude_use_local_git(page, False)
+            _drop_projects(c, (J2, J4))
+            for d in (J2, J4):
+                c.api("DELETE", f"/api/fs?path={d}")
+            for d in (J2, J4):
+                checks_git.forgejo(ctx, "DELETE", f"/api/v1/repos/{owner}/{d}")
         except Exception:  # noqa: BLE001 — cleanup never hides the failure
             pass
-    return j.done(f"a folder made, git-init'd and committed in the Terminal tab › New project › A folder in the workspace (kept) › the Git tab shows {owner}/{J2} with hello.txt and the commit")
+    return j.done(f"a folder made, git-init'd and committed in the Terminal tab › a project of the Code page with no click, said to be kept on the local git server › the Git tab shows {owner}/{J2} with hello.txt and the commit › Remove from Code, and it stayed removed; a package.json folder › Start git here › kept")
 
 
 @check("browser", "journey-code-terminal-commit")
