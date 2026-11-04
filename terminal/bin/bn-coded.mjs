@@ -2648,7 +2648,11 @@ const mergeDriverOverrides = (text) => [...new Set(String(text).split('\0').map(
 // above: the nearest folder around the root, up to its top (the workspace itself, never beyond), that is a repository —
 // the one the root's files are in, as the page names it (relative to the workspace), or null. The root was checked to be
 // a real folder with no link on its way (rootArg), so every folder around it is one too. No git runs for this.
-export function gitRepos({ depth = 2, max = 50, root = WS_ROOT } = {}) {
+// files: true (JON-1059, the workspace only) also lists, as `folders`, the folders directly in it that are no repository but hold a common
+// project file (PROJECT_FILES) — a folder made in the terminal with a package.json is a project too; at most `max`, no link followed
+// (lstat: a link to a file or a folder is not a mark), the same skipped names. An older daemon ignores the field: no `folders`.
+const PROJECT_FILES = ['package.json', 'pyproject.toml', 'requirements.txt', 'Cargo.toml', 'go.mod', 'Gemfile', 'pom.xml', 'build.gradle', 'build.gradle.kts', 'composer.json', 'deno.json', 'index.html'];
+export function gitRepos({ depth = 2, max = 50, root = WS_ROOT, files = false } = {}) {
   const out = [];
   const has = (abs) => { try { const st = fs.lstatSync(path.join(abs, '.git')); return st.isDirectory() ? 'dir' : st.isFile() ? 'file' : null; } catch { return null; } };
   const top = has(root.abs);
@@ -2676,7 +2680,18 @@ export function gitRepos({ depth = 2, max = 50, root = WS_ROOT } = {}) {
     }
   };
   walk('', 1);
-  return { repos: out, truncated: out.length >= max, above };
+  const folders = [];
+  if (files && !root.rel) {
+    const marked = (abs) => PROJECT_FILES.some((f) => { try { return fs.lstatSync(path.join(abs, f)).isFile(); } catch { return false; } });
+    let ents = [];
+    try { ents = fs.readdirSync(root.abs, { withFileTypes: true }); } catch { ents = []; }
+    for (const e of ents.sort((a, b) => (a.name < b.name ? -1 : 1))) {
+      if (folders.length >= max) break;
+      if (!e.isDirectory() || FIND_SKIP.has(e.name) || e.name.startsWith('.') || !gitPathOk(e.name) || out.some((r) => r.path === e.name)) continue;
+      if (!has(path.join(root.abs, e.name)) && marked(path.join(root.abs, e.name))) folders.push({ path: e.name });
+    }
+  }
+  return { repos: out, truncated: out.length >= max, above, ...(files && !root.rel ? { folders } : {}) };
 }
 
 // gitInitIn(abs, git) -> {git: true} or {git: false, gitError}: `git init` in a folder — no template (no hook, no
@@ -6087,7 +6102,7 @@ export function serve(sock) {
         case 'project.settings': return finish(T.RESULT, projectSettings(req));
         case 'paths.plain': return finish(T.RESULT, pathsPlain(req));
         // the Git panel's remotes: no network for these two; a branch switch or a remote's URL is a change
-        case 'git.repos': return finish(T.RESULT, gitRepos({ root: root() }));
+        case 'git.repos': return finish(T.RESULT, gitRepos({ root: root(), files: req.files === true }));
         case 'git.remote.state':
         case 'git.branch':
         case 'git.remote.set':

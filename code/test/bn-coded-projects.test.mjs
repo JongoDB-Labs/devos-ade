@@ -1421,3 +1421,30 @@ test('project.settings with an account: a plan session on claude:NAME is judged 
     fs.rmSync(path.join(HOME, '.subscriptions'), { recursive: true, force: true });
   }
 });
+
+test('git.repos files: true (JON-1059) also lists the direct folders of the workspace that hold a common project file and are no repository; bounded, no link followed', async () => {
+  const T0 = path.join(WS, 'scan');
+  fs.mkdirSync(T0, { recursive: true });
+  const mk = (rel, file) => { fs.mkdirSync(path.join(T0, rel), { recursive: true }); if (file) fs.writeFileSync(path.join(T0, rel, file), 'x'); };
+  mk('js', 'package.json'); mk('py', 'pyproject.toml'); mk('goo', 'go.mod'); mk('html', 'index.html'); mk('gradle', 'build.gradle.kts'); mk('empty'); mk('readme', 'README.md');
+  mk('repo', 'package.json'); fs.mkdirSync(path.join(T0, 'repo/.git'));                    // a repository with a package.json: listed as a repository only
+  mk('node_modules', 'package.json'); mk('.hidden', 'package.json');                         // skipped names
+  mk('linkedfile'); fs.symlinkSync(path.join(OUT, 'secret.txt'), path.join(T0, 'linkedfile/package.json'));   // a link is not a mark
+  fs.symlinkSync(path.join(WS, 'p2'), path.join(T0, 'linkdir'));                             // a link to a folder is not a folder
+  const root = coded.rootArg(T0);                                                          // (a root below the workspace: no scan)
+  assert.equal(coded.gitRepos({ root, files: true }).folders, undefined);
+  // the workspace itself: scan/ is not a mark folder, so look at a workspace-shaped root
+  const top = { abs: T0, rel: '', top: T0 };
+  const r = coded.gitRepos({ root: top, files: true });
+  assert.deepEqual(r.folders.map((x) => x.path), ['goo', 'gradle', 'html', 'js', 'py']);
+  assert.deepEqual(r.repos.map((x) => x.path), ['repo']);
+  assert.equal(coded.gitRepos({ root: top }).folders, undefined, 'asked for with files: true only');
+  // a cap on entries
+  assert.equal(coded.gitRepos({ root: top, files: true, max: 2 }).folders.length, 2);
+  // over the socket: the op passes the field on; the workspace has the folders of the earlier tests (p1 is a repository)
+  const o = await call({ op: 'git.repos', files: true });
+  assert.ok(Array.isArray(o.folders) && o.folders.every((x) => typeof x.path === 'string' && !x.path.includes('/')));
+  assert.ok(!o.folders.some((x) => x.path === 'p1'), 'a repository is not listed twice');
+  assert.equal((await call({ op: 'git.repos' })).folders, undefined);
+  fs.rmSync(T0, { recursive: true, force: true });
+});
