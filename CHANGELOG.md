@@ -20,7 +20,7 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
     `GLAB_CONFIG_DIR` and adds the old `~/.config/git/config` as an include in the process's environment (command scope,
     so it outranks `~/.gitconfig`).
   - The status file gains `account` and `first_name`; `/api/answers` lists each tool's `accounts`, the first first; the
-    launch words accept `open|chat TOOL[:NAME]` and `add TOOL`. Chat's sandbox stays at one account a tool.
+    launch words accept `open TOOL[:NAME]`, `add TOOL` and `rename|remove|logout TOOL[:NAME]` (`chat` takes a bare tool). Chat's sandbox stays at one account a tool.
 - **Accounts in the pickers, Settings and the Code page (JON-1052).** The Terminal tab's and the Code page terminal's
   Open menus list an entry for each account of a tool (`Codex · work`) and `Add an account…`, which opens a window running
   `subscriptions add TOOL` (it asks for the name, then signs in). Settings › Your AI subscriptions shows each account of a
