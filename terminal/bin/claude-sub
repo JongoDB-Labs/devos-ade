@@ -35,6 +35,17 @@ if [ -n "${TMUX:-}" ] && [ -n "${TMUX_PANE:-}" ] && [ "${BN_SUB_NOMARK:-0}" != 1
   "${BN_TMUX_BIN:-/usr/bin/tmux}" set-option -p -t "$TMUX_PANE" @bn-sub 1 >/dev/null 2>&1 || true
 fi
 umask 077
+# BN_SUB_ACCOUNT=NAME (subscriptions open claude:NAME): another Claude account, its own config folder
+# ~/.subscriptions/claude/NAME (CLAUDE_CONFIG_DIR, as for the first). A name that is not one, or a folder that is not there
+# (or is a link), is refused: never a path from outside. Without it, the first account, ~/.claude-subscription, as before.
+acct='' shown='~/.claude-subscription'
+if [ -n "${BN_SUB_ACCOUNT:-}" ]; then
+  acct="$BN_SUB_ACCOUNT" shown="~/.subscriptions/claude/$BN_SUB_ACCOUNT"
+  dir="${BN_SUBS_ROOT:-$HOME/.subscriptions}/claude/$acct"
+  if ! [[ $acct =~ ^[a-z0-9][a-z0-9-]{0,19}$ ]] || [ ! -d "$dir" ] || [ -L "$dir" ] || [ -L "${dir%/*}" ]; then
+    echo "claude-sub: no account called '${acct//[^a-z0-9-]/?}' here (subscriptions accounts claude)" >&2; exit 2
+  fi
+fi
 mkdir -p "$dir"
 export CLAUDE_CONFIG_DIR="$dir" DISABLE_AUTOUPDATER=1
 
@@ -75,7 +86,7 @@ if [ "$session" = 1 ]; then
     *) extra+=('--settings={"disableAutoMode":"disable"}'); auto_off=1 ;;
   esac
   if [ "${CLAUDE_SUB_QUIET:-0}" != 1 ] && [ -t 2 ]; then
-    printf 'claude-sub · Claude Code on your Claude plan (config ~/.claude-subscription; /login signs in) — usage counts against your plan\n' >&2
+    printf 'claude-sub · Claude Code on your Claude plan%s (config %s; /login signs in) — usage counts against your plan\n' "${acct:+, account $acct}" "$shown" >&2
     # (the Code page's Auto mode on, the terminal's off: which switch it is — JON-1051)
     case "$auto_off:$(printf '%s' "$code_auto" | tr '[:upper:]' '[:lower:]')" in
       1:true | 1:1 | 1:yes | 1:on) printf '%s\n' "claude-sub: auto mode is off in the terminal — the Code page's Auto mode is its own; Settings › Claude Code › Auto mode in the terminal turns it on here" >&2 ;;

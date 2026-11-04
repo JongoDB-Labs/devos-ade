@@ -5,22 +5,38 @@
 # DevOS ADE never opens those files: a status is what the tool's own status command says,
 # reduced to "signed in: yes / no / not known here" and which kind (ChatGPT, Claude Max, an API key …) — never more.
 #
-#   subscriptions [status]        each tool: in this sandbox (its version), signed in?
-#   subscriptions status --tsv    the same, a line per tool, for ./stack (Settings › Your AI subscriptions):
-#                                 id, installed (yes/no), version, signed in (yes/no/unknown), kind, how
-#   subscriptions login TOOL      the tool's own sign-in for a sandbox: a link and a code for your browser
-#   subscriptions logout TOOL     the tool's own sign-out (Gemini CLI and Copilot sign out inside them: said)
-#   subscriptions open TOOL       the tool itself, its sign-in first when it is not signed in (the pickers' windows)
+#   subscriptions [status]        each tool, each account: in this sandbox (its version), signed in?
+#   subscriptions status --tsv    the same, a line per account, for ./stack (Settings › Your AI subscriptions):
+#                                 id (TOOL, or TOOL:NAME for another account), installed (yes/no), version, signed in
+#                                 (yes/no/unknown), kind, how — and, on the first account's line only, its name (or -)
+#   subscriptions login ID        the tool's own sign-in for a sandbox: a link and a code for your browser
+#   subscriptions logout ID       the tool's own sign-out (Gemini CLI and Copilot sign out inside them: said)
+#   subscriptions open ID         the tool itself, its sign-in first when it is not signed in (the pickers' windows); its
+#                                 tmux window is renamed after what runs in it (claude-work, claude-max, codex-chatgpt)
 #   subscriptions ids             the tools in this sandbox, one id a line
+#   subscriptions accounts [TOOL] the accounts, one id a line (the first is TOOL itself), with their names
+#   subscriptions add TOOL [NAME] another account of the tool: asks for a name, makes its folder, signs in
+#   subscriptions remove TOOL:NAME  signs the account out (the tool's own sign-out), asks y/N, removes its folder
+#   subscriptions rename ID NEW   gives an account a new name (the first account's name is kept in a file of its own)
 #
-# TOOL: claude (Claude Code on your Claude plan: claude-sub), codex, gemini, copilot, cursor, grok; for open also
-# bedrock (devos-claude: Claude Code on Bedrock) and shell.
+# ID: TOOL (the first account: today's folder, nobody signs in again) or TOOL:NAME (another, in ~/.subscriptions/TOOL/NAME,
+# a folder of its own, mode 700, never a link: DevOS ADE makes and removes it and never opens what is in it; at most 8
+# accounts a tool). TOOL: claude (Claude Code on your Claude plan: claude-sub), codex, gemini, copilot, cursor, grok; for
+# open also bedrock (devos-claude: Claude Code on Bedrock) and shell, which take no account. Each launcher is pointed at
+# its account's folder by BN_SUB_ACCOUNT=NAME and the variable its tool reads (claude CLAUDE_CONFIG_DIR, codex CODEX_HOME,
+# gemini GEMINI_CLI_HOME, copilot COPILOT_HOME, grok GROK_HOME, cursor XDG_CONFIG_HOME). A tool that had no such variable
+# would stay at one account, said by `accounts`; none does at the pinned versions.
 set -uo pipefail
 umask 077
 
 TOOLS_DIR="${BN_TOOLS_DIR:-/usr/local/lib/bn-tools}"
 BIN="${BN_SUBS_BIN:-/usr/local/bin}"
 LIMIT_S="${BN_SUBS_TIMEOUT:-25}"
+ROOT="${BN_SUBS_ROOT:-$HOME/.subscriptions}"   # (the other accounts' folders: ROOT/TOOL/NAME; the launchers read the same)
+MAX_ACCOUNTS=8
+SINGLE_ACCOUNT=''                              # (tools whose pinned version has no folder variable: none now)
+NAME_RE='^[a-z0-9][a-z0-9-]{0,19}$'
+TMUX_BIN="${BN_TMUX_BIN:-/usr/bin/tmux}"
 # id|launcher|name|whose plan
 TABLE='claude|claude-sub|Claude Code|your Claude plan (Pro, Max, Team, Enterprise)
 codex|codex|Codex|your ChatGPT plan
@@ -33,6 +49,54 @@ die() { printf 'subscriptions: %s\n' "$*" >&2; exit 2; }
 row() { printf '%s\n' "$TABLE" | awk -F'|' -v id="$1" '$1 == id { print; f = 1 } END { exit !f }'; }
 field() { row "$1" | cut -d'|' -f"$2"; }
 ids_all() { printf '%s\n' "$TABLE" | cut -d'|' -f1; }
+
+# --- accounts: the first is TOOL (today's folder); another is TOOL:NAME, in ROOT/TOOL/NAME. DevOS ADE makes and removes
+# those folders and never reads inside them.
+name_ok() { [[ ${1:-} =~ $NAME_RE ]]; }
+real_dir() { [ -d "$1" ] && [ ! -L "$1" ]; }
+acct_dir() { printf '%s/%s/%s' "$ROOT" "$1" "$2"; }
+# split_id ID -> T (the tool) and A (the account's name; empty for the first); dies on a form that is not one
+split_id() {
+  case "$1" in *:*) T="${1%%:*}"; A="${1#*:}" ;; *) T="$1"; A='' ;; esac
+  row "$T" >/dev/null || die "no tool called '$T' (one of: $(ids_all | tr '\n' ' '))"
+  case "$1" in *:*)
+    name_ok "$A" || die "'$A' is not an account name: lowercase letters and digits, and - inside (1 to 20 characters)"
+    case " $SINGLE_ACCOUNT " in *" $T "*) die "$(field "$T" 3) keeps one account here: its pinned version has no variable for its login folder" ;; esac ;;
+  esac
+}
+# first_name TOOL -> the first account's name ($ROOT/TOOL/.first-name: ours, a word), empty when it has none
+first_name() {
+  local f="$ROOT/$1/.first-name" n
+  if [ -f "$f" ] && [ ! -L "$f" ] && [ ! -L "$ROOT" ] && [ ! -L "$ROOT/$1" ]; then
+    n="$(head -c 64 "$f" 2>/dev/null | head -n 1)"
+    ! name_ok "$n" || printf '%s' "$n"
+  fi
+  return 0
+}
+# acct_names TOOL -> the other accounts' names, one a line, sorted (real folders with a name that is one, never the first
+# account's name; at most MAX_ACCOUNTS in all with the first)
+acct_names() {
+  local d n fn c=0
+  fn="$(first_name "$1")"
+  [ ! -L "$ROOT" ] && [ ! -L "$ROOT/$1" ] && [ -d "$ROOT/$1" ] || return 0
+  for d in "$ROOT/$1"/*; do
+    real_dir "$d" || continue
+    n="${d##*/}"
+    name_ok "$n" && [ "$n" != "$fn" ] || continue
+    [ "$c" -lt $((MAX_ACCOUNTS - 1)) ] || break
+    printf '%s\n' "$n"; c=$((c + 1))
+  done
+}
+acct_exists() { [ -n "$2" ] && [ ! -L "$ROOT" ] && [ ! -L "$ROOT/$1" ] && real_dir "$(acct_dir "$1" "$2")"; }
+# acct_ids TOOL -> the tool's account ids: TOOL, then TOOL:NAME for each other
+acct_ids() { local n; printf '%s\n' "$1"; if ! installed "$1"; then return 0; fi; case " $SINGLE_ACCOUNT " in *" $1 "*) return 0 ;; esac; for n in $(acct_names "$1"); do printf '%s:%s\n' "$1" "$n"; done; }
+all_ids() { local t; for t in $(ids_all); do acct_ids "$t"; done; }
+# label ID -> how a table names it: "Claude Code", "Claude Code · work" (the first account's name, when it has one: the same)
+label() {
+  local T A fn; split_id "$1"
+  if [ -n "$A" ]; then printf '%s · %s' "$(field "$T" 3)" "$A"
+  else fn="$(first_name "$T")"; printf '%s%s' "$(field "$T" 3)" "${fn:+ · $fn}"; fi
+}
 
 # version ID -> the pinned version in this image, empty when the tool is not here
 version() {
@@ -51,8 +115,11 @@ run_capped() { timeout "$LIMIT_S" "$@" </dev/null 2>&1 | head -c 65536; }
 # state ID -> "SIGNED KIND HOW": SIGNED yes|no|unknown; KIND a word (or -); HOW command (its status command said so),
 # file (its login file is there — never opened) or none (it has no way to say)
 state() {
-  local out rc kind sub t
-  case "$1" in
+  local out rc kind sub t T A gdir grok
+  split_id "$1"
+  # (the launchers read the account from here; the first account's, empty, is the folder they always used)
+  export BN_SUB_ACCOUNT="$A"
+  case "$T" in
     claude)
       # `claude auth status`: JSON, exit 0 when signed in, 1 when not (authMethod, subscriptionType; no token)
       out="$(timeout "$LIMIT_S" "$BIN/claude-sub" auth status </dev/null 2>/dev/null | head -c 65536; printf '\nrc=%s' "${PIPESTATUS[0]}")"
@@ -83,16 +150,18 @@ state() {
       esac ;;
     gemini)
       # No status command: its settings' sign-in method (not a secret), and whether its login file is there (never opened)
-      t="$(head -c 1048576 "$HOME/.gemini/settings.json" 2>/dev/null | jq -r 'if type == "object" then (.security.auth.selectedType // "") else "" end' 2>/dev/null | head -n 1)"
+      gdir="$HOME"; [ -z "$A" ] || gdir="$(acct_dir gemini "$A")"   # (GEMINI_CLI_HOME: it keeps .gemini in it)
+      t="$(head -c 1048576 "$gdir/.gemini/settings.json" 2>/dev/null | jq -r 'if type == "object" then (.security.auth.selectedType // "") else "" end' 2>/dev/null | head -n 1)"
       case "$t" in
         gemini-api-key) echo "unknown api-key file" ;;
         vertex-ai) echo "unknown vertex-ai file" ;;
-        '' | oauth-personal) if [ -s "$HOME/.gemini/oauth_creds.json" ]; then echo "yes google file"; else echo "no - file"; fi ;;
+        '' | oauth-personal) if [ -s "$gdir/.gemini/oauth_creds.json" ]; then echo "yes google file"; else echo "no - file"; fi ;;
         *) echo "unknown - file" ;;
       esac ;;
     grok)
       # No status command: whether its login file is there (never opened)
-      if [ -s "${GROK_HOME:-$HOME/.grok}/auth.json" ]; then echo "yes xai file"; else echo "no - file"; fi ;;
+      grok="${GROK_HOME:-$HOME/.grok}"; [ -z "$A" ] || grok="$(acct_dir grok "$A")"
+      if [ -s "$grok/auth.json" ]; then echo "yes xai file"; else echo "no - file"; fi ;;
     copilot)
       # No status command, and its login sits in the file with its own state: not opened — /user in it says
       echo "unknown - none" ;;
@@ -110,58 +179,70 @@ kind_words() {
   esac
 }
 
-# tsv_row ID -> its line of `status --tsv`: id, installed yes/no, version, signed in, kind, how
+# tsv_row ID -> its line of `status --tsv`: id (TOOL or TOOL:NAME), installed yes/no, version, signed in, kind, how — and on
+# the first account's line a seventh, its name (or -)
 tsv_row() {
-  local v s k h
-  v="$(version "$1")"
-  if [ -n "$v" ]; then read -r s k h <<< "$(state "$1")"; printf '%s\tyes\t%s\t%s\t%s\t%s\n' "$1" "$v" "$s" "$k" "$h"
-  else printf '%s\tno\t-\tno\t-\tnone\n' "$1"; fi
+  local v s k h T A
+  split_id "$1"
+  v="$(version "$T")"
+  if [ -n "$v" ]; then read -r s k h <<< "$(state "$1")"; printf '%s\tyes\t%s\t%s\t%s\t%s' "$1" "$v" "$s" "$k" "$h"
+  else printf '%s\tno\t-\tno\t-\tnone' "$1"; fi
+  if [ -z "$A" ]; then printf '\t%s\n' "$(first_name "$T" | grep . || echo -)"; else printf '\n'; fi
 }
 
 cmd_status() {
-  local tsv=0 id v s k h
+  local tsv=0 id v s k h T A
   case "${1:-}" in --tsv) tsv=1 ;; '') ;; *) die "usage: subscriptions status [--tsv]" ;; esac
+  local ids=()
+  while IFS= read -r id; do ids+=("$id"); done < <(all_ids)
   if [ "$tsv" = 1 ]; then
-    # (each tool asked side by side, each within LIMIT_S: the answer takes as long as the slowest one, not all of them
+    # (each account asked side by side, each within LIMIT_S: the answer takes as long as the slowest one, not all of them
     # in a row — ./stack asks after every update; one at a time where no temporary folder can be made)
-    local d=''
+    local d='' i=0
     d="$(mktemp -d 2>/dev/null)" || d=''
-    for id in $(ids_all); do
-      if [ -n "$d" ]; then tsv_row "$id" > "$d/$id" & else tsv_row "$id"; fi
+    for id in ${ids[@]+"${ids[@]}"}; do
+      if [ -n "$d" ]; then tsv_row "$id" > "$d/$i" & else tsv_row "$id"; fi
+      i=$((i + 1))
     done
     if [ -n "$d" ]; then
       wait
-      for id in $(ids_all); do cat "$d/$id" 2>/dev/null || printf '%s\tno\t-\tno\t-\tnone\n' "$id"; done
-      rm -rf "$d"
+      i=0
+      for id in ${ids[@]+"${ids[@]}"}; do cat "$d/$i" 2>/dev/null || printf '%s\tno\t-\tno\t-\tnone\n' "$id"; i=$((i + 1)); done
+      rm -rf "${d:?}"
     fi
     return 0
   fi
-  printf '%-20s %-19s %-34s %s\n' TOOL VERSION "SIGNED IN" COMMAND
-  for id in $(ids_all); do
-    v="$(version "$id")"
-    if [ -z "$v" ]; then printf '%-20s %-19s %-34s %s\n' "$(field "$id" 3)" - "not in this sandbox (TERMINAL_AI_TOOLS)" "$(field "$id" 2)"; continue; fi
+  printf '%-28s %-19s %-34s %s\n' TOOL VERSION "SIGNED IN" COMMAND
+  for id in ${ids[@]+"${ids[@]}"}; do
+    split_id "$id"
+    v="$(version "$T")"
+    if [ -z "$v" ]; then printf '%-28s %-19s %-34s %s\n' "$(field "$T" 3)" - "not in this sandbox (TERMINAL_AI_TOOLS)" "$(field "$T" 2)"; continue; fi
     read -r s k h <<< "$(state "$id")"
     [ "$k" != - ] || k=''
     case "$s" in
       yes) s="yes${k:+ — $(kind_words "$k")}"; [ "$h" != file ] || s="$s (its login file is there)" ;;
       no) s="no — subscriptions login $id" ;;
-      *) case "$id" in copilot) s="not known here — /user in it" ;; *) s="not known here${k:+ ($(kind_words "$k"))}" ;; esac ;;
+      *) case "$T" in copilot) s="not known here — /user in it" ;; *) s="not known here${k:+ ($(kind_words "$k"))}" ;; esac ;;
     esac
-    printf '%-20s %-19s %-34s %s\n' "$(field "$id" 3)" "$v" "$s" "$(field "$id" 2)"
+    printf '%-28s %-19s %-34s %s\n' "$(label "$id")" "$v" "$s" "$(field "$T" 2)"
   done
-  printf '\nEach signs in with its own flow, here in the sandbox; its login stays in its own file, which DevOS ADE never opens.\n'
+  printf '\nEach signs in with its own flow, here in the sandbox; its login stays in its own file, which DevOS ADE never opens.\nMore than one account of a tool: subscriptions add TOOL (then subscriptions accounts).\n'
 }
 
+# need_tool ID — a tool in this sandbox and, for TOOL:NAME, an account that is there; T and A set, and BN_SUB_ACCOUNT for
+# what runs next (the launchers read it)
 need_tool() {
-  row "$1" >/dev/null || die "no tool called '$1' (one of: $(ids_all | tr '\n' ' '))"
-  installed "$1" || die "$(field "$1" 3) is not in this sandbox (TERMINAL_AI_TOOLS in .env leaves it out)"
+  split_id "$1"
+  installed "$T" || die "$(field "$T" 3) is not in this sandbox (TERMINAL_AI_TOOLS in .env leaves it out)"
+  [ -z "$A" ] || acct_exists "$T" "$A" || die "$(field "$T" 3) has no account called '$A' (subscriptions accounts $T; subscriptions add $T $A makes it)"
+  export BN_SUB_ACCOUNT="$A"
 }
 
-# login ID — the tool's own sign-in that works in a sandbox (run, not exec'd, by open)
+# login — the tool's own sign-in that works in a sandbox, for T and A (run, not exec'd, by open)
 login() {
   local rc=0
-  printf '(%s keeps its login in its own file here: anything running in this sandbox can read it. Sign out, and revoke it in your account at the provider, if that ever worries you.)\n' "$(field "$1" 3)"
-  case "$1" in
+  printf '(%s keeps its login in its own file here: anything running in this sandbox can read it. Sign out, and revoke it in your account at the provider, if that ever worries you.)\n' "$(label "$T${A:+:$A}")"
+  case "$T" in
     claude) printf 'Claude Code: open the link below in your browser, sign in, then paste the code it shows here.\n'
             "$BIN/claude-sub" auth login || rc=$? ;;
     codex) "$BIN/codex" login --device-auth || rc=$?
@@ -176,7 +257,7 @@ login() {
 }
 
 logout() {
-  case "$1" in
+  case "$T" in
     claude) exec "$BIN/claude-sub" auth logout ;;
     codex) exec "$BIN/codex" logout ;;
     cursor) exec "$BIN/cursor-agent" logout ;;
@@ -186,37 +267,153 @@ logout() {
   esac
 }
 
+# kind_window KIND -> the window's name for the first account without a name of its own: the tool and the kind, once the
+# kind is known (claude-max, codex-chatgpt; claude's kinds already start with claude-); empty when there is nothing to add
+kind_window() {
+  local k="${1//./-}"
+  case "$k" in '' | - | "$T") return 0 ;; "$T"-*) printf '%s' "$k" ;; *) printf '%s-%s' "$T" "$k" ;; esac
+}
+
+# rename_window KIND — the tmux window this runs in, named after what runs in it: the account's (claude-work), the first
+# account's own name, else the tool and its kind (claude-max) once known. Until then it keeps the name bn-session gave it.
+# Letters, digits, _ and - only; the folder part bn-session put on (@bn-suffix) stays. Windows are found by their option
+# @bn-open, never by name, so the rename costs nothing.
+rename_window() {
+  local base fn suf
+  [ -n "${TMUX:-}" ] && [ -n "${TMUX_PANE:-}" ] && [ -x "$TMUX_BIN" ] || return 0
+  if [ -n "$A" ]; then base="$T-$A"
+  else
+    fn="$(first_name "$T")"
+    if [ -n "$fn" ]; then base="$T-$fn"; else base="$(kind_window "$1")"; fi
+  fi
+  [ -n "$base" ] || return 0
+  base="$(printf '%s' "$base" | LC_ALL=C tr -cd 'A-Za-z0-9_-' | cut -c1-40)"
+  suf="$("$TMUX_BIN" show-options -wqv -t "$TMUX_PANE" @bn-suffix 2>/dev/null | head -n 1 | LC_ALL=C tr -cd 'A-Za-z0-9_-')"
+  "$TMUX_BIN" rename-window -t "$TMUX_PANE" "$base$suf" >/dev/null 2>&1 || true
+}
+
 cmd_open() {
-  local id="${1:-}" s
+  local id="${1:-}" s k
   case "$id" in
     bedrock) exec "$BIN/devos-claude" ;;
     shell) exec bash ;;
   esac
   need_tool "$id"
-  read -r s _ _ <<< "$(state "$id")"
+  read -r s k _ <<< "$(state "$id")"
   # (Claude Code and Gemini CLI sign in inside their own screens; the others first, with their own sign-in)
   if [ "$s" = no ]; then
-    case "$id" in
+    case "$T" in
       claude | gemini) ;;
-      *) printf '%s is not signed in here yet: its own sign-in first.\n\n' "$(field "$id" 3)"
-         login "$id" || printf '\n%s: not signed in. It starts anyway; `subscriptions login %s` tries again.\n\n' "$(field "$id" 3)" "$id" ;;
+      *) printf '%s is not signed in here yet: its own sign-in first.\n\n' "$(label "$id")"
+         if login; then read -r s k _ <<< "$(state "$id")"
+         else printf '\n%s: not signed in. It starts anyway; `subscriptions login %s` tries again.\n\n' "$(label "$id")" "$id"; fi ;;
     esac
   fi
-  exec "$BIN/$(field "$id" 2)"
+  rename_window "$k"
+  exec "$BIN/$(field "$T" 2)"
+}
+
+cmd_accounts() {
+  local only="${1:-}" t id fn
+  [ -z "$only" ] || row "$only" >/dev/null || die "no tool called '$only' (one of: $(ids_all | tr '\n' ' '))"
+  for t in $(ids_all); do
+    [ -z "$only" ] || [ "$t" = "$only" ] || continue
+    installed "$t" || continue
+    for id in $(acct_ids "$t"); do
+      if [ "$id" = "$t" ]; then fn="$(first_name "$t")"; printf '%-22s %s%s\n' "$id" "$(field "$t" 3)" "${fn:+ · $fn} (the first account)"
+      else printf '%-22s %s\n' "$id" "$(label "$id")"; fi
+    done
+    case " $SINGLE_ACCOUNT " in *" $t "*) printf '%-22s %s keeps one account here: its pinned version has no variable for its login folder\n' '' "$(field "$t" 3)" ;; esac
+  done
+}
+
+# add TOOL [NAME] — another account: a name (asked when not given), its folder (700), then that account's sign-in as open does
+cmd_add() {
+  local tool="${1:-}" name="${2:-}" fn d
+  [ -n "$tool" ] && [ $# -le 2 ] || die "usage: subscriptions add TOOL [NAME]"
+  split_id "$tool"
+  [ -z "$A" ] || die "usage: subscriptions add TOOL [NAME]   (TOOL alone, not TOOL:NAME)"
+  need_tool "$tool"
+  if [ "$(acct_names "$T" | wc -l | tr -d ' ')" -ge $((MAX_ACCOUNTS - 1)) ]; then die "$(field "$T" 3) has $MAX_ACCOUNTS accounts, the most there can be: subscriptions remove TOOL:NAME first"; fi
+  if [ -z "$name" ]; then
+    printf 'A name for this %s account (lowercase letters, digits and -; e.g. work or personal): ' "$(field "$T" 3)"
+    read -r name || die "no name given"
+  fi
+  name_ok "$name" || die "'$name' is not an account name: lowercase letters and digits, and - inside (1 to 20 characters)"
+  fn="$(first_name "$T")"
+  [ "$name" != "$fn" ] || die "'$name' is the name of the first $(field "$T" 3) account already"
+  d="$(acct_dir "$T" "$name")"
+  [ ! -e "$d" ] && [ ! -L "$d" ] || die "$(field "$T" 3) has an account called '$name' already"
+  [ ! -L "$ROOT" ] && [ ! -L "$ROOT/$T" ] || die "$ROOT/$T is a link: accounts live in real folders only"
+  mkdir -p "$ROOT/$T" && chmod 700 "$ROOT" "$ROOT/$T" 2>/dev/null
+  mkdir "$d" && chmod 700 "$d" || die "could not make $d"
+  printf 'Account %s made (%s). Its sign-in:\n\n' "$T:$name" "$d"
+  # (the window this runs in was found by "add:TOOL"; now it is the account's, as if open had made it)
+  if [ -n "${TMUX:-}" ] && [ -n "${TMUX_PANE:-}" ] && [ -x "$TMUX_BIN" ]; then
+    "$TMUX_BIN" set-option -w -t "$TMUX_PANE" @bn-open "$T:$name" >/dev/null 2>&1 || true
+    "$TMUX_BIN" set-option -w -t "$TMUX_PANE" @bn-suffix '' >/dev/null 2>&1 || true
+  fi
+  cmd_open "$T:$name"
+}
+
+# remove TOOL:NAME — asks y/N, the tool's own sign-out first where it has one, then the folder
+cmd_remove() {
+  local id="${1:-}" ans d
+  [ $# -eq 1 ] || die "usage: subscriptions remove TOOL:NAME"
+  split_id "$id"
+  [ -n "$A" ] || die "the first account of $(field "$T" 3) cannot be removed: it is $T, the folder it always had (subscriptions logout $T signs it out)"
+  acct_exists "$T" "$A" || die "$(field "$T" 3) has no account called '$A' (subscriptions accounts $T)"
+  d="$(acct_dir "$T" "$A")"
+  printf 'Remove the %s account "%s"? It is signed out first (where the tool can), and its folder %s is deleted with whatever it holds. [y/N] ' "$(field "$T" 3)" "$A" "$d"
+  read -r ans || ans=n
+  case "$ans" in y | Y | yes | YES | Yes) ;; *) printf 'Nothing removed.\n'; return 0 ;; esac
+  if installed "$T"; then
+    export BN_SUB_ACCOUNT="$A"
+    ( logout ) || printf '(it is signed out inside the tool, or was not signed in: the folder goes either way)\n'
+  fi
+  # (rechecked: a real folder of that name in the tool's own, never through a link)
+  acct_exists "$T" "$A" || die "$d is not a folder of its own any more: left as it is"
+  rm -rf -- "${ROOT:?}/${T:?}/${A:?}" || die "could not remove $d"
+  printf 'Removed %s. Revoke its login in your account at the provider too if you want it gone there.\n' "$T:$A"
+}
+
+# rename ID NEW — the account's new name; the first account's is kept in $ROOT/TOOL/.first-name
+cmd_rename() {
+  local id="${1:-}" new="${2:-}" fn
+  [ $# -eq 2 ] || die "usage: subscriptions rename TOOL[:NAME] NEW"
+  split_id "$id"
+  name_ok "$new" || die "'$new' is not an account name: lowercase letters and digits, and - inside (1 to 20 characters)"
+  fn="$(first_name "$T")"
+  [ "$new" != "$fn" ] && [ "$new" != "$A" ] || die "'$new' is the name it has"
+  [ ! -e "$(acct_dir "$T" "$new")" ] && [ ! -L "$(acct_dir "$T" "$new")" ] || die "$(field "$T" 3) has an account called '$new' already"
+  [ ! -L "$ROOT" ] && [ ! -L "$ROOT/$T" ] || die "$ROOT/$T is a link: accounts live in real folders only"
+  if [ -z "$A" ]; then
+    mkdir -p "$ROOT/$T" && chmod 700 "$ROOT" "$ROOT/$T" 2>/dev/null
+    printf '%s\n' "$new" > "$ROOT/$T/.first-name.new" && mv -f -- "$ROOT/$T/.first-name.new" "$ROOT/$T/.first-name" || die "could not write $ROOT/$T/.first-name"
+    printf 'The first %s account is called "%s" now (windows: %s-%s).\n' "$(field "$T" 3)" "$new" "$T" "$new"
+  else
+    acct_exists "$T" "$A" || die "$(field "$T" 3) has no account called '$A' (subscriptions accounts $T)"
+    mv -- "$(acct_dir "$T" "$A")" "$(acct_dir "$T" "$new")" || die "could not rename it"
+    printf '%s:%s is %s:%s now. A window still running it keeps the old folder: close it and open the account again.\n' "$T" "$A" "$T" "$new"
+  fi
 }
 
 sub="${1:-status}"; [ $# -eq 0 ] || shift
 # (what ./stack and the Code page ask — status, sign-in, sign-out — runs the system's programs only, never one of the
 # same name in a folder of the home on PATH; open keeps your PATH: the tool you open uses it)
-case "$sub" in status | ids | login | logout) export PATH="${BN_SUBS_PATH:-/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin}" ;; esac
+case "$sub" in status | ids | login | logout | accounts | remove | rename) export PATH="${BN_SUBS_PATH:-/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin}" ;; esac
 # (a status or a sign-out leaves your shell's pane as it was; a sign-in or a tool opened marks it: its launcher's mark)
-case "$sub" in status | ids | logout) export BN_SUB_NOMARK=1 ;; esac
+case "$sub" in status | ids | logout | accounts | remove | rename) export BN_SUB_NOMARK=1 ;; esac
 case "$sub" in
   status) cmd_status "$@" ;;
   ids) for id in $(ids_all); do ! installed "$id" || echo "$id"; done ;;
-  login) [ $# -eq 1 ] || die "usage: subscriptions login TOOL"; need_tool "$1"; login "$1"; exit $? ;;
-  logout) [ $# -eq 1 ] || die "usage: subscriptions logout TOOL"; need_tool "$1"; logout "$1" ;;
-  open) [ $# -eq 1 ] || die "usage: subscriptions open TOOL"; cmd_open "$1" ;;
-  -h | --help | help) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//' ;;
+  login) [ $# -eq 1 ] || die "usage: subscriptions login TOOL[:NAME]"; need_tool "$1"; login; exit $? ;;
+  logout) [ $# -eq 1 ] || die "usage: subscriptions logout TOOL[:NAME]"; need_tool "$1"; logout ;;
+  open) [ $# -eq 1 ] || die "usage: subscriptions open TOOL[:NAME]"; cmd_open "$1" ;;
+  accounts) [ $# -le 1 ] || die "usage: subscriptions accounts [TOOL]"; cmd_accounts "$@" ;;
+  add) cmd_add "$@" ;;
+  remove) cmd_remove "$@" ;;
+  rename) cmd_rename "$@" ;;
+  -h | --help | help) sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//' ;;
   *) die "unknown: subscriptions $sub (subscriptions --help)" ;;
 esac

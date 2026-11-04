@@ -245,12 +245,16 @@ def _launch_page(s: Settings, rem: bool, mode: str, tool: str, folder: str) -> H
     framers = portal + (f" {s.origin(CODE, rem)}" if s.code_on(rem) else "")
     names = {t["id"]: t for t in answers.read_tools(s.catalog_dir)}
     names.update({b["id"]: {**b, "provider": "", "plan": ""} for b in answers.BASICS})
-    t = names.get(tool) or {"name": tool, "provider": "", "plan": "", "command": tool}
-    name = t["name"]
-    if mode == "view":
+    base, _, acct = tool.partition(":")
+    t = names.get(base) or {"name": tool, "provider": "", "plan": "", "command": tool}
+    name = t["name"] + (f" · {acct}" if acct else "")
+    if mode == "add":
+        name = f"a new {t['name']} account"
+        what = f"A new {t['name']} account in a window of its own in this terminal (the sandbox): it asks for a name, then its own sign-in; {brand.NAME} never sees the login"
+    elif mode == "view":
         name = f"view {tool}"
         what = f"Another view of this terminal (view {tool}): the same windows, with a window of its own in front, in the sandbox"
-    elif tool in ("bedrock", "shell"):
+    elif base in ("bedrock", "shell"):
         what = f"{name} in a window of its own in this terminal (the sandbox)"
     else:
         what = (f"{name} ({t['provider']}) on {t['plan']}, in a window of its own in this terminal (the sandbox) — its own "

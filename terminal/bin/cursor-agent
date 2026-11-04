@@ -16,6 +16,16 @@ for v in $(compgen -e); do
     ANTHROPIC_* | CLAUDE_CODE_* | CLAUDE_BEDROCK_* | CLAUDE_CONFIG_DIR | SHARED_MCP_TOKEN | BN_MCP_URL | AWS_*) unset "$v" ;;
   esac
 done
+# BN_SUB_ACCOUNT=NAME (subscriptions open cursor:NAME): another account of this tool, its login in a folder of its own,
+# ~/.subscriptions/cursor/NAME — Cursor CLI keeps auth.json in $XDG_CONFIG_HOME/cursor on Linux (CURSOR_CONFIG_DIR moves its settings, not the login), so the account's folder is its XDG_CONFIG_HOME (the pinned 2026.10.22 package). A name that is not one, or a folder that is not there
+# (or is a link), is refused: never a path from outside. Without it, the first account, exactly as before.
+if [ -n "${BN_SUB_ACCOUNT:-}" ]; then
+  adir="${BN_SUBS_ROOT:-$HOME/.subscriptions}/cursor/$BN_SUB_ACCOUNT"
+  if ! [[ $BN_SUB_ACCOUNT =~ ^[a-z0-9][a-z0-9-]{0,19}$ ]] || [ ! -d "$adir" ] || [ -L "$adir" ] || [ -L "${adir%/*}" ]; then
+    echo "cursor-agent: no account called '${BN_SUB_ACCOUNT//[^a-z0-9-]/?}' here (subscriptions accounts cursor)" >&2; exit 2
+  fi
+  export XDG_CONFIG_HOME="$adir"
+fi
 # A tmux pane running it is marked as one of your subscriptions' tools (pane option @bn-sub): the Code page's @terminal
 # leaves its screen alone, where a sign-in's code may show. A guard against an accidental read, not a boundary.
 if [ -n "${TMUX:-}" ] && [ -n "${TMUX_PANE:-}" ] && [ "${BN_SUB_NOMARK:-0}" != 1 ] && [ -x "${BN_TMUX_BIN:-/usr/bin/tmux}" ]; then

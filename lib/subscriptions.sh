@@ -11,11 +11,11 @@
 #
 #   status [--chat]       asks the sandbox now (and Chat's, while the Code page is on), writes the status files,
 #                         prints them; --chat: Chat's alone
-#   login TOOL [--chat]   the tool's own sign-in, in the sandbox (docker compose exec; --chat: in Chat's), its words
+#   login ID [--chat]     the tool's own sign-in, in the sandbox (docker compose exec; --chat: in Chat's), its words
 #                         shown here as plain text (never a terminal escape of the sandbox's): a link and a code for your
 #                         browser (Claude Code: a link, then the code pasted back on stdin); Gemini CLI signs in inside
 #                         its own screen (Terminal tab)
-#   logout TOOL [--chat]  its own sign-out (Gemini CLI and Copilot sign out inside them: /auth signout, /logout)
+#   logout ID [--chat]    its own sign-out (Gemini CLI and Copilot sign out inside them: /auth signout, /logout)
 #
 # .env: TERMINAL_AI_TOOLS — all (blank: the default) | none | a comma list of codex, gemini, copilot, cursor, grok: which
 # of them the sandbox's image holds, from its next build (./stack update, ./stack terminal enable). Claude Code is
@@ -46,13 +46,14 @@ Usage: ./stack subscriptions <command> [--chat]
 
   status          Each tool in the sandbox: its version, and whether it is signed in (asked now) — and, while the
                   Code page is on, the same for Chat's sandbox
-  login TOOL      Its own sign-in, its words shown here: a link and a code for your browser (Gemini CLI: in the
+  login ID        Its own sign-in, its words shown here: a link and a code for your browser (Gemini CLI: in the
                   Terminal tab, inside its own screen)
-  logout TOOL     Its own sign-out (Gemini CLI and Copilot sign out inside them: /auth signout, /logout)
+  logout ID       Its own sign-out (Gemini CLI and Copilot sign out inside them: /auth signout, /logout)
   --chat          For Chat's sandbox (your subscriptions as Chat models: claude, codex, copilot, grok): its own
                   sign-ins, never the terminal's — sign in there once more, with the same flow
 
-  TOOL: claude (Claude Code on your Claude plan), codex, gemini, copilot, cursor, grok. In the sandbox's terminal:
+  ID: a TOOL — claude (Claude Code on your Claude plan), codex, gemini, copilot, cursor, grok — or TOOL:NAME, another account
+  of it (up to 8 a tool; the terminal's `subscriptions add|accounts|rename|remove` manage them; Chat's has one a tool). In the sandbox's terminal:
   claude-sub, codex, gemini, copilot, cursor-agent, grok, and `subscriptions` (the same commands). Each login stays
   in that tool's own file in the sandbox: DevOS ADE never opens it, and backups leave it out.
   .env: TERMINAL_AI_TOOLS=all (default) | none | codex,copilot,…  — which go into the sandbox (next ./stack update or
@@ -74,6 +75,9 @@ subs_kind_words() {
   esac
 }
 subs_valid_tool() { case " $SUBS_TOOLS " in *" $1 "*) [ -n "$1" ] ;; *) return 1 ;; esac; }
+# an account id: a tool, or TOOL:NAME (NAME: lowercase letters, digits and -, 1 to 20, not starting with -)
+SUBS_NAME_RE='^[a-z0-9][a-z0-9-]{0,19}$'
+subs_valid_id() { subs_valid_tool "${1%%:*}" && { case "$1" in *:*) [[ ${1#*:} =~ $SUBS_NAME_RE ]] ;; *) true ;; esac; }; }
 
 # subs_tools_arg -> TERMINAL_AI_TOOLS as the image build takes it (BN_AI_TOOLS): all, none, or the known names as a
 # comma list; a name it does not know is said and left out (blank, or nothing known left: all)
@@ -92,9 +96,11 @@ subs_tools_arg() {
   printf '%s\n' "${out:-all}"
 }
 
-# subs_parse < TSV -> one JSON object per line that passes: id (one of SUBS_TOOLS, once), installed yes/no, version
-# (letters, digits . + -, at most 40, or -), signed in yes/no/unknown, kind (one of the tool's own, or -), how (the
-# tool's own: command, file or none). The sandbox's word is never more than one of these: anything else is dropped.
+# subs_parse < TSV -> one JSON object per line that passes: id (TOOL, or TOOL:NAME for another account of it: NAME a word of
+# lowercase letters, digits and -, at most 8 accounts a tool, each once), installed yes/no, version (letters, digits . + -,
+# at most 40, or -), signed in yes/no/unknown, kind (one of the tool's own, or -), how (the tool's own: command, file or
+# none) — and, on the first account's line only, a seventh: its name (the same kind of word, or -). The sandbox's word is
+# never more than one of these: anything else is dropped. Written as {"id":TOOL,"account":""|NAME,"first_name":NAME|"",…}.
 # Each tool's kinds and its way of telling are its own (terminal/bin/subscriptions' state; the portal's answers.py
 # TOOL_KINDS, TOOL_HOW): a kind another tool would say, or another way, is not taken.
 SUBS_TOOL_KINDS="claude:claude-pro,claude-max,claude-team,claude-enterprise,claude.ai,api-key,oauth-token,api-key-helper,third-party codex:chatgpt,api-key,access-token,bedrock-key cursor:cursor gemini:google,vertex-ai,api-key grok:xai copilot:"
@@ -104,15 +110,22 @@ subs_parse() {
     BEGIN { n = split(ids, a, " "); for (i = 1; i <= n; i++) okid[a[i]] = 1
             n = split(kinds, a, " "); for (i = 1; i <= n; i++) { split(a[i], p, ":"); m = split(p[2], k, ","); for (j = 1; j <= m; j++) okkind[p[1] "/" k[j]] = 1 }
             n = split(hows, a, " "); for (i = 1; i <= n; i++) { split(a[i], p, ":"); okhow[p[1]] = p[2] } }
-    NF != 6 || !($1 in okid) || ($1 in seen) { next }
+    NF != 6 && NF != 7 { next }
+    { tool = $1; acct = ""; c = index($1, ":")
+      if (c) { tool = substr($1, 1, c - 1); acct = substr($1, c + 1) } }
+    !(tool in okid) || ($1 in seen) { next }
+    c && (acct !~ /^[a-z0-9][a-z0-9-]*$/ || length(acct) > 20 || NF != 6) { next }
+    !c && NF == 7 && $7 != "-" && ($7 !~ /^[a-z0-9][a-z0-9-]*$/ || length($7) > 20) { next }
+    c && count[tool] >= 7 { next }
     $2 != "yes" && $2 != "no" { next }
     $3 != "-" && ($3 !~ /^[0-9A-Za-z][0-9A-Za-z.+-]*$/ || length($3) > 40) { next }
     $4 != "yes" && $4 != "no" && $4 != "unknown" { next }
-    $5 != "-" && !(($1 "/" $5) in okkind) { next }
-    $6 != okhow[$1] && !($2 == "no" && $6 == "none") { next }
-    { seen[$1] = 1
-      printf "{\"id\":\"%s\",\"installed\":%s,\"version\":\"%s\",\"signed_in\":\"%s\",\"kind\":\"%s\",\"how\":\"%s\"}\n",
-        $1, ($2 == "yes" ? "true" : "false"), ($3 == "-" ? "" : $3), ($2 == "yes" ? $4 : "no"), ($5 == "-" ? "" : $5), $6 }'
+    $5 != "-" && !((tool "/" $5) in okkind) { next }
+    $6 != okhow[tool] && !($2 == "no" && $6 == "none") { next }
+    { seen[$1] = 1; if (c) count[tool]++
+      fn = (NF == 7 && $7 != "-") ? $7 : ""
+      printf "{\"id\":\"%s\",\"account\":\"%s\",\"first_name\":\"%s\",\"installed\":%s,\"version\":\"%s\",\"signed_in\":\"%s\",\"kind\":\"%s\",\"how\":\"%s\"}\n",
+        tool, acct, fn, ($2 == "yes" ? "true" : "false"), ($3 == "-" ? "" : $3), ($2 == "yes" ? $4 : "no"), ($5 == "-" ? "" : $5), $6 }'
 }
 
 # _subs_tsv — the sandbox's status lines, at most SUBS_TSV_MAX bytes (cut inside the deadline: a sandbox that prints
@@ -136,7 +149,7 @@ subs_refresh() {
     out="$(PROBE_DEADLINE_S="${SUBS_DEADLINE_S:-150}" _probe _subs_tsv)"
     rows="$(printf '%s\n' "$out" | subs_parse)"
     # (Chat's sandbox: its Chat tools alone — the others are not Chat models, whatever it says of them)
-    [ "$SUBS_WHERE" != chat ] || rows="$(printf '%s\n' "$rows" | grep -E "^\{\"id\":\"($(printf '%s' "$SUBS_CHAT_TOOLS" | tr ' ' '|'))\"" || true)"
+    [ "$SUBS_WHERE" != chat ] || rows="$(printf '%s\n' "$rows" | grep -E "^\{\"id\":\"($(printf '%s' "$SUBS_CHAT_TOOLS" | tr ' ' '|'))\",\"account\":\"\"" || true)"
     [ -n "$rows" ] || state=error
   fi
   SUBS_LAST_ROWS="$rows"
@@ -178,22 +191,24 @@ subs_refresh_reap() {
 
 # subs_print — the last answer, as a table (names and words from this side, never the sandbox's text)
 subs_print() {
-  local id inst ver signed kind how line words
+  local id inst ver signed kind how line words acct first label sid
   if [ -z "$SUBS_LAST_ROWS" ]; then return 0; fi
   printf '  %-32s %-20s %s\n' TOOL VERSION "SIGNED IN"
   while IFS= read -r line; do
     [ -n "$line" ] || continue
     id="$(json_get id <<< "$line")"; ver="$(json_get version <<< "$line")"; signed="$(json_get signed_in <<< "$line")"
     kind="$(json_get kind <<< "$line")"; how="$(json_get how <<< "$line")"
+    acct="$(json_get account <<< "$line")"; first="$(json_get first_name <<< "$line")"
+    sid="$id${acct:+:$acct}"; label="$(subs_name "$id")${acct:+ · $acct}${first:+ · $first}"
     case "$line" in *'"installed":true'*) inst=1 ;; *) inst=0 ;; esac
-    if [ "$inst" = 0 ]; then printf '  %-32s %-20s %s\n' "$(subs_name "$id")" - "not in the sandbox (TERMINAL_AI_TOOLS)"; continue; fi
+    if [ "$inst" = 0 ]; then printf '  %-32s %-20s %s\n' "$label" - "not in the sandbox (TERMINAL_AI_TOOLS)"; continue; fi
     words="$(subs_kind_words "$kind")"
     case "$signed" in
       yes) signed="yes${words:+ — $words}"; [ "$how" != file ] || signed="$signed (its login file is there)" ;;
-      no) signed="no — ./stack subscriptions login $id$([ "$SUBS_WHERE" != chat ] || echo ' --chat')" ;;
+      no) signed="no — ./stack subscriptions login $sid$([ "$SUBS_WHERE" != chat ] || echo ' --chat')" ;;
       *) if [ "$id" = copilot ]; then signed="not known here (/user in Copilot says)"; else signed="not known here${words:+ ($words)}"; fi ;;
     esac
-    printf '  %-32s %-20s %s\n' "$(subs_name "$id")" "$ver" "$signed"
+    printf '  %-32s %-20s %s\n' "$label" "$ver" "$signed"
   done <<< "$SUBS_LAST_ROWS"
 }
 
@@ -268,8 +283,10 @@ cmd_subscriptions() {
       fi
       printf '\nSign in: ./stack subscriptions login TOOL (here), or the Terminal tab'"'"'s Open menu; for Chat, ./stack subscriptions login TOOL --chat. Settings › Models & providers shows the same.\n' ;;
     login | logout)
-      [ $# -eq 1 ] || die "usage: ./stack subscriptions $sub TOOL [--chat]   (TOOL: ${SUBS_TOOLS// /, })"
-      subs_valid_tool "$1" || die "no tool called '$(plain_text "$1")' — one of: ${SUBS_TOOLS// /, }"
+      [ $# -eq 1 ] || die "usage: ./stack subscriptions $sub ID [--chat]   (ID: ${SUBS_TOOLS// /, }, or TOOL:NAME for another account)"
+      subs_valid_id "$1" || die "no tool or account called '$(plain_text "$1")' — a tool (${SUBS_TOOLS// /, }), or TOOL:NAME"
+      [ "$SUBS_WHERE" != chat ] || [ "${1#*:}" = "$1" ] || die "Chat's sandbox has one account a tool: $(subs_name "${1%%:*}")'s, without a :NAME"
+      local tool="${1%%:*}"
       if [ "$SUBS_WHERE" = chat ]; then
         case " $SUBS_CHAT_TOOLS " in *" $1 "*) ;; *) die "$(subs_name "$1") is not a Chat model (Settings › Models & providers says why): nothing to sign in to for Chat — one of: ${SUBS_CHAT_TOOLS// /, }" ;; esac
       fi
@@ -278,8 +295,8 @@ cmd_subscriptions() {
       local svc; svc="$(subs_service)"
       if [ "$sub" = logout ]; then
         case " $SUBS_SIGNOUT " in
-          *" $1 "*) dc exec -T -e "PATH=$SUBS_PATH" "$svc" "$SUBS_CMD" logout "$1" </dev/null 2>&1 | head -c "$SUBS_STREAM_MAX" | subs_plain_stream; rc="${PIPESTATUS[0]}" ;;
-          *) [ "$1" = gemini ] && die "Gemini CLI signs out inside it: in the Terminal tab, gemini, then /auth signout"
+          *" $tool "*) dc exec -T -e "PATH=$SUBS_PATH" "$svc" "$SUBS_CMD" logout "$1" </dev/null 2>&1 | head -c "$SUBS_STREAM_MAX" | subs_plain_stream; rc="${PIPESTATUS[0]}" ;;
+          *) [ "$tool" = gemini ] && die "Gemini CLI signs out inside it: in the Terminal tab, gemini, then /auth signout"
              [ "$SUBS_WHERE" != chat ] || die "Copilot signs out inside it, and Chat's sandbox has no screen of it: remove Chat's sign-in with docker volume rm $(project_name)_subs-chat-copilot while the Code page is off (./stack code disable), and revoke it on github.com › Settings › Applications"
              die "Copilot signs out inside it: in the Terminal tab, copilot, then /logout (and revoke it on github.com › Settings › Applications)" ;;
         esac
@@ -289,13 +306,13 @@ cmd_subscriptions() {
         # asks something back — Claude Code (the code your browser shows) and Copilot (whether to keep its login in a
         # file) — and is said first; the others get nothing of this terminal's. The login stays in the sandbox (--chat:
         # in Chat's, its own). Gemini CLI signs in inside its own screen: the Terminal tab's.
-        [ "$1" != gemini ] || die "Gemini CLI signs in inside its own screen: open it in the Terminal tab (Open › Gemini CLI), or gemini in a shell window there"
-        [ "$SUBS_WHERE" != chat ] || printf "For Chat: %s's own sign-in, in Chat's sandbox — a sign-in of its own, apart from the terminal's.\n" "$(subs_name "$1")"
-        case "$1" in
+        [ "$tool" != gemini ] || die "Gemini CLI signs in inside its own screen: open it in the Terminal tab (Open › Gemini CLI), or gemini in a shell window there"
+        [ "$SUBS_WHERE" != chat ] || printf "For Chat: %s's own sign-in, in Chat's sandbox — a sign-in of its own, apart from the terminal's.\n" "$(subs_name "$tool")"
+        case "$tool" in
           claude | copilot)
-            [ "$1" != claude ] || printf 'Claude Code: open the link below in your browser and sign in; then paste the code it shows here and press Enter.\n'
-            [ "$1" != copilot ] || printf 'Copilot: open the link below in your browser and enter the code; it may then ask here whether to keep its login in a file (answer y).\n'
-            printf '(What you type here now goes to %s'"'"'s own sign-in in %s, and nowhere else.)\n' "$(subs_name "$1")" "$(subs_where_words)"
+            [ "$tool" != claude ] || printf 'Claude Code: open the link below in your browser and sign in; then paste the code it shows here and press Enter.\n'
+            [ "$tool" != copilot ] || printf 'Copilot: open the link below in your browser and enter the code; it may then ask here whether to keep its login in a file (answer y).\n'
+            printf '(What you type here now goes to %s'"'"'s own sign-in in %s, and nowhere else.)\n' "$(subs_name "$tool")" "$(subs_where_words)"
             dc exec -T -e "PATH=$SUBS_PATH" "$svc" "$SUBS_CMD" login "$1" 2>&1 | head -c "$SUBS_STREAM_MAX" | subs_plain_stream; rc="${PIPESTATUS[0]}" ;;
           *) dc exec -T -e "PATH=$SUBS_PATH" "$svc" "$SUBS_CMD" login "$1" </dev/null 2>&1 | head -c "$SUBS_STREAM_MAX" | subs_plain_stream; rc="${PIPESTATUS[0]}" ;;
         esac
@@ -315,7 +332,7 @@ subs_status_line() {
   local f n=0 t=0 at
   f="$(subs_status_file)"
   [ -f "$f" ] || { printf '  AI tools   ./stack subscriptions — Codex, Gemini CLI, Copilot, Cursor, Grok and Claude Code on your plan, in the sandbox\n'; return 0; }
-  t="$(subs_count '"installed":true')"
+  t="$(subs_count '"account":"","first_name":"[a-z0-9-]*","installed":true')"
   n="$(subs_count '"signed_in":"yes"')"
   at="$(sed -n 's/.*"written_at":\([0-9]*\).*/\1/p' "$f" 2>/dev/null || true)"
   printf '  AI tools   %s in the sandbox, %s signed in (checked %s; ./stack subscriptions)\n' "$t" "$n" \

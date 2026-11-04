@@ -6,6 +6,25 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Added
+- **Several accounts for each subscription tool (JON-1052, the sandbox side).** Claude Code, Codex, Gemini CLI, Copilot,
+  Cursor and Grok can each have more than one signed-in account, up to 8 a tool. The first account is the tool itself, in
+  the folder it always used (nobody signs in again); another is `TOOL:NAME` (`claude:work`), in `~/.subscriptions/TOOL/NAME`,
+  a folder of its own that DevOS ADE makes and removes and never opens.
+  - In the terminal: `subscriptions accounts [TOOL]`, `add TOOL [NAME]`, `remove TOOL:NAME` (asks, signs out first),
+    `rename TOOL[:NAME] NEW`; `status`, `login`, `logout` and `open` take `TOOL:NAME`, and `status` has a row an account.
+  - Each launcher reads `BN_SUB_ACCOUNT=NAME` and points its tool at that folder with the variable the tool reads
+    (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GEMINI_CLI_HOME`, `COPILOT_HOME`, `GROK_HOME`; Cursor keeps its login under
+    `XDG_CONFIG_HOME`, so that one); a name that is not one, or a folder that is not there, is refused.
+  - The status file gains `account` and `first_name`; `/api/answers` lists each tool's `accounts`, the first first; the
+    launch words accept `open|chat TOOL[:NAME]` and `add TOOL`. Chat's sandbox stays at one account a tool.
+
+### Changed
+- **Windows are named after what runs in them (JON-1053).** The first window is `bedrock` (Claude Code on Bedrock, was
+  `claude`; the session is still `claude`). An account's window is `TOOL-NAME` (`claude-work`); the first account's is
+  `TOOL` until `subscriptions open` knows its kind, then `claude-max`, `codex-chatgpt` … (or the name you gave it).
+  A window is found by its tmux option `@bn-open`, not by its name, so renaming it costs nothing.
+
 ## [0.57.2] - 2026-11-04
 
 ### Fixed

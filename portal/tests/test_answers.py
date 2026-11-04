@@ -160,6 +160,31 @@ TOK = "1792760000-0123456789abcdef-" + "0" * 32   # a launch token's form (not a
     (["view", "22", TOK], False),
     (["view", "codex", TOK], False),
     (["view", "2", TOK, "/workspace/app"], False),
+    # an account of a tool (TOOL:NAME: lowercase letters, digits and -, 1 to 20, the first not a -); add takes a bare tool, no folder
+    (["open", "claude:work", TOK], True),
+    (["chat", "codex:personal-2", TOK, "/workspace/app"], True),
+    (["open", "grok:a", TOK], True),
+    (["open", "cursor:" + "a" * 20, TOK], True),
+    (["add", "codex", TOK], True),
+    (["add", "claude", TOK], True),
+    (["open", "bedrock:x", TOK], False),
+    (["open", "shell:x", TOK], False),
+    (["open", "claude:", TOK], False),
+    (["open", "claude:Work", TOK], False),
+    (["open", "claude:-w", TOK], False),
+    (["open", "claude:a_b", TOK], False),
+    (["open", "claude:a.b", TOK], False),
+    (["open", "claude:a b", TOK], False),
+    (["open", "claude:a:b", TOK], False),
+    (["open", "claude:" + "a" * 21, TOK], False),
+    (["open", "claude:../x", TOK], False),
+    (["open", "evil:work", TOK], False),
+    (["open", ":work", TOK], False),
+    (["add", "claude:work", TOK], False),
+    (["add", "shell", TOK], False),
+    (["add", "bedrock", TOK], False),
+    (["add", "evil", TOK], False),
+    (["add", "codex", TOK, "/workspace/app"], False),
     (["open", "2", TOK], False),
     (["chat", "3", TOK], False),
     (["run", "codex", TOK], False),
@@ -626,3 +651,85 @@ def test_chat_models_follow_the_sandboxs_way_out_as_env_has_it_now(s):
     assert codex()["reason"] == "chat-egress-off", "turned off from Settings: said at once"
     snap("host")
     assert codex()["ok"], "host: Chat's own proxy"
+
+
+@need_catalog
+def test_accounts_are_read_per_tool_the_first_first_and_only_as_words(s):
+    rows = [
+        {"id": "claude", "account": "", "first_name": "max", "installed": True, "version": "2.1.309", "signed_in": "yes", "kind": "claude-max", "how": "command"},
+        {"id": "claude", "account": "work", "first_name": "", "installed": True, "version": "2.1.309", "signed_in": "yes", "kind": "claude-team", "how": "command"},
+        {"id": "claude", "account": "work", "first_name": "", "installed": True, "version": "2.1.309", "signed_in": "no", "kind": "", "how": "command"},
+        {"id": "claude", "account": "Bad Name", "installed": True, "signed_in": "yes", "kind": "claude-pro", "how": "command"},
+        {"id": "claude", "account": "../x", "installed": True},
+        {"id": "claude", "account": 7, "installed": True},
+        {"id": "claude", "account": "max", "installed": True, "signed_in": "yes", "kind": "claude-pro"},   # (the first's name)
+        {"id": "claude", "account": "home", "installed": True, "version": "2.1.309", "signed_in": "no", "kind": "<b>", "how": "rm"},
+        {"id": "codex", "installed": True, "version": "0.164.0", "signed_in": "yes", "kind": "chatgpt", "how": "command", "first_name": "<script>"},
+        {"id": "codex", "account": "x", "installed": True, "version": "0.164.0", "signed_in": "yes", "kind": "claude-max", "how": "command"},
+        {"id": "evil", "account": "x", "installed": True},
+        # (an account of a tool that is not here: not listed)
+        {"id": "grok", "account": "", "installed": False}, {"id": "grok", "account": "y", "installed": True, "signed_in": "yes", "kind": "xai"},
+    ]
+    _status(s, {"version": 1, "written_at": 1792760000, "terminal": "running", "tools": rows})
+    t = answers.read_status(s.status_dir)["tools"]
+    # (the first account first, with its own name; its fields are the tool's own, as before)
+    assert t["claude"]["accounts"] == [{"name": "max", "signed_in": "yes", "kind": "claude-max"},
+                                       {"name": "work", "signed_in": "yes", "kind": "claude-team"},
+                                       {"name": "home", "signed_in": "no", "kind": ""}]
+    assert t["claude"]["signed_in"] == "yes" and t["claude"]["kind"] == "claude-max" and t["claude"]["first_name"] == "max"
+    # (a first name that is not a word is none; a kind another tool would say is dropped)
+    assert t["codex"]["first_name"] == "" and t["codex"]["accounts"] == [{"name": "", "signed_in": "yes", "kind": "chatgpt"},
+                                                                         {"name": "x", "signed_in": "yes", "kind": ""}]
+    assert t["grok"]["accounts"] == [{"name": "", "signed_in": "no", "kind": ""}]
+    # a file that is a first account's row only (an older image): one account, no name
+    _status(s, {"version": 1, "written_at": 1792760000, "terminal": "running", "tools": [
+        {"id": "codex", "installed": True, "version": "0.164.0", "signed_in": "no", "kind": "", "how": "command"}]})
+    assert answers.read_status(s.status_dir)["tools"]["codex"]["accounts"] == [{"name": "", "signed_in": "no", "kind": ""}]
+    # at most 8 accounts a tool, the first among them
+    many = [{"id": "codex", "installed": True, "version": "1", "signed_in": "no", "how": "command"}] + [
+        {"id": "codex", "account": f"a{i}", "installed": True, "version": "1", "signed_in": "no", "how": "command"} for i in range(12)]
+    _status(s, {"version": 1, "written_at": 1792760000, "terminal": "running", "tools": many})
+    assert [a["name"] for a in answers.read_status(s.status_dir)["tools"]["codex"]["accounts"]] == [""] + [f"a{i}" for i in range(7)]
+    # /api/answers' rows carry them (the pickers' entries, phase 2): kind words, never the sandbox's text
+    _status(s, {"version": 1, "written_at": 1792760000, "terminal": "running", "tools": rows})
+    row = {r["id"]: r for r in answers.tools(s.catalog_dir, s.status_dir)["tools"]}["claude"]
+    assert row["accounts"][1] == {"name": "work", "signed_in": "yes", "kind": "claude-team", "kind_words": "Claude Team"}
+    assert row["first_name"] == "max"
+    # a tool not checked yet has none
+    _status(s, {"version": 1, "written_at": 1792760000, "terminal": "running", "tools": []})
+    assert {r["id"]: r for r in answers.tools(s.catalog_dir, s.status_dir)["tools"]}["claude"]["accounts"] == []
+
+
+@need_catalog
+def test_an_account_or_an_add_needs_a_token_for_exactly_its_words(s):
+    L = answers.Launches("s" * 64, "fp", clock=lambda: 1_792_760_000.0)
+    t = L.issue("me@example.com", ["open", "claude:work"])
+    assert L.valid(t, "me@example.com", ["open", "claude:work"])
+    # (claude:work's is no claude's, no claude:home's, no add's)
+    assert not L.valid(t, "me@example.com", ["open", "claude"]) and not L.valid(t, "me@example.com", ["open", "claude:home"])
+    assert not L.valid(t, "me@example.com", ["add", "claude"])
+    assert answers.terminal_link(answers.terminal_args("add", "codex", TOK)) == f"/?arg=add&arg=codex&arg={TOK}"
+    assert answers.parse_terminal_uri(f"/?arg=add&arg=codex&arg={TOK}") == ("/", ["add", "codex", TOK])
+    assert answers.parse_terminal_uri(f"/?arg=open&arg=claude%3Awork&arg={TOK}") == ("/", ["open", "claude:work", TOK])
+    # the page that asks first names the account / the add
+    with _client(s) as c:
+        tok, ut = _login_unlock(c)
+        r = _verify(c, tok, ut, f"/?arg=open&arg=claude%3Awork&arg={TOK}")
+        assert r.status_code == 403 and "Open Claude Code · work here?" in r.text and 'name="tool" value="claude:work"' in r.text, r.text[:400]
+        r = _verify(c, tok, ut, f"/?arg=add&arg=codex&arg={TOK}")
+        assert r.status_code == 403 and "a new Codex account" in r.text and 'name="mode" value="add"' in r.text, r.text[:400]
+        assert _verify(c, tok, ut, f"/ws?arg=add&arg=codex&arg={TOK}", ws=True).status_code == 403
+        # the question's Open makes a token for exactly those words, and they pass the gate
+        hdr = {"Host": TERM_HOST, "Cookie": f"{COOKIE}={tok}; bn_terminal={ut}", "Origin": TERM, "Sec-Fetch-Site": "same-origin"}
+        for form, start in (({"mode": "add", "tool": "codex", "folder": ""}, "/?arg=add&arg=codex&arg="),
+                            ({"mode": "open", "tool": "claude:work", "folder": ""}, "/?arg=open&arg=claude%3Awork&arg=")):
+            r = c.post("/auth/terminal-launch", data=form, headers=hdr)
+            assert r.status_code == 303 and r.headers["location"].startswith(start), r.headers
+            link = r.headers["location"]
+            assert _verify(c, tok, ut, link).status_code == 200
+            assert _verify(c, tok, ut, "/ws" + link[1:], ws=True).status_code == 200
+        # words the rules refuse: not made
+        for form in ({"mode": "add", "tool": "claude:work", "folder": ""}, {"mode": "add", "tool": "shell", "folder": ""},
+                     {"mode": "add", "tool": "codex", "folder": "/workspace"}, {"mode": "open", "tool": "bedrock:x", "folder": ""},
+                     {"mode": "open", "tool": "claude:Work", "folder": ""}):
+            assert c.post("/auth/terminal-launch", data=form, headers=hdr).status_code == 400, form

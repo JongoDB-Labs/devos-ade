@@ -4341,7 +4341,7 @@ const tmuxDir = (p) => String(p).replaceAll('#', '##');
 // none runs yet
 async function tmuxSession(tmux) {
   if ((await run(tmux, ['has-session', '-t', `=${TMUX_SESSION}`])).code === 0) return;
-  const r = await run(tmux, ['new-session', '-d', '-s', TMUX_SESSION, '-n', 'claude', '-c', WORKSPACE, 'devos-claude; exec bash']);
+  const r = await run(tmux, ['new-session', '-d', '-s', TMUX_SESSION, '-n', 'bedrock', '-c', WORKSPACE, 'devos-claude; exec bash']);
   if (r.code !== 0) throw new Error(`tmux: ${printable(r.err, 200) || `exit ${r.code}`}`);
 }
 // tmuxGuard(tmux) -> null, or why a window made now might not run what was shown. The terminal's tmux server is the

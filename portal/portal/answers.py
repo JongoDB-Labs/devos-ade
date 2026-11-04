@@ -29,6 +29,10 @@ STATUS_FILE = "subscriptions.json"
 # Chat's sandbox's own sign-ins (./stack subscriptions status --chat): the Chat models', apart from the terminal's
 CHAT_STATUS_FILE = "subscriptions-chat.json"
 TOOL_IDS = ("claude", "codex", "gemini", "copilot", "cursor", "grok")
+# another account of a tool (terminal/bin/subscriptions: ~/.subscriptions/TOOL/NAME): its name, and how many a tool may have
+# (the first, TOOL itself, among them)
+ACCOUNT = re.compile(r"[a-z0-9][a-z0-9-]{0,19}")
+MAX_ACCOUNTS = 8
 COLUMNS = ("id", "name", "provider", "plan", "command", "signout", "chat_model", "chat_why", "terms")
 KINDS = {"claude-pro": "Claude Pro", "claude-max": "Claude Max", "claude-team": "Claude Team",
          "claude-enterprise": "Claude Enterprise", "claude.ai": "a Claude account", "chatgpt": "ChatGPT",
@@ -126,22 +130,41 @@ def terminal_reason(s, remote: bool) -> str | None:
 
 def read_status(status_dir: Path, name: str = STATUS_FILE) -> dict:
     """STATUS_DIR/subscriptions.json (or Chat's: CHAT_STATUS_FILE), every field checked: {"written_at", "sandbox",
-    "tools": {id: {...}}}."""
+    "tools": {id: {..., "first_name", "accounts": [{"name", "signed_in", "kind"}]}}}. A tool's own fields are its first
+    account's; "accounts" lists the first account first (name: its own name, "" when it has none), then the others."""
     d = hostfiles.read_json(status_dir / name, MAX_STATUS)
     at = d.get("written_at") if isinstance(d.get("written_at"), int) and d.get("written_at") > 0 else None
     tools = {}
-    for t in d.get("tools") or []:
-        if not isinstance(t, dict) or t.get("id") not in TOOL_IDS or t["id"] in tools:
+    others = {}   # tool -> [account rows], in the file's order
+    rows = d.get("tools") if isinstance(d.get("tools"), list) else []
+    for t in rows[:MAX_ACCOUNTS * len(TOOL_IDS)]:
+        if not isinstance(t, dict) or t.get("id") not in TOOL_IDS:
+            continue
+        tid = t["id"]
+        acct = t.get("account", "")
+        if not isinstance(acct, str) or (acct and not ACCOUNT.fullmatch(acct)):
             continue
         installed = t.get("installed") is True
         version = t.get("version") if isinstance(t.get("version"), str) and VERSION.fullmatch(t.get("version")) else ""
         signed = t.get("signed_in") if t.get("signed_in") in ("yes", "no", "unknown") else "unknown"
-        kind = t.get("kind") if t.get("kind") in TOOL_KINDS[t["id"]] else ""
-        how = TOOL_HOW[t["id"]] if installed else "none"   # (what this tool's check is, whatever the sandbox wrote)
-        tools[t["id"]] = {"installed": installed, "version": version if installed else "",
-                          "signed_in": signed if installed else "no", "kind": kind if installed else "", "how": how}
-        if len(tools) >= len(TOOL_IDS):
-            break
+        kind = t.get("kind") if t.get("kind") in TOOL_KINDS[tid] else ""
+        how = TOOL_HOW[tid] if installed else "none"   # (what this tool's check is, whatever the sandbox wrote)
+        row = {"installed": installed, "version": version if installed else "",
+               "signed_in": signed if installed else "no", "kind": kind if installed else "", "how": how}
+        if not acct:
+            if tid in tools:
+                continue
+            fn = t.get("first_name")
+            tools[tid] = {**row, "first_name": fn if isinstance(fn, str) and ACCOUNT.fullmatch(fn) else ""}
+        else:
+            lst = others.setdefault(tid, [])
+            if len(lst) < MAX_ACCOUNTS - 1 and all(o["name"] != acct for o in lst):
+                lst.append({"name": acct, **row})
+    for tid, t in tools.items():
+        # (another account never has the first's name; none beyond the first without the tool being here)
+        lst = [o for o in others.get(tid, []) if o["name"] != t["first_name"]] if t["installed"] else []
+        t["accounts"] = [{"name": t["first_name"], "signed_in": t["signed_in"], "kind": t["kind"]}] + \
+            [{"name": o["name"], "signed_in": o["signed_in"], "kind": o["kind"]} for o in lst]
     return {"written_at": at, "sandbox": d.get("terminal") if d.get("terminal") in SANDBOX else None, "tools": tools}
 
 
@@ -154,7 +177,9 @@ def tools(catalog_dir: Path, status_dir: Path) -> dict:
         s = st["tools"].get(t["id"])
         row = {**t, "installed": s["installed"] if s else None, "version": s["version"] if s else "",
                "signed_in": s["signed_in"] if s else "unknown", "kind": s["kind"] if s else "",
-               "kind_words": KINDS.get(s["kind"], "") if s else "", "how": s["how"] if s else "none"}
+               "kind_words": KINDS.get(s["kind"], "") if s else "", "how": s["how"] if s else "none",
+               "first_name": s["first_name"] if s else "",
+               "accounts": [{**a, "kind_words": KINDS.get(a["kind"], "")} for a in s["accounts"]] if s else []}
         # (a Chat model: its own sign-in in Chat's sandbox — never the terminal's — as Chat's last check said)
         if t["chat_model"] == "yes":
             c = ch["tools"].get(t["id"])
@@ -280,12 +305,24 @@ def folder_ok(folder, roots=()) -> bool:
     return folder in roots or WS_FOLDER.fullmatch(folder) is not None
 
 
+def tool_ok(tool) -> bool:
+    """A TOOL word for open|chat: bedrock or shell, a tool, or TOOL:NAME (another account of one of the six; not of
+    bedrock or shell)."""
+    if not isinstance(tool, str):
+        return False
+    base, sep, name = tool.partition(":")
+    return base in TERMINAL_TOOLS if not sep else base in TOOL_IDS and ACCOUNT.fullmatch(name) is not None
+
+
 def terminal_words(mode: str, tool: str, folder: str | None = None, roots=()) -> list[str] | None:
     """[MODE, TOOL(, FOLDER)] when each word passes bn-session's rules and FOLDER is one the pickers may name, else None.
-    A view (MODE view, TOOL 2 to 4) takes no folder."""
+    A view (MODE view, TOOL 2 to 4) takes no folder; nor does add (MODE add, TOOL a bare tool: `subscriptions add TOOL`,
+    which asks for the account's name in the window)."""
     if mode == "view":
         return [mode, tool] if tool in VIEWS and folder in (None, "") else None
-    if mode not in ("open", "chat") or tool not in TERMINAL_TOOLS:
+    if mode == "add":
+        return [mode, tool] if tool in TOOL_IDS and folder in (None, "") else None
+    if mode not in ("open", "chat") or not tool_ok(tool):
         return None
     words = [mode, tool]
     if folder not in (None, ""):

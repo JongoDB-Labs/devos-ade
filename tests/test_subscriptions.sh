@@ -74,15 +74,15 @@ test_what_the_sandbox_says_is_kept_only_as_words() {
     "$(printf 'gemini\tyes\t0.65.0%s\tyes\tgoogle\tfile' "$esc")" \
     "$(printf 'cursor\tyes\t<b>1</b>\tyes\tcursor\tcommand')" \
     "$(printf 'grok\tyes\t1.0.67\tmaybe\txai\tfile')" \
-    "$(printf 'copilot\tyes\t1.0.103\tunknown\t-\tnone\textra')" \
+    "$(printf 'copilot\tyes\t1.0.103\tunknown\t-\tnone\tEXTRA!')" \
     "$(printf 'evil\tyes\t1\tyes\t-\tnone')" \
     "$(printf 'copilot\tno\t-\tyes\tgoogle\tnone')" \
     "$(printf 'grok\tyes\t1.0.67\tyes\tchatgpt\tfile')" \
     "$(printf 'cursor\tyes\t2026.10.22-27dcf5f\tyes\tcursor\tfile')" \
     "$(printf 'copilot\tno\t-\tyes\t-\tnone')" | subs_parse)"
   # (a kind another tool would say — Google for Copilot, ChatGPT for Grok — or another way of telling: not taken)
-  assert_eq "$out" '{"id":"codex","installed":true,"version":"0.163.0","signed_in":"yes","kind":"chatgpt","how":"command"}
-{"id":"copilot","installed":false,"version":"","signed_in":"no","kind":"","how":"none"}'
+  assert_eq "$out" '{"id":"codex","account":"","first_name":"","installed":true,"version":"0.163.0","signed_in":"yes","kind":"chatgpt","how":"command"}
+{"id":"copilot","account":"","first_name":"","installed":false,"version":"","signed_in":"no","kind":"","how":"none"}'
 }
 
 test_the_status_file_says_what_passed_and_whether_the_sandbox_answered() {
@@ -91,7 +91,7 @@ test_the_status_file_says_what_passed_and_whether_the_sandbox_answered() {
   export TSV="$(printf 'claude\tyes\t2.1.309\tyes\tclaude-max\tcommand\ncodex\tno\t-\tno\t-\tnone\n')"
   subs_refresh
   f="$(subs_status_file)"
-  assert_contains "$(cat "$f")" '"terminal":"running","tools":[{"id":"claude","installed":true,"version":"2.1.309","signed_in":"yes","kind":"claude-max","how":"command"},{"id":"codex","installed":false'
+  assert_contains "$(cat "$f")" '"terminal":"running","tools":[{"id":"claude","account":"","first_name":"","installed":true,"version":"2.1.309","signed_in":"yes","kind":"claude-max","how":"command"},{"id":"codex","account":"","first_name":"","installed":false'
   [ "$(stat -c %a "$f" 2>/dev/null || stat -f %Lp "$f")" = 644 ] || return 1
   # nothing that passes: said as an error, no tools
   export TSV='garbage'
@@ -108,7 +108,7 @@ test_the_status_file_says_what_passed_and_whether_the_sandbox_answered() {
   # a sandbox that prints forever: its first 16 KiB read, inside the deadline — never the whole of it
   set_env TERMINAL_ENABLED true; export RUNNING=1 FOREVER=1
   SUBS_DEADLINE_S=20 subs_refresh || true
-  assert_contains "$(cat "$f")" '"terminal":"running","tools":[{"id":"codex","installed":true'
+  assert_contains "$(cat "$f")" '"terminal":"running","tools":[{"id":"codex","account":"","first_name":"","installed":true'
   # by its path, with the system's PATH: never a program of that name the sandbox's home put first
   assert_contains "$(cat "$TMP/dc")" "dc exec -T -e PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin -e BN_SUBS_TIMEOUT=15 terminal /usr/local/bin/subscriptions status --tsv"
 }
@@ -128,7 +128,7 @@ test_stack_subscriptions_prints_its_own_words_and_signs_out_by_tool() {
   out="$( (cmd_subscriptions logout copilot) 2>&1)" && return 1
   assert_contains "$out" "/logout"
   out="$( (cmd_subscriptions logout '../../etc') 2>&1)" && return 1
-  assert_contains "$out" "no tool called"
+  assert_contains "$out" "no tool or account called"
   assert_not_contains "$(cat "$TMP/dc")" "logout"
 }
 
@@ -192,29 +192,29 @@ test_each_tool_in_the_sandbox_says_only_signed_in_and_which_kind() {
   out="$(CLAUDE_STATUS='{"loggedIn":true,"authMethod":"claude.ai","subscriptionType":"max","email":"x@example.com"}' CLAUDE_RC=0 \
     CODEX_STATUS="API key configured - ${key:0:8}***${key: -5}" CURSOR_STATUS='{"isAuthenticated":true,"userInfo":{"email":"x@example.com"}}' \
     bash "$STACK_DIR/terminal/bin/subscriptions" status --tsv)"
-  assert_eq "$(printf '%s\n' "$out" | grep '^claude')" "$(printf 'claude\tyes\t2.1.309\tyes\tclaude-max\tcommand')"
-  assert_eq "$(printf '%s\n' "$out" | grep '^codex')" "$(printf 'codex\tyes\t0.163.0\tyes\tapi-key\tcommand')"
-  assert_eq "$(printf '%s\n' "$out" | grep '^cursor')" "$(printf 'cursor\tyes\t2026.10.22-27dcf5f\tyes\tcursor\tcommand')"
-  assert_eq "$(printf '%s\n' "$out" | grep '^copilot')" "$(printf 'copilot\tyes\t1.0.103\tunknown\t-\tnone')"
+  assert_eq "$(printf '%s\n' "$out" | grep '^claude')" "$(printf 'claude\tyes\t2.1.309\tyes\tclaude-max\tcommand\t-')"
+  assert_eq "$(printf '%s\n' "$out" | grep '^codex')" "$(printf 'codex\tyes\t0.163.0\tyes\tapi-key\tcommand\t-')"
+  assert_eq "$(printf '%s\n' "$out" | grep '^cursor')" "$(printf 'cursor\tyes\t2026.10.22-27dcf5f\tyes\tcursor\tcommand\t-')"
+  assert_eq "$(printf '%s\n' "$out" | grep '^copilot')" "$(printf 'copilot\tyes\t1.0.103\tunknown\t-\tnone\t-')"
   # never part of a key, an email: only the words
   assert_not_contains "$out" "sk-proj"
   assert_not_contains "$out" "example.com"
   # no login file: not signed in; a login file (never opened: unreadable here): signed in
-  assert_eq "$(printf '%s\n' "$out" | grep '^grok')" "$(printf 'grok\tyes\t1.0.67\tno\t-\tfile')"
+  assert_eq "$(printf '%s\n' "$out" | grep '^grok')" "$(printf 'grok\tyes\t1.0.67\tno\t-\tfile\t-')"
   mkdir -p "$HOME/.grok" "$HOME/.gemini"; printf 'x' > "$HOME/.grok/auth.json"; chmod 000 "$HOME/.grok/auth.json"
   printf 'x' > "$HOME/.gemini/oauth_creds.json"; chmod 000 "$HOME/.gemini/oauth_creds.json"
   out="$(bash "$STACK_DIR/terminal/bin/subscriptions" status --tsv)"
-  assert_eq "$(printf '%s\n' "$out" | grep '^grok')" "$(printf 'grok\tyes\t1.0.67\tyes\txai\tfile')"
-  assert_eq "$(printf '%s\n' "$out" | grep '^gemini')" "$(printf 'gemini\tyes\t0.65.0\tyes\tgoogle\tfile')"
+  assert_eq "$(printf '%s\n' "$out" | grep '^grok')" "$(printf 'grok\tyes\t1.0.67\tyes\txai\tfile\t-')"
+  assert_eq "$(printf '%s\n' "$out" | grep '^gemini')" "$(printf 'gemini\tyes\t0.65.0\tyes\tgoogle\tfile\t-')"
   # a Gemini that uses your own key (its settings say so): not known here
   printf '{"security":{"auth":{"selectedType":"gemini-api-key"}}}' > "$HOME/.gemini/settings.json"
   out="$(bash "$STACK_DIR/terminal/bin/subscriptions" status --tsv)"
-  assert_eq "$(printf '%s\n' "$out" | grep '^gemini')" "$(printf 'gemini\tyes\t0.65.0\tunknown\tapi-key\tfile')"
+  assert_eq "$(printf '%s\n' "$out" | grep '^gemini')" "$(printf 'gemini\tyes\t0.65.0\tunknown\tapi-key\tfile\t-')"
   chmod 600 "$HOME/.grok/auth.json" "$HOME/.gemini/oauth_creds.json"
   # a tool left out of the image (TERMINAL_AI_TOOLS): not installed
   printf 'codex 0.163.0\n' > "$TMP/tools/VERSIONS"
   out="$(bash "$STACK_DIR/terminal/bin/subscriptions" status --tsv)"
-  assert_eq "$(printf '%s\n' "$out" | grep '^cursor')" "$(printf 'cursor\tno\t-\tno\t-\tnone')"
+  assert_eq "$(printf '%s\n' "$out" | grep '^cursor')" "$(printf 'cursor\tno\t-\tno\t-\tnone\t-')"
   # and what ./stack keeps of all of it passes its own check
   assert_eq "$(printf '%s\n' "$out" | subs_parse | wc -l | tr -d ' ')" 6
 }
@@ -328,7 +328,19 @@ test_bn_session_takes_only_its_words() {
   ws="$(cd "$ws" && pwd -P)"; proj="$(cd "$proj" && pwd -P)"
   # tmux: records what it was asked; "claude" exists once made
   # (and the sessions made: -d with -s NAME, as ensure and the grouped sessions make them)
-  printf '#!/bin/sh\necho "tmux $*" >> "%s/tmux"\ncase "$1" in has-session) [ -f "%s/made.${3#=}" ]; exit $? ;; new-session) if [ "$2" = -d ]; then n=; for a in "$@"; do [ "$p" = -s ] && n="$a"; p="$a"; done; touch "%s/made.$n"; fi; exit 0 ;; esac\nexit 0\n' "$TMP" "$TMP" "$TMP" > "$b/tmux"
+  # (windows: new-window -P prints an id (@1, @2 ...), and a window option @bn-open set on it is listed by list-windows)
+  cat > "$b/tmux" <<EOF
+#!/bin/sh
+echo "tmux \$*" >> "$TMP/tmux"
+case "\$1" in
+  has-session) [ -f "$TMP/made.\${3#=}" ]; exit \$? ;;
+  new-session) if [ "\$2" = -d ]; then n=; for a in "\$@"; do [ "\$p" = -s ] && n="\$a"; p="\$a"; done; touch "$TMP/made.\$n"; fi; exit 0 ;;
+  new-window) for a in "\$@"; do [ "\$a" = -P ] && { n=\$(( \$(cat "$TMP/wn" 2>/dev/null || echo 0) + 1 )); echo \$n > "$TMP/wn"; echo "@\$n"; }; done; exit 0 ;;
+  set-option) [ "\$2" = -w ] && [ "\$5" = @bn-open ] && echo "\${4#*:} \$6" >> "$TMP/wins"; exit 0 ;;
+  list-windows) cat "$TMP/wins" 2>/dev/null; exit 0 ;;
+esac
+exit 0
+EOF
   chmod +x "$b/tmux"
   # (the sandbox's sha256sum; here whichever this computer has)
   local real_sum; real_sum="$(command -v sha256sum || true)"
@@ -345,7 +357,7 @@ test_bn_session_takes_only_its_words() {
     "open codex $N1 $TMP/elsewhere" "open codex $N1 $ws/../elsewhere" "open codex $N1 relative" "open codex $N1 $ws extra"; do
     # shellcheck disable=SC2086
     out="$(_run $args)"
-    assert_eq "$(printf '%s\n' "$out" | tail -n 1)" "tmux new-session -A -s claude -n claude -c $ws devos-claude; exec bash"
+    assert_eq "$(printf '%s\n' "$out" | tail -n 1)" "tmux new-session -A -s claude -n bedrock -c $ws devos-claude; exec bash"
   done
   [ ! -d "$TMP/state/$N1" ] || { echo "a refused request used its nonce" >&2; return 1; }
   # a token made more than 10 minutes ago (or ahead of this clock): nothing starts, the terminal is only attached
@@ -356,23 +368,58 @@ test_bn_session_takes_only_its_words() {
   done
   # open: a window of the tool, made current; the same nonce again only attaches
   out="$(_run open codex "$N1")"
-  assert_contains "$out" "tmux new-window -S -d -t =claude: -n codex -c $ws /usr/local/bin/subscriptions open codex; exec bash"
-  assert_contains "$out" "tmux set-option -p -t =claude:=codex @bn-sub 1"
-  assert_contains "$out" "tmux select-window -t =claude:=codex"
+  assert_contains "$out" "tmux new-window -d -P -F #{window_id} -t =claude: -n codex -c $ws /usr/local/bin/subscriptions open codex; exec bash"
+  assert_contains "$out" "tmux set-option -w -t =claude:@1 @bn-open codex"
+  assert_contains "$out" "tmux set-option -w -t =claude:@1 @bn-suffix "
+  assert_contains "$out" "tmux set-option -p -t =claude:@1 @bn-sub 1"
+  assert_contains "$out" "tmux select-window -t =claude:@1"
   assert_eq "$(printf '%s\n' "$out" | tail -n 1)" "tmux attach-session -t =claude"
   out="$(_run open codex "$N1")"
   assert_not_contains "$out" "new-window"
+  # a window is found by its option @bn-open, not by its name (subscriptions open renames it: claude-max): a fresh token
+  # selects the window that is there and makes none, whatever it is called now
+  local N6="$now-6666666666666666-$M"
+  out="$(_run open codex "$N6")"
+  assert_not_contains "$out" "new-window"
+  assert_contains "$out" "tmux list-windows -t =claude -F #{window_id} #{@bn-open}"
+  assert_contains "$out" "tmux select-window -t =claude:@1"
   # a folder below the workspace, a project folder (its own name in the window's, and a short hash of its path)
   local h; h="$(printf '%s' "$proj/inner" | "$b/sha256sum" | cut -c1-6)"
   out="$(_run open grok "$N2" "$proj/inner")"
   assert_contains "$out" "-n grok-inner-$h -c $proj/inner /usr/local/bin/subscriptions open grok"
+  assert_contains "$out" "@bn-open grok@$h"
+  assert_contains "$out" "@bn-suffix -inner-$h"
   # a shell (or Claude Code on Bedrock) is no subscription's tool: its window is not marked
   out="$(_run open shell "$N5")"
   assert_contains "$out" "-n shell -c $ws /usr/local/bin/subscriptions open shell"
   assert_not_contains "$out" "@bn-sub"
-  # Claude on your plan's window is claude-sub (the first window, claude, is devos-claude's)
+  # Claude on your plan's window is named after what runs in it: claude until `subscriptions open` knows (claude-max); the
+  # first window is bedrock
   out="$(_run open claude "$N1x")"
-  assert_contains "$out" "-n claude-sub -c $ws /usr/local/bin/subscriptions open claude"
+  assert_contains "$out" "-n claude -c $ws /usr/local/bin/subscriptions open claude; exec bash"
+  assert_contains "$out" "@bn-open claude"
+  # another account: TOOL-NAME, found by TOOL:NAME; Bedrock and a shell take no account
+  local A1="$now-a1a1a1a1a1a1a1a1-$M" A2="$now-a2a2a2a2a2a2a2a2-$M" A3="$now-a3a3a3a3a3a3a3a3-$M"
+  out="$(_run open claude:work "$A1")"
+  assert_contains "$out" "-n claude-work -c $ws /usr/local/bin/subscriptions open claude:work; exec bash"
+  assert_contains "$out" "@bn-open claude:work"
+  assert_contains "$out" "@bn-sub 1"
+  out="$(_run chat codex:personal-2 "$A2")"
+  assert_contains "$out" "-n codex-personal-2 -c $ws /usr/local/bin/subscriptions open codex:personal-2; exec bash"
+  for args in "open bedrock:x $A3" "open shell:x $A3" "open claude: $A3" "open claude:Work $A3" "open claude:-w $A3" "open claude:a_b $A3" \
+    "open claude:abcdefghijklmnopqrstu $A3" "open claude:a:b $A3" "open evil:work $A3" "add claude:work $A3" "add shell $A3" "add bedrock $A3" "add claude $A3 $ws"; do
+    # shellcheck disable=SC2086
+    out="$(_run $args)"
+    case "$out" in *new-window*) echo "refused words made a window: $args -> $out" >&2; return 1 ;; esac
+    assert_eq "$(printf '%s\n' "$out" | tail -n 1)" "tmux new-session -A -s claude -n bedrock -c $ws devos-claude; exec bash"
+  done
+  [ ! -d "$TMP/state/$A3" ] || { echo "a refused account used its nonce" >&2; return 1; }
+  # add: a window running `subscriptions add TOOL` (it asks for the name), found by "add:TOOL", marked as a tool's
+  out="$(_run add grok "$A3")"
+  assert_contains "$out" "-n grok-new -c $ws /usr/local/bin/subscriptions add grok; exec bash"
+  assert_contains "$out" "@bn-open add:grok"
+  assert_contains "$out" "@bn-sub 1"
+  assert_eq "$(printf '%s\n' "$out" | tail -n 1)" "tmux attach-session -t =claude"
   # a folder with "#" (tmux reads -c as a format) and a "." in its name (a pane in a target): doubled, mapped
   mkdir -p "$ws/a#b.c"
   out="$(_run open codex "$N4" "$ws/a#b.c")"
@@ -383,7 +430,8 @@ test_bn_session_takes_only_its_words() {
   out="$(_run chat gemini "$N3" "$ws/sub")"
   assert_contains "$out" "tmux new-session -d -t =claude -s chat-gemini-sub-$h"
   assert_contains "$out" "tmux set-option -t =chat-gemini-sub-$h: status off"
-  assert_contains "$out" "tmux select-window -t =chat-gemini-sub-$h:=gemini-sub-$h"
+  assert_contains "$out" "-n gemini-sub-$h -c $ws/sub"
+  assert_contains "$out" "tmux select-window -t =chat-gemini-sub-$h:@"
   assert_eq "$(printf '%s\n' "$out" | tail -n 1)" "tmux attach-session -t =chat-gemini-sub-$h"
   # view N (the Terminal tab's views 2 to 4): a session grouped with "claude" (its status line kept: it is the view's tab
   # strip), a new shell window made current in it — shell-N, not the workspace's "shell" that Open a shell here finds by
@@ -411,7 +459,7 @@ test_bn_session_takes_only_its_words() {
   rm -f "$TMP/made.view-4"
   out="$(_run view 4 "$V3")"
   assert_not_contains "$out" "new-window"
-  assert_eq "$(printf '%s\n' "$out" | tail -n 1)" "tmux new-session -A -s claude -n claude -c $ws devos-claude; exec bash"
+  assert_eq "$(printf '%s\n' "$out" | tail -n 1)" "tmux new-session -A -s claude -n bedrock -c $ws devos-claude; exec bash"
   out="$(_run view 4 "$V4")"
   assert_contains "$out" "tmux new-session -d -t =claude -s view-4"
   # N out of range, not a number, a folder or a fourth word, a token of the wrong form or too old, a view with no TOKEN: the
@@ -423,7 +471,7 @@ test_bn_session_takes_only_its_words() {
     out="$(_run $args)"
     assert_not_contains "$out" "new-window"
     assert_not_contains "$out" "-s view-"
-    assert_eq "$(printf '%s\n' "$out" | tail -n 1)" "tmux new-session -A -s claude -n claude -c $ws devos-claude; exec bash"
+    assert_eq "$(printf '%s\n' "$out" | tail -n 1)" "tmux new-session -A -s claude -n bedrock -c $ws devos-claude; exec bash"
   done
   # (the words refused before the token is looked at: it is not used up)
   local VX="$now-eeeeeeeeeeeeeeee-$M"
@@ -495,7 +543,7 @@ test_one_list_of_tools_everywhere() {
   assert_contains "$(cat "$STACK_DIR/terminal/tools/install.sh")" "TOOLS_ALL=\"$SUBS_OPTIONAL\""
   assert_eq "$(awk -F'\t' '!/^#/ && $1 != "id" && $6 == "cli" { print $1 }' "$STACK_DIR/catalog/ai-tools.tsv" | tr '\n' ' ')" "$SUBS_SIGNOUT "
   # bn-session's words and the portal's (answers.TERMINAL_TOOLS): the same
-  assert_contains "$(cat "$STACK_DIR/terminal/bin/bn-session")" 'case "$tool" in bedrock | claude | codex | gemini | copilot | cursor | grok | shell) ;;'
+  assert_contains "$(cat "$STACK_DIR/terminal/bin/bn-session")" '  claude | codex | gemini | copilot | cursor | grok) ;;'
   assert_contains "$(cat "$STACK_DIR/portal/portal/answers.py")" 'TERMINAL_TOOLS = ("bedrock", "claude", "codex", "gemini", "copilot", "cursor", "grok", "shell")'
   # the Code page's and Chat's (code/server/agents/tools.mjs): the catalog's tools but Gemini (Google's plans stopped working in
   # its CLI; follow-up), Chat's the catalog's chat_model column — each with the models its tool offers (plan-<tool>--<model>)
@@ -578,7 +626,7 @@ test_chat_has_sign_ins_of_its_own_asked_and_made_in_its_sandbox_alone() {
   assert_not_contains "$out" "Cursor"
   f="$(SUBS_WHERE=chat subs_status_file)"
   assert_contains "$f" "subscriptions-chat.json"
-  assert_contains "$(cat "$f")" '"terminal":"running","tools":[{"id":"codex","installed":true,"version":"0.163.0","signed_in":"no"'
+  assert_contains "$(cat "$f")" '"terminal":"running","tools":[{"id":"codex","account":"","first_name":"","installed":true,"version":"0.163.0","signed_in":"no"'
   assert_not_contains "$(cat "$f")" "cursor"
   # the terminal's file untouched by it; both asked by a plain status, each in its own sandbox
   : > "$TMP/dc"
@@ -608,4 +656,255 @@ test_chat_has_sign_ins_of_its_own_asked_and_made_in_its_sandbox_alone() {
   assert_contains "$out" "./stack code enable"
   out="$( (cmd_subscriptions status --chat) 2>&1)" && return 1
   assert_contains "$out" "Chat's sandbox is off"
+}
+
+# --- several accounts a tool (JON-1052): ids TOOL / TOOL:NAME, folders in ~/.subscriptions/TOOL/NAME, windows named after them
+
+test_accounts_are_made_listed_renamed_and_removed_and_each_is_asked_as_itself() {
+  command -v jq >/dev/null 2>&1 || { echo "jq is not installed here (the sandbox has it)" >&2; return 77; }
+  _sandbox_bin
+  # (the stub codex tells accounts apart by BN_SUB_ACCOUNT, as the real launcher does by CODEX_HOME)
+  cat > "$TMP/sbin/codex" <<'EOF'
+#!/bin/sh
+[ "$*" = "login status" ] && { if [ -n "${BN_SUB_ACCOUNT:-}" ]; then printf '%s\n' "${CODEX_STATUS_ACCT:-Not logged in}" >&2; else printf '%s\n' "${CODEX_STATUS:-Not logged in}" >&2; fi; exit 0; }
+[ "$*" = logout ] && { echo "codex logout for [${BN_SUB_ACCOUNT:-}]" >> "$TMP/codex.log"; exit 0; }
+exit 0
+EOF
+  export TMP BN_SUBS_ROOT="$HOME/.subscriptions"
+  local S="$STACK_DIR/terminal/bin/subscriptions" out
+  # nobody signs in again: the first account is the tool itself; no other until one is added
+  assert_eq "$(bash "$S" accounts codex | awk '{ print $1 }')" "codex"
+  # add: the name asked (or given), the folder private and a real one, then that account's own sign-in
+  out="$(printf 'work\n' | bash "$S" add codex 2>&1)"
+  assert_contains "$out" "A name for this Codex account"
+  assert_contains "$out" "Account codex:work made"
+  assert_contains "$out" "Codex · work is not signed in here yet"
+  [ -d "$BN_SUBS_ROOT/codex/work" ] && [ ! -L "$BN_SUBS_ROOT/codex/work" ] || { echo "no folder" >&2; return 1; }
+  assert_eq "$(stat -c %a "$BN_SUBS_ROOT/codex/work" 2>/dev/null || stat -f %Lp "$BN_SUBS_ROOT/codex/work")" 700
+  assert_eq "$(stat -c %a "$BN_SUBS_ROOT/codex" 2>/dev/null || stat -f %Lp "$BN_SUBS_ROOT/codex")" 700
+  bash "$S" add codex personal >/dev/null 2>&1
+  assert_eq "$(bash "$S" accounts codex | awk '{ print $1 }' | tr '\n' ' ')" "codex codex:personal codex:work "
+  # refused: a name that is not one, one in use, a TOOL:NAME, a tool that is not there, the ninth account
+  for bad in 'Work' '-x' 'a_b' 'a.b' 'abcdefghijklmnopqrstu' '../x' 'a:b' ''; do
+    out="$(bash "$S" add codex "$bad" 2>&1 </dev/null)" && { echo "add took '$bad'" >&2; return 1; }
+  done
+  assert_contains "$(bash "$S" add codex work 2>&1)" "has an account called 'work' already"
+  assert_contains "$(bash "$S" add codex:x y 2>&1)" "usage: subscriptions add TOOL"
+  assert_contains "$(bash "$S" add evil x 2>&1)" "no tool called 'evil'"
+  assert_contains "$(bash "$S" add bedrock x 2>&1)" "no tool called 'bedrock'"
+  local i; for i in 1 2 3 4 5; do mkdir -p "$BN_SUBS_ROOT/codex/a$i"; done
+  assert_eq "$(bash "$S" accounts codex | wc -l | tr -d ' ')" 8
+  assert_contains "$(bash "$S" add codex ninth 2>&1)" "has 8 accounts, the most there can be"
+  [ ! -e "$BN_SUBS_ROOT/codex/ninth" ] || return 1
+  rm -rf "${BN_SUBS_ROOT:?}/codex/a1" "${BN_SUBS_ROOT:?}/codex/a2" "${BN_SUBS_ROOT:?}/codex/a3" "${BN_SUBS_ROOT:?}/codex/a4" "${BN_SUBS_ROOT:?}/codex/a5"
+  # a link, a file, a name that is not one: not an account (and never reached through a link)
+  mkdir -p "$TMP/elsewhere"; ln -s "$TMP/elsewhere" "$BN_SUBS_ROOT/codex/linked"; : > "$BN_SUBS_ROOT/codex/afile"; mkdir "$BN_SUBS_ROOT/codex/Bad_Name"
+  assert_eq "$(bash "$S" accounts codex | awk '{ print $1 }' | tr '\n' ' ')" "codex codex:personal codex:work "
+  assert_contains "$(bash "$S" open codex:linked 2>&1)" "has no account called 'linked'"
+  # the table: one row an account, the TSV id column TOOL or TOOL:NAME, the first account's name (or -) as a seventh column
+  out="$(CODEX_STATUS='Logged in using ChatGPT' CODEX_STATUS_ACCT='Logged in using ChatGPT' bash "$S" status --tsv)"
+  assert_eq "$(printf '%s\n' "$out" | grep '^codex' | cut -f1,2,4,5,6 | tr '\t' ',' | tr '\n' ' ')" "codex,yes,yes,chatgpt,command codex:personal,yes,yes,chatgpt,command codex:work,yes,yes,chatgpt,command "
+  assert_eq "$(printf '%s\n' "$out" | grep '^codex' | awk -F'\t' '{ print NF }' | tr '\n' ' ')" "7 6 6 "
+  assert_eq "$(printf '%s\n' "$out" | grep -c '^claude')" 1
+  # each account is asked as itself: signed in for the first, not for work
+  out="$(CODEX_STATUS='Logged in using ChatGPT' bash "$S" status --tsv | grep '^codex')"
+  assert_eq "$(printf '%s\n' "$out" | cut -f1,4 | tr '\t' ',' | tr '\n' ' ')" "codex,yes codex:personal,no codex:work,no "
+  out="$(CODEX_STATUS='Logged in using ChatGPT' bash "$S" status)"
+  assert_contains "$out" "Codex · work"
+  assert_contains "$out" "no — subscriptions login codex:work"
+  # rename: the folder moves; the first account's name is a file of its own, and no other account takes it
+  assert_contains "$(bash "$S" rename codex:work office 2>&1)" "codex:work is codex:office now"
+  [ -d "$BN_SUBS_ROOT/codex/office" ] && [ ! -e "$BN_SUBS_ROOT/codex/work" ] || return 1
+  assert_contains "$(bash "$S" rename codex main 2>&1)" 'The first Codex account is called "main"'
+  assert_eq "$(cat "$BN_SUBS_ROOT/codex/.first-name")" main
+  assert_eq "$(bash "$S" status --tsv | grep '^codex	' | cut -f7)" main
+  assert_contains "$(bash "$S" rename codex:office main 2>&1)" "has an account called 'main' already" || true
+  assert_contains "$(bash "$S" rename codex:office personal 2>&1)" "has an account called 'personal' already"
+  assert_contains "$(bash "$S" rename codex:office 'Bad Name' 2>&1)" "is not an account name"
+  assert_contains "$(bash "$S" add codex main 2>&1)" "is the name of the first Codex account already"
+  assert_contains "$(bash "$S" accounts codex)" "Codex · main (the first account)"
+  # a name file that is not a name is not one
+  printf 'Not A Name!\n' > "$BN_SUBS_ROOT/codex/.first-name"
+  assert_eq "$(bash "$S" status --tsv | grep '^codex	' | cut -f7)" "-"
+  printf 'main\n' > "$BN_SUBS_ROOT/codex/.first-name"
+  # remove: the first cannot go; N (or nothing) keeps it; y signs it out with the tool's own sign-out, then the folder goes
+  assert_contains "$(printf 'y\n' | bash "$S" remove codex 2>&1)" "cannot be removed"
+  assert_contains "$(printf 'y\n' | bash "$S" remove codex:nothere 2>&1)" "has no account called 'nothere'"
+  assert_contains "$(printf 'n\n' | bash "$S" remove codex:office 2>&1)" "Nothing removed"
+  assert_contains "$(bash "$S" remove codex:office 2>&1 </dev/null)" "Nothing removed"
+  [ -d "$BN_SUBS_ROOT/codex/office" ] || return 1
+  : > "$TMP/codex.log"
+  out="$(printf 'y\n' | bash "$S" remove codex:office 2>&1)"
+  assert_contains "$out" "Removed codex:office"
+  [ ! -e "$BN_SUBS_ROOT/codex/office" ] || return 1
+  assert_eq "$(cat "$TMP/codex.log")" "codex logout for [office]"
+  [ -d "$BN_SUBS_ROOT/codex/personal" ] || return 1
+  # sign-in and -out take the id too
+  assert_contains "$(bash "$S" logout codex:nothere 2>&1)" "has no account called 'nothere'"
+  : > "$TMP/codex.log"; bash "$S" logout codex:personal >/dev/null 2>&1
+  assert_eq "$(cat "$TMP/codex.log")" "codex logout for [personal]"
+  : > "$TMP/codex.log"; bash "$S" logout codex >/dev/null 2>&1
+  assert_eq "$(cat "$TMP/codex.log")" "codex logout for []"
+  assert_contains "$(bash "$S" login 'codex:../x' 2>&1)" "is not an account name"
+  assert_contains "$(bash "$S" open bedrock:x 2>&1 </dev/null)" "no account" || true
+}
+
+test_a_window_is_named_after_what_runs_in_it() {
+  command -v jq >/dev/null 2>&1 || { echo "jq is not installed here (the sandbox has it)" >&2; return 77; }
+  _sandbox_bin
+  export BN_SUBS_ROOT="$HOME/.subscriptions" TMP
+  local S="$STACK_DIR/terminal/bin/subscriptions" out
+  # (a tmux of the test's own: it answers the window's folder suffix and records the rename)
+  cat > "$TMP/tmux-stub" <<'EOF'
+#!/bin/sh
+echo "tmux $*" >> "$TMP/tmux.log"
+case "$1" in show-options) printf '%s\n' "${SUFFIX:-}" ;; esac
+exit 0
+EOF
+  chmod +x "$TMP/tmux-stub"
+  export BN_TMUX_BIN="$TMP/tmux-stub" TMUX=/tmp/t,1,0 TMUX_PANE=%5
+  mkdir -p "$BN_SUBS_ROOT/codex/work"
+  # an account: TOOL-NAME, signed in or not
+  : > "$TMP/tmux.log"; bash "$S" open codex:work >/dev/null 2>&1 </dev/null || true
+  assert_contains "$(cat "$TMP/tmux.log")" "tmux rename-window -t %5 codex-work"
+  # the first account without a name: the tool and its kind once known (codex-chatgpt), nothing before
+  : > "$TMP/tmux.log"; CODEX_STATUS='Logged in using ChatGPT' bash "$S" open codex >/dev/null 2>&1 </dev/null || true
+  assert_contains "$(cat "$TMP/tmux.log")" "tmux rename-window -t %5 codex-chatgpt"
+  : > "$TMP/tmux.log"; CODEX_STATUS='API key configured - sk-abc***xyz' bash "$S" open codex >/dev/null 2>&1 </dev/null || true
+  assert_contains "$(cat "$TMP/tmux.log")" "tmux rename-window -t %5 codex-api-key"
+  : > "$TMP/tmux.log"; bash "$S" open codex >/dev/null 2>&1 </dev/null || true
+  assert_not_contains "$(cat "$TMP/tmux.log")" "rename-window"
+  # Claude's kinds already start with claude-; a kind that is not known leaves the name alone
+  : > "$TMP/tmux.log"; CLAUDE_STATUS='{"loggedIn":true,"authMethod":"claude.ai","subscriptionType":"max"}' CLAUDE_RC=0 bash "$S" open claude >/dev/null 2>&1 </dev/null || true
+  assert_contains "$(cat "$TMP/tmux.log")" "tmux rename-window -t %5 claude-max"
+  : > "$TMP/tmux.log"; CLAUDE_STATUS='{"loggedIn":true,"authMethod":"claude.ai","subscriptionType":"other"}' CLAUDE_RC=0 bash "$S" open claude >/dev/null 2>&1 </dev/null || true
+  assert_contains "$(cat "$TMP/tmux.log")" "tmux rename-window -t %5 claude-ai"
+  # the first account's own name wins; a window in a folder keeps its folder part
+  printf 'main\n' > "$BN_SUBS_ROOT/codex/.first-name"
+  : > "$TMP/tmux.log"; SUFFIX=-inner-0a1b2c CODEX_STATUS='Logged in using ChatGPT' bash "$S" open codex >/dev/null 2>&1 </dev/null || true
+  assert_contains "$(cat "$TMP/tmux.log")" "tmux show-options -wqv -t %5 @bn-suffix"
+  assert_contains "$(cat "$TMP/tmux.log")" "tmux rename-window -t %5 codex-main-inner-0a1b2c"
+  # letters, digits, _ and - only, whatever the suffix says
+  : > "$TMP/tmux.log"; SUFFIX='-a.b:c#d' bash "$S" open codex:work >/dev/null 2>&1 </dev/null || true
+  assert_contains "$(cat "$TMP/tmux.log")" "tmux rename-window -t %5 codex-work-abcd"
+  # not in tmux: no rename; Bedrock and a shell are not renamed (and take no account)
+  : > "$TMP/tmux.log"; env -u TMUX -u TMUX_PANE bash "$S" open codex:work >/dev/null 2>&1 </dev/null || true
+  assert_not_contains "$(cat "$TMP/tmux.log")" "rename-window"
+  # add: the window found by "add:TOOL" becomes the account's (found by TOOL:NAME), named after it
+  : > "$TMP/tmux.log"; printf 'travel\n' | bash "$S" add codex >/dev/null 2>&1 || true
+  assert_contains "$(cat "$TMP/tmux.log")" "tmux set-option -w -t %5 @bn-open codex:travel"
+  assert_contains "$(cat "$TMP/tmux.log")" "tmux rename-window -t %5 codex-travel"
+}
+
+test_each_launcher_runs_the_account_it_is_told_in_that_accounts_folder_only() {
+  local b="$TMP/tools" r="$HOME/.subscriptions" out t
+  mkdir -p "$b/codex/bin" "$b/copilot" "$b/cursor" "$b/gemini/node_modules/.bin" "$b/grok"
+  local f
+  for f in codex/bin/codex copilot/copilot cursor/cursor-agent gemini/node_modules/.bin/gemini grok/grok; do
+    printf '#!/bin/sh\nenv | grep -E "^(CODEX_HOME|GEMINI_CLI_HOME|COPILOT_HOME|GROK_HOME|XDG_CONFIG_HOME|BN_SUB_ACCOUNT)=" | sort\n' > "$b/$f"; chmod +x "$b/$f"
+  done
+  local cl="$TMP/claude"; printf '#!/bin/sh\nif [ "$1" = --help ]; then printf "Usage: claude\\n\\nCommands:\\n  auth  x\\n"; exit 0; fi\nenv | grep -E "^(CLAUDE_CONFIG_DIR|BN_SUB_ACCOUNT)=" | sort\n' > "$cl"; chmod +x "$cl"
+  export BN_TOOLS_DIR="$b" BN_CLAUDE_BIN="$cl" BN_SUBS_ROOT="$r"; unset TMUX TMUX_PANE
+  local pair var tool
+  # (tool, launcher, the variable it reads — confirmed in each pinned version: README "Your AI subscriptions")
+  for pair in claude:claude-sub:CLAUDE_CONFIG_DIR codex:codex:CODEX_HOME gemini:gemini:GEMINI_CLI_HOME copilot:copilot:COPILOT_HOME \
+      cursor:cursor-agent:XDG_CONFIG_HOME grok:grok:GROK_HOME; do
+    tool="${pair%%:*}"; var="${pair##*:}"; pair="${pair#*:}"; pair="${pair%%:*}"
+    mkdir -p "$r/$tool/work"
+    # an account: its own folder in the tool's variable
+    out="$(BN_SUB_ACCOUNT=work bash "$STACK_DIR/terminal/bin/$pair" x 2>&1)"
+    assert_contains "$out" "$var=$r/$tool/work"
+    assert_contains "$out" "BN_SUB_ACCOUNT=work"
+    # none: the first account, exactly as before (no variable set; claude-sub its own folder)
+    out="$(bash "$STACK_DIR/terminal/bin/$pair" x 2>&1)"
+    if [ "$tool" = claude ]; then assert_contains "$out" "CLAUDE_CONFIG_DIR=$HOME/.claude-subscription"; else assert_not_contains "$out" "$var="; fi
+    out="$(BN_SUB_ACCOUNT= bash "$STACK_DIR/terminal/bin/$pair" x 2>&1)"
+    if [ "$tool" = claude ]; then assert_contains "$out" "CLAUDE_CONFIG_DIR=$HOME/.claude-subscription"; else assert_not_contains "$out" "$var="; fi
+    # refused (exit 2, nothing run): a name that is not one, a folder that is not there, a link, a path
+    for bad in 'Work' '../work' 'a/b' '-w' 'nothere' 'abcdefghijklmnopqrstu' 'linked' 'a b'; do
+      out="$(BN_SUB_ACCOUNT="$bad" bash "$STACK_DIR/terminal/bin/$pair" x 2>&1)" && { echo "$pair took account '$bad'" >&2; return 1; }
+      assert_contains "$out" "no account called"
+      assert_not_contains "$out" "$var="
+    done
+  done
+  # a link in place of the account's folder, or of the tool's: refused
+  mkdir -p "$TMP/elsewhere"; ln -s "$TMP/elsewhere" "$r/codex/linked"
+  out="$(BN_SUB_ACCOUNT=linked bash "$STACK_DIR/terminal/bin/codex" x 2>&1)" && return 1
+  assert_contains "$out" "no account called 'linked'"
+  rm "$r/codex/linked"; mv "$r/codex" "$TMP/codex-real"; ln -s "$TMP/codex-real" "$r/codex"
+  out="$(BN_SUB_ACCOUNT=work bash "$STACK_DIR/terminal/bin/codex" x 2>&1)" && return 1
+  assert_contains "$out" "no account called 'work'"
+  # the stack's variables are still left out beside it
+  rm "$r/codex"; mv "$TMP/codex-real" "$r/codex"
+  out="$(ANTHROPIC_AUTH_TOKEN=k BN_SUB_ACCOUNT=work bash "$STACK_DIR/terminal/bin/codex" x 2>&1)"
+  assert_not_contains "$out" "ANTHROPIC"
+  assert_contains "$out" "CODEX_HOME=$r/codex/work"
+}
+
+test_the_host_reads_accounts_as_words_and_caps_them() {
+  local out i rows
+  rows="$(printf '%s\n' \
+    "$(printf 'codex\tyes\t0.163.0\tyes\tchatgpt\tcommand\tmain')" \
+    "$(printf 'codex:work\tyes\t0.163.0\tno\t-\tcommand')" \
+    "$(printf 'codex:work\tyes\t0.163.0\tyes\tchatgpt\tcommand')" \
+    "$(printf 'codex:Bad\tyes\t0.163.0\tyes\tchatgpt\tcommand')" \
+    "$(printf 'codex:a:b\tyes\t0.163.0\tyes\tchatgpt\tcommand')" \
+    "$(printf 'codex:\tyes\t0.163.0\tyes\tchatgpt\tcommand')" \
+    "$(printf 'codex:-x\tyes\t0.163.0\tyes\tchatgpt\tcommand')" \
+    "$(printf 'codex:abcdefghijklmnopqrstu\tyes\t0.163.0\tyes\tchatgpt\tcommand')" \
+    "$(printf 'codex:x\tyes\t0.163.0\tyes\tchatgpt\tcommand\tmain')" \
+    "$(printf 'evil:x\tyes\t1\tyes\t-\tnone')" \
+    "$(printf 'bedrock:x\tyes\t1\tyes\t-\tnone')" \
+    "$(printf 'grok:ok\tyes\t1.0.67\tyes\tchatgpt\tfile')" \
+    "$(printf 'grok:ok2\tyes\t1.0.67\tyes\txai\tfile')" \
+    "$(printf 'cursor\tyes\t1\tno\t-\tcommand\tBad Name')" \
+    "$(printf 'gemini\tyes\t0.65.0\tno\t-\tfile\t-')" | subs_parse)"
+  assert_eq "$rows" '{"id":"codex","account":"","first_name":"main","installed":true,"version":"0.163.0","signed_in":"yes","kind":"chatgpt","how":"command"}
+{"id":"codex","account":"work","first_name":"","installed":true,"version":"0.163.0","signed_in":"no","kind":"","how":"command"}
+{"id":"grok","account":"ok2","first_name":"","installed":true,"version":"1.0.67","signed_in":"yes","kind":"xai","how":"file"}
+{"id":"gemini","account":"","first_name":"","installed":true,"version":"0.65.0","signed_in":"no","kind":"","how":"file"}'
+  # at most 8 accounts a tool, the first among them
+  out="$( { printf 'claude\tyes\t2.1.309\tyes\tclaude-max\tcommand\t-\n'; for i in 1 2 3 4 5 6 7 8 9 10; do printf 'claude:a%s\tyes\t2.1.309\tno\t-\tcommand\n' "$i"; done; } | subs_parse | wc -l | tr -d ' ')"
+  assert_eq "$out" 8
+  # ids: a tool, or TOOL:NAME
+  subs_valid_id codex && subs_valid_id codex:work && subs_valid_id grok:a-1 || return 1
+  for bad in '' codex: :work codex:Work codex:-a codex:a:b codex:a_b codex:abcdefghijklmnopqrstu evil evil:work 'codex:a b' 'codex:../x' 'codex:a;b'; do
+    ! subs_valid_id "$bad" || { echo "subs_valid_id took '$bad'" >&2; return 1; }
+  done
+}
+
+test_stack_subscriptions_takes_an_account_id_and_shows_each_account() {
+  _stubs
+  local out
+  set_env CODE_ENABLED true
+  export TSV="$(printf 'codex\tyes\t0.163.0\tyes\tchatgpt\tcommand\tmain\ncodex:work\tyes\t0.163.0\tno\t-\tcommand\ngrok\tno\t-\tno\t-\tnone\t-\n')"
+  out="$(cmd_subscriptions status)"
+  assert_contains "$out" "Codex · main"
+  assert_contains "$out" "yes — ChatGPT"
+  assert_contains "$out" "Codex · work"
+  assert_contains "$out" "no — ./stack subscriptions login codex:work"
+  assert_contains "$(cat "$(subs_status_file)")" '"id":"codex","account":"work","first_name":""'
+  # the line `./stack terminal status` prints: tools in the sandbox (the first accounts), accounts signed in
+  assert_contains "$(subs_status_line)" "1 in the sandbox, 1 signed in"
+  # sign in and out by account: the id reaches the sandbox; a bad one is refused before it is asked
+  : > "$TMP/dc"
+  cmd_subscriptions logout codex:work >/dev/null
+  assert_contains "$(cat "$TMP/dc")" "terminal /usr/local/bin/subscriptions logout codex:work"
+  cmd_subscriptions login codex:work >/dev/null 2>&1 || true
+  assert_contains "$(cat "$TMP/dc")" "terminal /usr/local/bin/subscriptions login codex:work"
+  : > "$TMP/dc"
+  for bad in 'codex:Work' 'codex:a b' 'codex:../x' 'evil:x' 'codex:'; do
+    out="$( (cmd_subscriptions login "$bad") 2>&1)" && return 1
+    assert_contains "$out" "no tool or account called"
+  done
+  assert_not_contains "$(cat "$TMP/dc")" "login"
+  # Gemini and Copilot sign in and out inside themselves, for an account too
+  out="$( (cmd_subscriptions logout copilot:work) 2>&1)" && return 1
+  assert_contains "$out" "/logout"
+  # Chat has one account a tool: its status keeps the first accounts only, and no :NAME is taken for it
+  export CHAT_TSV="$(printf 'codex\tyes\t0.163.0\tno\t-\tcommand\t-\ncodex:work\tyes\t0.163.0\tyes\tchatgpt\tcommand\n')"
+  cmd_subscriptions status --chat >/dev/null || true
+  assert_not_contains "$(cat "$(SUBS_WHERE=chat subs_status_file)")" '"account":"work"'
+  out="$( (cmd_subscriptions login codex:work --chat) 2>&1)" && return 1
+  assert_contains "$out" "Chat's sandbox has one account a tool"
 }

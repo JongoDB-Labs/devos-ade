@@ -17,6 +17,16 @@ for v in $(compgen -e); do
     ANTHROPIC_* | CLAUDE_CODE_* | CLAUDE_BEDROCK_* | CLAUDE_CONFIG_DIR | SHARED_MCP_TOKEN | BN_MCP_URL | AWS_*) unset "$v" ;;
   esac
 done
+# BN_SUB_ACCOUNT=NAME (subscriptions open gemini:NAME): another account of this tool, its login in a folder of its own,
+# ~/.subscriptions/gemini/NAME — Gemini CLI takes GEMINI_CLI_HOME as its home and keeps .gemini in it (its bundled code at the pinned 0.65.0). A name that is not one, or a folder that is not there
+# (or is a link), is refused: never a path from outside. Without it, the first account, exactly as before.
+if [ -n "${BN_SUB_ACCOUNT:-}" ]; then
+  adir="${BN_SUBS_ROOT:-$HOME/.subscriptions}/gemini/$BN_SUB_ACCOUNT"
+  if ! [[ $BN_SUB_ACCOUNT =~ ^[a-z0-9][a-z0-9-]{0,19}$ ]] || [ ! -d "$adir" ] || [ -L "$adir" ] || [ -L "${adir%/*}" ]; then
+    echo "gemini: no account called '${BN_SUB_ACCOUNT//[^a-z0-9-]/?}' here (subscriptions accounts gemini)" >&2; exit 2
+  fi
+  export GEMINI_CLI_HOME="$adir"
+fi
 # A tmux pane running it is marked as one of your subscriptions' tools (pane option @bn-sub): the Code page's @terminal
 # leaves its screen alone, where a sign-in's code may show. A guard against an accidental read, not a boundary.
 if [ -n "${TMUX:-}" ] && [ -n "${TMUX_PANE:-}" ] && [ "${BN_SUB_NOMARK:-0}" != 1 ] && [ -x "${BN_TMUX_BIN:-/usr/bin/tmux}" ]; then

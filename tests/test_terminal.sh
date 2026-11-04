@@ -874,7 +874,7 @@ test_ttyd_listens_on_a_socket_only_and_checks_the_origin() {
   assert_not_contains "$d" "TERMINAL_PROXY_SECRET"
   assert_not_contains "$d" "EXPOSE"
   assert_contains "$(cat "$STACK_DIR/terminal/bin/bn-session")" 'S=claude'
-  assert_contains "$(cat "$STACK_DIR/terminal/bin/bn-session")" 'plain() { exec tmux new-session -A -s "$S" -n claude -c "$WS" "devos-claude; exec bash"; }'
+  assert_contains "$(cat "$STACK_DIR/terminal/bin/bn-session")" 'plain() { exec tmux new-session -A -s "$S" -n bedrock -c "$WS" "devos-claude; exec bash"; }'
   # the page rewrite: a viewport and our icon in, ttyd's icon out
   assert_contains "$(cat "$STACK_DIR/terminal/ttyd-page.py")" '<meta name="viewport" content="width=device-width'
   printf '<html><head><meta charset="UTF-8"><link rel="icon" type="image/png" href="data:image/png;base64,AAA"></head><body><script type="text/javascript">var t="é";</script></body></html>' > "$TMP/in.html"
