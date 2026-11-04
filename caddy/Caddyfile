@@ -299,6 +299,10 @@ import tls-{$LOCAL_TLS:off}.caddy
 	request_body /api/settings/* {
 		max_size 16KB
 	}
+	# Chat's "Make it a project": the chat as text (the portal refuses more than 200,000 characters itself; 1 MB covers them as UTF-8).
+	request_body /api/chat-handoff {
+		max_size 1MB
+	}
 	# Export to Files: the Code page's zip (the portal checks its length: at most 220 MiB = 231 MB).
 	request_body /api/code-export {
 		max_size 231MB
@@ -481,7 +485,7 @@ import tls-{$LOCAL_TLS:off}.caddy
 # sandbox (/.bn/preview: locally its capability, from this unlock, caddy/preview-on.caddy; remotely a single-use
 # hand-off to the preview host, remote_preview below), the sandboxed artifact viewer's address (/.bn/artifact: its
 # capability, from this unlock; caddy/artifact-on.caddy; local only) and what Home's Continue row may show of the page's
-# sessions (/.bn/recent: the page's own POST). Any other /.bn/ path is nobody's.
+# sessions (/.bn/recent: the page's own POST) and a chat handed over from Chat (/.bn/handoff: the page's own POST, once). Any other /.bn/ path is nobody's.
 (code_portal) {
 	@bn_code_preview path /.bn/preview
 	reverse_proxy @bn_code_preview portal:8000 {
@@ -531,6 +535,14 @@ import tls-{$LOCAL_TLS:off}.caddy
 	@bn_code_recent path /.bn/recent
 	reverse_proxy @bn_code_recent portal:8000 {
 		rewrite /auth/code-recent
+	}
+	# (a chat handed over from Chat's "Make it a project": the page redeems the id its address carried, once — portal/chathandoff.py)
+	request_body /.bn/handoff {
+		max_size 1KB
+	}
+	@bn_code_handoff path /.bn/handoff
+	reverse_proxy @bn_code_handoff portal:8000 {
+		rewrite /auth/code-handoff
 	}
 	respond /.bn/* 404
 }

@@ -23,7 +23,7 @@ from starlette.responses import FileResponse, HTMLResponse, JSONResponse, PlainT
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import activity, admin, answers, appicons, appsso, brand, chatsearch, codeexport, feedback, gitsearch, icons, prices, recent, searchindex, settings_api, summary, uilayout, updates, webapp
+from . import activity, admin, answers, appicons, appsso, brand, chathandoff, chatsearch, codeexport, feedback, gitsearch, icons, prices, recent, searchindex, settings_api, summary, uilayout, updates, webapp
 from . import code as codepage
 from . import settings as settings_mod
 from .config import CODE, TERMINAL, Settings
@@ -730,6 +730,9 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
     sessions_rate = settings_api.RateLimit(2, 200)
     # the Code page's last report of its sessions, per sign-in (Home's Continue row: code_recent, api_continue)
     reports = recent.Reports()
+    # Chat's "Make it a project" hand-offs waiting to be opened on the Code page (portal/chathandoff.py): in memory, once each
+    handoffs = chathandoff.Handoffs()
+    handoff_burst = recent.Burst(5, 10)
 
     def sessions_err(status: int, msg: str, retry: int = 0) -> Response:
         r = JSONResponse({"error": msg}, status_code=status)
@@ -839,6 +842,35 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
         recent_rate.hit()
         reports.put(session_login(request.headers, settings), report)
         return _no_store(Response(status_code=204))
+
+    # --- the Code page redeems a chat handed over from Chat (portal/chathandoff.py): POST /.bn/handoff on the code host (Caddy → here,
+    # --- after the code host's check) — the Code page's own script (its Origin, X-Requested-With: no other site can send that
+    # --- without a preflight, which is never allowed) with the id its address carried. The first time, for the sign-in that
+    # --- made it and within ten minutes: the title and the text. Every other time: 404, and nothing.
+    async def code_handoff(request: Request) -> Response:
+        if (deny := code_guard(request)) is not None:
+            return deny
+        rem = remote(request)
+        if request.headers.get("origin") != settings.origin(CODE, rem) or request.headers.get("x-requested-with") != "bn-code" \
+                or request.headers.get("sec-fetch-site", "same-origin") != "same-origin":
+            return _no_store(JSONResponse({"error": "cross-site request refused"}, status_code=403))
+        length = request.headers.get("content-length", "")
+        if not length.isdigit() or not length.isascii() or int(length) > 1024:
+            return _no_store(JSONResponse({"error": "request too large or without a length"}, status_code=413))
+        try:
+            data = json.loads(await request.body())
+        except ValueError:
+            data = None
+        if not isinstance(data, dict):
+            return _no_store(JSONResponse({"error": "not a JSON object"}, status_code=400))
+        if wait := handoff_burst.take():
+            r = JSONResponse({"error": f"Too many tries: again in {wait} s."}, status_code=429)
+            r.headers["Retry-After"] = str(wait)
+            return _no_store(r)
+        got = handoffs.take(session_login(request.headers, settings), data.get("id"))
+        if got is None:
+            return _no_store(JSONResponse({"error": "This hand-off was used already, or it expired (they last ten minutes). Make it a project from the chat again."}, status_code=404))
+        return _no_store(JSONResponse(got))
 
     async def terminal_unlock_callback(request: Request) -> Response:
         rem = remote(request)
@@ -1286,6 +1318,7 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
         page reported for Home's Continue row (recent.Reports)."""
         sweeper.request(sessions.not_before or None)
         reports.clear()
+        handoffs.clear()
 
     async def logout(request: Request) -> Response:
         if not same_origin(request.headers, settings):
@@ -1418,6 +1451,35 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
                 log.info("code export failed: %s", type(e).__name__)
                 return _no_store(JSONResponse({"error": "the zip did not arrive whole"}, status_code=400))
         return _no_store(JSONResponse({"ok": True, "bucket": codeexport.BUCKET, "key": key.split("/", 1)[1], "size": int(length)}))
+
+    # --- Chat's "Make it a project" (portal/chathandoff.py): the portal page (static/code.js) deposits the chat the Chat frame told it
+    # --- of — a title and the conversation as text — and gets an id for the Code page's link. Kept in memory, once, ten minutes.
+    async def api_chat_handoff(request: Request) -> Response:
+        if (deny := api_guard(request)) is not None:
+            return deny
+        if not same_origin(request.headers, settings):
+            return _no_store(JSONResponse({"error": "cross-site request refused"}, status_code=403))
+        if not settings.code_on(remote(request)):
+            return _no_store(JSONResponse({"error": "the Code page is off here"}, status_code=404))
+        length = request.headers.get("content-length", "")
+        if not length.isdigit() or not length.isascii() or len(length) > 12:
+            return _no_store(JSONResponse({"error": "a Content-Length is needed"}, status_code=411))
+        if int(length) > chathandoff.MAX_BODY:
+            return _no_store(JSONResponse({"error": "that chat is too big to hand over", "tooBig": True, "limit": chathandoff.MAX_TEXT}, status_code=413))
+        try:
+            got = chathandoff.take_body(json.loads(await request.body()))
+        except ValueError:
+            got = None
+        if got == "too-big":
+            return _no_store(JSONResponse({"error": "that chat is too big to hand over", "tooBig": True, "limit": chathandoff.MAX_TEXT}, status_code=413))
+        if got is None:
+            return _no_store(JSONResponse({"error": "not a chat as text"}, status_code=400))
+        if wait := handoff_burst.take():
+            r = JSONResponse({"error": f"Too many hand-offs: again in {wait} s."}, status_code=429)
+            r.headers["Retry-After"] = str(wait)
+            return _no_store(r)
+        title, text = got
+        return _no_store(JSONResponse({"id": handoffs.put(session_login(request.headers, settings), title, text), "expires_in": chathandoff.TTL_S}))
 
     # --- who answers (answers.py): the pickers of the Terminal and Chat tabs and Settings › Your AI subscriptions —
     # --- the tools in the sandbox and whether each says it is signed in (never a login), and Chat's models
@@ -1805,6 +1867,7 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
             Route("/auth/code-terminal-launch", code_terminal_launch, methods=["POST"]),
             Route("/auth/code-sessions", code_sessions, methods=["POST"]),
             Route("/auth/code-recent", code_recent, methods=["POST"]),
+            Route("/auth/code-handoff", code_handoff, methods=["POST"]),
             Route("/auth/code-preview", code_preview, methods=["GET"]),
             Route("/auth/preview-callback", preview_callback, methods=["GET"]),
             Route("/auth/code-artifact", code_artifact, methods=["GET"]),
@@ -1817,6 +1880,7 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
             Route("/api/answers", api_answers, methods=["GET"]),
             Route("/api/terminal/launch", api_terminal_launch, methods=["POST"]),
             Route("/api/code-export", api_code_export, methods=["POST"]),
+            Route("/api/chat-handoff", api_chat_handoff, methods=["POST"]),
             Route("/api/logins", api_logins),
             Route("/api/admin/status", api_admin_status, methods=["GET"]),
             Route("/api/admin/request", api_admin_request, methods=["POST"]),

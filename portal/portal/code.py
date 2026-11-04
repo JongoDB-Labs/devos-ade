@@ -227,13 +227,16 @@ async def spend(client: httpx.AsyncClient, s: Settings, session: str) -> tuple[i
 DEEP_LINK_MAX = 6000      # the address as carried (a longer one keeps its session, not its prompt)
 PROMPT_MAX = 4000         # characters of a prompt (as the page caps it)
 PROJECT = re.compile(r"ws|p_[0-9a-f]{8}")   # a project's id (code/web/src/deeplink.ts)
+# /?handoff=<id>: a chat handed over from Chat's "Make it a project" (chathandoff.py) — an id it made (32 URL-safe characters), or
+# the words too-big / failed for a hand-off that did not happen, so that the page's dialog can say so
+HANDOFF = re.compile(r"[A-Za-z0-9_-]{32}|too-big|failed")
 
 
 def deep_link(uri: str | None) -> str | None:
     """'/?session=…&prompt=…&git=…&new=1&project=…' rebuilt from a request's path and query when it is a deep link into
     the Code page, else None. Only the root path, only these parameters (once each), a session id that is a UUID, a
     prompt of at most PROMPT_MAX characters without NUL, git only hosts or clone, new only 1, a project id's shape
-    (ws or p_ and 8 hex digits)."""
+    (ws or p_ and 8 hex digits), a handoff an id of the shape chathandoff.py makes (or too-big, failed)."""
     if not isinstance(uri, str) or not uri.startswith("/?") or len(uri) > 64 * 1024:
         return None
     try:
@@ -242,7 +245,7 @@ def deep_link(uri: str | None) -> str | None:
         return None
     out: dict[str, str] = {}
     for k, v in pairs:
-        if k not in ("session", "prompt", "git", "new", "project") or k in out:
+        if k not in ("session", "prompt", "git", "new", "project", "handoff") or k in out:
             continue
         if k == "session" and SESSION.fullmatch(v.lower()):
             out[k] = v.lower()
@@ -253,6 +256,8 @@ def deep_link(uri: str | None) -> str | None:
         elif k == "new" and v == "1":
             out[k] = v
         elif k == "project" and PROJECT.fullmatch(v):
+            out[k] = v
+        elif k == "handoff" and HANDOFF.fullmatch(v):
             out[k] = v
     if not out:
         return None

@@ -11,8 +11,8 @@
 // notification's address) is shown in place ({type: "bn-portal-session", id}) once the page runs, else by its deep link.
 // What the framed page reports (the sessions that need you, those open: titles are sandbox data, text only, capped)
 // goes to Home's Continue row (home.js, bn:code-status), Activity and the search; the ways in are deep links
-// (?session=, ?new=1&project=, ?git=, ?setup=; ?prompt= — a draft the Code page marks as coming from a link, never sent
-// by itself).
+// (?session=, ?new=1&project=, ?git=, ?setup=, ?handoff= — a chat from Chat's "Make it a project", shown in a dialog first; ?prompt= — a draft the
+// Code page marks as coming from a link, never sent by itself).
 // The tab is there while the Code page is off on this site too (turned off, or not allowed over remote access): muted,
 // with an "off" pill, it then shows a page of the portal's own — what the Code page is, what turning it on does and how —
 // with no frame, no badge and nothing loaded from the code host.
@@ -191,6 +191,45 @@
         reply({ ok: true, key: String(j.key), bucket: String(j.bucket), url });
       } catch (_) {
         reply({ ok: false, error: "the portal did not answer" });
+      }
+    });
+  }
+  // Chat's "Make it a project" (owui/functions/make_project.py): Open WebUI's action asks its own page to say, to this one that frames
+  // it, "this chat" — {type: "bn-chat-handoff", id, title, text} (text: the conversation; tooBig: it was over the cap, nothing sent).
+  // Taken only from the Chat tab's own frame, from Chat's origin. The portal keeps the text for the Code page (POST /api/chat-handoff:
+  // once, ten minutes, in memory — portal/chathandoff.py) and the Code tab opens at ?handoff=<id>, where a dialog shows the
+  // conversation read-only and creates nothing until you confirm. The frame is told how it went ({type: "bn-portal-chat-handoff",
+  // id, ok, error?, tooBig?}). Open WebUI gets no key and no route to the Code page or the workspace by this: it only says a chat.
+  const HANDOFF_MAX = 200000, HANDOFF_ID = /^[A-Za-z0-9_-]{32}$/;
+  function chatHandoff() {
+    let chatOrigin = "";
+    try { chatOrigin = APP_URLS.chat ? new URL(appUrl("chat")).origin : ""; } catch (_) { return; }
+    if (!chatOrigin) return;
+    let busy = false;
+    window.addEventListener("message", async (e) => {
+      const f = document.querySelector('#frames iframe[data-app="chat"]');
+      if (e.origin !== chatOrigin || !f || e.source !== f.contentWindow || !e.data || e.data.type !== "bn-chat-handoff") return;
+      const d = e.data;
+      if (typeof d.id !== "string" || !/^[A-Za-z0-9]{1,32}$/.test(d.id)) return;
+      const reply = (m) => { try { f.contentWindow.postMessage({ type: "bn-portal-chat-handoff", id: d.id, ...m }, chatOrigin); } catch (_) { /* gone */ } };
+      if (!here) { reply({ ok: false, error: "The Code page is off here. Turn it on in Settings › Claude Code, then try again." }); showTab("code"); return; }
+      if (busy) { reply({ ok: false, error: "A hand-off is on its way already." }); return; }
+      const tooBig = () => { reply({ ok: true, tooBig: true }); openLink({ handoff: "too-big" }); };
+      if (d.tooBig === true || (typeof d.text === "string" && d.text.length > HANDOFF_MAX)) { tooBig(); return; }
+      if (typeof d.text !== "string" || !d.text.trim()) { reply({ ok: false, error: "There is nothing in this chat to hand over." }); return; }
+      busy = true;
+      try {
+        const r = await fetch("/api/chat-handoff", { method: "POST", credentials: "same-origin", headers: { "X-Requested-With": "devos-ade", "Content-Type": "application/json" },
+          body: JSON.stringify({ title: typeof d.title === "string" ? d.title.slice(0, 120) : "", text: d.text }) });
+        let j = {};
+        try { j = await r.json(); } catch (_) { /* not JSON */ }
+        if (r.status === 413 || j.tooBig === true) tooBig();
+        else if (!r.ok || typeof j.id !== "string" || !HANDOFF_ID.test(j.id)) reply({ ok: false, error: String(j.error || `The portal answered HTTP ${r.status}`).slice(0, 200) });
+        else { reply({ ok: true }); openLink({ handoff: j.id }); }
+      } catch (_) {
+        reply({ ok: false, error: "The portal did not answer." });
+      } finally {
+        busy = false;
       }
     });
   }
@@ -400,6 +439,7 @@
   // Activity (activity.js, from /api/activity), with Keep and Turn off: it used to be a banner on Home.
 
   addTab();
+  chatHandoff();
   if (here) { listen(); routes(); window.addEventListener("load", preload, { once: true }); } else offPage();
   cardLine();
 })();
