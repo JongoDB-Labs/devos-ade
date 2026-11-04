@@ -439,21 +439,22 @@ export function normSettingsView(v: unknown): SettingsView | null {
   };
 }
 
-/** A git repository of the workspace that is not a project (GET /api/projects/found): offered as one — Add as project, or Not now. */
-export interface FoundRepo {
-  /** its folder in the workspace, by the same rules as a project's */
-  folder: string;
-  name: string;
+/** A project the backend added by itself because its folder appeared in the workspace (a repository or a project folder made in the
+ *  terminal, a clone): the Projects tab tells of it until you dismiss the notice. kept: the repository on the built-in git server, or null. */
+export interface AddedNotice {
+  id: string;
+  kept: string | null;
+  /** asked, and "not for this project": the line does not offer to keep it */
+  declined: boolean;
 }
-/** normFound(v) -> the offers of the backend's answer, each checked (a folder a project may be, a name of one line); at most 20, none twice.
- *  Nothing here makes a project: Add as project asks the backend, which checks the folder again. */
-export function normFound(v: unknown): FoundRepo[] {
-  const out: FoundRepo[] = [];
-  for (const x of Array.isArray(obj(v)?.found) ? (obj(v)?.found as unknown[]).slice(0, 20) : []) {
+/** normAdded(v) -> the notices of the backend's answer (GET /api/projects, `added`), each checked (a project id, a repository name of one line);
+ *  at most 64, none twice. Joined to the projects by id, where the name, folder and git state are. */
+export function normAdded(v: unknown): AddedNotice[] {
+  const out: AddedNotice[] = [];
+  for (const x of Array.isArray(v) ? v.slice(0, 64) : []) {
     const o = obj(x);
-    if (!o || !rootOk(o.folder) || out.some((r) => r.folder === o.folder)) continue;
-    const name = nameOk(o.name) ? o.name : (o.folder as string).split('/').pop() ?? '';
-    if (nameOk(name)) out.push({ folder: o.folder as string, name });
+    if (!o || typeof o.id !== 'string' || !projectIdOk(o.id) || out.some((r) => r.id === o.id)) continue;
+    out.push({ id: o.id, kept: typeof o.kept === 'string' && o.kept.length > 0 && o.kept.length <= 200 && !/[\x00-\x1f\x7f]/.test(o.kept) ? o.kept : null, declined: o.declined === true });
   }
   return out;
 }

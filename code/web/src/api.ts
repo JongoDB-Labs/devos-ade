@@ -31,7 +31,7 @@ import type { RecentReport } from './recent';
 import { normKeep, type KeepView } from './keep';
 import { takeHandoff, type Handoff } from './handoff';
 import { normExportPlan, zipWhole, type ExportOptions, type ExportPlan } from './exportzip';
-import { cwdOk, goneCwdOk, normFound, normProject, normProjects, normSessionSettings, normSettingsView, projectIdOk, WORKSPACE_ID, WORKSPACE_PATH, type FoundRepo, type Project, type SettingsView, rootOk } from './projects';
+import { cwdOk, goneCwdOk, normAdded, normProject, normProjects, normSessionSettings, normSettingsView, projectIdOk, WORKSPACE_ID, WORKSPACE_PATH, type AddedNotice, type Project, type SettingsView, rootOk } from './projects';
 
 type Obj = Record<string, unknown>;
 const obj = (v: unknown): Obj | null => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Obj) : null);
@@ -903,9 +903,9 @@ export async function renameSession(id: string, title: string): Promise<void> {
 // ---------------------------------------------------------------- projects
 
 /** The projects (the Workspace first), as the code container keeps them and the sandbox says of their folders. */
-export async function getProjects(): Promise<Project[]> {
+export async function getProjects(): Promise<{ projects: Project[]; added: AddedNotice[] }> {
   const o = await request('GET', '/api/projects');
-  return normProjects(o.projects ?? o.items);
+  return { projects: normProjects(o.projects ?? o.items), added: normAdded(o.added) };
 }
 /** A new project: a new folder of the workspace (git: `git init` in it) or a folder that is there. keep: it is kept on the built-in git
  *  server too (a repository made there, its remote added, pushed) — keepError when that did not work (the project is made either way). */
@@ -935,14 +935,10 @@ export async function keepStop(id: string): Promise<{ repo: string; removed: boo
   const o = await keepRequest('DELETE', id, '');
   return { repo: label(o.repo, 200), removed: o.removed === true };
 }
-/** Git repositories of the workspace that are not projects (made in the terminal, cloned): offered by the Projects tab. */
-export async function getFoundRepos(): Promise<FoundRepo[]> {
-  return normFound(await request('GET', '/api/projects/found'));
-}
-/** Not now: this folder is not offered again (remembered by the code container; the folder itself is untouched). */
-export async function declineFoundRepo(folder: string): Promise<void> {
-  if (!rootOk(folder)) throw new ApiError(400, 'bad folder');
-  await request('POST', '/api/projects/found/decline', { folder });
+/** Dismiss the Projects tab's notice of a project added by itself: the notice goes, the project stays. */
+export async function dismissAdded(id: string): Promise<void> {
+  if (!projectIdOk(id)) throw new ApiError(400, 'bad project id');
+  await request('POST', '/api/projects/added/dismiss', { id });
 }
 export async function renameProject(id: string, name: string): Promise<void> {
   if (!projectIdOk(id)) throw new ApiError(400, 'bad project id');

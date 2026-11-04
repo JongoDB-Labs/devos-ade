@@ -31,7 +31,7 @@ import { recentReport } from './recent';
 import { parseDeepLink, withoutDeepLink } from './deeplink';
 import { HANDOFF_MAX, type Handoff } from './handoff';
 import { eventTime, sessionCost } from './spend';
-import { RECHECK_TEXT, WORKSPACE, WORKSPACE_ID, goneTops, holdForSettings, inProject, liveHostTops, mentionPath, projectFor, projectIdOk, projectOfCwd, readOnlyTops, settingsApplied, settingsStateFor, type Project, type SettingsState, type Where } from './projects';
+import { RECHECK_TEXT, WORKSPACE, WORKSPACE_ID, goneTops, holdForSettings, inProject, liveHostTops, mentionPath, projectFor, projectIdOk, projectOfCwd, readOnlyTops, settingsApplied, settingsStateFor, type AddedNotice, type Project, type SettingsState, type Where } from './projects';
 import { PRODUCT } from './brand';
 
 export interface Toast {
@@ -360,6 +360,8 @@ export interface AppState {
   budgetNext: Budget | null;
   /** the projects (GET /api/projects: the Workspace first, always there) */
   projects: Project[];
+  /** the notices of the projects the backend added by itself (the Projects tab: Added from the workspace) */
+  projectsAdded: AddedNotice[];
   projectsError: string | null;
   /** projectsError's words from the sandbox, when it is in them: apart */
   projectsSaid?: SandboxWords | null;
@@ -430,6 +432,7 @@ export const store: Store<AppState> = createStore<AppState>({
   linkDraft: null,
   budgetNext: nextBudget(),
   projects: [{ ...WORKSPACE }],
+  projectsAdded: [],
   projectsError: null,
   project: WORKSPACE_ID,
   where: {},
@@ -2392,10 +2395,10 @@ function noteWhere(rows: { id: string; cwd: string; project: string }[]): void {
 /** The projects again (GET /api/projects). A remembered project that is gone: the Workspace. */
 export async function refreshProjects(): Promise<void> {
   try {
-    const projects = await api.getProjects();
+    const { projects, added } = await api.getProjects();
     // (the folders of this computer the sandbox sees: their paths are the page's own — text.ts cleanPath)
     const changed = setHostTops(liveHostTops(projects), readOnlyTops(projects), goneTops(projects));
-    set((s) => ({ ...s, projects, projectsError: null, projectsSaid: null }));
+    set((s) => ({ ...s, projects, projectsAdded: added, projectsError: null, projectsSaid: null }));
     sayRecheck(projects);
     // (a session list read before these folders were known left their sessions out)
     if (changed) void refreshSessions();
@@ -2646,6 +2649,22 @@ export async function renameProjectTo(id: string, name: string): Promise<void> {
   } catch (e) {
     toast(`Not renamed: ${errText(e)}`, 'error');
   }
+}
+
+/** Dismiss the notice of a project added by itself: the project stays. */
+export async function dismissAddedNotice(id: string): Promise<void> {
+  set((s) => ({ ...s, projectsAdded: s.projectsAdded.filter((n) => n.id !== id) }));
+  try { await api.dismissAdded(id); } catch (e) { toast(`Not dismissed: ${errText(e)}`, 'error'); void refreshProjects(); }
+}
+/** Start git here: `git init` in a project's folder that has none (the backend then keeps it on the local git server when the rules say so). */
+export async function startGitHere(id: string): Promise<void> {
+  try {
+    await api.projectGitInit(id);
+    toast('A git repository now (git init).', 'ok');
+  } catch (e) {
+    if (!(e instanceof api.ApiError && e.status === 409)) toast(`git init: ${errText(e)}`, 'error');
+  }
+  await refreshProjects();
 }
 
 /** Remove from Code: the record goes (its sessions are shown where their folder is); `trash` with the folder named

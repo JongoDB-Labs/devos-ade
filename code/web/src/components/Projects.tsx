@@ -61,7 +61,7 @@ import { Icon, Spinner } from './icons';
 import { SandboxSaid } from './Said';
 import { Cmd, Dialog, Dropdown, MenuItem, copyText } from './ui';
 import { ExportDialog } from './Export';
-import { FoundRepos } from './Found';
+import { AddedProjects } from './Added';
 import { ImportSheet, Suggestions, TOOL_BADGE, TOOL_LABEL } from './Import';
 import { SetupSheet } from './Setup';
 import { HandoffDialog } from './Handoff';
@@ -530,7 +530,7 @@ export function ProjectsPanel() {
           </div>
         )}
         {error && <div class="side-note err">{error}</div>}
-        <FoundRepos />
+        <AddedProjects />
         <button type="button" class="proj-add" onClick={() => openProjectDialog({ kind: 'new', tab: 'empty' })} data-testid="new-project">
           <Icon name="plus" size={14} /> New project
         </button>

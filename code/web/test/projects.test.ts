@@ -5,7 +5,7 @@
 // resolves them, and a ?project= link (an id's shape only: nothing is created by a link).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cwdOk, hostPathOk, inProject, liveHostTops, mentionPath, nameOk, needsLook, newProjectFrom, normFound, normProjects, readOnlyTops, normSessionSettings, normSettingsView, projectFor, projectOfCwd, rootOk, sessionsByProject, settingsApplied, settingsStateFor, shownIn, visibleWs, workspacePath, WORKSPACE_ID } from '../src/projects';
+import { cwdOk, hostPathOk, inProject, liveHostTops, mentionPath, nameOk, needsLook, newProjectFrom, normAdded, normProjects, readOnlyTops, normSessionSettings, normSettingsView, projectFor, projectOfCwd, rootOk, sessionsByProject, settingsApplied, settingsStateFor, shownIn, visibleWs, workspacePath, WORKSPACE_ID } from '../src/projects';
 import { parseDeepLink, withoutDeepLink } from '../src/deeplink';
 import { normSessionInfo } from '../src/api';
 import type { SessionInfo } from '../src/types';
@@ -394,12 +394,13 @@ test('Add to project › New project…: the sessions\' own folder when it can b
   assert.deepEqual(newProjectFrom(['/workspacex/y'], ['']), E);
 });
 
-test('found repositories: only folders a project may be, names of one line, at most 20, none twice', () => {
-  assert.deepEqual(normFound({ found: [{ folder: 'fresh', name: 'fresh' }, { folder: 'client/site', name: 'site' }] }), [{ folder: 'fresh', name: 'fresh' }, { folder: 'client/site', name: 'site' }]);
-  // a name that does not fit is the folder's last part; a folder that is not a project's to be is left out
-  assert.deepEqual(normFound({ found: [{ folder: 'a/b', name: 'x\ny' }, { folder: '../etc', name: 'etc' }, { folder: '.hidden', name: 'h' }, { folder: '', name: 'ws' }, { folder: 7 }, null, 'x',
-    { folder: 'a/b', name: 'again' }, { folder: 'a\nb', name: 'n' }, { folder: '/workspace/abs', name: 'abs' }] }), [{ folder: 'a/b', name: 'b' }]);
-  assert.deepEqual(normFound(null), []);
-  assert.deepEqual(normFound({ found: 'fresh' }), []);
-  assert.equal(normFound({ found: Array.from({ length: 50 }, (_, i) => ({ folder: `r${i}`, name: `r${i}` })) }).length, 20);
+test('added notices: only project ids, a repository name of one line or none, at most 64, none twice', () => {
+  assert.deepEqual(normAdded([{ id: 'p_0123abcd', kept: 'forge/rtm-tracker', declined: false }, { id: 'p_89abcdef', kept: null, declined: true }]),
+    [{ id: 'p_0123abcd', kept: 'forge/rtm-tracker', declined: false }, { id: 'p_89abcdef', kept: null, declined: true }]);
+  // an id that is no project's, a repeat, a name with a line break or too long: left out or none
+  assert.deepEqual(normAdded([{ id: '../x' }, { id: 'ws' }, { id: 'p_0123abcd', kept: 'a\nb' }, { id: 'p_0123abcd', kept: 'again' }, null, 'x', { id: 7 }, { id: 'p_89abcdef', kept: 'x'.repeat(201), declined: 'yes' }]),
+    [{ id: 'ws', kept: null, declined: false }, { id: 'p_0123abcd', kept: null, declined: false }, { id: 'p_89abcdef', kept: null, declined: false }]);
+  assert.deepEqual(normAdded(null), []);
+  assert.deepEqual(normAdded({ added: [] }), []);
+  assert.equal(normAdded(Array.from({ length: 100 }, (_, i) => ({ id: `p_${String(i).padStart(8, '0')}` }))).length, 64);
 });
