@@ -15,6 +15,10 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   private, empty repository `devos/<name>` when it is ticked, not with the first commit, so a new project shows in Git before
   anything is committed. (Forgejo's create call needs a wider token than the one the built-in host has, so it is made the way
   the first push of a new repository makes one.)
+- **New project's Create no longer fails with "busy: another git change is on its way" while a kept project pushes itself.** Making a
+  project's folder (and its `git init`) waited for the same one-at-a-time slot as every git change in the workspace, so a push of another
+  project refused it; it touches no repository but the new folder, so it now has a slot of its own. And one keep of a project runs at a
+  time: the terminal's `project new --keep` and a project kept by itself at the same moment make one repository, not two attempts.
 
 ### Added
 - **User-journey checks (JON-1058).** `browser/journey-code-to-git`, `journey-terminal-folder-to-git` and
