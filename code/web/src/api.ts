@@ -31,7 +31,7 @@ import type { RecentReport } from './recent';
 import { normKeep, type KeepView } from './keep';
 import { takeHandoff, type Handoff } from './handoff';
 import { normExportPlan, zipWhole, type ExportOptions, type ExportPlan } from './exportzip';
-import { cwdOk, goneCwdOk, normAdded, normProject, normProjects, normSessionSettings, normSettingsView, projectIdOk, WORKSPACE_ID, WORKSPACE_PATH, type AddedNotice, type Project, type SettingsView, rootOk } from './projects';
+import { cwdOk, goneCwdOk, normAdded, normProject, normProjects, normSessionSettings, normSettingsView, projectIdOk, WORKSPACE_ID, WORKSPACE_PATH, type AddedNotice, type Project, type SettingsView } from './projects';
 
 type Obj = Record<string, unknown>;
 const obj = (v: unknown): Obj | null => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Obj) : null);
