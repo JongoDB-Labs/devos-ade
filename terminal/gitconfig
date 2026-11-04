@@ -5,3 +5,11 @@
 # own push, pull and clone never read this file.
 [credential]
 	helper = /usr/local/bin/bn-git-credential
+# Who a commit is by when nothing else says (JON-1058): without this a `git commit` in the terminal, or by Claude, stops at "unable to
+# auto-detect email address" on a new sandbox, so a project could not be committed, pushed or kept anywhere. This file is git's lowest
+# level: a repository's own user.name/user.email, ~/.gitconfig (the Code page's "Use yours from this computer…" writes it) and
+# GIT_AUTHOR_*/GIT_COMMITTER_* all win over it. The Code page's panel reads none of this file (it runs git with the system level
+# off and picks its own identity), so what it shows and signs with is unchanged.
+[user]
+	name = DevOS ADE
+	email = ade@devos-ade.invalid

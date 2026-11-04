@@ -1438,3 +1438,26 @@ test_chats_own_proxy_goes_before_every_up_that_no_longer_wants_it() {
   docker() { echo "docker $*" >> "$TMP/docker"; return 0; }
   set_env CODE_ENABLED ''; set_env TERMINAL_EGRESS ''
 }
+
+test_the_sandbox_git_has_a_default_identity_that_every_other_one_beats() {
+  # (JON-1058: a `git commit` in the terminal or by Claude stopped at "unable to auto-detect email address")
+  command -v git >/dev/null || { echo "no git here" >&2; return 0; }
+  local g="$STACK_DIR/terminal/gitconfig" r="$TMP/idrepo" h="$TMP/idhome" out
+  mkdir -p "$r" "$h"
+  git -C "$r" init -q
+  echo a > "$r/a"; git -C "$r" add a
+  # the file is git's system level: HOME has no configuration, nothing in the environment
+  out="$(cd "$r" && env -i PATH="$PATH" HOME="$h" GIT_CONFIG_SYSTEM="$g" GIT_CONFIG_GLOBAL=/dev/null git commit -q -m one && git log -1 --format='%an <%ae> / %cn <%ce>')"
+  assert_eq "$out" "DevOS ADE <ade@devos-ade.invalid> / DevOS ADE <ade@devos-ade.invalid>"
+  # the user's own ~/.gitconfig beats it, and so does the repository's
+  printf '[user]\n\tname = Me\n\temail = me@example.org\n' > "$h/.gitconfig"
+  echo b > "$r/b"; git -C "$r" add b
+  out="$(cd "$r" && env -i PATH="$PATH" HOME="$h" GIT_CONFIG_SYSTEM="$g" git commit -q -m two && git log -1 --format='%an <%ae>')"
+  assert_eq "$out" "Me <me@example.org>"
+  echo c > "$r/c"; git -C "$r" add c; git -C "$r" config user.name Repo; git -C "$r" config user.email repo@example.org
+  out="$(cd "$r" && env -i PATH="$PATH" HOME="$h" GIT_CONFIG_SYSTEM="$g" git commit -q -m three && git log -1 --format='%an <%ae>')"
+  assert_eq "$out" "Repo <repo@example.org>"
+  # the image copies it as /etc/gitconfig, still with the credential helper
+  assert_contains "$(grep -c 'COPY gitconfig /etc/gitconfig' "$STACK_DIR/terminal/Dockerfile")" "1"
+  assert_contains "$(cat "$g")" "helper = /usr/local/bin/bn-git-credential"
+}
