@@ -261,7 +261,8 @@ def survives(ctx):
         rec.save()
     # the list is one line, but other checks' windows (Run, Start, Open in the terminal) can make it wrap in xterm
     names = " ".join(out.split())
-    expect(re.search(r"\bclaude\b", names), f"no claude window in {names[-300:]!r}")
+    # (the first window is bedrock — Claude Code on Bedrock; the tmux session is still claude)
+    expect(re.search(r"\bbedrock\b", names), f"no bedrock window in {names[-300:]!r}")
     return f"a window made in one browser ({mark}) is still there from the next one: {names[-120:]}"
 
 

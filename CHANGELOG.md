@@ -28,8 +28,9 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   before it removes anything). On the Code page a Claude plan session and an agent (Codex, Copilot, Cursor, Grok) can
   start on another account: the Who answers menu has an item for each signed-in account, checked against the sandbox's own
   list, and the sandbox only ever takes a name that is a real folder of `~/.subscriptions/TOOL`. Chat stays at one account
-  a tool, and Settings says so. A session on another Claude account keeps its transcript in that account's folder (its
-  history list shows the first account's sessions; one on another account is listed while it is open).
+  a tool, and Settings says so. A session on another Claude account keeps its transcript in that account's folder: the history lists the sessions of every
+  account (each row says its account), and a session is resumed — also after a restart, and by Open in the terminal — on the account it ran on;
+  a request that names another account for it is refused. Trust for a project's plugins is judged on the session's own account's installed plugins.
 
 ### Changed
 - **Windows are named after what runs in them (JON-1053).** The first window is `bedrock` (Claude Code on Bedrock, was

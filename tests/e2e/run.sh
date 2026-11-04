@@ -1641,9 +1641,10 @@ JS
       record subscriptions picker-windows SKIP 0 "the pickers' checks did not run (E2E_CHECKS)"
     else
       wins="$(docker exec "$tc" tmux list-windows -a -F '#{session_name}:#{window_name}' 2>/dev/null | tr '\n' ' ')"
-      case " $wins " in *" claude:codex "*) case " $wins " in *" chat-grok:grok "*) wins="ok $wins" ;; esac ;; esac
+      # (a window is named after what runs in it: codex until `subscriptions open` knows the kind — codex-chatgpt once signed in —, so both the bare name and a "-kind" one count)
+      case " $wins " in *" claude:codex"*) case " $wins " in *" chat-grok:grok"*) wins="ok $wins" ;; esac ;; esac
       case "$wins" in ok*) record subscriptions picker-windows PASS 0 "tmux: ${wins#ok }" ;;
-        *) record subscriptions picker-windows FAIL 0 "tmux: $wins (want claude:codex and chat-grok:grok)" ;; esac
+        *) record subscriptions picker-windows FAIL 0 "tmux: $wins (want claude:codex[-kind] and chat-grok:grok[-kind])" ;; esac
     fi
   fi
 fi
