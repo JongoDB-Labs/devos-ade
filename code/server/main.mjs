@@ -31,7 +31,8 @@ import { makeImportsApi } from './imports-api.mjs';
 import { Setup } from './import-setup.mjs';
 import { makeSetupApi } from './setup-api.mjs';
 import { AgentStore } from './agents/store.mjs';
-import { makeStatus, harnessList } from './agents/status.mjs';
+import { makeStatus, harnessList, accountKnown } from './agents/status.mjs';
+const freshGate = { at: 0 };   // (accountKnown: the fresh look for an account name the list lacks, at most once in a while)
 import { harnessOk, AGENT_TOOLS, HARNESSES } from './agents/tools.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -397,8 +398,7 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
         if (was) base.account = was;
       } else if (b.account !== undefined && b.account !== null) {
         if (typeof b.account !== 'string' || !(base.harness === 'claude' || AGENT_TOOLS.includes(base.harness))) throw new HttpError(400, 'bad account');
-        const has = (st) => (st.tools?.[base.harness]?.accounts ?? []).some((a) => a.name === b.account);
-        if (!has(await subs()) && !has(await subs({ fresh: true }))) throw new HttpError(400, 'no such account (Settings › Your AI subscriptions lists them)');
+        if (!(await accountKnown(subs, base.harness, b.account, freshGate))) throw new HttpError(400, 'no such account (Settings › Your AI subscriptions lists them)');
         base.account = b.account;
       }
       const agent = AGENT_TOOLS.includes(base.harness);
@@ -416,7 +416,7 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
       if (!agent && isUuid(b.resume) && b.fork !== true && !mgr.get(b.resume)?.open) await api.notRunning(b.resume);
       // what of the folder's own Claude Code settings its process gets (trusted, or not applied): decided now, for it; an
       // agent of your subscriptions: none of that — it starts only while they apply (trusted, or none), asked at each start
-      if (!agent) await mgr.prepare(base.cwd);
+      if (!agent) await mgr.prepare(base.cwd, base.harness === 'claude' ? base.account ?? null : null);
       else await mgr.agentSettingsCheck(base.cwd, HARNESSES[base.harness].name);
       // a session copied from this computer (or a fork of one) opens in Manual the first time — its history is what a
       // past session saw — forks of it too; it counts as opened once it did open (not when the open failed)
@@ -795,7 +795,7 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
         // its folder's own configuration decided now: for a process that may start (resumed, restarted for its budget),
         // and for a running one in a project's folder (changed since it started — a pull, an edited hook —: it restarts
         // with the configuration as it now applies)
-        if (claude && (!s.open || s.cwd !== WS || s.budgetRestart() || s.settingsRestart())) await mgr.prepare(s.cwd);
+        if (claude && (!s.open || s.cwd !== WS || s.budgetRestart() || s.settingsRestart())) await mgr.prepare(s.cwd, s.account ?? null);
         s.prompt({ text: m.text, images: m.images ?? [], uuid: m.uuid });
         c.attached.add(s.id);
         return reply({});
@@ -804,7 +804,7 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
       case 'set_model': await sessionOf(m).setModel(m.model); return reply({ model: m.model });
       case 'set_mode': {
         const s = sessionOf(m);
-        if (!s.open || m.mode === 'bypassPermissions') await mgr.prepare(s.cwd);   // (a switch to Bypass may start a process)
+        if (!s.open || m.mode === 'bypassPermissions') await mgr.prepare(s.cwd, s.account ?? null);   // (a switch to Bypass may start a process)
         await s.setMode(m.mode, { confirmed: m.confirmed === true });
         return reply({ mode: s.mode });
       }
@@ -821,7 +821,7 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
       case 'allow_blocked': {
         if (!isUuid(m.id)) throw new SessionError('bad blocked-action id');
         const bs = sessionOf(m);
-        if (!bs.open || bs.cwd !== WS || bs.budgetRestart() || bs.settingsRestart()) await mgr.prepare(bs.cwd);   // (its retry is a prompt)
+        if (!bs.open || bs.cwd !== WS || bs.budgetRestart() || bs.settingsRestart()) await mgr.prepare(bs.cwd, bs.account ?? null);   // (its retry is a prompt)
         bs.allowBlocked(m.id);
         return reply({});
       }
@@ -880,7 +880,7 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
       case 'rewind_files': {
         if (!isUuid(m.message)) throw new SessionError('bad message id');
         const rs = sessionOf(m);
-        if (!rs.open) await mgr.prepare(rs.cwd);
+        if (!rs.open) await mgr.prepare(rs.cwd, rs.account ?? null);
         const r = await rs.rewindFiles(m.message, { dryRun: m.dryRun === true });
         const n = (v) => (Number.isInteger(v) && v >= 0 ? v : 0);
         // (why not: Claude Code's own words — a sentence of ours, the words apart)

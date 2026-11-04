@@ -37,6 +37,18 @@ export function makeStatus({ call, ttlMs = 60000, now = () => Date.now(), log = 
   };
 }
 
+/** accountKnown(subs, tool, name, gate) -> whether the sandbox's own list names that account of the tool. A name the cached list
+ *  lacks is looked for once more, fresh (an account added a moment ago) — at most once every FRESH_GAP_MS for all requests
+ *  (`gate` keeps the time), so a made-up name cannot make each request probe the sandbox; within the gap: not known. */
+export const FRESH_GAP_MS = 10000;
+export async function accountKnown(subs, tool, name, gate = { at: 0 }, now = () => Date.now()) {
+  const has = (st) => (st?.tools?.[tool]?.accounts ?? []).some((a) => a.name === name);
+  if (has(await subs())) return true;
+  if (now() - gate.at < FRESH_GAP_MS) return false;
+  gate.at = now();
+  return has(await subs({ fresh: true }));
+}
+
 /** the harnesses as the page's picker shows them: each with whether it is there, signed in, and may be used here */
 export function harnessList(st, { planAllowed = false } = {}) {
   return Object.values(HARNESSES).map((h) => {

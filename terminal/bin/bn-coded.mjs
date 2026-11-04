@@ -2797,7 +2797,7 @@ const IMAGE = /\.(png|jpe?g|gif|svg|webp|ico)$/i;
 // surface}; type name: a folder listed by its name alone. verifiable: each was read whole as text and the bounds held
 // (a link out of the workspace, a big file, a FIFO, a link to a folder, a .claude that is a link, a folder that cannot
 // be listed are not); over: why not (null: fine). text false: no texts (the hashes alone — what a start compares)
-export function settingsFiles(abs, { text = false } = {}) {
+export function settingsFiles(abs, { text = false, account = null, root = SUBS_ROOT } = {}) {
   // one part's rows and bounds (cut: its texts no longer shown — past CONFIG_SHOWN, in an answer with texts only: the
   // walk goes on, every row listed as a start lists it, so the hash the dialog trusts is the one a start compares)
   const part = () => ({ files: [], over: null, cut: null, bytes: 0, shown: 0 });
@@ -2991,7 +2991,7 @@ export function settingsFiles(abs, { text = false } = {}) {
   // a plugin updated or removed since is looked at again. Claude on your plan has a record of its own (claude-sub's
   // folder): the same plugins, as installed there, with a hash of their own (planHash)
   const pl = enabledPluginsOf(abs, claude.files);
-  const pp = pl ? enabledPluginsOf(abs, claude.files, PLAN_PLUGIN_RECORD()) : null;
+  const pp = pl ? enabledPluginsOf(abs, claude.files, PLAN_PLUGIN_RECORD(account, root)) : null;
   const rowsOf = (list) => list.map((f) => [f.name, f.type, f.sha256 ?? null, f.target ?? null]);
   // (Claude Code's hash: its rows and the plugin rows together, sorted, exactly as v0.23.0's listing)
   const own = [...claude.files, ...plug.files].sort(byName);
@@ -3027,7 +3027,14 @@ export function settingsFiles(abs, { text = false } = {}) {
 }
 // The sandbox's own plugins (Claude Code's record of what is installed, in its folder)
 export const PLUGIN_RECORD = () => path.join(CONFIG_DIR, 'plugins', 'installed_plugins.json');
-export const PLAN_PLUGIN_RECORD = () => path.join(PLAN_DIR, 'plugins', 'installed_plugins.json');
+// (Claude on your plan's record of installed plugins: the first account's folder, or — account NAME — that account's own, checked
+// against the folders there are: a plan session on claude:NAME is judged on the plugins its account has installed)
+export const PLAN_PLUGIN_RECORD = (account = null, root = SUBS_ROOT) => {
+  if (!account) return path.join(PLAN_DIR, 'plugins', 'installed_plugins.json');
+  const d = accountDir('claude', account, root);
+  if (!d) throw new Error('no such account');
+  return path.join(d, 'plugins', 'installed_plugins.json');
+};
 // enabledPluginsOf(abs, files) -> {plugins: [{id, installed, versions: [{version, commit}]}] (by id), registry: ok |
 // none | unreadable}, or null when the folder's own .claude/settings*.json turn no plugin on (enabledPlugins, in any
 // case — folded —, at the top level: an object's keys whose value is not false, an array's strings — as the code container reads
@@ -3068,7 +3075,9 @@ const isUtf8Buf = (b) => { try { new TextDecoder('utf-8', { fatal: true }).decod
 // project.settings {root?} -> {files (with their text, ≤ 256 KiB each), hash, verifiable, over}: a project's folder
 // (none: the workspace)
 export function projectSettings(req) {
-  return settingsFiles(rootArg(req?.root).abs, { text: req?.text !== false });
+  // (account: a plan session's, on another Claude account than the first)
+  const account = req?.account === undefined || req?.account === null ? null : String(req.account);
+  return settingsFiles(rootArg(req?.root).abs, { text: req?.text !== false, account });
 }
 // The names an agent's change approved by Accept edits never touches, folded (fold) and at any depth: git's folder and
 // what runs on your computer when you open the folder, commit or install (Claude Code's own protected list, other
@@ -4467,10 +4476,13 @@ export async function launchStart(name, digest, { tmux = tmuxBin(), root = WS_RO
 // <id>` typed into its fresh shell and run — there, in your shell's history. Only a checked UUID of a transcript that is
 // there is ever part of what is typed (the page's own process for that session is closed first, by the code container).
 // plan: a session of Claude on your plan — `claude-sub --resume <id>` (its own folder's transcript)
-const RESUME_CMD = (id, plan = false) => `${plan ? 'claude-sub' : 'devos-claude'} --resume ${id}`;
-export async function terminalResume(id, { tmux = tmuxBin(), procDir = '/proc', cwd = null, plan = false } = {}) {
+// (another Claude account: claude-sub takes it from BN_SUB_ACCOUNT, in the command line of the shell it is typed into)
+const RESUME_CMD = (id, plan = false, account = null) => `${plan ? `${account ? `BN_SUB_ACCOUNT=${account} ` : ''}claude-sub` : 'devos-claude'} --resume ${id}`;
+export async function terminalResume(id, { tmux = tmuxBin(), procDir = '/proc', cwd = null, plan = false, account = null, root = SUBS_ROOT } = {}) {
   if (typeof id !== 'string' || !UUID.test(id)) throw new Error('bad session id');
-  const file = transcriptFile(id, cwd, { store: plan ? 'plan' : 'bedrock' });
+  // (the session's own account: a folder there is, never a path; the transcript is looked for in that account's store)
+  if (account !== null && (!plan || typeof account !== 'string' || !accountDir('claude', account, root))) throw new Error('no such account');
+  const file = transcriptFile(id, cwd, { store: plan ? (account ? `plan:${account}` : 'plan') : 'bedrock' });
   let st;
   try { st = file && fs.lstatSync(file); } catch { st = null; }
   if (!st) throw new Error('no such session in this workspace (it has no prompts yet?)');
@@ -4486,10 +4498,10 @@ export async function terminalResume(id, { tmux = tmuxBin(), procDir = '/proc', 
   const pane = w.out.trim();
   if (!/^%[0-9]{1,6}$/.test(pane)) throw new Error('tmux: no pane for the new window');
   // -l: the text as it is (no key names); then Enter on its own
-  const t = await run(tmux, ['send-keys', '-t', pane, '-l', RESUME_CMD(id, plan)]);
+  const t = await run(tmux, ['send-keys', '-t', pane, '-l', RESUME_CMD(id, plan, account)]);
   const e = t.code === 0 ? await run(tmux, ['send-keys', '-t', pane, 'Enter']) : t;
   if (e.code !== 0) throw new Error(`tmux: ${printable(e.err, 200) || `exit ${e.code}`}`);
-  return { ok: true, window, command: RESUME_CMD(id, plan) };
+  return { ok: true, window, command: RESUME_CMD(id, plan, account) };
 }
 
 // terminalWindow(root) — a project's terminal: a new window of the terminal's tmux session in its folder (a shell of
@@ -6071,7 +6083,7 @@ export function serve(sock) {
         case 'perm.read': return finish(T.RESULT, permRead(root()));
         case 'perm.remove': return finish(T.RESULT, permRemove(req));
         case 'terminal.resume':
-          terminalResume(req.id, { cwd: req.cwd ?? null, plan: req.plan === true }).then((r) => finish(T.RESULT, r), (e) => fail(e.message));
+          terminalResume(req.id, { cwd: req.cwd ?? null, plan: req.plan === true, account: req.account === undefined || req.account === null ? null : String(req.account) }).then((r) => finish(T.RESULT, r), (e) => fail(e.message));
           return undefined;
         case 'terminal.window': {
           const r0 = root();

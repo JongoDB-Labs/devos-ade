@@ -1387,3 +1387,37 @@ test('paths.plain: never inside another repository on the way — a .git below t
   }
   fs.rmSync(D, { recursive: true });
 });
+
+test('project.settings with an account: a plan session on claude:NAME is judged on the plugins that account has installed (its planHash and installed), the first account\'s record untouched', async () => {
+  const { checkFiles, checkPlugins, hashOf } = await import('../server/trust.mjs');
+  const D = path.join(WS, 'plugacct');
+  fs.mkdirSync(path.join(D, '.claude'), { recursive: true });
+  fs.writeFileSync(path.join(D, '.claude/settings.json'), JSON.stringify({ enabledPlugins: { 'fmt@acme': true } }));
+  const rec = (dir, version) => {
+    fs.mkdirSync(path.join(dir, 'plugins'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'plugins', 'installed_plugins.json'), JSON.stringify({ version: 2, plugins: { 'fmt@acme': [{ scope: 'user', version }] } }));
+  };
+  const first = path.join(HOME, '.claude-subscription'), work = path.join(HOME, '.subscriptions', 'claude', 'work');
+  rec(first, '0.9.0');
+  fs.mkdirSync(work, { recursive: true });
+  try {
+    const r0 = await call({ op: 'project.settings', root: D });
+    assert.deepEqual(r0.planPlugins[0], { id: 'fmt@acme', installed: true, versions: [{ version: '0.9.0', commit: null }] });
+    // (the account has not installed it: the plugin is missing there, whatever the first account has)
+    let r = await call({ op: 'project.settings', root: D, account: 'work' });
+    assert.deepEqual(r.planPlugins.map((p) => [p.id, p.installed]), [['fmt@acme', false]]);
+    assert.notEqual(r.planHash, r0.planHash);
+    assert.equal(r.hash, r0.hash, 'Bedrock\'s hash does not depend on the account');
+    // (installed there: its own version in the hash, and the code container recomputes the same hash)
+    rec(work, '2.0.0');
+    r = await call({ op: 'project.settings', root: D, account: 'work' });
+    assert.deepEqual(r.planPlugins[0], { id: 'fmt@acme', installed: true, versions: [{ version: '2.0.0', commit: null }] });
+    assert.equal(hashOf(checkFiles(r, D).files, checkPlugins(r).planPlugins), r.planHash);
+    assert.notEqual(r.planHash, r0.planHash);
+    // (an account that is not a folder there, or a path: refused, never read)
+    for (const bad of ['nope', '../x', '/etc', 'A']) assert.match((await call({ op: 'project.settings', root: D, account: bad })).error ?? '', /no such account/, bad);
+  } finally {
+    fs.rmSync(first, { recursive: true, force: true });
+    fs.rmSync(path.join(HOME, '.subscriptions'), { recursive: true, force: true });
+  }
+});

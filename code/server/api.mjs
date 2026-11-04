@@ -296,11 +296,13 @@ export function makeApi({ call, sessions, projects = null, reloadPollMs = 1000, 
     const harness = harnessOf(id);
     if (harness !== 'bedrock' && harness !== 'claude') throw new HttpError(409, 'only Claude Code\'s sessions open in the terminal from here: open the tool there and resume it with its own command');
     handing.add(id);
-    let result;
+    let result, toTermAccount = null;
     try {
       const s = sessions.get?.(id);
       if (s) await s.toTerminal();
-      ({ result } = await call({ op: 'terminal.resume', id, ...cwdField(await cwdFor(id)), ...(harness === 'claude' ? { plan: true } : {}) }, { timeoutMs: 20000 }));
+      const account = harness === 'claude' ? await accountOf(id) : null;
+      ({ result } = await call({ op: 'terminal.resume', id, ...cwdField(await cwdFor(id)), ...(harness === 'claude' ? { plan: true } : {}), ...(account ? { account } : {}) }, { timeoutMs: 20000 }));
+      toTermAccount = account;
     } catch (e) {
       handing.delete(id);
       // (a status of ours; the text: bn-coded's fixed one plainly, anything else its words apart — said.mjs)
@@ -311,7 +313,7 @@ export function makeApi({ call, sessions, projects = null, reloadPollMs = 1000, 
     }
     setTimeout(() => handing.delete(id), 10000).unref?.();
     const window = typeof result?.window === 'string' && /^resume-[0-9a-f]{8}$/.test(result.window) ? result.window : null;
-    return { ok: true, window, command: `${harness === 'claude' ? 'claude-sub' : 'devos-claude'} --resume ${id}` };
+    return { ok: true, window, command: `${harness === 'claude' ? `${toTermAccount ? `BN_SUB_ACCOUNT=${toTermAccount} ` : ''}claude-sub` : 'devos-claude'} --resume ${id}` };
   }
   // notRunning(id) — throws 409 while a process in the sandbox other than this side's runs that conversation (resumed
   // in the terminal): the page never resumes it a second time. This side's own process for it, just closed, is waited

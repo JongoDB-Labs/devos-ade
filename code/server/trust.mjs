@@ -799,8 +799,8 @@ export function makeTrust({ call, store, log = () => {} }) {
   // texts (the dialog, a trust), each hash recomputed here from what was shown — each text's own SHA-256 checked
   // against the one the sandbox gave — so a trusted hash covers exactly the texts the page showed; without (a
   // session's start: the hashes alone, cheap), the sandbox's hashes of the same files, compared with the trusted ones
-  async function read(abs, { text = true } = {}) {
-    const { result } = await call({ op: 'project.settings', ...(abs === WS ? {} : { root: abs }), ...(text ? {} : { text: false }) }, { timeoutMs: 20000 });
+  async function read(abs, { text = true, account = null } = {}) {
+    const { result } = await call({ op: 'project.settings', ...(abs === WS ? {} : { root: abs }), ...(text ? {} : { text: false }), ...(account ? { account } : {}) }, { timeoutMs: 20000 });
     const { files: all, ok, agentOk } = checkFiles(result, abs);
     const { plugins, planPlugins, ok: pok } = checkPlugins(result);
     for (const f of all) if (f.text !== null && (!f.sha256 || sha256(Buffer.from(f.text, 'utf8')) !== f.sha256)) f.text = null;
@@ -896,7 +896,7 @@ export function makeTrust({ call, store, log = () => {} }) {
       return store().list().find((p) => p.id === rec.id) ?? { ...rec, trust: undefined };
     } catch { return rec; }
   }
-  async function decide(cwd) {
+  async function decide(cwd, account = null) {
     if (cwd === WS) {
       const ws = { state: 'workspace', sources: ALL_SOURCES, strictMcp: false, project: WORKSPACE_ID, hash: null };
       return { ...ws, plan: { ...ws }, agents: { state: 'workspace', part: null } };
@@ -906,7 +906,7 @@ export function makeTrust({ call, store, log = () => {} }) {
       strictMcp: !APPLIED.includes(state), hash, ...extra });
     try {
       rec = recordAt(cwd);
-      const r = await read(cwd, { text: false });
+      const r = await read(cwd, { text: false, account });
       rec = await carryOver(rec, r);
       const st = statesOf(rec, r);
       note(rec?.id, st.state);

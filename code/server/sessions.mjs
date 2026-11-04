@@ -915,7 +915,7 @@ export class Session {
   recheckSettings(q, settings) {
     if (!this.mgr.decideSettings) return;
     Promise.resolve(typeof q?.initializationResult === 'function' ? q.initializationResult() : null).catch(() => null)
-      .then(() => (this.q === q ? this.mgr.decideSettings(this.cwd) : null))
+      .then(() => (this.q === q ? this.mgr.decideSettings(this.cwd, this.account) : null))
       .then((d0) => {
         const d = this.ownSettings(d0);
         if (!d || this.q !== q) return;
@@ -984,9 +984,9 @@ export class SessionManager {
   get(id) { return isUuid(id) ? this.sessions.get(id) || null : null; }
 
   // --- what a process gets of its folder's own settings: decided just before each start, taken by it, never reused ---
-  async prepare(cwd) {
+  async prepare(cwd, account = null) {
     if (cwd === WS || !this.decideSettings) return;
-    const d = await this.decideSettings(cwd);
+    const d = await this.decideSettings(cwd, account);
     this.decisions.set(cwd, { d, at: Date.now() });
   }
   peekSettings(cwd) {

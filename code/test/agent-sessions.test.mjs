@@ -769,3 +769,44 @@ test('resume after a restart (nothing open, no list yet) is on the session\'s ow
   assert.equal(await x.api.resumeAccount(g, undefined), 'alt');
   await assert.rejects(() => x.api.resumeAccount(g, 'work'), (e) => e.status === 409);
 });
+
+test('a name the status list lacks is looked for fresh at most once every 10 s; a made-up name cannot make each request probe', async () => {
+  const { accountKnown, FRESH_GAP_MS } = await import('../server/agents/status.mjs');
+  let probes = 0, t = 1000000;
+  const subs = async ({ fresh = false } = {}) => { if (fresh) probes++; return { tools: { codex: { accounts: fresh && probes >= 3 ? [{ name: 'late' }] : [{ name: 'alt' }] } } }; };
+  const gate = { at: 0 }, now = () => t;
+  assert.equal(await accountKnown(subs, 'codex', 'alt', gate, now), true);
+  assert.equal(probes, 0);
+  assert.equal(await accountKnown(subs, 'codex', 'bogus', gate, now), false);
+  assert.equal(probes, 1);
+  for (let i = 0; i < 20; i++) assert.equal(await accountKnown(subs, 'codex', 'bogus', gate, now), false);
+  assert.equal(probes, 1);
+  t += FRESH_GAP_MS;
+  assert.equal(await accountKnown(subs, 'codex', 'bogus', gate, now), false);
+  assert.equal(probes, 2);
+  t += FRESH_GAP_MS;
+  assert.equal(await accountKnown(subs, 'codex', 'late', gate, now), true);
+  assert.equal(probes, 3);
+});
+
+test('a plan session on another account is decided on that account\'s plugin record: prepare and the recheck pass the account', async () => {
+  const seen = [];
+  const { mgr, queries } = manager({ plan: true, more: { decideSettings: async (cwd, account) => { seen.push([cwd, account ?? null]); return { state: 'none', sources: ['user'], strictMcp: false, project: null, hash: null, plan: { state: 'none', sources: ['user'], strictMcp: false, project: null, hash: null } }; } } });
+  await mgr.prepare('/workspace/app', 'work');
+  await mgr.prepare('/workspace/app');
+  assert.deepEqual(seen, [['/workspace/app', 'work'], ['/workspace/app', null]]);
+  mgr.closeAll();
+  assert.ok(queries);
+});
+
+test('Open in the terminal for a session on another account: the sandbox is told the account (and resumes with BN_SUB_ACCOUNT)', async () => {
+  const { api, calls } = await accountsApi({ stores: { bedrock: [], plan: [[IDS.a, 4]], 'plan:work': [[IDS.w, 3]] } });
+  await api.listSessions('');
+  const r = await api.toTerminal(IDS.w).catch((e) => e);
+  const t = calls.find((c) => c.op === 'terminal.resume');
+  assert.deepEqual([t.plan, t.account], [true, 'work'], String(r?.message ?? ''));
+  assert.match(r.command ?? '', /^BN_SUB_ACCOUNT=work claude-sub --resume /);
+  await api.toTerminal(IDS.a).catch(() => {});
+  const t1 = calls.filter((c) => c.op === 'terminal.resume')[1];
+  assert.deepEqual([t1.plan, t1.account], [true, undefined]);
+});

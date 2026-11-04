@@ -222,3 +222,29 @@ test('sessions.running: a process with the id as an argument (not bn-coded\'s ow
   fs.rmSync(path.join(proc, '103'), { recursive: true });
   assert.equal((await coded.terminalResume(id, { procDir: proc })).ok, true);
 });
+
+test('terminal.resume on another Claude account: the transcript is looked for in that account\'s store and claude-sub runs with BN_SUB_ACCOUNT; an account that is not a folder is refused', async () => {
+  const id = crypto.randomUUID();
+  const proc = path.join(ROOT, 'proc-acct');
+  fs.mkdirSync(proc, { recursive: true });
+  const acct = path.join(ROOT, '.subscriptions', 'claude', 'work');
+  const dir = path.join(acct, 'projects', WS.replace(/[^A-Za-z0-9]/g, '-'));
+  fs.mkdirSync(dir, { recursive: true });
+  // (nowhere else: the first account's store and Bedrock's do not have it)
+  await assert.rejects(coded.terminalResume(id, { procDir: proc, plan: true }), /no such session/);
+  await assert.rejects(coded.terminalResume(id, { procDir: proc, plan: true, account: 'nope' }), /no such account/);
+  for (const bad of ['../x', '/etc', 'A', 5]) await assert.rejects(coded.terminalResume(id, { procDir: proc, plan: true, account: bad }), /no such account/);
+  await assert.rejects(coded.terminalResume(id, { procDir: proc, plan: false, account: 'work' }), /no such account/);
+  fs.writeFileSync(path.join(dir, `${id}.jsonl`), '{"type":"user"}\n');
+  fs.rmSync(LOG, { force: true });
+  const r = await coded.terminalResume(id, { procDir: proc, plan: true, account: 'work' });
+  assert.equal(r.command, `BN_SUB_ACCOUNT=work claude-sub --resume ${id}`);
+  assert.ok(fs.readFileSync(LOG, 'utf8').includes(`BN_SUB_ACCOUNT=work claude-sub --resume ${id}`));
+  // the first account's: as before
+  const dir1 = path.join(ROOT, '.claude-subscription', 'projects', WS.replace(/[^A-Za-z0-9]/g, '-'));
+  fs.mkdirSync(dir1, { recursive: true });
+  fs.writeFileSync(path.join(dir1, `${id}.jsonl`), '{"type":"user"}\n');
+  assert.equal((await coded.terminalResume(id, { procDir: proc, plan: true })).command, `claude-sub --resume ${id}`);
+  fs.rmSync(path.join(ROOT, '.subscriptions'), { recursive: true, force: true });
+  fs.rmSync(path.join(ROOT, '.claude-subscription'), { recursive: true, force: true });
+});
