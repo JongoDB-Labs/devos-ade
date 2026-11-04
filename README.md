@@ -1564,8 +1564,12 @@ uninstall` removes it, turning the server off keeps it).
   (`https://gateway:8093/devos/<folder name>.git`), and `git push -u local main` makes the private repository with its first push.
 - **A repository made in the Terminal is a Code project.** `project add [DIR] [--name NAME]` lists a folder of `/workspace` (default: here) under the Code
   page's Projects; `project add --keep [--repo NAME]` also keeps it on the local git server (needs the switch above, and a git repository);
-  `project new NAME [--keep]` makes `/workspace/NAME`, `git init` (branch `main`) and adds it. The Projects tab also offers any git repository of the
-  workspace (two levels down) that is not a project — one line per folder, **Add as project** or **Not now** (remembered for that folder).
+  `project new NAME [--keep]` makes `/workspace/NAME`, `git init` (branch `main`) and adds it. A git repository of the
+  workspace (two levels down) or a folder in it with a `package.json`, `pyproject.toml`, `go.mod`, `index.html` or another common project file becomes
+  a project by itself — when the Projects tab loads and every 45 seconds while a page is open — unless it is a project, inside or around one, or you
+  took it out with **Remove from Code** (remembered). A repository with no remote of its own is also kept on the local git server (while the server is
+  on and *Let Claude use this host* is on for it); one with a remote is added and offers **Keep it on your local git server**; a folder without git
+  offers **Start git here**. A notice per project says what happened; dismissing it keeps the project.
 - **Keep a project on it (Code page).** Asked once per project: *New project* has **Keep it on your local git server**,
   ticked (an empty folder, a clone, a folder of the workspace; git init is implied), and a project that is not kept and has not
   said no gets a line at the top of its Git panel — *Keep this project on your local git server?* — with the repository's

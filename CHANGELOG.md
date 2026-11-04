@@ -30,8 +30,15 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
     list a folder of `/workspace` as a Code project, optionally keep it on the local git server (needs the same switch), make a
     folder with `git init` and add it, or write the server as the repository's remote `local`. They reach the Code page over the
     connection the code container already keeps open to the sandbox: no new port.
-  - The Projects tab offers git repositories of the workspace that are not projects, one line per folder: **Add as project** or
-    **Not now** (remembered for that folder).
+  - **A repository or a project folder made in the workspace is a project by itself.** A git repository (two levels down) or a folder
+    directly in `/workspace` with a `package.json`, `pyproject.toml`, `go.mod`, `index.html` or another common project file becomes a
+    project when the Code page lists its projects and every 45 seconds while a page is open, so one made in the Terminal is there with no
+    click; never one that is a project, inside one or around one, or that you took out with **Remove from Code** (remembered, and the
+    first version's *Not now* folders count as removed). A repository with no remote of its own is also kept on the local git server,
+    when the server is on, its host lets Claude use it and the folder's name is a repository name; one with a remote (a clone) is added,
+    not kept, and offers **Keep it on your local git server**; a folder without git offers **Start git here**, and then the same rule
+    keeps it. The Projects tab says what happened, one notice per project ("Added from the workspace: NAME — kept on your local git
+    server") with **Remove from Code**; dismissing a notice keeps the project.
 - **Make it a project, from a chat (JON-1060).** A **Make it a project** button under each Chat answer (an Open WebUI action,
   installed by `./stack setup`; Admin Panel › Functions turns it off) carries the conversation to the Code page: a *New
   project* dialog with the chat read-only above a name from its title, an empty folder, *Keep it on your local git server*

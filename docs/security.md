@@ -1720,9 +1720,14 @@ only (never one of Claude Code's aliases, at most 128 characters), anything else
   adds is that code in the sandbox can put entries in the project list (up to the limit); the Projects tab shows them and *Remove* takes
   them off. `project add --keep` (a private repository on the built-in git server, the remote added, pushed) is done only while *Let
   Claude use this host* is on for the Local git server — the same switch as the sandbox's git, since it is the same authority — and
-  otherwise adds the project and says what to turn on. The Projects tab also lists the git repositories it finds in the workspace
-  (`GET /api/projects/found`: bn-coded's `git.repos`, two levels down, no git run) that are not projects, and *Not now* is a list of
-  folders in the project records (`found`, at most 200); *Add as project* is the page's ordinary add of a folder.
+  otherwise adds the project and says what to turn on. The code container also adds projects by itself
+  (`autoproj.mjs`): bn-coded's `git.repos` with `files: true` lists the repositories (two levels down, no link followed, no git run, at most 50)
+  and the workspace's direct folders that hold a common project file (`package.json`, `pyproject.toml`, `go.mod` …, at most 50; `lstat`, so a link
+  is no mark), and each that is not a project, inside or around one, or in the removed list becomes a project through the page's ordinary add of a
+  folder — when the project list is asked for and every 45 s while a page is connected, one look at a time, at most 10 added per look. *Remove from
+  Code* is remembered by folder (`removed` in the project records, at most 200; the first version's `found` list is read as removed). A repository
+  with no remote of its own is also kept (keep.mjs) while the server is connected and *Let Claude use this host* is on for it — the same
+  authority as `project add --keep`, read from the host's switch, never assumed; a failure is logged once. Nothing changes a project's trust.
 - [x] **The page names a project by its id, never by a folder.** Every call that works in a project takes
   `?project=<id>` (`ws`, or `p_` and 8 hex digits). The code container looks the id up in its own records and sends
   bn-coded that record's folder as the op's root (`root: /workspace/<folder>`); a malformed id is refused (400), one
