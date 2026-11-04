@@ -31,6 +31,8 @@
 //                   dependency folders), size-capped; dry: only how many files and bytes
 //   fs.grep         a text (or a ripgrep regex) searched in the files of the root: ripgrep with fixed arguments, or
 //                   a bounded walk (literal text only); caps on hits, file size and time
+//   project.link    the terminal's `project` command to the code container (a folder registered as a project, or kept on the
+//                   built-in git server): a socket here that relays checked requests; the code container decides
 //   project.create / project.check / project.trash / project.settings
 //                   a new project's folder (and `git init`, no template: no hook); whether the project folders the code
 //                   container names are there (a real folder, a git repository; where they lead); a project's folder
@@ -3975,6 +3977,83 @@ export function brokerStop() {
   for (const f of ['cred.sock', 'agent.sock']) { try { fs.unlinkSync(path.join(b.dir, f)); } catch { /* gone */ } }
 }
 
+// project.link — the terminal's `project` command (bin/project) to the code container, over the one connection the code
+// container keeps open (as git.broker's, but always: it grants nothing). /tmp/bn-project/link.sock takes one JSON line
+// {op: info | add | keep, folder: "/workspace/<folder>", name?, repo?} and answers one line — the code container's word, which
+// registers a project or keeps it on the built-in git server and checks it all again (projects.mjs, keep.mjs). Here only the
+// shape: a real folder of the workspace (never through a link, not the trash, not a hidden one), the fields as short plain
+// text, and at most LINK_PER_MINUTE questions a minute so a loop in the sandbox cannot fill the project list.
+export const LINK_PER_MINUTE = 20;
+export const LINK_DIR = process.env.BN_PROJECT_TMP || '/tmp/bn-project';
+const LINK_NAME = /^[\x20-\x7e]{1,80}$/;
+const LINK_REPO = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+// linkRequest(q) -> the question for the code container ({kind: 'project', op, folder?, name?, repo?}), or {error}
+export function linkRequest(q) {
+  const op = q?.op;
+  if (op !== 'info' && op !== 'add' && op !== 'keep') return { error: 'unknown request' };
+  if (op === 'info') return { kind: 'project', op };
+  const v = q.folder;
+  if (typeof v !== 'string' || v.length > 1024 || !v.startsWith(`${WORKSPACE}/`)) return { error: `a folder under ${WORKSPACE}` };
+  const rel = v.slice(WORKSPACE.length + 1);
+  if (!rootRel(rel) || rel.split('/').some((x) => x.startsWith('.'))) return { error: 'not a folder that can be a project (its name starts with a dot, or is deeper than allowed)' };
+  if (rootType(rel) !== 'dir') return { error: `${printable(v, 200)} is not a folder (or a link is on its way: projects are never reached through a link)` };
+  const out = { kind: 'project', op, folder: rel };
+  if (q.name !== undefined && q.name !== null && q.name !== '') {
+    if (typeof q.name !== 'string' || !LINK_NAME.test(q.name)) return { error: 'a name of one line of plain characters, at most 80' };
+    out.name = q.name;
+  }
+  if (q.repo !== undefined && q.repo !== null && q.repo !== '') {
+    if (typeof q.repo !== 'string' || !LINK_REPO.test(q.repo)) return { error: 'a repository name of letters, digits, . _ and -' };
+    out.repo = q.repo;
+  }
+  return out;
+}
+// linkAnswer(a) -> the code container's answer as the command may print it: known fields only, text as plain short lines
+export function linkAnswer(a) {
+  const o = a && typeof a === 'object' ? a : {};
+  const out = {};
+  for (const k of ['ok', 'existing', 'git', 'kept', 'mayKeep', 'available']) if (typeof o[k] === 'boolean') out[k] = o[k];
+  for (const [k, n] of [['error', 400], ['id', 20], ['name', 80], ['repo', 120], ['owner', 100], ['url', 300], ['note', 400]]) if (typeof o[k] === 'string') out[k] = printable(o[k], n);
+  return out;
+}
+let link = null;
+export function linkStart(ask, { dir = LINK_DIR } = {}) {
+  linkStop();
+  privateDir(dir);
+  const file = path.join(dir, 'link.sock');
+  try { fs.unlinkSync(file); } catch { /* none */ }
+  const recent = [];
+  const srv = net.createServer((c) => {
+    c.on('error', () => {});
+    let asked = false;
+    lineReader(c, 4096, (line) => {
+      if (asked) return;
+      asked = true;
+      const reply = (v) => { try { c.end(`${JSON.stringify(v)}\n`); } catch { /* gone */ } };
+      let q = null;
+      try { q = JSON.parse(line); } catch { /* below */ }
+      const now = Date.now();
+      while (recent.length && now - recent[0] > 60000) recent.shift();
+      if (recent.length >= LINK_PER_MINUTE) return reply({ error: `more than ${LINK_PER_MINUTE} requests a minute: wait a little` });
+      recent.push(now);
+      const r = linkRequest(q);
+      if (r.error) return reply({ error: r.error });
+      ask(r).then((a) => reply(linkAnswer(a)), (e) => reply({ error: printable(e?.message || 'no answer', 200) }));
+    });
+  });
+  srv.on('error', (e) => { process.stderr.write(`bn-coded: the project link: ${e.code || e.message}\n`); });
+  srv.listen(file);
+  link = { srv, file };
+  return link;
+}
+export function linkStop() {
+  if (!link) return;
+  const l = link;
+  link = null;
+  try { l.srv.close(); } catch { /* closed */ }
+  try { fs.unlinkSync(l.file); } catch { /* gone */ }
+}
+
 // --- fs.grep: search the workspace's files — ripgrep (the sandbox image's) with fixed arguments: its own regex engine
 // --- (linear time; never PCRE2), literal or regex, case, include/exclude globs (checked), --max-count per file,
 // --- --max-filesize, links never followed, .gitignore honoured, .git / the trash / dependencies and build output
@@ -5805,6 +5884,7 @@ export const CHAT_SWEEP_MS = 5000;
 const running = { claude: 0, cli: 0, agent: 0 };
 const helpers = { zip: 0, git: 0, grep: 0, gitRead: 0, gitWrite: 0, gitNet: 0, capture: 0, subs: 0 };
 let brokerSock = null;
+let linkSock = null;
 export function serve(sock) {
   const parser = new FrameParser();
   let child = null, opened = false, writer = null, done = false, tunnel = null;
@@ -6040,6 +6120,13 @@ export function serve(sock) {
           brokerStart(ask);
           send(T.STDOUT, Buffer.from('ready\n'));
           return undefined;
+        // the terminal's `project` command (bin/project) to the code container: always open, one at a time; grants nothing
+        case 'project.link':
+          if (linkSock && linkSock !== sock) { try { linkSock.end(); } catch { /* gone */ } }
+          linkSock = sock;
+          linkStart(ask);
+          send(T.STDOUT, Buffer.from('ready\n'));
+          return undefined;
         // the Git panel: two reads at once, one change at a time (git's index lock; a second click waits for the first)
         case 'git.status':
         case 'git.log':
@@ -6179,6 +6266,7 @@ export function serve(sock) {
     for (const w of asks.values()) { clearTimeout(w.t); w.reject(new Error('the connection ended')); }
     asks.clear();
     if (brokerSock === sock) { brokerSock = null; brokerStop(); }
+    if (linkSock === sock) { linkSock = null; linkStop(); }
     if (tunnel) { tunnel.destroy(); tunnel = null; }
     if (writer?.abort) writer.abort(); else fsWriteAbort(writer);
     writer = null;

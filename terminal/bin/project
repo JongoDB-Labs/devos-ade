@@ -1,0 +1,112 @@
+#!/usr/bin/env node
+// project: a repository made in this terminal becomes a Code project, and can be kept on the built-in git server (JON-1059).
+//   project add [DIR] [--name NAME] [--keep [--repo REPO]]   DIR (default: here), a folder under /workspace, is listed on the
+//                                    Code page's Projects; --keep also makes it a private repository on the local git server
+//                                    and pushes (DIR must be a git repository; the server's login for this terminal is the
+//                                    Code page's to give: Git hosts > Let Claude use this host)
+//   project new NAME [--keep]        /workspace/NAME made, git init (branch main), then project add
+//   project remote [REPO]            in this repository: git remote add local https://gateway:8093/<owner>/<REPO>.git (REPO: the
+//                                    folder's name) — then git push -u local main creates the repository on the server
+// It asks the Code page through /tmp/bn-project/link.sock (bn-coded relays it down the connection the code container keeps
+// open: no port of its own) and holds no credential. Node built-ins only.
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import net from 'node:net';
+import path from 'node:path';
+
+const WS = process.env.BN_CODE_WORKSPACE || '/workspace';
+const SOCK = path.join(process.env.BN_PROJECT_TMP || '/tmp/bn-project', 'link.sock');
+const out = (t) => process.stdout.write(`${t}\n`);
+const die = (t, code = 1) => { process.stderr.write(`project: ${t}\n`); process.exit(code); };
+const USAGE = `usage:
+  project add [DIR] [--name NAME] [--keep [--repo REPO]]   list a folder of ${WS} as a project of the Code page
+  project new NAME [--keep]                                a new folder, git init, then project add
+  project remote [REPO]                                    add the local git server as this repository's remote "local"
+--keep makes a private repository of it on the local git server and pushes (needs Let Claude use this host, Code page > Git hosts).`;
+
+// ask(q) -> the Code page's answer (one JSON line), or exits with why it could not be asked
+function ask(q) {
+  return new Promise((resolve) => {
+    let buf = '';
+    const c = net.connect(SOCK);
+    const t = setTimeout(() => { c.destroy(); die('no answer from the Code page in 2 minutes'); }, 120000);
+    c.on('error', (e) => { clearTimeout(t); die(e.code === 'ENOENT' || e.code === 'ECONNREFUSED' ? 'the Code page is not connected to this terminal (it is off, or starting: try again in a few seconds)' : e.message); });
+    c.on('data', (d) => { buf += d.toString('utf8'); if (buf.length > 16384) c.destroy(); });
+    c.on('close', () => {
+      clearTimeout(t);
+      try { resolve(JSON.parse(buf.split('\n')[0])); } catch { die('the Code page did not answer'); }
+    });
+    c.write(`${JSON.stringify(q)}\n`);
+  });
+}
+const git = (args, cwd) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+const isRepo = (dir) => fs.existsSync(path.join(dir, '.git'));
+// (the same as the Code page's: letters, digits, . _ - ; other characters one dash)
+const slug = (n) => String(n).normalize('NFKD').replace(/[^A-Za-z0-9_.-]+/g, '-').replace(/-{2,}/g, '-').replace(/^[^A-Za-z0-9]+/, '').replace(/[-.]+$/, '').slice(0, 100) || 'project';
+
+// args(list, flags) -> {rest, opts}: --name and --repo take a value, --keep does not
+function parse(list) {
+  const rest = [], opts = {};
+  for (let i = 0; i < list.length; i++) {
+    const a = list[i];
+    if (a === '--keep') opts.keep = true;
+    else if (a === '--name' || a === '--repo') { if (i + 1 >= list.length) die(`${a} takes a value`, 2); opts[a.slice(2)] = list[++i]; }
+    else if (a.startsWith('--')) die(`unknown option ${a}\n${USAGE}`, 2);
+    else rest.push(a);
+  }
+  return { rest, opts };
+}
+// where(dir) -> the absolute folder, which must be under the workspace
+function where(dir) {
+  const abs = path.resolve(dir);
+  if (abs === WS) die(`${WS} itself is the Workspace project already: pick a folder in it`);
+  if (!abs.startsWith(`${WS}/`)) die(`${abs} is not under ${WS}: the Code page's projects are folders of the workspace`);
+  if (!fs.existsSync(abs)) die(`${abs} is not there`);
+  return abs;
+}
+async function add(dir, opts) {
+  const abs = where(dir);
+  if (opts.keep && !isRepo(abs)) die(`${abs} is not a git repository yet: git init first (and commit), then project add --keep`);
+  const a = await ask({ op: opts.keep ? 'keep' : 'add', folder: abs, ...(opts.name ? { name: opts.name } : {}), ...(opts.repo ? { repo: opts.repo } : {}) });
+  if (a.error) die(a.note ? `${a.error} (${a.note})` : a.error);
+  out(`${a.existing ? 'Already a project' : 'Added as a project'}: ${a.name}. It is under Projects on the Code page.`);
+  if (opts.keep) out(a.kept ? `Kept on the local git server as ${a.repo}: it is pushed by itself from the Code page, and \`git push\` here works too.` : `Not kept on the local git server: ${a.note || 'it was not said why'}`);
+  else if (isRepo(abs)) out('To keep it on the local git server: project add --keep, or the project\'s Git panel on the Code page.');
+}
+async function remote(repoArg) {
+  let top;
+  try { top = git(['rev-parse', '--show-toplevel'], process.cwd()); } catch { die('this folder is not a git repository: git init first'); }
+  const info = await ask({ op: 'info' });
+  if (info.error) die(info.error);
+  if (!info.available) die('the local git server is not connected here (Settings > Claude Code > Local git server, then ./stack up)');
+  const repo = slug(repoArg || path.basename(top));
+  const url = `${info.url}${repo}.git`;
+  let have = '';
+  try { have = git(['remote', 'get-url', 'local'], top); } catch { /* none */ }
+  if (have && have !== url) die(`the remote "local" is ${have} already: remove it (git remote remove local) or pick the same repository name`);
+  if (!have) git(['remote', 'add', 'local', url], top);
+  out(`${have ? 'The remote "local" is' : 'Added the remote "local":'} ${url}`);
+  const branch = (() => { try { return git(['symbolic-ref', '--short', 'HEAD'], top); } catch { return 'main'; } })();
+  out(`Push it with: git push -u local ${branch} (the first push makes the private repository)`);
+  if (!info.mayKeep) out('Note: git here gets a login for the local git server only once you turn on "Let Claude use this host" for it (Code page > Git hosts).');
+}
+
+const [cmd, ...argv] = process.argv.slice(2);
+const { rest, opts } = parse(argv);
+if (!cmd || cmd === 'help' || cmd === '--help' || cmd === '-h') { out(USAGE); process.exit(cmd ? 0 : 2); }
+if (cmd === 'add') {
+  if (rest.length > 1) die(USAGE, 2);
+  await add(rest[0] || process.cwd(), opts);
+} else if (cmd === 'new') {
+  if (rest.length !== 1 || !/^[A-Za-z0-9][A-Za-z0-9._ -]{0,79}$/.test(rest[0])) die('project new NAME: a folder name of letters, digits, . _ - and spaces, starting with a letter or digit', 2);
+  const abs = path.join(WS, rest[0]);
+  if (fs.existsSync(abs)) die(`${abs} is there already: project add ${rest[0]}`);
+  fs.mkdirSync(abs, { mode: 0o755 });
+  try { git(['init', '--quiet', '--initial-branch=main'], abs); } catch (e) { die(`git init failed in ${abs}: ${String(e.stderr || e.message).trim().slice(0, 200)}`); }
+  out(`Made ${abs} (a git repository, branch main).`);
+  // (no commit yet: --keep keeps it, and its repository appears with its first commit)
+  await add(abs, opts);
+} else if (cmd === 'remote') {
+  if (rest.length > 1 || opts.keep || opts.name || opts.repo) die(USAGE, 2);
+  await remote(rest[0]);
+} else die(`unknown command ${cmd}\n${USAGE}`, 2);

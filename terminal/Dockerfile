@@ -124,7 +124,8 @@ COPY tmux.conf /etc/tmux.conf
 COPY bashrc /etc/devos-ade.bashrc
 COPY ssh_config /etc/ssh/ssh_config.d/devos-ade.conf
 # git's credential helper for every git here (bin/bn-git-credential: it keeps nothing; it answers only for a git host
-# you let Claude use, through the Code page), and the well-known git hosts' SSH host keys
+# you let Claude use, through the Code page; the built-in git server's certificate is the CA for gateway:8093 alone), and the
+# well-known git hosts' SSH host keys
 COPY gitconfig /etc/gitconfig
 COPY ssh_known_hosts /etc/ssh/ssh_known_hosts
 COPY bin/ /usr/local/bin/
@@ -138,7 +139,7 @@ COPY managed/off.json /etc/claude-code/managed-settings.json
 RUN chmod 755 /etc/claude-code && chmod 644 /etc/claude-code/managed-settings.json \
  && chmod 644 /etc/tmux.conf /etc/devos-ade.bashrc /etc/ssh/ssh_config.d/devos-ade.conf /etc/gitconfig /etc/ssh/ssh_known_hosts \
  && chmod 755 /usr/local/bin/devos-claude /usr/local/bin/claude-bedrock /usr/local/bin/bn-terminal \
-      /usr/local/bin/bn-session /usr/local/bin/bn-coded.mjs /usr/local/bin/bn-preview.mjs /usr/local/bin/bn-ssh-proxy /usr/local/bin/bn-git-credential \
+      /usr/local/bin/bn-session /usr/local/bin/bn-coded.mjs /usr/local/bin/bn-preview.mjs /usr/local/bin/bn-ssh-proxy /usr/local/bin/bn-git-credential /usr/local/bin/project \
       /usr/local/bin/bn-gh /usr/local/bin/claude-sub /usr/local/bin/subscriptions /usr/local/bin/codex /usr/local/bin/gemini \
       /usr/local/bin/copilot /usr/local/bin/cursor-agent /usr/local/bin/grok \
  && chmod 755 /etc/gemini-cli && chmod 644 /etc/gemini-cli/settings.json \

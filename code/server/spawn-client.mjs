@@ -216,9 +216,9 @@ export function sandboxCall(req, { timeoutMs = 60000, maxBytes = MAX_RESULT, inp
 /**
  * git.broker: one connection kept open while Claude may use a git host. Every ASK goes to onAsk (its answer back);
  * nothing else is read. Resolves {close(), closed: Promise} once bn-coded says it is ready; rejects when it refuses or
- * cannot be reached.
+ * cannot be reached. op: project.link is the same connection for the terminal's `project` command (termlink.mjs).
  */
-export function sandboxBroker({ onAsk, sock = SOCK, timeoutMs = 15000 } = {}) {
+export function sandboxBroker({ onAsk, sock = SOCK, timeoutMs = 15000, op = 'git.broker' } = {}) {
   return new Promise((resolve, reject) => {
     const conn = net.connect(sock);
     const parser = new FrameParser();
@@ -226,7 +226,7 @@ export function sandboxBroker({ onAsk, sock = SOCK, timeoutMs = 15000 } = {}) {
     const closed = new Promise((r) => { closedResolve = r; });
     const timer = setTimeout(() => { if (!ready) { conn.destroy(); reject(new SandboxError('the sandbox did not answer in time', 'timeout')); } }, timeoutMs);
     conn.on('error', (e) => { if (!ready) { clearTimeout(timer); reject(new SandboxError(`sandbox unreachable: ${e.code || e.message}`, 'unreachable')); } });
-    conn.write(frame(T.OPEN, { op: 'git.broker' }));
+    conn.write(frame(T.OPEN, { op }));
     conn.on('data', (chunk) => {
       let frames;
       try { frames = parser.push(chunk); } catch { conn.destroy(); return; }

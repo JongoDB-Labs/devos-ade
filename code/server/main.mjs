@@ -21,6 +21,7 @@ import { GitHosts, HostError } from './githosts.mjs';
 import { makeGitRemote } from './gitremote.mjs';
 import { makeMirrors } from './mirrors.mjs';
 import { makeKeep, SWEEP_MS } from './keep.mjs';
+import { makeTermLink, makeProjectAnswer } from './termlink.mjs';
 import { NEVER_ASKS, CLAUDE_SAID, sandboxWords } from './said.mjs';
 import { SandboxError } from './spawn-client.mjs';
 import { Projects, ProjectError, projectIdOk, WS, absOf } from './projects.mjs';
@@ -318,6 +319,10 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
     oauthDelay: gitOAuthDelay,
     onEvent: (event) => toAll({ type: 'git_event', event }) }));
   keeper();
+  // the terminal's `project` command (termlink.mjs): a folder of the workspace made a project, or kept on the built-in git server
+  const termLink = openBroker ? makeTermLink({ open: openBroker, log: logger, answer: makeProjectAnswer({ addProject: (b) => api.addProject(b), projects: proj,
+    keeper, mirrors: mirrorsApi, hosts: () => hostStore.read().hosts, log: logger, words: (e) => sandboxWords(e, '/api/git/') }) }) : null;
+  if (termLink) setTimeout(() => { termLink.start().catch(() => {}); }, 1500).unref?.();
   if (openBroker) setTimeout(() => { gitRemote().syncBroker().catch((e) => logger(`git broker: ${short(e.message, 200)}`)); }, 1000).unref?.();
   // an MCP server's name as the session reports it (plugin servers: plugin:x:y; claude.ai ones may have spaces)
   const MCP_SERVER = /^[\x20-\x7e]{1,200}$/;
@@ -903,7 +908,7 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
     }
   }
 
-  return { server, wss, mgr, broker, site, keeper, closeGit: () => { gitRemoteApi?.close(); keepApi?.close(); } };
+  return { server, wss, mgr, broker, site, keeper, closeGit: () => { gitRemoteApi?.close(); keepApi?.close(); termLink?.close(); } };
 }
 
 // --- the container's entry point ---
