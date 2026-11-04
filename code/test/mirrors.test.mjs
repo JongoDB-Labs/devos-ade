@@ -168,3 +168,19 @@ test('create makes an empty private repository for a kept project the way a firs
   await assert.rejects(makeMirrors({ store: setup('create4'), fetchImpl: refused.fetchImpl, base: 'http://caddy:8099' }).create('../x'), (e) => e.status === 400);
   assert.equal(refused.calls.length, 1, 'the bad name sent nothing');
 });
+
+test('protect asks for the default branch, then makes the one rule that refuses a force-push and a deletion of it (pushes left open, no allow-list); a rule there already is done, any other refusal is said', async () => {
+  const f = fake({ 'GET /api/v1/repos/devos/kept-app': [200, { default_branch: 'trunk' }], 'POST /api/v1/repos/devos/kept-app/branch_protections': [201, {}] });
+  const m = makeMirrors({ store: setup('protect'), fetchImpl: f.fetchImpl, base: 'http://caddy:8099' });
+  assert.equal(await m.protect('kept-app'), 'trunk');
+  assert.deepEqual(f.calls.map((c) => c.key), ['GET /api/v1/repos/devos/kept-app', 'POST /api/v1/repos/devos/kept-app/branch_protections']);
+  const b = f.calls[1].body;
+  assert.equal(b.rule_name, 'trunk'); assert.equal(b.enable_push, true); assert.equal(b.enable_push_whitelist, false);
+  assert.deepEqual(b.push_whitelist_usernames ?? [], []);
+  const dup = fake({ 'GET /api/v1/repos/devos/kept-app': [200, {}], 'POST /api/v1/repos/devos/kept-app/branch_protections': [403, { message: 'Branch protection already exist' }] });
+  assert.equal(await makeMirrors({ store: setup('protect2'), fetchImpl: dup.fetchImpl, base: 'http://caddy:8099' }).protect('kept-app'), 'main', 'no default branch said: main');
+  const no = fake({ 'GET /api/v1/repos/devos/kept-app': [200, { default_branch: 'a*' }], 'POST /api/v1/repos/devos/kept-app/branch_protections': [403, { message: 'not an admin' }] });
+  await assert.rejects(makeMirrors({ store: setup('protect3'), fetchImpl: no.fetchImpl, base: 'http://caddy:8099' }).protect('kept-app'), (e) => /not an admin/.test(e.message));
+  assert.equal(no.calls[1].body.rule_name, 'main', 'a glob in a branch name never becomes a rule that matches more');
+  await assert.rejects(m.protect('../x'), (e) => e.status === 400);
+});

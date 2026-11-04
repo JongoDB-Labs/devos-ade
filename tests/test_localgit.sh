@@ -453,12 +453,17 @@ test_the_web_site_signs_the_owner_in_only_after_the_portal_and_the_sandboxs_path
   assert_contains "$mirrors" 'push_mirrors(/[A-Za-z0-9._-]+)?|push_mirrors-sync|mirror-sync'
   assert_not_contains "$mirrors" "admin"
   # (and, for the portal's Git search, the two GET searches — a matcher of their own, GET and those paths only)
-  assert_eq "$(printf '%s\n' "$mirrors" | grep -c 'reverse_proxy')" 5
+  assert_eq "$(printf '%s\n' "$mirrors" | grep -c 'reverse_proxy')" 6
   # (and the one POST of git's that makes an empty repository for a kept project: that path, that method and that content type only)
   assert_contains "$(printf '%s\n' "$mirrors" | sed -n '/@create {/,/}/p')" "method POST"
   assert_contains "$(printf '%s\n' "$mirrors" | sed -n '/@create {/,/}/p')" 'git-receive-pack$'
   assert_contains "$(printf '%s\n' "$mirrors" | sed -n '/@create {/,/}/p')" "header Content-Type application/x-git-receive-pack-request"
   assert_contains "$mirrors" "reverse_proxy @create forgejo:3000"
+  # (and the one POST that protects a kept repository's default branch: that method and that path only — no read, change or delete of a rule)
+  assert_contains "$(printf '%s\n' "$mirrors" | sed -n '/@protect {/,/}/p')" "method POST"
+  assert_contains "$(printf '%s\n' "$mirrors" | sed -n '/@protect {/,/}/p')" 'path_regexp ^/api/v1/repos/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+/branch_protections$'
+  assert_not_contains "$(printf '%s\n' "$mirrors" | sed -n '/@protect {/,/}/p')" "method GET"
+  assert_contains "$mirrors" "reverse_proxy @protect forgejo:3000"
   assert_contains "$(printf '%s\n' "$mirrors" | sed -n '/@search {/,/}/p')" "method GET"
   assert_contains "$(printf '%s\n' "$mirrors" | sed -n '/@search {/,/}/p')" "path /api/v1/repos/search /api/v1/repos/issues/search"
   assert_contains "$mirrors" "reverse_proxy @search forgejo:3000"

@@ -48,6 +48,7 @@ export const rejectedText = (branch) => `${branch}: the local git server has com
 // remote() — gitremote.mjs's API (state, remoteSet, remoteRemove, plan, run); mirrors — mirrors.mjs (owner, nameFree)
 export function makeKeep({ store, remote, mirrors, now = () => Date.now(), log = () => {} }) {
   const running = new Map();   // project id -> the run in progress
+  const guarded = new Map();   // 'owner/name' -> the branches known to be protected on the server (this start's memory: a restart looks again)
   const again = new Set();     // project ids asked to push again while a run was in progress
   let timer = null;
   const rootOf = (id) => {
@@ -79,6 +80,17 @@ export function makeKeep({ store, remote, mirrors, now = () => Date.now(), log =
     return out;
   }
 
+  // protect(repo) — the repository's default branch refuses a force-push and a deletion on the server (mirrors.protect). Never fatal:
+  // a refusal is logged and the next start, the next sweep or the next keep tries again; what is known to be done is not asked twice.
+  async function protect(repo) {
+    if (typeof mirrors.protect !== 'function' || typeof repo !== 'string') return;
+    try {
+      const branch = await mirrors.protect(repo.split('/')[1]);
+      if (!guarded.has(repo)) guarded.set(repo, new Set());
+      guarded.get(repo).add(branch);
+    } catch (e) { log(`keep: could not protect the default branch of ${repo}: ${short(e?.message, 200)}`); }
+  }
+
   // keep(id, {name, auto}) -> the view: the name checked (on the server already, or held by another kept project: 409, nothing
   // changed), the empty private repository made on the server at once (so the project is in the Git tab from the start, before
   // any commit), its remote added (origin when the project has none, else local), and what it has pushed. A project without commits
@@ -108,7 +120,11 @@ export function makeKeep({ store, remote, mirrors, now = () => Date.now(), log =
     }
     store().setLocalgit(id, () => ({ state: 'kept', repo: made.repo, remote: remoteName, auto: b.auto !== false, made: true, pushedAt: null, lastError: null, heads: {}, rejected: {} }));
     log(`keep: ${p.name} is kept as ${made.repo} (remote ${remoteName})`);
+    // (before the first push, so the default branch is guarded from its first commit; the server's default branch is the branch of that push
+    // when the repository was empty, so it is asked again after it)
+    await protect(made.repo);
     await sync(id, { manual: true });
+    await protect(made.repo);
     return view(id);
   }
 
@@ -269,15 +285,26 @@ export function makeKeep({ store, remote, mirrors, now = () => Date.now(), log =
     let ids = [];
     try { ids = store().keptIds(); } catch { return; }
     for (const id of ids) {
-      try { const rec = store().localgit(id); if (rec?.state === 'kept' && rec.auto) await sync(id); } catch (e) { log(`keep ${id}: ${short(e?.message, 200)}`); }
+      try {
+        const rec = store().localgit(id);
+        // (a project kept before default branches were protected gets its rule here, once per start; a failed one is tried again)
+        if (rec?.state === 'kept' && !guarded.has(rec.repo)) await protect(rec.repo);
+        if (rec?.state === 'kept' && rec.auto) await sync(id);
+      } catch (e) { log(`keep ${id}: ${short(e?.message, 200)}`); }
     }
+  }
+  async function guardAll() {
+    let ids = [];
+    try { ids = store().keptIds(); } catch { return; }
+    for (const id of ids) { try { const rec = store().localgit(id); if (rec?.state === 'kept') await protect(rec.repo); } catch (e) { log(`keep ${id}: ${short(e?.message, 200)}`); } }
   }
   function start(ms = SWEEP_MS) {
     clearInterval(timer);
+    void guardAll();   // (at once, not after the first interval: the repositories kept before this version get their protection when the Code page starts)
     timer = setInterval(() => { void sweep(); }, ms);
     timer.unref?.();
   }
   const close = () => { clearInterval(timer); timer = null; };
 
-  return { view, keep, pushNow, setAuto, decline, stop, sync, committed, turnEnded, keptRepo, sweep, start, close };
+  return { view, keep, pushNow, setAuto, decline, stop, sync, committed, turnEnded, keptRepo, sweep, guardAll, start, close };
 }

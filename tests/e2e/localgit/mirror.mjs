@@ -54,6 +54,12 @@ ok(await p('DELETE', '/api/v1/repos/devos/e2e-one') === 404, 'deleting a reposit
 ok(await p('GET', '/api/v1/admin/users') === 404, 'the admin API is not passed (404)');
 ok(await p('GET', '/api/v1/user') === 404, 'the account API is not passed (404)');
 ok(await p('GET', '/devos/e2e-one') === 404, 'the web UI is not on it (404)');
+// protecting a kept repository's default branch (JON-1059): the one POST is passed and Forgejo takes it (a repeat is "already exist");
+// reading, changing or deleting a rule is not passed
+ok((await m.protect('e2e-one')) === 'main', 'the default branch is protected through the internal site');
+ok((await m.protect('e2e-one')) === 'main', 'a second protection of it is done, not an error');
+ok(await p('GET', '/api/v1/repos/devos/e2e-one/branch_protections') === 404, 'listing the rules is not passed (404)');
+ok(await p('DELETE', '/api/v1/repos/devos/e2e-one/branch_protections/main') === 404, 'deleting a rule is not passed (404)');
 // removing the push mirror
 const name = pm.name;
 await m.remove({ repo: 'e2e-one', name });
