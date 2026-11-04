@@ -438,3 +438,22 @@ export function normSettingsView(v: unknown): SettingsView | null {
     said: typeof o.said === 'string' && o.said ? { said: label(o.said, 300), by: 'sandbox' } : null,
   };
 }
+
+/** A git repository of the workspace that is not a project (GET /api/projects/found): offered as one — Add as project, or Not now. */
+export interface FoundRepo {
+  /** its folder in the workspace, by the same rules as a project's */
+  folder: string;
+  name: string;
+}
+/** normFound(v) -> the offers of the backend's answer, each checked (a folder a project may be, a name of one line); at most 20, none twice.
+ *  Nothing here makes a project: Add as project asks the backend, which checks the folder again. */
+export function normFound(v: unknown): FoundRepo[] {
+  const out: FoundRepo[] = [];
+  for (const x of Array.isArray(obj(v)?.found) ? (obj(v)?.found as unknown[]).slice(0, 20) : []) {
+    const o = obj(x);
+    if (!o || !rootOk(o.folder) || out.some((r) => r.folder === o.folder)) continue;
+    const name = nameOk(o.name) ? o.name : (o.folder as string).split('/').pop() ?? '';
+    if (nameOk(name)) out.push({ folder: o.folder as string, name });
+  }
+  return out;
+}

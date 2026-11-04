@@ -30,7 +30,7 @@ import { promptTitle } from './mentions';
 import type { RecentReport } from './recent';
 import { normKeep, type KeepView } from './keep';
 import { normExportPlan, zipWhole, type ExportOptions, type ExportPlan } from './exportzip';
-import { cwdOk, goneCwdOk, normProject, normProjects, normSessionSettings, normSettingsView, projectIdOk, WORKSPACE_ID, WORKSPACE_PATH, type Project, type SettingsView } from './projects';
+import { cwdOk, goneCwdOk, normFound, normProject, normProjects, normSessionSettings, normSettingsView, projectIdOk, WORKSPACE_ID, WORKSPACE_PATH, type FoundRepo, type Project, type SettingsView, rootOk } from './projects';
 
 type Obj = Record<string, unknown>;
 const obj = (v: unknown): Obj | null => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Obj) : null);
@@ -933,6 +933,15 @@ export const keepDecline = (id: string): Promise<KeepView> => keepView('POST', i
 export async function keepStop(id: string): Promise<{ repo: string; removed: boolean }> {
   const o = await keepRequest('DELETE', id, '');
   return { repo: label(o.repo, 200), removed: o.removed === true };
+}
+/** Git repositories of the workspace that are not projects (made in the terminal, cloned): offered by the Projects tab. */
+export async function getFoundRepos(): Promise<FoundRepo[]> {
+  return normFound(await request('GET', '/api/projects/found'));
+}
+/** Not now: this folder is not offered again (remembered by the code container; the folder itself is untouched). */
+export async function declineFoundRepo(folder: string): Promise<void> {
+  if (!rootOk(folder)) throw new ApiError(400, 'bad folder');
+  await request('POST', '/api/projects/found/decline', { folder });
 }
 export async function renameProject(id: string, name: string): Promise<void> {
   if (!projectIdOk(id)) throw new ApiError(400, 'bad project id');

@@ -119,7 +119,10 @@ export function localgitRecord(r) {
     lastError: typeof r.lastError === 'string' && r.lastError && !ODD.test(r.lastError) ? r.lastError.slice(0, 300) : null, heads: commits(r.heads), rejected: commits(r.rejected) };
 }
 
-const empty = () => ({ version: 1, projects: [], filed: {}, archived: {}, hostTrust: {}, gone: [], seen: [], localgit: {} });
+// found: folders of the workspace with a git repository in them that the Projects tab offered as projects and you said "Not now"
+// to (found.mjs) — remembered by folder, so the line does not come back; the folder itself is never touched
+export const FOUND_MAX = 200;
+const empty = () => ({ version: 1, projects: [], filed: {}, archived: {}, hostTrust: {}, gone: [], seen: [], localgit: {}, found: [] });
 const WORKSPACE = Object.freeze({ id: WORKSPACE_ID, name: 'Workspace', root: '', created: null, workspace: true });
 
 export class Projects {
@@ -187,7 +190,8 @@ export class Projects {
       const rec = projectIdOk(k) ? localgitRecord(r) : null;
       if (rec) localgit[k] = rec;
     }
-    return { version: 1, projects, filed, archived, hostTrust, gone, seen, localgit };
+    const found = [...new Set(Array.isArray(v.found) ? v.found.filter((x) => rootOk(x)) : [])].slice(0, FOUND_MAX);
+    return { version: 1, projects, filed, archived, hostTrust, gone, seen, localgit, found };
   }
   write(v) {
     fs.mkdirSync(this.dir, { recursive: true, mode: 0o700 });
@@ -348,6 +352,16 @@ export class Projects {
   localgit(id) {
     const r = projectIdOk(id) ? this.read().localgit[id] : null;
     return r ? { ...r, ...(r.state === 'kept' ? { heads: { ...r.heads }, rejected: { ...r.rejected } } : {}) } : null;
+  }
+  /** foundDeclined() -> the folders you said "Not now" to when the Projects tab offered them as projects */
+  foundDeclined() { return this.read().found; }
+  /** declineFound(root) -> the list: this folder is not offered again (a folder of the workspace, as a project's root is) */
+  declineFound(root) {
+    if (!rootOk(root)) throw new ProjectError(400, 'a folder of the workspace: 1 to 4 levels of names (none starting with "."), at most 160 bytes');
+    return this.update((v) => {
+      if (!v.found.includes(root)) v.found = [...v.found, root].slice(-FOUND_MAX);
+      return [...v.found];
+    });
   }
   /** keptIds() -> the ids of the projects kept on the built-in git server */
   keptIds() { return Object.entries(this.read().localgit).filter(([, r]) => r.state === 'kept').map(([id]) => id); }

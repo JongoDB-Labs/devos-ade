@@ -251,7 +251,8 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
   function onStateBoth(a, b) { toAll(stateMsg(a)); toAll(stateMsg(b)); }
   const api = makeApi({ call, sessions: mgr, projects: { list: () => proj().list(), get: (id) => proj().get(id), add: (b) => proj().add(b), rename: (id, n) => proj().rename(id, n),
     remove: (id) => proj().remove(id), file: (ids, pid) => proj().file(ids, pid), placer: () => proj().placer(), syncHosts: () => proj().syncHosts(),
-      archive: (ids, on) => proj().archive(ids, on), archivedIds: () => proj().archivedIds(), forgetSession: (id) => proj().forgetSession(id), hosts: () => proj().hosts() },
+      archive: (ids, on) => proj().archive(ids, on), archivedIds: () => proj().archivedIds(), forgetSession: (id) => proj().forgetSession(id), hosts: () => proj().hosts(),
+      foundDeclined: () => proj().foundDeclined(), declineFound: (root) => proj().declineFound(root) },
     reloadPollMs, reloadMaxMs, log: logger,
     settingsKnown: (id) => trust.known(id), agentStore: agents, plan: () => planAllowed === true,
     planAccounts: async () => ((await subs()).tools?.claude?.accounts ?? []).map((a) => a.name) });
@@ -487,6 +488,9 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
     // projects (projects.mjs): the records, a new one (a new folder, or one that is there), a name, the sessions filed
     // there, removal (the record; its folder into the trash only when named again), its terminal, git init in it
     if (p === '/api/projects' && m === 'GET') return send(res, 200, await api.listProjects());
+    // git repositories of the workspace that are not projects (made in the terminal, cloned): offered by the Projects tab; "Not now" is remembered
+    if (p === '/api/projects/found' && m === 'GET') return send(res, 200, await api.foundProjects());
+    if (p === '/api/projects/found/decline' && m === 'POST') return send(res, 200, api.declineFound(await readJson(req)));
     if (p === '/api/projects' && m === 'POST') {
       const b = await readJson(req);
       if (b?.keep === true && b.kind === 'new') b.git = true;   // (kept: a repository, so git init)

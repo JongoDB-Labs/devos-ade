@@ -134,6 +134,12 @@
 .imp-tool, .imp-result, .imp-local, .imp-thinking { overflow-wrap: anywhere; }
 .imp-results { margin: 0 0 8px; padding-left: 18px; }
 .proj-suggest { margin-top: 6px; }
+/* repositories of the workspace offered as projects (components/Found.tsx): one line each, the buttons at its end */
+.proj-found { margin-top: 8px; }
+.proj-found-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 4px 8px; border-bottom: 1px solid var(--line); }
+.proj-found-name { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.proj-found-row .btn { margin-left: auto; }
+.proj-found-row .btn + .btn { margin-left: 0; }
 .imp-suggestion { display: grid; gap: 2px; padding: 4px 8px; border-bottom: 1px solid var(--line); }
 .imp-suggestion summary { cursor: pointer; }
 

@@ -86,7 +86,7 @@ const answers = {
     }
     return { result: { ...meta, zipBytes: 12 }, stdout: Buffer.alloc(0) };
   },
-  'git.repos': (req) => ({ result: { repos: req.root ? [{ path: '' }, { path: 'lib/inner' }, { path: '../x' }] : [{ path: 'app' }] } }),
+  'git.repos': (req) => ({ result: { repos: state.repos && !req.root ? state.repos : req.root ? [{ path: '' }, { path: 'lib/inner' }, { path: '../x' }] : [{ path: 'app' }] } }),
 };
 const call = async (req, opts) => { calls.push(req); const a = answers[req.op]; if (!a) throw new SandboxError('unknown op', 'refused'); return a(req, opts); };
 const queries = [];
@@ -716,4 +716,34 @@ test('Export to Files: the plan (dry), then the zip passed through; over the lim
   const n = calls.length;
   assert.equal((await req('GET', '/api/projects/p_00000000/export?dry=1')).status, 404);
   assert.equal(calls.length, n);
+});
+
+test('found: git repositories of the workspace that are not projects are offered; "Not now" is remembered by folder; adding takes them off', async () => {
+  const dir = (p) => ({ path: p, kind: 'dir' });
+  // (a project's own folder, one inside a project, one around a project, a file-kind .git (a worktree), hostile paths: none offered)
+  const mine = (await req('POST', '/api/projects', { kind: 'folder', folder: 'mine' })).json.project;
+  state.repos = [dir('mine'), dir('mine/inner'), dir('fresh'), dir('client/site'), { path: 'wt', kind: 'file' }, dir('../etc'), dir('.hidden'), dir('a\nb')];
+  try {
+    let r = await req('GET', '/api/projects/found');
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.json.found, [{ folder: 'fresh', name: 'fresh' }, { folder: 'client/site', name: 'site' }]);
+    // Not now: remembered (in the records, by folder), not offered again, even after a restart of the store
+    r = await req('POST', '/api/projects/found/decline', { folder: 'fresh' });
+    assert.equal(r.status, 200);
+    assert.deepEqual((await req('GET', '/api/projects/found')).json.found, [{ folder: 'client/site', name: 'site' }]);
+    assert.deepEqual(new Projects({ dir: store.dir.replace(/\/projects$/, '') }).foundDeclined(), ['fresh']);
+    for (const b of [{ folder: '../etc' }, { folder: '' }, {}, { folder: 5 }, { folder: '.git' }]) assert.equal((await req('POST', '/api/projects/found/decline', b)).status, 400, JSON.stringify(b));
+    assert.equal((await req('POST', '/api/projects/found/decline', { folder: 'fresh' })).status, 200, 'twice: once');
+    assert.deepEqual(store.foundDeclined(), ['fresh']);
+    // Add as project is the ordinary add of a folder, and the line is gone
+    r = await req('POST', '/api/projects', { kind: 'folder', folder: 'client/site' });
+    assert.equal(r.status, 200);
+    assert.deepEqual((await req('GET', '/api/projects/found')).json.found, []);
+    // a sandbox older than the op, or one that fails: nothing offered, no error
+    state.repos = undefined;
+    answers['git.repos'] = () => Promise.reject(new SandboxError('unknown op', 'refused'));
+    assert.deepEqual((await req('GET', '/api/projects/found')).json, { found: [] });
+    // the page cannot decline another way: GET and a bad Origin are refused
+    assert.equal((await req('GET', '/api/projects/found/decline')).status, 404);
+  } finally { state.repos = undefined; await req('DELETE', `/api/projects/${mine.id}`); }
 });

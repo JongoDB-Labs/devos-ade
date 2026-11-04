@@ -850,6 +850,20 @@ export function makeApi({ call, sessions, projects = null, reloadPollMs = 1000, 
     const f = await folders(list);
     return { projects: list.map((p) => projectOut(p, f.get(p.id))), max: PROJECTS_MAX };
   }
+  // foundProjects() -> {found: [{folder, name}]}: git repositories in the workspace (two levels down, bn-coded's git.repos) that are
+  // not projects yet — not one, not inside one, not around one — and that you have not said "Not now" to; a repository made in the
+  // terminal shows up here whether or not its `project add` was run. Offered, never added by this call.
+  async function foundProjects() {
+    let repos = [];
+    try { repos = (await call({ op: 'git.repos' }, { timeoutMs: 15000 })).result?.repos; } catch (e) { if (!unknownOp(e)) log(`projects: found: ${short(e?.message || String(e), 200)}`); }
+    const roots = store().list().filter((p) => !p.workspace && !p.host && !p.gone).map((p) => p.root);
+    const declined = new Set(store().foundDeclined());
+    const clash = (r) => roots.some((x) => x === r || x.startsWith(`${r}/`) || r.startsWith(`${x}/`));
+    const found = (Array.isArray(repos) ? repos : []).filter((r) => r && r.kind === 'dir' && rootOk(r.path) && !clash(r.path) && !declined.has(r.path))
+      .slice(0, 20).map((r) => ({ folder: r.path, name: r.path.split('/').pop() }));
+    return { found };
+  }
+  const declineFound = (b) => ({ ok: true, declined: store().declineFound(typeof b?.folder === 'string' ? b.folder.trim() : '').length });
   // folderThere(root) — throws 409 unless the project's folder is a real folder in the sandbox now (a new session starts
   // there; an older sandbox that cannot say: let it try)
   async function folderThere(root) {
@@ -1043,7 +1057,7 @@ export function makeApi({ call, sessions, projects = null, reloadPollMs = 1000, 
     gitStatus, gitLog, gitFile, gitStage, gitUnstage, gitCommit, gitDiscard, gitDraft, memory, memoryWrite, plugins, available, pluginAction,
     marketplaces: async () => ({ marketplaces: (await plugins()).marketplaces }), marketplaceAdd, marketplaceRemove, marketplaceUpdate, mcpAdd, mcpRemove,
     ports, stopPort, launch, launchStart, runTasks, runStart, runResults, runShow, terminalCapture,
-    listProjects, addProject, removeProject, renameProject, fileSessions, projectTerminal, projectGitInit, folderThere };
+    listProjects, addProject, removeProject, renameProject, fileSessions, projectTerminal, projectGitInit, folderThere, foundProjects, declineFound };
 }
 const unknownOp = (e) => e instanceof SandboxError && e.kind === 'refused' && /unknown op/.test(e.message);
 
