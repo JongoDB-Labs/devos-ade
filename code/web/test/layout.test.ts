@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import {
   PLACED, WIDGETS, BOUNDS, DOCKS, allowedDocks, arrange, activeIn, collapsible, defaultLayout, defaultLayoutPrefs, dockBounds, dockOf, explorerOpen, fromLegacy,
   growWidget, isDefault, moveWidget, nextDock, parseLayout, parseLayoutPrefs, resetLayout, reveal, setActive, setDockSize, setHidden, setMode, setPane,
-  setWidgetSize, shiftWidget, shown, tabletPane, toggleExplorer, visibleIn, type DeviceLayout, type WidgetId,
+  setWidgetSize, shiftWidget, shown, tabletPane, toggleExplorer, visibleIn, keptStep, type DeviceLayout, type WidgetId,
 } from '../src/layout';
-import { DEFAULT_PREFS, parsePrefs } from '../src/prefs';
+import { DEFAULT_PREFS, parsePrefs, localEdits } from '../src/prefs';
 
 const all = (l: DeviceLayout) => DOCKS.flatMap((d) => l.place[d]).sort();
 const every = (l: DeviceLayout) => assert.deepEqual(all(l), [...PLACED].sort(), 'every widget sits in exactly one dock');
@@ -329,4 +329,30 @@ test('what the backend keeps round-trips: a layout through JSON and back is the 
   d = setDockSize(setHidden(d, 'status', true), 'left', 333);
   assert.deepEqual(parseLayout(JSON.parse(JSON.stringify(d)), 'desktop'), d);
   assert.ok(JSON.stringify(d).length < 1000, `a layout is small (${JSON.stringify(d).length} bytes)`);
+});
+
+test('the layout your sign-in keeps: taken, reset, sent or left — a change made here since the copy was read wins', () => {
+  const mine = setActive(defaultLayout(), 'left', 'sessions');
+  const theirs = setActive(defaultLayout(), 'left', 'git');
+  const base = { device: 'desktop' as const, keptBefore: false, mineSince: false };
+  assert.equal(keptStep({ ...base, mine, theirs }), 'take', 'another device\'s change wins over this browser\'s older one');
+  assert.equal(keptStep({ ...base, mine: defaultLayout(), theirs: null, keptBefore: true }), 'reset', 'Reset to default on another device');
+  assert.equal(keptStep({ ...base, mine, theirs: null }), 'send', 'one from before the backend kept them goes to your sign-in');
+  assert.equal(keptStep({ ...base, mine: defaultLayout(), theirs: null }), 'none');
+  // (the Projects tab clicked while the page still waited for its first answers: the backend's copy was read before the click)
+  for (const t of [theirs, null]) assert.equal(keptStep({ ...base, mine, theirs: t, keptBefore: true, mineSince: true }), 'none', 'a change made since wins, sent or not');
+});
+
+test('local changes against a copy read from the backend: one made after the read began is newer than the copy', () => {
+  const e = localEdits();
+  e.mark('desktop');
+  const asked = e.now();
+  assert.equal(e.since('desktop', asked), false, 'a change made before the read: the copy has it or is newer');
+  assert.equal(e.since('tablet', asked), false);
+  e.mark('desktop');
+  assert.equal(e.since('desktop', asked), true, 'a change made while the read was on its way');
+  assert.equal(e.since('model', asked), false, 'per thing changed');
+  e.mark('model');
+  assert.equal(e.since('model', asked), true);
+  assert.equal(e.since('desktop', e.now()), false, 'a copy read after it');
 });

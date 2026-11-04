@@ -38,6 +38,19 @@ export interface Prefs {
 
 /** At most this many starred models are kept. */
 export const STARRED_MAX = 50;
+
+/** This browser's changes to what the backend keeps (a device's layout, the model), counted: a copy of the backend's
+ *  read when now() was `asked` is older than a change marked since (app.ts takePrefs: the page's first answers can take
+ *  seconds, and a click made meanwhile was sent before the copy arrived). */
+export function localEdits() {
+  let n = 0;
+  const at = new Map<string, number>();
+  return {
+    mark(what: Device | 'model'): void { at.set(what, ++n); },
+    now: (): number => n,
+    since: (what: Device | 'model', asked: number): boolean => (at.get(what) ?? 0) > asked,
+  };
+}
 const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:/@[\]-]{0,127}$/;
 
 export const DEFAULT_PREFS: Prefs = {

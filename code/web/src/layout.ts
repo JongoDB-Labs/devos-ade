@@ -220,6 +220,17 @@ function canon(v: unknown): unknown {
 export const isDefault = (l: DeviceLayout, device: Device): boolean => same(l, defaultLayout(device));
 export const sameLayout = (a: DeviceLayout, b: DeviceLayout): boolean => same(a, b);
 
+/** What this browser does with a device's layout as its sign-in keeps it (app.ts takeLayout): 'take' theirs (a change
+ *  made on another device wins), 'reset' to the default (kept before, not now: Reset to default on another device),
+ *  'send' its own (one from before the backend kept them, or set up here first), or 'none'. mineSince: this browser
+ *  changed it since the backend's copy was read — sent or not yet — so the copy is older than it and never wins. */
+export function keptStep(o: { mine: DeviceLayout; theirs: DeviceLayout | null | undefined; device: Device; keptBefore: boolean; mineSince: boolean }): 'take' | 'reset' | 'send' | 'none' {
+  if (o.mineSince) return 'none';
+  if (o.theirs) return 'take';
+  if (o.keptBefore) return 'reset';
+  return isDefault(o.mine, o.device) ? 'none' : 'send';
+}
+
 // ---------------------------------------------------------------- changing it (each returns the same object when nothing changes)
 
 const withDock = (l: DeviceLayout, dock: DockId, patch: Partial<DockState>): DeviceLayout => {

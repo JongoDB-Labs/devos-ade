@@ -24,6 +24,11 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   before the first prompt. A chat handed over from Chat hit this every time it was named "From the chat: …" just after its first message.
 - **On a phone, Home's *New session in …* and *New chat* no longer cut each other short.** With a longer project name both buttons were
   squeezed onto one row and ended in an ellipsis; they now share the row while they fit and wrap to two rows when they do not.
+- **A tab click, a resized panel or a model picked in the first seconds after the Code page opens stays as you left it
+  (JON-1064).** It used to snap back a moment later. The page took the layout and model kept for your sign-in from its
+  first answer once every other first answer was in. The project list now looks for new projects first, so that can take
+  a few seconds, and by then the copy was older than your click. A change you make since that copy was asked for now
+  wins over it. Your sign-in had kept the change all along, so the next load was already right.
 
 ### Added
 - **User-journey checks (JON-1058).** `browser/journey-code-to-git`, `journey-terminal-folder-to-git` and

@@ -13,7 +13,7 @@ import { SETUP_LINKS, settingsRoute, setupTarget, type SetupReason } from './set
 import type { Ev, FsEntry, Harness, HarnessInfo, Hunk, ImageBlock, KeyBudget, LaunchEntry, LaunchList, Mode, PortInfo, PreviewInfo, PreviewLink, RunList, RunResult, RunTask, ServerMsg, ServerState, SessionInfo, UserPrefs } from './types';
 import { approveRun, approvedRun, askDraft, outcome, outcomeText, plainCommand } from './run';
 import { approveLaunch, approvedLaunch, switchedAway, type Viewport } from './devpreview';
-import { loadPrefs, savePrefs, type Prefs } from './prefs';
+import { loadPrefs, localEdits, savePrefs, type Prefs } from './prefs';
 import * as lay from './layout';
 import type { DeviceLayout, Device, DockId, WidgetId } from './layout';
 import { applyHunks } from './diff';
@@ -499,11 +499,14 @@ export const deviceNow = (): Device => (tabletNow() ? 'tablet' : 'desktop');
 export const layoutNow = (s: AppState = get()): DeviceLayout => s.prefs.layout[deviceNow()];
 
 const layoutDirty = new Set<Device>();
+/** (this browser's changes to what the backend keeps, counted: a copy of the backend's read before one is older than it — takePrefs) */
+const edits = localEdits();
 let layoutTimer: ReturnType<typeof setTimeout> | null = null;
 /** Keep a device's layout for your sign-in a moment after the last change (dragging a splitter changes it on every
  *  pixel). A layout back at the default is forgotten there: nothing was customized. */
 function pushLayout(device: Device): void {
   layoutDirty.add(device);
+  edits.mark(device);
   if (layoutTimer) clearTimeout(layoutTimer);
   layoutTimer = setTimeout(() => sendLayouts(false), 600);
 }
@@ -631,20 +634,21 @@ export function resetWidgets(): void {
   editLayout((_l, d) => lay.resetLayout(d), 'The layout is back to the default.');
 }
 /** The layouts the backend keeps for your sign-in, taken over by this browser (at the start and after a reconnect): a change
- *  made on another device wins, unless this browser has one of its own not sent yet. */
-function takeLayout(kept: UserPrefs['layout']): void {
+ *  made on another device wins, unless this browser has one of its own not sent yet or made since the copy was read
+ *  (edits.now() was `asked` then) — layout.ts keptStep. */
+function takeLayout(kept: UserPrefs['layout'], asked: number): void {
   for (const device of ['desktop', 'tablet'] as const) {
-    if (layoutDirty.has(device)) continue;   // (a change of this browser's not kept yet wins)
     const mine = get().prefs.layout[device];
     const theirs = kept?.[device];
-    if (theirs) {
+    const step = lay.keptStep({ mine, theirs, device, keptBefore: get().prefs.layoutKept.includes(device), mineSince: layoutDirty.has(device) || edits.since(device, asked) });
+    if (step === 'take' && theirs) {
       if (!lay.sameLayout(mine, theirs)) setPrefs((p) => ({ ...p, layout: { ...p.layout, [device]: theirs } }));
       keptLayout(device, true);
-    } else if (get().prefs.layoutKept.includes(device)) {
+    } else if (step === 'reset') {
       // (kept before, and not now: Reset to default on another device — this browser follows, never sending its old one back)
       if (!lay.isDefault(mine, device)) setPrefs((p) => ({ ...p, layout: { ...p.layout, [device]: lay.defaultLayout(device) } }));
       keptLayout(device, false);
-    } else if (!lay.isDefault(mine, device)) {
+    } else if (step === 'send') {
       // (a layout from before the backend kept them, or set up here first: it goes to your sign-in)
       pushLayout(device);
     }
@@ -673,15 +677,18 @@ export function defaultModel(s: AppState = get()): string {
 function rememberModel(model: string): void {
   const settingsDefault = get().models?.settingsDefault ?? null;
   setPrefs((p) => (p.model === model && p.modelSetting === settingsDefault ? p : { ...p, model, modelSetting: settingsDefault }));
+  edits.mark('model');
   void api.putPrefs({ model, settingsDefault }).catch(() => undefined);
 }
 
 /** What the backend keeps for your sign-in, taken over by this browser (at the start, and again after a reconnect: a
- *  pick made on another device since). A browser that picked before the backend kept picks gives its own to it. */
-function takePrefs(server: ServerState): void {
+ *  pick made on another device since). A browser that picked before the backend kept picks gives its own to it.
+ *  asked: edits.now() when `server` was asked for — a change made here since is newer than this copy and stays. */
+function takePrefs(server: ServerState, asked: number): void {
   const kept = server.prefs;
   if (!kept) return;
-  takeLayout(kept.layout);
+  takeLayout(kept.layout, asked);
+  if (edits.since('model', asked)) return;   // (a pick made here meanwhile: it went to the backend after this copy)
   if (kept.model) {
     setPrefs((p) => (p.model === kept.model && p.modelSetting === kept.settingsDefault ? p : { ...p, model: kept.model as string, modelSetting: kept.settingsDefault }));
     return;
@@ -731,9 +738,10 @@ export const socket = new api.Socket({
  *  (their conversation stays; the next prompt resumes them). */
 async function syncOpenSessions(): Promise<void> {
   try {
+    const asked = edits.now();
     const server = await api.getState();
     noteWhere(server.sessions);
-    takePrefs(server);
+    takePrefs(server, asked);
     const open = new Set(server.sessions.map((o) => o.id));
     set((s) => {
       let changed = false;
@@ -1274,6 +1282,7 @@ export async function boot(): Promise<void> {
       restore: { n: (s.restore?.n ?? 0) + 1, text }, startWith: 'default' }));   // (the mode picker shows Manual: what it starts in)
   }
   socket.start();
+  const asked = edits.now();   // (the answers below can take seconds — refreshProjects looks for new projects first)
   const results = await Promise.allSettled([api.getState(), api.getModels(), refreshSessions(), refreshProjects()]);
   const [st, models] = results;
   if (models.status === 'fulfilled') set((s) => ({ ...s, models: models.value }));
@@ -1285,7 +1294,7 @@ export async function boot(): Promise<void> {
   if (st.status === 'fulfilled') {
     const server = st.value;
     set((s) => ({ ...s, server }));
-    takePrefs(server);
+    takePrefs(server, asked);
     if (server.agents) void refreshHarnesses();
     noteWhere(server.sessions);
     for (const o of server.sessions) {
