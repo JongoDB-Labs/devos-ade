@@ -211,6 +211,7 @@ export const SANDBOX_REFUSALS = Object.freeze([
   'a Chat conversation has no tools: --tools=, --strict-mcp-config and --setting-sources=, once each',
   'not for a Chat conversation',
   'no such tool',
+  'no such account',
   'mode: code or chat',
   'not in Chat: it has no switch that turns its tools off',
   'that tool is not in this sandbox',

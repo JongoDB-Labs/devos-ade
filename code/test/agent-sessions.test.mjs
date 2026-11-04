@@ -700,3 +700,24 @@ test('a plugin row whose name no page shows as it is (past 1,024 characters, a c
     assert.notEqual(d.agents.state, 'trusted', what);
   }
 });
+
+test('another account: a plan session and an agent carry its name to the sandbox; a bad name is refused; the record keeps it', async () => {
+  const { mgr, queries, spawns, agents, store } = manager({ plan: true });
+  for (const bad of ['../x', 'A', '', 'a'.repeat(21), 5]) assert.throws(() => mgr.open({ harness: 'claude', account: bad }), /bad account/);
+  assert.throws(() => mgr.open({ account: 'work' }), /no accounts/);
+  const { id } = mgr.open({ harness: 'claude', account: 'work' });
+  assert.equal(mgr.get(id).account, 'work');
+  queries[0].options.spawnClaudeCodeProcess({ args: [] });
+  assert.deepEqual([spawns[0].plan, spawns[0].account], [true, 'work']);
+  const first = mgr.open({ harness: 'claude' });
+  queries[1].options.spawnClaudeCodeProcess({ args: [] });
+  assert.equal(spawns[1].account, undefined);
+  const a = mgr.open({ harness: 'codex', account: 'alt' });
+  await wait(() => agents.length === 1);
+  assert.equal(agents[0].account, 'alt');
+  await wait(() => store.get(a.id)?.account === 'alt' || mgr.get(a.id).state === 'ended');
+  const kept = store.get(a.id)?.account;
+  mgr.closeAll();
+  assert.equal(kept, 'alt');
+  assert.ok(first.id);
+});

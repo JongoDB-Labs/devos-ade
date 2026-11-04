@@ -148,10 +148,13 @@ test('an agent: its launcher with fixed arguments, in a folder of the workspace 
 
 test('which tools are signed in: words only, every known tool once (no line: not known), the system\'s programs', async () => {
   const r = result(await talk(SOCK, [open({ op: 'subscriptions.status' })]));
-  assert.deepEqual(r.tools, [{ id: 'claude', installed: false, signed: 'unknown' }, { id: 'codex', installed: true, signed: 'yes' },
-    { id: 'gemini', installed: false, signed: 'unknown' }, { id: 'copilot', installed: true, signed: 'unknown' },
-    { id: 'cursor', installed: false, signed: 'unknown' }, { id: 'grok', installed: false, signed: 'unknown' }]);
-  assert.deepEqual(coded.parseSubsStatus('codex\tno\t-\tno\t-\tnone\ncodex\tyes\t1\tyes\tchatgpt\tcommand').tools[1], { id: 'codex', installed: false, signed: 'no' });
+  assert.deepEqual(r.tools, [{ id: 'claude', installed: false, signed: 'unknown', accounts: [] }, { id: 'codex', installed: true, signed: 'yes', accounts: [] },
+    { id: 'gemini', installed: false, signed: 'unknown', accounts: [] }, { id: 'copilot', installed: true, signed: 'unknown', accounts: [] },
+    { id: 'cursor', installed: false, signed: 'unknown', accounts: [] }, { id: 'grok', installed: false, signed: 'unknown', accounts: [] }]);
+  // other accounts of a tool (claude:work) and the first account's name (a seventh column), words only
+  const t = coded.parseSubsStatus('claude\tyes\t2.1.0\tyes\tclaude.ai\tcommand\tmax\nclaude:work\tyes\t2.1.0\tno\t-\tcommand\nclaude:Bad\tyes\t1\tyes\tx\tcommand\nclaude:work\tyes\t2.1.0\tyes\tx\tcommand').tools[0];
+  assert.deepEqual([t.first, t.accounts], ['max', [{ name: 'work', signed: 'no' }]]);
+  assert.deepEqual(coded.parseSubsStatus('codex\tno\t-\tno\t-\tnone\ncodex\tyes\t1\tyes\tchatgpt\tcommand').tools[1], { id: 'codex', installed: false, signed: 'no', accounts: [] });
 });
 
 test('the plan\'s transcripts: listed, read and titled from its own folder; a store of another name refused', async () => {

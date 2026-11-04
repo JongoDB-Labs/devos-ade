@@ -40,10 +40,11 @@ export const PLAIN_SAID = Object.freeze({
 });
 
 export class AgentSession {
-  constructor(mgr, { id, harness, model, mode, cwd = WS, ref = null, title = '', preface = null }) {
+  constructor(mgr, { id, harness, model, mode, cwd = WS, ref = null, title = '', preface = null, account = null }) {
     this.mgr = mgr;
     this.id = id;
     this.harness = harness;
+    this.account = typeof account === 'string' && account ? account : null;   // (another account of the tool: bn-coded checks it)
     this.info0 = HARNESSES[harness];
     this.cwd = cwdOk(cwd) ? cwd : WS;
     this.model = model || null;
@@ -68,7 +69,7 @@ export class AgentSession {
   info() {
     return { id: this.id, state: this.state, model: this.model, mode: this.mode, effort: null, title: this.title, open: this.open,
       pending: this.mgr.broker.forSession(this.id).length, lastActive: this.lastActive, error: this.error, epoch: this.epoch, budget: null,
-      terminal: false, cwd: this.cwd, settings: null, harness: this.harness, plan: { ...this.usage, limits: this.limits } };
+      terminal: false, cwd: this.cwd, settings: null, harness: this.harness, ...(this.account ? { account: this.account } : {}), plan: { ...this.usage, limits: this.limits } };
   }
   settingsInfo() { return null; }
 
@@ -83,7 +84,7 @@ export class AgentSession {
     this.mgr.onState(this);
   }
   record(fields = {}) {
-    this.mgr.agentStore?.put(this.id, { harness: this.harness, ref: this.ref, cwd: this.cwd, title: this.title, model: this.model, ...fields });
+    this.mgr.agentStore?.put(this.id, { harness: this.harness, ...(this.account ? { account: this.account } : {}), ref: this.ref, cwd: this.cwd, title: this.title, model: this.model, ...fields });
   }
 
   // --- the tool's process ---
@@ -101,7 +102,7 @@ export class AgentSession {
       try {
         // (its folder's own settings, Claude Code's and the other tools': trusted or none — asked anew at every start)
         await this.mgr.agentSettingsCheck?.(this.cwd, this.name);
-        const proc = this.mgr.spawnAgent({ tool: this.harness, mode: 'code', cwd: this.cwd },
+        const proc = this.mgr.spawnAgent({ tool: this.harness, mode: 'code', cwd: this.cwd, ...(this.account ? { account: this.account } : {}) },
           { onStderr: (s) => this.mgr.logStderr(this.id, `${this.harness} ${this.id.slice(0, 8)} stderr: ${short(s, 300)}`) });
         const opts = { tool: this.harness, log: (m) => this.mgr.log(`${this.harness} ${this.id.slice(0, 8)}: ${m}`), clientVersion: this.mgr.versions?.server ?? '0',
           onEvent: (ev) => this.fromAgent(agent, ev), onPermission: (p) => this.ask(p), plainEdit: (paths) => this.plainEdit(paths) };

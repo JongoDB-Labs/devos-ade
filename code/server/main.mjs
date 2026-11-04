@@ -221,7 +221,7 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
       if (ev.type === 'result' && s.pendingTitle && s.hasTranscript) {
         const title = s.pendingTitle;
         s.pendingTitle = null;
-        call({ op: 'sessions.title', id: s.id, title, ...(s.cwd !== WS ? { cwd: s.cwd } : {}), ...(s.plan ? { store: 'plan' } : {}) }).catch((e) => logger(`title ${s.id.slice(0, 8)}: ${short(e?.message || String(e), 200)}`));
+        call({ op: 'sessions.title', id: s.id, title, ...(s.cwd !== WS ? { cwd: s.cwd } : {}), ...(s.plan ? { store: s.account ? `plan:${s.account}` : 'plan' } : {}) }).catch((e) => logger(`title ${s.id.slice(0, 8)}: ${short(e?.message || String(e), 200)}`));
       }
     },
     onState: (s) => toAll(stateMsg(s)),
@@ -236,7 +236,7 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
     },
     // is there a transcript for this session in the sandbox already?
     transcriptExists: async (id, cwd, plan = false) => {
-      const { result } = await call({ op: 'sessions.load', id, ...(cwd && cwd !== WS ? { cwd } : {}), ...(plan ? { store: 'plan' } : {}) });
+      const { result } = await call({ op: 'sessions.load', id, ...(cwd && cwd !== WS ? { cwd } : {}), ...(plan ? { store: typeof plan === 'string' ? plan : 'plan' } : {}) });
       return Array.isArray(result?.entries) && result.entries.length > 0;
     },
     // a plugin reload: the pages showing that session get its new commands, plugins and MCP servers
@@ -389,6 +389,13 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
       // who answers: a resumed session as it ran (its own harness), a new one as asked (bedrock when not said)
       if (b.harness !== undefined && b.harness !== null && !harnessOk(b.harness)) throw new HttpError(400, 'bad harness: bedrock, claude, codex, copilot, cursor or grok');
       base.harness = isUuid(b.resume) ? api.harnessOf(b.resume) : (b.harness ?? 'bedrock');
+      // another account of that tool (a plan session, an agent): one the sandbox's own list names — never anything else
+      if (b.account !== undefined && b.account !== null) {
+        if (typeof b.account !== 'string' || !(base.harness === 'claude' || AGENT_TOOLS.includes(base.harness))) throw new HttpError(400, 'bad account');
+        const has = (st) => (st.tools?.[base.harness]?.accounts ?? []).some((a) => a.name === b.account);
+        if (!has(await subs()) && !has(await subs({ fresh: true }))) throw new HttpError(400, 'no such account (Settings › Your AI subscriptions lists them)');
+        base.account = b.account;
+      }
       const agent = AGENT_TOOLS.includes(base.harness);
       // the conversation carried over from another session (the picker's switch of who answers), before its first prompt
       if (isUuid(b.carry) && !isUuid(b.resume)) base.preface = await api.carryText(b.carry);

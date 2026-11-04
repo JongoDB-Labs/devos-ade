@@ -12,6 +12,7 @@ import { checkSnapshot, diffSnapshots, mergeSnapshots, watchEvent, revertOf } fr
 import { WS, cwdOk } from './projects.mjs';
 import { ALL_SOURCES, APPLIED as APPLIED_STATES, RECHECK_TEXT, withheldText } from './trust.mjs';
 import { gitNote } from './gitnote.mjs';
+const ACCOUNT_RE = /^[a-z0-9][a-z0-9-]{0,19}$/;   // an account's name (subscriptions): a folder of the sandbox's, checked there too
 import { SandboxError } from './spawn-client.mjs';
 import { plainRefusal } from './gitreasons.mjs';
 import { sandboxWords } from './said.mjs';
@@ -91,12 +92,14 @@ const pluginsKey = (list) => (Array.isArray(list) ? list.filter((p) => p && type
   .map((p) => `${short(p.name, 200)}@${short(p.version, 60)}`).sort().join('\n') : null);
 
 export class Session {
-  constructor(mgr, { id, model, mode, effort, resume, fork, at, taskStop, hasTranscript, budget, cwd = WS, plan = false, preface = null }) {
+  constructor(mgr, { id, model, mode, effort, resume, fork, at, taskStop, hasTranscript, budget, cwd = WS, plan = false, preface = null, account = null }) {
     this.mgr = mgr;
     this.id = id;
     // Claude on your plan (Settings' switch): claude-sub's folder and login, no LiteLLM, no spend tag, no budget in
     // dollars — else Claude Code on Bedrock through LiteLLM, as the Code page always ran it
     this.plan = plan === true;
+    // (another account of your plan: its name — a folder of the sandbox's ~/.subscriptions/claude; none: the first account)
+    this.account = this.plan && typeof account === 'string' && account ? account : null;
     this.harness = this.plan ? 'claude' : 'bedrock';
     // the conversation carried over from another session (the picker's switch of who answers): before the first prompt
     this.preface = typeof preface === 'string' && preface ? preface : null;
@@ -158,7 +161,7 @@ export class Session {
     return { id: this.id, state: this.state, model: this.model, mode: this.mode, effort: this.effort, title: this.title, open: this.open,
       pending: this.mgr.broker.forSession(this.id).length, lastActive: this.lastActive, error: this.error, epoch: this.epoch,
       budget: this.budget ? { ...this.budget } : null, terminal: this.inTerminal !== null, cwd: this.cwd, settings: this.settingsInfo(),
-      harness: this.harness, ...(this.plan ? { plan: { ...(this.planUsage ?? { input: 0, output: 0, cached: 0, turns: 0 }), limits: this.planLimits ?? null } } : {}) };
+      harness: this.harness, ...(this.account ? { account: this.account } : {}), ...(this.plan ? { plan: { ...(this.planUsage ?? { input: 0, output: 0, cached: 0, turns: 0 }), limits: this.planLimits ?? null } } : {}) };
   }
   // ownSettings(d) -> a decision (trust.mjs's decide) as it is for this session: Claude on your plan's own (its plugin
   // record differs from the sandbox's: d.plan), or the decision itself
@@ -269,7 +272,7 @@ export class Session {
     const options = {
       cwd: this.cwd,
       pathToClaudeCodeExecutable: '/usr/local/bin/claude',   // a path in the sandbox: only the arguments travel
-      spawnClaudeCodeProcess: (o) => this.mgr.spawn(o, { ...(this.plan ? { plan: true } : { litellmSession: this.id }),
+      spawnClaudeCodeProcess: (o) => this.mgr.spawn(o, { ...(this.plan ? { plan: true, ...(this.account ? { account: this.account } : {}) } : { litellmSession: this.id }),
         onStderr: (s) => this.mgr.logStderr(this.id, `claude ${this.id.slice(0, 8)} stderr: ${short(s, 300)}`) }),
       env: {},                                                 // nothing of this container's environment
       // (the SDK's default is an empty system prompt)
@@ -1044,13 +1047,15 @@ export class SessionManager {
 
   /** POST /api/sessions -> {id, existing}. cwd: the folder a new (or forked) session runs in — its project's; a resumed
    *  one, its own (the caller reads it from the transcript's list) */
-  open({ model, mode, effort, resume, fork, at, taskStop, budget, cwd, harness, preface } = {}) {
+  open({ model, mode, effort, resume, fork, at, taskStop, budget, cwd, harness, preface, account } = {}) {
     if (cwd !== undefined && cwd !== null && !cwdOk(cwd)) throw new SessionError('bad folder: /workspace or a folder of it, or a folder of this computer the sandbox sees (one no longer added is read only)');
     // who answers: Claude Code on Bedrock (as always), Claude on your plan (the switch), or a subscription's agent
     const h = harness === undefined || harness === null ? (isUuid(resume) && this.sessions.get(resume)?.harness) || 'bedrock' : harness;
     if (!harnessOk(h)) throw new SessionError('bad harness: bedrock, claude, codex, copilot, cursor or grok');
     if (preface !== undefined && preface !== null && (typeof preface !== 'string' || preface.length > LIMITS.maxPromptChars)) throw new SessionError('bad preface');
-    if (AGENT_TOOLS.includes(h)) return this.openAgent({ harness: h, model, mode, resume, fork, at, cwd, preface });
+    if (account !== undefined && account !== null && (typeof account !== 'string' || !ACCOUNT_RE.test(account))) throw new SessionError('bad account');
+    if (account && h !== 'claude' && !AGENT_TOOLS.includes(h)) throw new SessionError('Claude Code on Bedrock has no accounts');
+    if (AGENT_TOOLS.includes(h)) return this.openAgent({ harness: h, model, mode, resume, fork, at, cwd, preface, account });
     if (h === 'claude' && this.planAllowed !== true) throw new SessionError(PLAN_OFF, 409);
     if (model !== undefined && model !== null && !isModel(model)) throw new SessionError('bad model');
     if (h !== 'claude' && model !== undefined && model !== null && !isFullModel(model)) throw new SessionError(ALIAS_REFUSED);
@@ -1078,7 +1083,7 @@ export class SessionManager {
       }
     }
     const id = resume && !fork ? resume : crypto.randomUUID();
-    const s = new Session(this, { id, model, mode, effort, resume, fork, at, taskStop, budget: budget || undefined, cwd: cwd ?? WS, plan: h === 'claude', preface: preface ?? null });
+    const s = new Session(this, { id, model, mode, effort, resume, fork, at, taskStop, budget: budget || undefined, cwd: cwd ?? WS, plan: h === 'claude', preface: preface ?? null, account: h === 'claude' ? (account || this.sessions.get(resume)?.account || null) : null });
     this.sessions.set(id, s);
     this.trim();
     return { id, existing: false };
@@ -1086,7 +1091,7 @@ export class SessionManager {
 
   // A session with a subscription's agent: new, or one of the page's record taken up again (the tool resumes its own
   // session where it can). Its tool starts at once (a sign-in that is missing shows before the first prompt).
-  openAgent({ harness, model, mode, resume, fork, at, cwd, preface }) {
+  openAgent({ harness, model, mode, resume, fork, at, cwd, preface, account }) {
     if (!this.spawnAgent) throw new SessionError('the subscriptions\' agents are not available here', 501);
     if (fork || at) throw new SessionError(`${HARNESSES[harness].name} sessions cannot be forked here`);
     if (model !== undefined && model !== null && (typeof model !== 'string' || !/^[\x21-\x7e]{1,200}$/.test(model))) throw new SessionError('bad model');
@@ -1101,9 +1106,9 @@ export class SessionManager {
       const row = this.agentStore?.get(resume);
       if (!row) throw new SessionError('no such session (its record is gone)', 404);
       if (row.harness !== harness) throw new SessionError(`that session is ${HARNESSES[row.harness]?.name ?? row.harness}'s`, 409);
-      s = new AgentSession(this, { id: row.id, harness: row.harness, model: model ?? row.model, mode, cwd: row.cwd, ref: row.ref, title: row.title });
+      s = new AgentSession(this, { id: row.id, harness: row.harness, model: model ?? row.model, mode, cwd: row.cwd, ref: row.ref, title: row.title, account: row.account ?? null });
     }
-    if (!s) s = new AgentSession(this, { id: crypto.randomUUID(), harness, model, mode, cwd: cwd ?? WS, preface });
+    if (!s) s = new AgentSession(this, { id: crypto.randomUUID(), harness, model, mode, cwd: cwd ?? WS, preface, account: account || null });
     else { if (model) s.model = model; if (mode) s.mode = mode === 'dontAsk' ? 'readOnly' : mode; }
     this.sessions.set(s.id, s);
     this.trim();
@@ -1125,11 +1130,11 @@ export class SessionManager {
       if (this.sessions.has(id)) throw new Error('already a session here');
       s.close('reset');
       let has = false;
-      try { has = (await this.transcriptExists(id, s.cwd, s.plan)) === true; } catch { has = false; }
+      try { has = (await this.transcriptExists(id, s.cwd, s.plan ? (s.account ? `plan:${s.account}` : true) : false)) === true; } catch { has = false; }
       await this.prepare(s.cwd).catch(() => {});   // (its folder's settings decided for the new process; failing: not applied)
       if (this.sessions.has(id)) throw new Error('already a session here');   // (one opened meanwhile)
       const ns = new Session(this, { id, model: s.model, mode: s.mode, effort: s.effort, taskStop: s.taskStop, resume: has ? id : undefined, hasTranscript: has,
-        budget: s.budget ? { ...s.budget } : undefined, cwd: s.cwd, plan: s.plan });
+        budget: s.budget ? { ...s.budget } : undefined, cwd: s.cwd, plan: s.plan, account: s.account });
       this.sessions.set(id, ns);
       this.trim();
       this.onReset(s, ns);

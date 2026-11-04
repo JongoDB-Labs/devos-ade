@@ -39,7 +39,7 @@ export const printable = (s, n = 300) => String(s ?? '').replace(/[^\x20-\x7e]/g
 /** Agent SDK spawnClaudeCodeProcess(SpawnOptions) -> SpawnedProcess, in the sandbox. plan: Claude on your plan (bn-coded's
  *  planEnv: claude-sub's folder, none of the stack's variables, no spend tag). open: another process op's OPEN frame
  *  instead (sandboxAgent). A refusal of bn-coded's is `refusal` (and a 'refused' event) before the exit. */
-export function sandboxProcess(opts, { litellmSession, onStderr, sock = SOCK, plan = false, chat = null, open = null } = {}) {
+export function sandboxProcess(opts, { litellmSession, onStderr, sock = SOCK, plan = false, chat = null, account = null, open = null } = {}) {
   const ee = new EventEmitter();
   ee.on('error', () => {});   // an 'error' nobody listens to would throw; the SDK adds its own listener
   const conn = net.connect(sock);
@@ -77,7 +77,7 @@ export function sandboxProcess(opts, { litellmSession, onStderr, sock = SOCK, pl
   // variables and the session id (for LiteLLM's spend tag) travel — on your plan, no session id (no LiteLLM).
   const args = Array.isArray(opts?.args) ? opts.args : [], cwd = opts?.cwd || '/workspace';
   // (chat: one of Chat's conversations on your plan — its own empty folder in the sandbox, no tools: bn-coded checks)
-  conn.write(frame(T.OPEN, open ?? (plan === true ? { op: 'claude', plan: true, args, cwd, env, ...(chat ? { chat } : {}) } : { op: 'claude', args, cwd, env, litellmSession })));
+  conn.write(frame(T.OPEN, open ?? (plan === true ? { op: 'claude', plan: true, args, cwd, env, ...(chat ? { chat } : {}), ...(account ? { account } : {}) } : { op: 'claude', args, cwd, env, litellmSession })));
   let refusal = null;
   conn.on('data', (chunk) => {
     let frames;
@@ -130,8 +130,8 @@ export function sandboxProcess(opts, { litellmSession, onStderr, sock = SOCK, pl
 /** A tool of your subscriptions in the sandbox (bn-coded's agent op): {tool: codex|copilot|cursor|grok, mode: code
  *  (cwd: a folder of the workspace) | chat (chat: the conversation's 32-hex id: its own empty folder)} -> a process
  *  (stdin, stdout, kill, exit) speaking the tool's interface for other apps. */
-export function sandboxAgent({ tool, mode, cwd, chat }, { onStderr, sock = SOCK } = {}) {
-  const open = mode === 'chat' ? { op: 'agent', tool, mode, chat } : { op: 'agent', tool, mode: 'code', cwd: cwd || '/workspace' };
+export function sandboxAgent({ tool, mode, cwd, chat, account }, { onStderr, sock = SOCK } = {}) {
+  const open = mode === 'chat' ? { op: 'agent', tool, mode, chat } : { op: 'agent', tool, mode: 'code', cwd: cwd || '/workspace', ...(account ? { account } : {}) };
   return sandboxProcess({}, { onStderr, sock, open });
 }
 

@@ -421,24 +421,45 @@ export function childEnv(extra, litellmSession, base = process.env, model = null
 // for Bedrock (those that keep it off a Claude account too: /login hidden, a plan's commands and connectors), the MCP
 // token (in mcp.json), this server's own — what claude-sub leaves out too, and AWS's
 const STACK_VAR = /^(ANTHROPIC_[A-Z0-9_]*|CLAUDE_CODE_USE_[A-Z0-9_]*|CLAUDE_CODE_OAUTH_[A-Z0-9_]*|CLAUDE_BEDROCK_[A-Z0-9_]*|CLAUDE_CODE_SIMPLE|CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS|CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC|CLAUDE_CONFIG_DIR|DISABLE_LOGIN_COMMAND|DISABLE_UPGRADE_COMMAND|DISABLE_EXTRA_USAGE_COMMAND|ENABLE_CLAUDEAI_MCP_SERVERS|SHARED_MCP_TOKEN|BN_MCP_URL|BN_[A-Z0-9_]*|AWS_[A-Z0-9_]*)$/;
-// planEnv(extra, base) -> the environment of Claude on your plan: this container's without the stack's variables
+// The accounts of a subscription tool: ~/.subscriptions/TOOL/NAME (mode 700, real folders, never links). A request names an
+// account; this checks it against the folders that are there and gives back the folder's path — never a path from the request.
+const SUBS_ROOT = path.join(os.homedir(), '.subscriptions');
+export const ACCOUNT_NAME = /^[a-z0-9][a-z0-9-]{0,19}$/;
+export function accountDir(tool, name, root = SUBS_ROOT) {
+  if (typeof tool !== 'string' || !/^[a-z]{3,10}$/.test(tool) || typeof name !== 'string' || !ACCOUNT_NAME.test(name)) return null;
+  try {
+    const top = fs.lstatSync(path.join(root, tool));
+    const st = fs.lstatSync(path.join(root, tool, name));
+    return top.isDirectory() && !top.isSymbolicLink() && st.isDirectory() && !st.isSymbolicLink() ? path.join(root, tool, name) : null;
+  } catch { return null; }
+}
+// planEnv(extra, base, account) -> the environment of Claude on your plan: this container's without the stack's variables
 // (STACK_VAR: no LiteLLM, no Bedrock, no terminal key, no spend tag), plus the SDK's few (checked), and claude-sub's
 // folder — Claude Code then uses its own stored login there, which nothing here reads
-export function planEnv(extra, base = process.env) {
+export function planEnv(extra, base = process.env, account = null, root = SUBS_ROOT) {
   const env = {};
   for (const [k, v] of Object.entries(base)) if (!STACK_VAR.test(k)) env[k] = v;
   for (const [k, v] of Object.entries(extra && typeof extra === 'object' ? extra : {})) {
     if (SDK_ENV.test(k) && typeof v === 'string' && /^[\x20-\x7e]{0,200}$/.test(v)) env[k] = v;
   }
-  env.CLAUDE_CONFIG_DIR = PLAN_DIR;
+  // (another account: its own folder, checked here against the folders that are there; BN_SUBS_ROOT is never passed)
+  const adir = account ? accountDir('claude', account, root) : null;
+  if (account && !adir) throw new Error('no such account');
+  env.CLAUDE_CONFIG_DIR = adir || PLAN_DIR;
   env.DISABLE_AUTOUPDATER = '1';
   return env;
 }
 // agentEnv(base) -> a subscription agent's environment (Codex, Copilot, Cursor, Grok): this container's without the
 // stack's variables; nothing added (each launcher sets its tool's own folder and switches)
-export function agentEnv(base = process.env) {
+export function agentEnv(base = process.env, account = null, tool = null, root = SUBS_ROOT) {
   const env = {};
   for (const [k, v] of Object.entries(base)) if (!STACK_VAR.test(k) && !/^(CLAUDECODE|CLAUDE_CODE_[A-Z0-9_]*|CLAUDE_AGENT_SDK_VERSION)$/.test(k)) env[k] = v;
+  // another account of the tool: its launcher takes BN_SUB_ACCOUNT (checked there too); only a name that is a folder here
+  // goes on, and never BN_SUBS_ROOT
+  if (account) {
+    if (!accountDir(tool, account, root)) throw new Error('no such account');
+    env.BN_SUB_ACCOUNT = account;
+  }
   return env;
 }
 // chatFolder(id) -> Chat's folder for one conversation (CHAT_DIR/<32 hex>), made (mode 700) when not there yet: a real
@@ -634,8 +655,15 @@ export const encodeCwd = (cwd) => {
   return `${n.slice(0, 200)}-${Math.abs(h).toString(36)}`;
 };
 // store: 'plan' — Claude on your plan's transcripts (PLAN_DIR); else the stack's Claude Code's (CONFIG_DIR)
-const PROJECTS = (store) => path.join(store === 'plan' ? PLAN_DIR : CONFIG_DIR, 'projects');
-export const storeArg = (v) => { if (v === undefined || v === null || v === 'bedrock') return 'bedrock'; if (v === 'plan') return 'plan'; throw new Error('bad store'); };
+const PROJECTS = (store) => {
+  if (typeof store === 'string' && store.startsWith('plan:')) {
+    const d = accountDir('claude', store.slice(5));
+    if (!d) throw new Error('bad store');
+    return path.join(d, 'projects');
+  }
+  return path.join(store === 'plan' ? PLAN_DIR : CONFIG_DIR, 'projects');
+};
+export const storeArg = (v) => { if (v === undefined || v === null || v === 'bedrock') return 'bedrock'; if (v === 'plan') return 'plan'; if (typeof v === 'string' && /^plan:[a-z0-9][a-z0-9-]{0,19}$/.test(v)) return v; throw new Error('bad store'); };
 // cwdOk(v): a working folder a session may have — in the workspace or a folder of this computer; absolute,
 // normalized, one line (it need not exist)
 export const cwdOk = (v) => typeof v === 'string' && v.length <= 1024 && topOf(v) !== null
@@ -1573,16 +1601,25 @@ const firstFile = (list) => list.find((f) => { try { return fs.statSync(f).isFil
 // --- lines are checked here word by word: only these words leave (no version string, no account detail).
 const SUBS_BIN = process.env.BN_SUBS_BIN_PATH || '/usr/local/bin/subscriptions';
 export const SUBS_TOOLS = ['claude', 'codex', 'gemini', 'copilot', 'cursor', 'grok'];
-const SUBS_LINE = /^(claude|codex|gemini|copilot|cursor|grok)\t(yes|no)\t(-|[0-9A-Za-z][0-9A-Za-z.+-]{0,39})\t(yes|no|unknown)\t(-|[a-z0-9.-]{1,30})\t(command|file|none)$/;
+const SUBS_LINE = /^(claude|codex|gemini|copilot|cursor|grok)\t(yes|no)\t(-|[0-9A-Za-z][0-9A-Za-z.+-]{0,39})\t(yes|no|unknown)\t(-|[a-z0-9.-]{1,30})\t(command|file|none)(?:\t(-|[a-z0-9][a-z0-9-]{0,19}))?$/;
+// (another account's line: claude:work — its tool, name and whether it is signed in)
+const SUBS_ACCOUNT = /^(claude|codex|gemini|copilot|cursor|grok):([a-z0-9][a-z0-9-]{0,19})\t(yes|no)\t(-|[0-9A-Za-z][0-9A-Za-z.+-]{0,39})\t(yes|no|unknown)\t(-|[a-z0-9.-]{1,30})\t(command|file|none)$/;
 // parseSubsStatus(text) -> {tools: [{id, installed, signed}]}: one row per known tool, a tool without a valid line
 // "unknown" (never signed in by default)
 export function parseSubsStatus(text) {
-  const seen = new Map();
-  for (const line of String(text).split('\n').slice(0, 50)) {
+  const seen = new Map(), more = new Map();
+  for (const line of String(text).split('\n').slice(0, 100)) {
     const m = line.match(SUBS_LINE);
-    if (m && !seen.has(m[1])) seen.set(m[1], { id: m[1], installed: m[2] === 'yes', signed: m[2] === 'yes' ? m[4] : 'no' });
+    if (m && !seen.has(m[1])) { seen.set(m[1], { id: m[1], installed: m[2] === 'yes', signed: m[2] === 'yes' ? m[4] : 'no', ...(m[7] && m[7] !== '-' ? { first: m[7] } : {}) }); continue; }
+    const a = line.match(SUBS_ACCOUNT);
+    if (a) {
+      const l = more.get(a[1]) ?? [];
+      if (l.length < 8 && !l.some((x) => x.name === a[2])) l.push({ name: a[2], signed: a[3] === 'yes' ? a[5] : 'no' });
+      more.set(a[1], l);
+    }
   }
-  return { tools: SUBS_TOOLS.map((id) => seen.get(id) ?? { id, installed: false, signed: 'unknown' }) };
+  // (accounts: the other accounts of the tool, by name; first: the first account's name, when it has one)
+  return { tools: SUBS_TOOLS.map((id) => ({ ...(seen.get(id) ?? { id, installed: false, signed: 'unknown' }), accounts: more.get(id) ?? [] })) };
 }
 export async function subscriptionsStatus({ bin = SUBS_BIN, timeoutMs = 60000 } = {}) {
   // (the system's programs only: never one of the same name a folder of the home puts first on PATH)
@@ -5845,10 +5882,13 @@ export function serve(sock) {
         if (req.args.some((a) => typeof a === 'string' && (a.startsWith('--project-config-root') || a.startsWith('--max-budget-usd')))) return fail('not for a Chat conversation');
         let dir;
         try { dir = chatFolder(req.chat); } catch (e) { return fail(e.message); }
-        return startProcess([...FIXED, ...req.args.slice(FIXED.length)], dir, { ...planEnv(req.env), CLAUDE_CODE_DISABLE_ATTACHMENTS: '1' });
+        return startProcess([...FIXED, ...req.args.slice(FIXED.length)], dir, { ...planEnv(req.env), CLAUDE_CODE_DISABLE_ATTACHMENTS: '1' });   // (Chat: one account a tool)
       }
       const cwd = confine(typeof req.cwd === 'string' ? req.cwd : WORKSPACE);
       if (!cwd) return fail('cwd must be in /workspace');
+      // (an account of your plan: a name, checked against the folders there are — planEnv throws when there is none)
+      const acct = req.account === undefined || req.account === null ? null : String(req.account);
+      if (acct !== null && (req.plan !== true || !ACCOUNT_NAME.test(acct) || !accountDir('claude', acct))) return fail('no such account');
       // --project-config-root: always, once, and the folder the process runs in (real paths) — Claude Code then reads the
       // configuration project.settings hashes (no .claude/ below it), never another folder's
       const pcr = req.args.filter((a) => typeof a === 'string' && a.startsWith('--project-config-root'));
@@ -5860,7 +5900,7 @@ export function serve(sock) {
       // (Chat's knowledge bases and the shared bucket would reach your plan: claude-sub leaves it out too)
       if (req.plan === true) {
         if (req.args.some((a) => typeof a === 'string' && a.startsWith('--max-budget-usd'))) return fail('no budget stop for a session on your plan');
-        return startProcess([...FIXED, ...req.args.slice(FIXED.length)], cwd, planEnv(req.env));
+        return startProcess([...FIXED, ...req.args.slice(FIXED.length)], cwd, planEnv(req.env, process.env, acct));
       }
       refreshPrices();   // (for the next session, when they are old: this one uses what is known now)
       return startProcess(args, cwd, childEnv(req.env, req.litellmSession, process.env, modelArg(req.args)));
@@ -5881,7 +5921,9 @@ export function serve(sock) {
       }
       const bin = path.join(AGENT_BIN_DIR, a.bin);
       if (!fs.existsSync(bin)) return fail('that tool is not in this sandbox');
-      return startProcess([...a[req.mode]], cwd, agentEnv(), { kind: 'agent', bin });
+      const acct = req.account === undefined || req.account === null ? null : String(req.account);
+      if (acct !== null && (req.mode !== 'code' || !ACCOUNT_NAME.test(acct) || !accountDir(req.tool, acct))) return fail('no such account');
+      return startProcess([...a[req.mode]], cwd, agentEnv(process.env, acct, req.tool), { kind: 'agent', bin });
     }
     if (req.op === 'cli') {
       const why = checkCliArgs(req.args);

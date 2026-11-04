@@ -162,7 +162,8 @@ export function makeApi({ call, sessions, projects = null, reloadPollMs = 1000, 
     if (a) return a.harness;
     return planIds.has(id) ? 'claude' : 'bedrock';
   }
-  const storeField = (id) => (harnessOf(id) === 'claude' ? { store: 'plan' } : {});
+  // (a session open here on another account of your plan: that account's transcripts — its sandbox folder; else the first's)
+  const storeField = (id) => (harnessOf(id) === 'claude' ? { store: sessions.get?.(id)?.account ? `plan:${sessions.get(id).account}` : 'plan' } : {});
   /** carryText(id) -> the conversation of a session as a preface for one with another harness (its last CARRY_CHARS) */
   async function carryText(id) {
     if (!isUuid(id)) throw new HttpError(400, 'bad session id');

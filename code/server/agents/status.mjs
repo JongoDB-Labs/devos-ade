@@ -4,6 +4,7 @@
 import { HARNESSES } from './tools.mjs';
 
 const SIGNED = ['yes', 'no', 'unknown'];
+const NAME = /^[a-z0-9][a-z0-9-]{0,19}$/;   // an account's name (subscriptions)
 
 export function makeStatus({ call, ttlMs = 60000, now = () => Date.now(), log = () => {} }) {
   let cache = null, at = 0, inflight = null;
@@ -15,7 +16,10 @@ export function makeStatus({ call, ttlMs = 60000, now = () => Date.now(), log = 
           const tools = {};
           for (const t of Array.isArray(result?.tools) ? result.tools : []) {
             if (t && typeof t.id === 'string' && Object.hasOwn(HARNESSES, t.id)) {
-              tools[t.id] = { installed: t.installed === true, signed: SIGNED.includes(t.signed) ? t.signed : 'unknown' };
+              tools[t.id] = { installed: t.installed === true, signed: SIGNED.includes(t.signed) ? t.signed : 'unknown',
+                ...(typeof t.first === 'string' && NAME.test(t.first) ? { first: t.first } : {}),
+                accounts: (Array.isArray(t.accounts) ? t.accounts : []).filter((a) => a && typeof a.name === 'string' && NAME.test(a.name)).slice(0, 8)
+                  .map((a) => ({ name: a.name, signed: SIGNED.includes(a.signed) ? a.signed : 'unknown' })) };
             }
           }
           cache = { tools, checked: now() }; at = now();
@@ -38,6 +42,6 @@ export function harnessList(st, { planAllowed = false } = {}) {
   return Object.values(HARNESSES).map((h) => {
     const t = st?.tools?.[h.id] ?? { installed: false, signed: 'unknown' };
     const allowed = h.id === 'claude' ? planAllowed === true : true;
-    return { id: h.id, name: h.name, provider: h.provider, plan: h.plan, installed: t.installed, signed: t.signed, allowed };
+    return { id: h.id, name: h.name, provider: h.provider, plan: h.plan, installed: t.installed, signed: t.signed, allowed, ...(t.first ? { first: t.first } : {}), accounts: t.accounts ?? [] };
   });
 }

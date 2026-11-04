@@ -28,7 +28,7 @@ export class AgentStore {
     try { rows = JSON.parse(fs.readFileSync(path.join(this.dir, 'index.json'), 'utf8')); } catch { rows = []; }
     for (const r of Array.isArray(rows) ? rows : []) {
       if (r && isUuid(r.id) && harnessOk(r.harness) && r.harness !== 'bedrock' && (r.ref === null || REF.test(r.ref)) && typeof r.cwd === 'string') {
-        this.index.set(r.id, { id: r.id, harness: r.harness, ref: r.ref, cwd: r.cwd, title: short(r.title, 200), model: short(r.model, 200) || null,
+        this.index.set(r.id, { id: r.id, harness: r.harness, ...(typeof r.account === 'string' && /^[a-z0-9][a-z0-9-]{0,19}$/.test(r.account) ? { account: r.account } : {}), ref: r.ref, cwd: r.cwd, title: short(r.title, 200), model: short(r.model, 200) || null,
           created: Number(r.created) || 0, modified: Number(r.modified) || 0, size: Number(r.size) || 0 });
       }
     }
