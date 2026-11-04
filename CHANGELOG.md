@@ -6,6 +6,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.57.2] - 2026-11-04
+
 ### Fixed
 - **Claude Code on Bedrock signs in to no Claude account (JON-1050).** A `/login` in the terminal's Claude Code on
   Bedrock saved a Claude account login in its folder. Nothing used it — the stack's key comes first, so no request
@@ -4489,7 +4491,8 @@ Initial public release.
 - `bin/claude-bedrock`: runs Claude Code against Bedrock through LiteLLM without touching plain `claude`.
 - Cost transparency: Bedrock prices in `./stack costs` and the Open WebUI model picker, spend per key.
 
-[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.57.1...HEAD
+[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.57.2...HEAD
+[0.57.2]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.57.1...v0.57.2
 [0.57.1]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.57.0...v0.57.1
 [0.57.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.56.0...v0.57.0
 [0.56.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.55.0...v0.56.0
