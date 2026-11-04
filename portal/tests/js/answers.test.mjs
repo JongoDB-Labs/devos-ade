@@ -337,3 +337,10 @@ test("a phone's closed Chat menu shows the choice's name only; the menu lists ea
   assert.equal(A.shortLabel(null), "");
   assert.equal(A.shortLabel("x".repeat(100)).length, 60);
 });
+
+test("the Terminal picker goes back to the last real entry after Add an account…, never stays on add:TOOL", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../../portal/static/answers.js", import.meta.url), "utf8");
+  assert.match(src, /if \(!tLabel\(\) && !tSelect\.value\.startsWith\("add:"\)\) tLast = tSelect\.value;/);
+  assert.match(src, /if \(add\) tSelect\.value = tLast, tLabel\(\), tPickSync\(\);/);
+});

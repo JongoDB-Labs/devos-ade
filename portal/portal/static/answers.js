@@ -262,7 +262,8 @@
   };
   // (a phone's closed menu: the choice's name, whole in its title)
   const tPickSync = () => { const o = tSelect.selectedOptions[0]; tPickText.textContent = o ? shortLabel(o.textContent) : ""; tPick.title = o ? o.textContent : ""; };
-  tSelect.addEventListener("change", () => { tPickSync(); if (!tLabel()) tLast = tSelect.value; });
+  // ("Add an account…" is an action, not a place to stay: the menu goes back to the last real entry)
+  tSelect.addEventListener("change", () => { tPickSync(); if (!tLabel() && !tSelect.value.startsWith("add:")) tLast = tSelect.value; });
   tOpen.addEventListener("click", () => {
     if (goSetup(tSelect.value)) { tSelect.value = tLast; tLabel(); tPickSync(); return; }
     const f = document.querySelector('#frames iframe[data-app="terminal"]');

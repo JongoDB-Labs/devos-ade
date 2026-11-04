@@ -803,7 +803,8 @@ export async function openSession(opts: OpenOptions): Promise<{ id: string; exis
   if (opts.budget) body.budget = { usd: opts.budget.usd, hard: opts.budget.hard, ...(opts.budget.spent !== undefined ? { spent: opts.budget.spent } : {}) };
   if (!opts.resume && opts.project && opts.project !== WORKSPACE_ID && projectIdOk(opts.project)) body.project = opts.project;
   if (!opts.resume && opts.harness && opts.harness !== 'bedrock') body.harness = opts.harness;
-  if (!opts.resume && opts.harness && opts.harness !== 'bedrock' && opts.account && ACCOUNT_NAME.test(opts.account)) body.account = opts.account;
+  // (a resumed session too: the backend resumes it on the account it ran on and refuses one that disagrees)
+  if ((opts.resume || (opts.harness && opts.harness !== 'bedrock')) && opts.account && ACCOUNT_NAME.test(opts.account)) body.account = opts.account;
   if (!opts.resume && opts.carry && isUuid(opts.carry)) body.carry = opts.carry;
   // this page has a Stop per background task, so an interrupt spares them (the backend's taskStop)
   body.taskStop = true;
@@ -1959,13 +1960,16 @@ export function normAnswers(raw: unknown): BnAnswers {
 export async function reportRecent(report: RecentReport): Promise<void> {
   await request('POST', '/.bn/recent', report, { 'X-Requested-With': 'bn-code' });
 }
+/** The address the portal gives for the terminal: open=TOOL, or TOOL:NAME for another account of it (the portal encodes the
+ *  colon: %3A); add=TOOL (`subscriptions add TOOL` asks for the name) */
+export const launchUrlOk = (url: string): boolean =>
+  /^\/\.bn\/terminal\?(open|add)=[A-Za-z]{1,20}((?::|%3A)[a-z0-9][a-z0-9-]{0,19})?(&dir=[^&#]{1,2000})?&launch=[0-9]{10}-[0-9a-f]{16}-[0-9a-f]{32}$/.test(url);
 /** A launch token for the terminal panel's Open menu (POST /.bn/terminal-launch: the portal makes it only for this
  *  page's own request, X-Requested-With) -> the panel's address with it (/.bn/terminal?open=…&launch=…). */
 export async function terminalLaunch(tool: string, dir: string | null, mode: 'open' | 'add' = 'open'): Promise<string> {
   const o = await request('POST', '/.bn/terminal-launch', { tool, ...(dir ? { dir } : {}), ...(mode === 'add' ? { mode } : {}) }, { 'X-Requested-With': 'bn-code' });
   const url = str(o.url);
-  // (open=TOOL, or TOOL:NAME for another account of it; add=TOOL: `subscriptions add TOOL` asks for the name)
-  if (!/^\/\.bn\/terminal\?(open|add)=[A-Za-z]{1,20}(:[a-z0-9][a-z0-9-]{0,19})?(&dir=[^&#]{1,2000})?&launch=[0-9]{10}-[0-9a-f]{16}-[0-9a-f]{32}$/.test(url)) throw new ApiError(502, 'The portal gave no address for the terminal.');
+  if (!launchUrlOk(url)) throw new ApiError(502, 'The portal gave no address for the terminal.');
   return url;
 }
 export async function getModels(): Promise<BnModels> {

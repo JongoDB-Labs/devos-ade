@@ -1708,6 +1708,7 @@ async function openExisting(id: string, fork: boolean, before?: string, text = '
     if (!bedrock && startIn === 'auto') startIn = 'default';
     const { id: newId, existing, fresh } = await api.openSession({ model: bedrock ? sendModel(model, s) : undefined, mode: startIn,
       effort: bedrock || harness === 'claude' ? s.prefs.effort : null, resume: id, fork, before,
+      account: (!bedrock && (info?.account || src?.account)) || undefined,
       budget: budget ? { ...budget, ...(fork ? {} : spentOf(src)) } : null });
     if (existing) {
       // open already (another tab, another device): the same process — attach to it; its history merges after the replay
@@ -1927,6 +1928,7 @@ async function revive(id: string, noAsk = false): Promise<string | null> {
     // (the same session: Plan goes on; Bypass ended with its process — Manual)
     const budget = v?.budget ?? storedBudget(id);
     const { id: newId } = await api.openSession({ model: sendModel(v?.model, s) || sendModel(defaultModel(s), s), mode: startMode(v?.mode, s.prefs.mode, autoOk(s)), effort: v?.effort ?? s.prefs.effort, resume: id,
+      account: v?.account || s.sessions.find((x) => x.id === id)?.account || undefined,
       budget: budget ? { ...budget, ...spentOf(v) } : null });
     if (newId !== id) {
       // the backend gave the resumed process a new id: carry the conversation over to it

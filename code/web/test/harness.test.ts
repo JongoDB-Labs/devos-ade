@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { harnessOf, normAnswers, normEvent, normPlan, normServerMsg } from '../src/api';
+import { harnessOf, launchUrlOk, normAnswers, normEvent, normPlan, normServerMsg } from '../src/api';
 import { planText, harnessState, answerers, claudePlanModels } from '../src/components/Pickers';
 import { SETUP_LINKS, settingsRoute, setupTarget, type SetupReason } from '../src/setuplinks';
 import { applyEvent, newView } from '../src/session';
@@ -134,4 +134,16 @@ test('the terminal menu: one entry per account (the first, then the others by na
   const menu = readFileSync(new URL('../src/components/Shell.tsx', import.meta.url), 'utf8');
   assert.match(menu, /value=\{`add:\$\{t\.id\}`\}/);
   assert.match(menu, /value=\{`\$\{t\.id\}:\$\{a\.name\}`\}/);
+});
+
+test("the portal's launch address: a tool, an account of it (the colon encoded, as the portal writes it) or add; nothing else", () => {
+  const L = 'launch=1792760000-0123456789abcdef-0123456789abcdef0123456789abcdef';
+  for (const ok of [`open=codex&${L}`, `open=codex%3Awork&${L}`, `open=codex:work&${L}`, `open=claude%3Ateam-2&dir=%2Fworkspace%2Fapp&${L}`, `add=grok&${L}`]) {
+    assert.equal(launchUrlOk(`/.bn/terminal?${ok}`), true, ok);
+  }
+  for (const bad of [`open=codex%3A&${L}`, `open=codex%3AWork&${L}`, `open=codex%3A-x&${L}`, `open=codexwork&${L}x`, `open=codex%3Awork%3Aa&${L}`, `bad=codex&${L}`,
+    `open=codex%3A${'a'.repeat(21)}&${L}`, `open=codex&launch=1`]) {
+    assert.equal(launchUrlOk(`/.bn/terminal?${bad}`), false, bad);
+  }
+  assert.equal(launchUrlOk(`https://evil.example/.bn/terminal?open=codex&${L}`), false);
 });
