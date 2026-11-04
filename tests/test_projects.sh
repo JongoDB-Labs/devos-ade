@@ -342,7 +342,7 @@ test_compose_renders_the_folders_into_the_sandbox_only() {
 import json, os, sys
 d = json.load(sys.stdin)
 s = d["services"]; t, c = s["terminal"], s["code"]
-binds = [(v["source"], v["target"], bool(v.get("read_only")), bool(v["bind"].get("create_host_path"))) for v in t["volumes"] if v["type"] == "bind" and v["target"] not in ("/workspace", "/etc/claude-code/managed-settings.json")]
+binds = [(v["source"], v["target"], bool(v.get("read_only")), bool(v["bind"].get("create_host_path"))) for v in t["volumes"] if v["type"] == "bind" and v["target"] not in ("/workspace", "/etc/claude-code/managed-settings.json", "/etc/bn-localgit-ca")]
 assert binds == [(os.environ["A"], os.environ["PA"], False, False), (os.environ["B"], "/projects/notes", True, False)], binds
 assert json.loads(t["environment"]["BN_CODE_ROOTS"]) == [os.environ["PA"], "/projects/notes"], t["environment"]["BN_CODE_ROOTS"]
 # no other service gets a folder of yours, nor the list

@@ -451,6 +451,12 @@
      "source": "<WORKSPACE>",
      "target": "/workspace",
      "type": "bind"
+    },
+    {
+     "read_only": true,
+     "source": "<STATE>/localgit/tls/ca",
+     "target": "/etc/bn-localgit-ca",
+     "type": "bind"
     }
    ]
   },

@@ -258,6 +258,11 @@ export const ANSWER_ERRORS = Object.freeze([
   '"permissions" is not an object',
   'a folder on its way is a link',
   'a link: not read',
+  'a name of one line of plain characters, at most 80',
+  'a repository name of letters, digits, . _ and -',
+  'no answer',
+  'not a folder that can be a project (its name starts with a dot, or is deeper than allowed)',
+  'unknown request',
   'not a regular file',
   'a folder on its way is a link (or not a folder): not read',
   // (Run's tasks: taskError's reasons, and NO_PROGRAM's)
