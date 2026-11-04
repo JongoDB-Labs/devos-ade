@@ -48,6 +48,7 @@ export const rejectedText = (branch) => `${branch}: the local git server has com
 // remote() — gitremote.mjs's API (state, remoteSet, remoteRemove, plan, run); mirrors — mirrors.mjs (owner, nameFree)
 export function makeKeep({ store, remote, mirrors, now = () => Date.now(), log = () => {} }) {
   const running = new Map();   // project id -> the run in progress
+  const complained = new Set();   // repositories whose failed protection was logged already
   const guarded = new Map();   // 'owner/name' -> the branches known to be protected on the server (this start's memory: a restart looks again)
   const again = new Set();     // project ids asked to push again while a run was in progress
   let timer = null;
@@ -88,7 +89,19 @@ export function makeKeep({ store, remote, mirrors, now = () => Date.now(), log =
       const branch = await mirrors.protect(repo.split('/')[1]);
       if (!guarded.has(repo)) guarded.set(repo, new Set());
       guarded.get(repo).add(branch);
-    } catch (e) { log(`keep: could not protect the default branch of ${repo}: ${short(e?.message, 200)}`); }
+      complained.delete(repo);
+    } catch (e) {
+      // (said once per repository until it works: a sweep every 10 minutes does not repeat it)
+      if (!complained.has(repo)) { complained.add(repo); log(`keep: could not protect the default branch of ${repo}: ${short(e?.message, 200)}`); }
+    }
+  }
+  // ensure(repo) — protect again when the server's default branch now is not one known to be protected (the first push of an empty
+  // repository picks it, and it can be changed on the server); a default branch that cannot be read is protect's to say
+  async function ensure(repo) {
+    if (typeof mirrors.protect !== 'function' || typeof repo !== 'string') return;
+    let want;
+    try { want = (await mirrors.defaultBranch?.(repo.split('/')[1])) ?? 'main'; } catch { want = null; }
+    if (want === null || !guarded.get(repo)?.has(want)) await protect(repo);
   }
 
   // keep(id, {name, auto}) -> the view: the name checked (on the server already, or held by another kept project: 409, nothing
@@ -287,8 +300,8 @@ export function makeKeep({ store, remote, mirrors, now = () => Date.now(), log =
     for (const id of ids) {
       try {
         const rec = store().localgit(id);
-        // (a project kept before default branches were protected gets its rule here, once per start; a failed one is tried again)
-        if (rec?.state === 'kept' && !guarded.has(rec.repo)) await protect(rec.repo);
+        // (a project kept before default branches were protected gets its rule here, and so does one whose default branch moved; a failed one is tried again)
+        if (rec?.state === 'kept') await ensure(rec.repo);
         if (rec?.state === 'kept' && rec.auto) await sync(id);
       } catch (e) { log(`keep ${id}: ${short(e?.message, 200)}`); }
     }
@@ -296,7 +309,7 @@ export function makeKeep({ store, remote, mirrors, now = () => Date.now(), log =
   async function guardAll() {
     let ids = [];
     try { ids = store().keptIds(); } catch { return; }
-    for (const id of ids) { try { const rec = store().localgit(id); if (rec?.state === 'kept') await protect(rec.repo); } catch (e) { log(`keep ${id}: ${short(e?.message, 200)}`); } }
+    for (const id of ids) { try { const rec = store().localgit(id); if (rec?.state === 'kept') await ensure(rec.repo); } catch (e) { log(`keep ${id}: ${short(e?.message, 200)}`); } }
   }
   function start(ms = SWEEP_MS) {
     clearInterval(timer);

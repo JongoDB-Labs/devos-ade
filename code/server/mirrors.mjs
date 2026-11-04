@@ -184,11 +184,21 @@ export function makeMirrors({ store = new GitHosts(), fetchImpl = globalThis.fet
   // up only to set a flag), so an empty repository is protected from its first push. One that exists already is a 403 "already exist"
   // and counts as done. The token needs write:repository and the account to own the repository (the route asks for its admin), both
   // true of the built-in host; the call is the one POST Caddy's internal site lets through for it (caddy/localgit-on.caddy @protect).
-  async function protect(name) {
+  // defaultBranch(name) -> the repository's default branch as the server says it, or null while it says none (an empty repository before
+  // its first push); a name that is not a plain branch name is an error, never a guess: a rule for another branch would pass for this one's.
+  async function defaultBranch(name) {
     const { owner: o } = local();
     if (typeof name !== 'string' || !NAME.test(name)) throw err(400, 'a repository name of letters, digits, . _ and - (at most 100)');
     const repo = await api('GET', `/repos/${o}/${name}`);
-    const branch = typeof repo?.default_branch === 'string' && BRANCH.test(repo.default_branch) ? repo.default_branch : 'main';
+    const b = repo?.default_branch;
+    if (b === undefined || b === null || b === '') return null;
+    if (typeof b !== 'string' || !BRANCH.test(b)) throw err(502, `the default branch of ${o}/${name} is not a plain branch name, so it was not protected`);
+    return b;
+  }
+  async function protect(name) {
+    const { owner: o } = local();
+    // (BRANCH has no glob characters, so the rule name is one branch and can never become a pattern that matches several)
+    const branch = (await defaultBranch(name)) ?? 'main';   // (none yet: "main" is the branch the first push is expected to make; the caller checks later)
     try {
       await api('POST', `/repos/${o}/${name}/branch_protections`, { rule_name: branch, enable_push: true, enable_push_whitelist: false, enable_merge_whitelist: false,
         enable_status_check: false, required_approvals: 0 });
@@ -202,5 +212,5 @@ export function makeMirrors({ store = new GitHosts(), fetchImpl = globalThis.fet
     for (const m of await list()) { try { set.add(new URL(m.remote).hostname); } catch { /* not a URL */ } }
     return [...set].sort();
   }
-  return { list, add, sync, remove, hosts, owner, nameFree, create, protect };
+  return { list, add, sync, remove, hosts, owner, nameFree, create, protect, defaultBranch };
 }

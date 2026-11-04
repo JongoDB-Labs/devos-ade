@@ -179,8 +179,14 @@ test('protect asks for the default branch, then makes the one rule that refuses 
   assert.deepEqual(b.push_whitelist_usernames ?? [], []);
   const dup = fake({ 'GET /api/v1/repos/devos/kept-app': [200, {}], 'POST /api/v1/repos/devos/kept-app/branch_protections': [403, { message: 'Branch protection already exist' }] });
   assert.equal(await makeMirrors({ store: setup('protect2'), fetchImpl: dup.fetchImpl, base: 'http://caddy:8099' }).protect('kept-app'), 'main', 'no default branch said: main');
-  const no = fake({ 'GET /api/v1/repos/devos/kept-app': [200, { default_branch: 'a*' }], 'POST /api/v1/repos/devos/kept-app/branch_protections': [403, { message: 'not an admin' }] });
+  const no = fake({ 'GET /api/v1/repos/devos/kept-app': [200, { default_branch: 'main' }], 'POST /api/v1/repos/devos/kept-app/branch_protections': [403, { message: 'not an admin' }] });
   await assert.rejects(makeMirrors({ store: setup('protect3'), fetchImpl: no.fetchImpl, base: 'http://caddy:8099' }).protect('kept-app'), (e) => /not an admin/.test(e.message));
-  assert.equal(no.calls[1].body.rule_name, 'main', 'a glob in a branch name never becomes a rule that matches more');
+  // a default branch that is not a plain name (a glob, a bad character) is refused, and nothing is protected in its place
+  for (const bad of ['a*', 'x y', '-lead', 'a[b]']) {
+    const g = fake({ 'GET /api/v1/repos/devos/kept-app': [200, { default_branch: bad }] });
+    await assert.rejects(makeMirrors({ store: setup('protect4' + bad.length + bad[0]), fetchImpl: g.fetchImpl, base: 'http://caddy:8099' }).protect('kept-app'), (e) => /not a plain branch name/.test(e.message), bad);
+    assert.deepEqual(g.calls.map((c) => c.key), ['GET /api/v1/repos/devos/kept-app'], `${bad}: no rule was sent`);
+  }
+  assert.equal(await makeMirrors({ store: setup('protect5'), fetchImpl: fake({ 'GET /api/v1/repos/devos/kept-app': [200, { default_branch: '' }] }).fetchImpl, base: 'http://caddy:8099' }).defaultBranch('kept-app'), null);
   await assert.rejects(m.protect('../x'), (e) => e.status === 400);
 });
