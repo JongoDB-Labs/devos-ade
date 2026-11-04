@@ -3,11 +3,14 @@
 // puts a DRAFT into the prompt box — never sent by itself; ?git=hosts opens the Git panel's
 // Git hosts (Settings › Claude Code links there), ?git=clone its Clone dialog (empty: nothing is cloned by a link),
 // ?new=1 the start of a new session (Home's New session: no session of before is shown; nothing starts until you send),
-// ?setup=1 the Bring your setup sheet (?setup=git: for the Git name and email; it reads nothing by itself). A link is anyone's to make, so
+// ?setup=1 the Bring your setup sheet (?setup=git: for the Git name and email; it reads nothing by itself), ?handoff=<id> a chat handed
+// over from Chat's "Make it a project" (handoff.ts: the id is redeemed once and the New project dialog shows the conversation first;
+// nothing is created until you confirm; ?handoff=too-big or failed: the dialog says the hand-off did not happen). A link is anyone's to make, so
 // the draft is marked as coming from a link, capped, its invisible characters made visible (as everything untrusted
 // on this page), and the parameters leave the address bar at once (a reload does not bring the draft back).
 // Linear time: one pass over a capped string (test/polish.test.ts times hostile inputs).
 import { visible } from './text';
+import { HANDOFF_ID, type HandoffNote } from './handoff';
 
 /** At most this many characters of a link's prompt become the draft (more: cut, and said). */
 export const PROMPT_MAX = 4000;
@@ -30,13 +33,15 @@ export interface DeepLink {
   setup: '1' | 'git' | null;
   /** a new session's start (no earlier session shown) */
   fresh: boolean;
+  /** a chat handed over from Chat: its id (redeemed once), or the words of a hand-off that did not happen, or null */
+  handoff: { id: string } | { note: HandoffNote } | null;
   /** the link carried parameters this page knows (they are to be taken out of the address) */
   any: boolean;
 }
 
 /** parseDeepLink(location.search) — the parameters this page takes; anything else is left alone. */
 export function parseDeepLink(search: string): DeepLink {
-  const out: DeepLink = { session: null, prompt: null, cut: false, git: null, project: null, setup: null, fresh: false, any: false };
+  const out: DeepLink = { session: null, prompt: null, cut: false, git: null, project: null, setup: null, fresh: false, handoff: null, any: false };
   if (typeof search !== 'string' || !search) return out;
   let p: URLSearchParams;
   try {
@@ -69,6 +74,12 @@ export function parseDeepLink(search: string): DeepLink {
     out.any = true;
     if (su === '1' || su === 'git') out.setup = su;
   }
+  const ho = p.get('handoff');
+  if (ho !== null) {
+    out.any = true;
+    if (HANDOFF_ID.test(ho)) out.handoff = { id: ho };
+    else if (ho === 'too-big' || ho === 'failed') out.handoff = { note: ho };
+  }
   const raw = p.get('prompt');
   if (raw !== null) {
     out.any = true;
@@ -90,6 +101,7 @@ export function withoutDeepLink(href: string): string {
     u.searchParams.delete('project');
     u.searchParams.delete('setup');
     u.searchParams.delete('new');
+    u.searchParams.delete('handoff');
     return u.pathname + (u.searchParams.toString() ? `?${u.searchParams}` : '') + u.hash;
   } catch {
     return '/';

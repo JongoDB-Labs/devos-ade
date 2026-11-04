@@ -157,3 +157,7 @@
 .setup-items code { font-size: 11px; overflow-wrap: anywhere; }
 .setup-write { margin: 6px 0; display: grid; gap: 4px; }
 .setup-text { max-height: 40vh; overflow: auto; margin: 0; padding: 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+
+/* A chat handed over from Chat's "Make it a project" (components/Handoff.tsx): the conversation, read-only, before anything is made */
+.ho-chat { margin: 6px 0 0; padding: 8px 10px; max-height: 38vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 12.5px;
+  border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); user-select: text; }

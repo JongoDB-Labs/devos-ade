@@ -29,6 +29,7 @@ import { crossed, nextBudget, rememberBudget, storedBudget, type Budget } from '
 import { firstWaiting, pageTitle, waitingSessions } from './groups';
 import { recentReport } from './recent';
 import { parseDeepLink, withoutDeepLink } from './deeplink';
+import { HANDOFF_MAX, type Handoff } from './handoff';
 import { eventTime, sessionCost } from './spend';
 import { RECHECK_TEXT, WORKSPACE, WORKSPACE_ID, goneTops, holdForSettings, inProject, liveHostTops, mentionPath, projectFor, projectIdOk, projectOfCwd, readOnlyTops, settingsApplied, settingsStateFor, type Project, type SettingsState, type Where } from './projects';
 import { PRODUCT } from './brand';
@@ -256,7 +257,10 @@ export type ProjectDialog =
   | { kind: 'import'; id: string }
   /** Bring your setup: your Claude Code setup and Git name and email of this computer, copied into the sandbox (Setup.tsx);
    *  id: the project it was opened from (a folder of this computer: its local MCP servers too), tool: git from the Git panel */
-  | { kind: 'setup'; id: string | null; tool?: 'git' };
+  | { kind: 'setup'; id: string | null; tool?: 'git' }
+  /** a chat handed over from Chat's "Make it a project" (Handoff.tsx): its conversation read-only and a project to make from it
+   *  once you confirm; chat null: the hand-off did not happen, note says why */
+  | { kind: 'handoff'; chat: Handoff | null; note: string };
 
 /** A draft that came from a link (?prompt=): never focused, never sent by Enter until you said you read it, and always
  *  sent into a NEW session in Manual mode — never into the session shown, never in your remembered mode. */
@@ -1309,6 +1313,8 @@ export async function boot(): Promise<void> {
   }
   // a link from Settings › Claude Code › Bring your setup (?setup=1), or for the Git name and email (?setup=git)
   if (link.setup) openProjectDialog({ kind: 'setup', id: get().project ?? null, ...(link.setup === 'git' ? { tool: 'git' as const } : {}) });
+  // a chat handed over from Chat (?handoff=): redeemed once, its dialog shows it — nothing is made until you confirm
+  if (link.handoff) void openHandoff(link.handoff);
   announce();
   startPortWatch();
   startBudgetWatch();
@@ -1318,6 +1324,22 @@ export async function boot(): Promise<void> {
       const id = get().active;
       if (!document.hidden && id && get().views[id]?.unseen) updateView(id, (v) => ({ ...v, unseen: false }));
     });
+  }
+}
+
+/** A chat handed over from Chat (Make it a project): the dialog that shows it, or says why there is none. The id is redeemed here, at
+ *  once and only once (a reload before you confirm loses it: make it a project from the chat again). */
+export async function openHandoff(h: { id: string } | { note: 'too-big' | 'failed' }): Promise<void> {
+  if ('note' in h) {
+    openProjectDialog({ kind: 'handoff', chat: null, note: h.note === 'too-big'
+      ? `That chat is too big to hand over: the limit is ${HANDOFF_MAX.toLocaleString('en-US')} characters of conversation. Start a project from the part that matters (New project), or make a shorter chat.`
+      : 'The chat could not be handed over. Open it in the Chat tab and choose Make it a project again.' });
+    return;
+  }
+  try {
+    openProjectDialog({ kind: 'handoff', chat: await api.redeemHandoff(h.id), note: '' });
+  } catch (e) {
+    openProjectDialog({ kind: 'handoff', chat: null, note: api.problemOf(e).text });
   }
 }
 

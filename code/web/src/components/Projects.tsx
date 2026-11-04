@@ -64,6 +64,7 @@ import { ExportDialog } from './Export';
 import { FoundRepos } from './Found';
 import { ImportSheet, Suggestions, TOOL_BADGE, TOOL_LABEL } from './Import';
 import { SetupSheet } from './Setup';
+import { HandoffDialog } from './Handoff';
 import { modelLabel } from './Pickers';
 import { SETUP_LINKS } from '../setuplinks';
 import { PRODUCT } from '../brand';
@@ -620,6 +621,7 @@ export function ProjectDialogs() {
   if (d.kind === 'settings') return <SettingsDialog id={d.id} start={d.start} onClose={close} />;
   if (d.kind === 'import') return <ImportSheet id={d.id} onClose={close} />;
   if (d.kind === 'setup') return <SetupSheet project={d.id} tool={d.tool ?? null} onClose={close} />;
+  if (d.kind === 'handoff') return <HandoffDialog chat={d.chat} note={d.note} onClose={close} />;
   return <FileDialog ids={d.ids} onClose={close} />;
 }
 

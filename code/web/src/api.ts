@@ -29,6 +29,7 @@ import { normBudget, type Budget as SessionBudget } from './budget';
 import { promptTitle } from './mentions';
 import type { RecentReport } from './recent';
 import { normKeep, type KeepView } from './keep';
+import { takeHandoff, type Handoff } from './handoff';
 import { normExportPlan, zipWhole, type ExportOptions, type ExportPlan } from './exportzip';
 import { cwdOk, goneCwdOk, normFound, normProject, normProjects, normSessionSettings, normSettingsView, projectIdOk, WORKSPACE_ID, WORKSPACE_PATH, type FoundRepo, type Project, type SettingsView, rootOk } from './projects';
 
@@ -1968,6 +1969,15 @@ export function normAnswers(raw: unknown): BnAnswers {
  *  own request, X-Requested-With, and keeps it in memory for this sign-in; recent.ts makes it). */
 export async function reportRecent(report: RecentReport): Promise<void> {
   await request('POST', '/.bn/recent', report, { 'X-Requested-With': 'bn-code' });
+}
+/** A chat handed over from Chat's "Make it a project": POST /.bn/handoff redeems the id this page's address carried — once, for this
+ *  sign-in, within ten minutes (the portal checks it all; the portal makes it only for this page's own request, X-Requested-With)
+ *  -> the title and the conversation, checked (handoff.ts). A used or old id comes back as the portal's words. */
+export async function redeemHandoff(id: string): Promise<Handoff> {
+  const o = await request('POST', '/.bn/handoff', { id }, { 'X-Requested-With': 'bn-code' });
+  const h = takeHandoff(o);
+  if (!h) throw new ApiError(502, 'The portal gave no chat to make a project from.');
+  return h;
 }
 /** The address the portal gives for the terminal: open=TOOL, or TOOL:NAME for another account of it (the portal encodes the
  *  colon: %3A); add=TOOL (`subscriptions add TOOL` asks for the name) */
