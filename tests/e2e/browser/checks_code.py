@@ -3580,7 +3580,7 @@ def settings_code_bypass(ctx):
 
 
 def _auto_setting(ctx, on: bool):
-    """Settings › Claude Code › Auto mode, through the page and the update helper (it restarts the terminal and the code
+    """Settings › Claude Code › Auto mode on the Code page, through the page and the update helper (it restarts the terminal and the code
     container: the sandbox's managed settings and the code container both follow it)."""
     page, rec = ctx.page(f"settings-code-auto-{'on' if on else 'off'}")
     login(page)

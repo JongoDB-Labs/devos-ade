@@ -103,7 +103,8 @@ picker_json() {
     END { if (n) printf "{%s\"modelPicker\":{\"replaceBuiltInOptions\":true,\"options\":[%s]}}\n", (off == 1 ? "\"disableAutoMode\":\"disable\"," : ""), r }'
 }
 
-# Settings › Terminal › Auto mode (TERMINAL_AUTO_MODE): Claude Code's auto mode in this terminal's sessions. Its reviewer
+# Settings › Claude Code › Auto mode in the terminal (TERMINAL_AUTO_MODE): Claude Code's auto mode in this terminal's
+# sessions — the Code page's Auto mode is a switch of its own (BN_CODE_AUTO_MODE: only said, JON-1051). Its reviewer
 # (Claude Code's classifier, CLAUDE_CODE_AUTO_MODE_MODEL) runs on this terminal's Haiku whatever the session's model: a
 # safety check, so always a Claude model (as the Code page's sessions: bn-coded.mjs reviewerModel; one of yours wins).
 # No Claude Haiku here: Claude Code's default, claude-sonnet-5 (the catalog's alias for Sonnet 5.5).
@@ -111,10 +112,28 @@ reviewer='Sonnet 5.5'
 case "${ANTHROPIC_DEFAULT_HAIKU_MODEL:-}" in
   claude-haiku-*) export CLAUDE_CODE_AUTO_MODE_MODEL="${CLAUDE_CODE_AUTO_MODE_MODEL:-$ANTHROPIC_DEFAULT_HAIKU_MODEL}"; reviewer="$CLAUDE_CODE_AUTO_MODE_MODEL" ;;
 esac
-auto_on=0
-case "$(printf '%s' "${TERMINAL_AUTO_MODE:-}" | tr '[:upper:]' '[:lower:]')" in true | 1 | yes | on) auto_on=1 ;; esac
-if [ "$auto_on" = 1 ]; then auto_help="available (Settings › Terminal › Auto mode): its reviewer model runs on $reviewer"
-else auto_help="off (Settings › Terminal › Auto mode turns it on)"; fi
+on_word() { case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in true | 1 | yes | on) return 0 ;; esac; return 1; }
+auto_on=0; ! on_word "${TERMINAL_AUTO_MODE:-}" || auto_on=1
+if [ "$auto_on" = 1 ]; then auto_help="available (Settings › Claude Code › Auto mode in the terminal): its reviewer model runs on $reviewer"
+else auto_help="off (Settings › Claude Code › Auto mode in the terminal turns it on; the Code page's Auto mode is its own)"; fi
+
+# Claude Code on Bedrock signs in to no Claude account (JON-1050): it runs on this terminal's key, which comes before
+# any login. /login is hidden, and a plan's /upgrade, /usage-credits and claude.ai connectors with it (the terminal's
+# environment sets these too: plain `claude` here); signing in from here is refused, pointing to Claude on your plan.
+export DISABLE_LOGIN_COMMAND=1 DISABLE_UPGRADE_COMMAND=1 DISABLE_EXTRA_USAGE_COMMAND=1 ENABLE_CLAUDEAI_MCP_SERVERS=false
+case "${1:-}:${2:-}" in
+  auth:login | setup-token:*)
+    die "Claude Code on Bedrock signs in to no Claude account: it runs on this stack's key. Claude on your plan is claude-sub — claude-sub auth login, or /login in it" ;;
+esac
+# stray_login -> true when this folder (~/.claude) holds a Claude account login anyway (a /login before it was hidden,
+# or one typed elsewhere): never used here, kept until a sign-out. Claude Code's own `auth status` says so (exit 0,
+# authMethod claude.ai), asked without this terminal's key — the login file itself is never opened; on Linux it is
+# .credentials.json, so without one there is nothing to ask.
+stray_login() {
+  [ -e "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.credentials.json" ] || return 1
+  env -u ANTHROPIC_BASE_URL -u ANTHROPIC_AUTH_TOKEN -u ANTHROPIC_API_KEY timeout 10 claude auth status </dev/null 2>/dev/null |
+    head -c 65536 | jq -e 'type == "object" and .authMethod == "claude.ai"' >/dev/null 2>&1
+}
 
 case "${1:-}" in
   --models)
@@ -234,6 +253,16 @@ subcmds="$(claude --help 2>/dev/null </dev/null | awk '/^Commands:/ { f = 1; nex
   f && /^  [a-z]/ { n = split($1, a, "|"); for (i = 1; i <= n; i++) print a[i] }' || true)"
 add_mcp=1
 case "${1:-}" in '' | -*) ;; *) for c in $subcmds; do [ "$c" = "$1" ] && { add_mcp=0; break; }; done ;; esac
+# A session's two notes, with the launch line: a Claude account login this folder holds (how to remove it), and auto
+# mode off here while the Code page's is on (which switch it is)
+if [ "$add_mcp" = 1 ] && [ "${CLAUDE_BEDROCK_QUIET:-0}" != 1 ]; then
+  if stray_login; then
+    printf '%s\n' "devos-claude: ~/.claude here also holds a Claude account login (a /login made it). Claude Code on Bedrock never uses it — this terminal's key comes first — but it stays until /logout here (or devos-claude auth logout) removes it. Claude on your plan is claude-sub." >&2
+  fi
+  if [ "$auto_on" != 1 ] && on_word "${BN_CODE_AUTO_MODE:-}"; then
+    printf '%s\n' "devos-claude: auto mode is off in the terminal — the Code page's Auto mode is its own; Settings › Claude Code › Auto mode in the terminal turns it on here" >&2
+  fi
+fi
 mcp_args=()
 # First, as one argument: after yours a `--` would make it prompt text; as two, the variadic option takes your prompt.
 [ "$add_mcp" = 1 ] && [ -f "$mcp" ] && mcp_args=("--mcp-config=$mcp")

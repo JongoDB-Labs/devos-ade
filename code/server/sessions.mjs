@@ -39,7 +39,7 @@ const AUTO_OFF = `Auto mode is off: turn it on in Settings › Claude Code, from
 // apart (said: shown as its words, never in our sentence)
 const autoRefused = (e) => {
   const m = short(e?.message || String(e), 300);
-  const text = /disabled by settings/i.test(m) ? 'Auto mode is off in the sandbox\'s Claude Code settings: the terminal container has not taken Settings › Claude Code › Auto mode yet (./stack up restarts it).'
+  const text = /disabled by settings/i.test(m) ? 'Auto mode is off in the sandbox\'s Claude Code settings: the terminal container has not taken Settings › Claude Code › Auto mode on the Code page yet (./stack up restarts it).'
     : /unavailable|not available|not supported/i.test(m) ? 'Claude Code does not offer Auto mode for this session (on Bedrock: Sonnet 5 or later, Opus 4.7 or later, Haiku 5.5).'
       : 'Claude Code refused it.';
   return { text, said: said(m, 300) };

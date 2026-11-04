@@ -418,8 +418,9 @@ export function childEnv(extra, litellmSession, base = process.env, model = null
   return Object.assign(env, backgroundEnv(model, prices, base.ANTHROPIC_DEFAULT_HAIKU_MODEL));
 }
 // The stack's variables a tool of your subscriptions never gets: its gateway, keys and models, Claude Code's switches
-// for Bedrock, the MCP token (in mcp.json), this server's own — what claude-sub leaves out too, and AWS's
-const STACK_VAR = /^(ANTHROPIC_[A-Z0-9_]*|CLAUDE_CODE_USE_[A-Z0-9_]*|CLAUDE_CODE_OAUTH_[A-Z0-9_]*|CLAUDE_BEDROCK_[A-Z0-9_]*|CLAUDE_CODE_SIMPLE|CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS|CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC|CLAUDE_CONFIG_DIR|SHARED_MCP_TOKEN|BN_MCP_URL|BN_[A-Z0-9_]*|AWS_[A-Z0-9_]*)$/;
+// for Bedrock (those that keep it off a Claude account too: /login hidden, a plan's commands and connectors), the MCP
+// token (in mcp.json), this server's own — what claude-sub leaves out too, and AWS's
+const STACK_VAR = /^(ANTHROPIC_[A-Z0-9_]*|CLAUDE_CODE_USE_[A-Z0-9_]*|CLAUDE_CODE_OAUTH_[A-Z0-9_]*|CLAUDE_BEDROCK_[A-Z0-9_]*|CLAUDE_CODE_SIMPLE|CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS|CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC|CLAUDE_CONFIG_DIR|DISABLE_LOGIN_COMMAND|DISABLE_UPGRADE_COMMAND|DISABLE_EXTRA_USAGE_COMMAND|ENABLE_CLAUDEAI_MCP_SERVERS|SHARED_MCP_TOKEN|BN_MCP_URL|BN_[A-Z0-9_]*|AWS_[A-Z0-9_]*)$/;
 // planEnv(extra, base) -> the environment of Claude on your plan: this container's without the stack's variables
 // (STACK_VAR: no LiteLLM, no Bedrock, no terminal key, no spend tag), plus the SDK's few (checked), and claude-sub's
 // folder — Claude Code then uses its own stored login there, which nothing here reads

@@ -6,6 +6,23 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Fixed
+- **Claude Code on Bedrock signs in to no Claude account (JON-1050).** A `/login` in the terminal's Claude Code on
+  Bedrock saved a Claude account login in its folder. Nothing used it — the stack's key comes first, so no request
+  went to that account and its claude.ai connectors were not loaded (the notice said so) — but it stayed there. Now, in
+  every Claude Code on Bedrock (the terminal's `claude` and `devos-claude`, the Code page's, `devos-claude` on your
+  computer):
+  - `/login` is hidden, and a plan's `/upgrade`, `/usage-credits` and claude.ai connectors with it;
+  - `auth login` and `setup-token` are refused, pointing to Claude on your plan (`claude-sub` in the terminal; your own
+    `claude` on your computer);
+  - a Claude account login its folder already holds is said at start, with how to remove it (`/logout`). DevOS ADE
+    asks Claude Code's own `auth status`; it never opens the login.
+  - Claude on your plan (`claude-sub`, the Code page's plan sessions) keeps `/login`.
+- **Auto mode says which switch is which (JON-1051).** Settings › Claude Code › Auto mode is the Code page's: it is
+  named "Auto mode on the Code page" now, and says the terminal has its own (Auto mode in the terminal). With the Code
+  page's on and the terminal's off, Claude Code in the terminal (`claude`, `devos-claude`, `claude-sub`) says which
+  switch turns it on there. `devos-claude --help` in the terminal named a Settings place that does not exist.
+
 ## [0.57.1] - 2026-11-03
 
 ### Fixed

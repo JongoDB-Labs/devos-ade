@@ -15,7 +15,8 @@ for (const d of [WS, HOME, BIN, path.join(WS, 'app')]) fs.mkdirSync(d, { recursi
 // a stand-in for Claude Code and for each agent's launcher: its arguments, cwd and the variables that matter
 const SAY = `#!/usr/bin/env node
 const pick = ['ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_CUSTOM_HEADERS', 'CLAUDE_CONFIG_DIR', 'CLAUDE_CODE_USE_BEDROCK', 'SHARED_MCP_TOKEN',
-  'BN_MCP_URL', 'AWS_SECRET_ACCESS_KEY', 'DISABLE_AUTOUPDATER', 'HTTPS_PROXY', 'CLAUDE_CODE_ENTRYPOINT', 'BN_CODE_WORKSPACE', 'CLAUDE_CODE_DISABLE_ATTACHMENTS'];
+  'BN_MCP_URL', 'AWS_SECRET_ACCESS_KEY', 'DISABLE_AUTOUPDATER', 'HTTPS_PROXY', 'CLAUDE_CODE_ENTRYPOINT', 'BN_CODE_WORKSPACE', 'CLAUDE_CODE_DISABLE_ATTACHMENTS',
+  'DISABLE_LOGIN_COMMAND', 'ENABLE_CLAUDEAI_MCP_SERVERS'];
 process.stdout.write(JSON.stringify({ bin: require('path').basename(process.argv[1]), args: process.argv.slice(2), cwd: process.cwd(),
   env: Object.fromEntries(pick.filter((k) => k in process.env).map((k) => [k, process.env[k]])) }) + '\\n');
 process.stdin.on('data', () => {}); process.stdin.on('end', () => process.exit(0));
@@ -29,7 +30,9 @@ fs.writeFileSync(SUBS, `#!/bin/sh\nprintf 'codex\\tyes\\t0.163.0\\tyes\\tchatgpt
 Object.assign(process.env, { BN_CODE_WORKSPACE: WS, BN_CODE_SOCK_DIR: SOCKDIR, BN_CODE_CHILDREN: path.join(ROOT, 'children'), BN_CLAUDE_BIN: CLAUDE,
   CLAUDE_CONFIG_DIR: path.join(HOME, '.claude'), HOME, BN_PLAN_CONFIG_DIR: path.join(HOME, '.claude-subscription'), BN_CHAT_DIR: path.join(HOME, '.bn-chat'),
   BN_AGENT_BIN_DIR: BIN, BN_SUBS_BIN_PATH: SUBS, SHARED_MCP_TOKEN: 'mcp-secret', BN_MCP_URL: 'http://gateway:8091/mcp',
-  ANTHROPIC_BASE_URL: 'http://gateway:8091', ANTHROPIC_AUTH_TOKEN: 'sk-terminal-key', CLAUDE_CODE_USE_BEDROCK: '1', AWS_SECRET_ACCESS_KEY: 'aws', HTTPS_PROXY: 'http://egress:3128' });
+  ANTHROPIC_BASE_URL: 'http://gateway:8091', ANTHROPIC_AUTH_TOKEN: 'sk-terminal-key', CLAUDE_CODE_USE_BEDROCK: '1', AWS_SECRET_ACCESS_KEY: 'aws', HTTPS_PROXY: 'http://egress:3128',
+  // (the terminal's: Claude Code on Bedrock signs in to no Claude account — compose.terminal.yaml)
+  DISABLE_LOGIN_COMMAND: '1', ENABLE_CLAUDEAI_MCP_SERVERS: 'false' });
 for (const k of Object.keys(process.env)) if (/^(DISABLE_AUTOUPDATER|CLAUDE_CODE_[A-Z_]*|CLAUDECODE|TMUX|TMUX_PANE)$/.test(k)) delete process.env[k];
 fs.mkdirSync(path.join(HOME, '.config/devos-ade'), { recursive: true });
 fs.writeFileSync(path.join(HOME, '.config/devos-ade/mcp.json'), '{}');
@@ -55,6 +58,8 @@ test('Claude on your plan: claude-sub\'s folder, none of the stack\'s variables,
   assert.ok(b.args.some((a) => a.startsWith('--mcp-config=')));
   assert.match(b.env.ANTHROPIC_CUSTOM_HEADERS, /code-3f2a1b4c/);
   assert.equal(b.env.ANTHROPIC_BASE_URL, 'http://gateway:8091');
+  assert.equal(b.env.DISABLE_LOGIN_COMMAND, '1');
+  assert.equal(b.env.ENABLE_CLAUDEAI_MCP_SERVERS, 'false');
   assert.match(result(await run({ op: 'claude', plan: true, args: [...FIXED, '--max-budget-usd=1', `--project-config-root=${WS}`], cwd: WS })).error, /no budget stop for a session on your plan/);
 });
 

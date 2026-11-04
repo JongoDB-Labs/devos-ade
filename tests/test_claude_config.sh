@@ -203,6 +203,44 @@ test_notes_new_folder_and_claude_md_tip_once_never_a_copy() {
   assert_not_contains "$out" "denied"
 }
 
+# A Claude account login in the lean folder (JON-1050): said, with how to remove it — Claude Code's own `auth status`,
+# asked without the LiteLLM key, and only when the login can be there (a .credentials.json, or the account entry of the
+# folder's .claude.json): otherwise Claude Code is not even started. Your own folder: nothing.
+test_stray_login_said_only_for_a_claude_account_login_in_the_lean_folder() {
+  _home
+  mkdir -p "$TMP/bin"
+  cat > "$TMP/bin/claude" <<'EOS'
+#!/bin/sh
+echo "claude $*" >> "$STUB_LOG"
+[ "$1 $2" = "auth status" ] || exit 9
+[ -z "${ANTHROPIC_AUTH_TOKEN:-}" ] || { printf '{"authMethod": "oauth_token"}\n'; exit 0; }
+[ -e "$CLAUDE_CONFIG_DIR/stub-login" ] || { printf '{"loggedIn": false}\n'; exit 1; }
+printf '{\n  "loggedIn": true,\n  "authMethod": "claude.ai"\n}\n'
+EOS
+  chmod +x "$TMP/bin/claude"
+  export STUB_LOG="$TMP/claude.log"; : > "$STUB_LOG"
+  local PATH="$TMP/bin:$PATH" d
+  claude_config_resolve; claude_config_prepare; d="$HOME/.claude-bedrock"
+  # nothing that could hold one: nothing said, Claude Code not started
+  assert_eq "$(claude_config_stray_login)" ""
+  assert_eq "$(cat "$STUB_LOG")" ""
+  # its trace there but no login (a sign-out since): asked, nothing said
+  printf '{"oauthAccount": {}}\n' > "$d/.claude.json"
+  assert_eq "$(claude_config_stray_login)" ""
+  assert_eq "$(cat "$STUB_LOG")" "claude auth status"
+  # a login: said — also with the key exported (it is asked without it)
+  : > "$d/stub-login"
+  assert_contains "$(ANTHROPIC_AUTH_TOKEN=sk-cc claude_config_stray_login)" "devos-claude: ~/.claude-bedrock also holds a Claude account login (a /login made it). Claude Code on Bedrock never uses it — the LiteLLM key comes first — but it stays until /logout in devos-claude (or devos-claude auth logout) removes it."
+  # the login file itself (Linux) is reason enough to ask
+  rm -f "$d/.claude.json"; : > "$d/.credentials.json"
+  assert_contains "$(claude_config_stray_login)" "also holds a Claude account login"
+  # your own folder keeps your everyday claude's login: nothing said, nothing asked
+  : > "$STUB_LOG"; mkdir -p "$HOME/.claude"; : > "$HOME/.claude/.credentials.json"; : > "$HOME/.claude/stub-login"
+  CLAUDE_BEDROCK_USE_MY_CONFIG=1 claude_config_resolve
+  assert_eq "$(claude_config_stray_login)" ""
+  assert_eq "$(cat "$STUB_LOG")" ""
+}
+
 test_resume_prefix_names_the_variable_that_picked_the_folder() {
   _home
   claude_config_resolve; assert_eq "$(claude_config_resume_prefix)" ""

@@ -1147,9 +1147,89 @@ STUB
   assert_not_contains "$out" "disableAutoMode"
   out="$(run TERMINAL_AUTO_MODE=false /bin/bash "$STACK_DIR/terminal/bin/devos-claude" mcp list)" || return 1
   assert_eq "$(printf '%s\n' "$out" | tr '\n' ' ')" "mcp list "
-  assert_contains "$(run TERMINAL_AUTO_MODE=yes /bin/bash "$STACK_DIR/terminal/bin/devos-claude" --help)" "Auto     auto mode available (Settings › Terminal › Auto mode): its reviewer model runs on Sonnet 5.5"
+  assert_contains "$(run TERMINAL_AUTO_MODE=yes /bin/bash "$STACK_DIR/terminal/bin/devos-claude" --help)" "Auto     auto mode available (Settings › Claude Code › Auto mode in the terminal): its reviewer model runs on Sonnet 5.5"
   assert_contains "$(run TERMINAL_AUTO_MODE=yes ANTHROPIC_DEFAULT_HAIKU_MODEL=claude-haiku-5-5 /bin/bash "$STACK_DIR/terminal/bin/devos-claude" --help)" "its reviewer model runs on claude-haiku-5-5"
-  assert_contains "$(run /bin/bash "$STACK_DIR/terminal/bin/devos-claude" --help)" "Auto     auto mode off (Settings › Terminal › Auto mode turns it on)"
+  assert_contains "$(run /bin/bash "$STACK_DIR/terminal/bin/devos-claude" --help)" "Auto     auto mode off (Settings › Claude Code › Auto mode in the terminal turns it on; the Code page's Auto mode is its own)"
+}
+
+# Claude Code on Bedrock in the sandbox signs in to no Claude account (JON-1050): devos-claude refuses `auth login` and
+# `setup-token` (pointing to claude-sub), its sessions get /login hidden and a plan's commands and connectors off, and
+# a Claude account login its folder holds anyway is said at start — asked of Claude Code's own `auth status` without
+# the terminal's key, only when the login file can be there (never opened). With the Code page's Auto mode on and the
+# terminal's off, a session says which switch it is (JON-1051).
+test_claude_bedrock_in_the_sandbox_signs_in_to_no_claude_account() {
+  mkdir -p "$TMP/bin" "$TMP/home/.config/devos-ade"
+  printf '{}\n' > "$TMP/home/.config/devos-ade/mcp.json"
+  cat > "$TMP/bin/claude" <<'STUB'
+#!/bin/bash
+if [ "${1:-}" = --help ]; then printf 'Usage: claude\nCommands:\n  auth  Manage authentication\n  mcp  Configure MCP servers\n  setup-token  Set up a token\n'; exit 0; fi
+if [ "${1:-} ${2:-}" = "auth status" ]; then
+  echo "auth status" >> "$STUB_LOG"
+  [ -z "${ANTHROPIC_AUTH_TOKEN:-}" ] || { printf '{"loggedIn": true, "authMethod": "oauth_token"}\n'; exit 0; }
+  [ "${STUB_LOGIN:-0}" = 1 ] || { printf '{"loggedIn": false}\n'; exit 1; }
+  printf '{\n  "loggedIn": true,\n  "authMethod": "claude.ai"\n}\n'; exit 0
+fi
+printf 'ARGS %s\n' "$*"
+env | grep -E '^(DISABLE_[A-Z_]*_COMMAND|ENABLE_CLAUDEAI_MCP_SERVERS)=' | sort
+STUB
+  printf '#!/bin/sh\nexit 0\n' > "$TMP/bin/curl"
+  printf '#!/bin/sh\nshift; exec "$@"\n' > "$TMP/bin/timeout"   # (the image's coreutils; macOS has none)
+  chmod 755 "$TMP/bin/claude" "$TMP/bin/curl" "$TMP/bin/timeout"
+  export STUB_LOG="$TMP/auth.log"; : > "$STUB_LOG"
+  run() { env -i PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP/home" STUB_LOG="$STUB_LOG" ANTHROPIC_BASE_URL=http://gateway:8091 \
+    ANTHROPIC_AUTH_TOKEN=sk-x CLAUDE_BEDROCK_OPUS_MODEL=claude-haiku-5-5 "$@"; }
+  local out rc
+  # signing in from here: refused, naming claude-sub; Claude Code never runs
+  for a in "auth login" "setup-token"; do
+    rc=0; out="$(run /bin/bash "$STACK_DIR/terminal/bin/devos-claude" $a 2>&1)" || rc=$?
+    assert_eq "$rc" 1
+    assert_contains "$out" "devos-claude: Claude Code on Bedrock signs in to no Claude account: it runs on this stack's key. Claude on your plan is claude-sub"
+    assert_not_contains "$out" "ARGS"
+  done
+  # signing out stays (it removes a login left there)
+  assert_contains "$(run CLAUDE_BEDROCK_QUIET=1 /bin/bash "$STACK_DIR/terminal/bin/devos-claude" auth logout)" "ARGS auth logout"
+  # a session: /login hidden, a plan's commands and connectors off
+  out="$(run CLAUDE_BEDROCK_QUIET=1 /bin/bash "$STACK_DIR/terminal/bin/devos-claude" -p hi)"
+  assert_contains "$out" "DISABLE_LOGIN_COMMAND=1"
+  assert_contains "$out" "DISABLE_UPGRADE_COMMAND=1"
+  assert_contains "$out" "DISABLE_EXTRA_USAGE_COMMAND=1"
+  assert_contains "$out" "ENABLE_CLAUDEAI_MCP_SERVERS=false"
+  # no login file: nothing said, nothing asked
+  out="$(run STUB_LOGIN=1 /bin/bash "$STACK_DIR/terminal/bin/devos-claude" -p hi 2>&1)"
+  assert_not_contains "$out" "Claude account login"
+  assert_eq "$(cat "$STUB_LOG")" ""
+  # a login file without a Claude account in it (an MCP server's sign-in): asked, nothing said
+  mkdir -p "$TMP/home/.claude"; printf '{}' > "$TMP/home/.claude/.credentials.json"
+  out="$(run /bin/bash "$STACK_DIR/terminal/bin/devos-claude" -p hi 2>&1)"
+  assert_not_contains "$out" "Claude account login"
+  assert_eq "$(cat "$STUB_LOG")" "auth status"
+  # a Claude account login: said, with how to remove it (asked without the terminal's key, which would hide it)
+  out="$(run STUB_LOGIN=1 /bin/bash "$STACK_DIR/terminal/bin/devos-claude" -p hi 2>&1)"
+  assert_contains "$out" "devos-claude: ~/.claude here also holds a Claude account login (a /login made it). Claude Code on Bedrock never uses it"
+  assert_contains "$out" "until /logout here (or devos-claude auth logout) removes it"
+  assert_contains "$out" "ARGS "
+  # … not with the launch line hidden, and not for a subcommand
+  assert_not_contains "$(run STUB_LOGIN=1 CLAUDE_BEDROCK_QUIET=1 /bin/bash "$STACK_DIR/terminal/bin/devos-claude" -p hi 2>&1)" "Claude account login"
+  assert_not_contains "$(run STUB_LOGIN=1 /bin/bash "$STACK_DIR/terminal/bin/devos-claude" mcp list 2>&1)" "Claude account login"
+  # auto mode: the Code page's on, the terminal's off — which switch it is; the terminal's on, or the Code page's off: nothing
+  out="$(run BN_CODE_AUTO_MODE=true TERMINAL_AUTO_MODE=false /bin/bash "$STACK_DIR/terminal/bin/devos-claude" -p hi 2>&1)"
+  assert_contains "$out" "devos-claude: auto mode is off in the terminal — the Code page's Auto mode is its own; Settings › Claude Code › Auto mode in the terminal turns it on here"
+  assert_not_contains "$(run BN_CODE_AUTO_MODE=true TERMINAL_AUTO_MODE=true /bin/bash "$STACK_DIR/terminal/bin/devos-claude" -p hi 2>&1)" "auto mode is off"
+  assert_not_contains "$(run BN_CODE_AUTO_MODE=false /bin/bash "$STACK_DIR/terminal/bin/devos-claude" -p hi 2>&1)" "auto mode is off"
+  # the shells' `claude`: the same refusal, before Claude Code runs (whatever the auto mode switch)
+  for a in "auth login" "setup-token"; do
+    rc=0; out="$(env -i PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP" TERMINAL_AUTO_MODE=true "$BASH" --norc --noprofile -i -c ". '$STACK_DIR/terminal/bashrc'; claude $a" 2>&1)" || rc=$?
+    assert_eq "$rc" 2
+    assert_contains "$out" "claude: claude here is Claude Code on Bedrock (this terminal's key) and signs in to no Claude account. Claude on your plan is claude-sub"
+    assert_not_contains "$out" "ARGS"
+  done
+  # the terminal's environment: every claude there (plain claude, the Code page's) — and the Code page's switch, for the line
+  local c; c="$(cat "$STACK_DIR/compose.terminal.yaml")"
+  assert_contains "$c" 'DISABLE_LOGIN_COMMAND: "1"'
+  assert_contains "$c" 'DISABLE_UPGRADE_COMMAND: "1"'
+  assert_contains "$c" 'DISABLE_EXTRA_USAGE_COMMAND: "1"'
+  assert_contains "$c" 'ENABLE_CLAUDEAI_MCP_SERVERS: "false"'
+  assert_contains "$c" 'BN_CODE_AUTO_MODE: ${CODE_AUTO_MODE:-false}'
 }
 
 # `claude` typed in the terminal's shells (terminal/bashrc): auto mode off for its sessions unless the terminal's own
@@ -1171,7 +1251,8 @@ STUB
   assert_eq "$(sh_claude false mcp list | tr '\n' ' ')" "mcp list "
   assert_eq "$(sh_claude true -p hi | tr '\n' ' ')" "-p hi "
   assert_eq "$(sh_claude ON -p hi | tr '\n' ' ')" "-p hi "
-  # the terminal container passes the switch in (and only it: the Code page's reaches the sandbox as its managed settings)
+  # the terminal container passes the switch in (the Code page's decides the sandbox's managed settings; it comes in too, for
+  # one line only: test_claude_bedrock_in_the_sandbox_signs_in_to_no_claude_account)
   assert_contains "$(cat "$STACK_DIR/compose.terminal.yaml")" 'TERMINAL_AUTO_MODE: ${TERMINAL_AUTO_MODE:-false}'
 }
 

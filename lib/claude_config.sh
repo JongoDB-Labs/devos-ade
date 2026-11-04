@@ -200,6 +200,24 @@ claude_config_notes() {
   fi
 }
 
+# claude_config_stray_login -> lean mode, a line when the folder holds a Claude account login (a /login before
+# devos-claude hid it, or `claude auth login` run with it as CLAUDE_CONFIG_DIR): Claude Code on Bedrock never uses it —
+# the LiteLLM key comes first — but it stays until a sign-out (JON-1050). Claude Code's own `auth status` says so (exit
+# 0, "authMethod": "claude.ai"), asked without the key; the login itself (the Keychain on macOS, .credentials.json
+# elsewhere) is never read — first only whether it can be there: that file, or the account entry of the folder's
+# .claude.json. Your own folder (CLAUDE_BEDROCK_USE_MY_CONFIG=1) is where your everyday claude keeps its login: nothing.
+claude_config_stray_login() {
+  local out re='"authMethod"[[:space:]]*:[[:space:]]*"claude\.ai"'
+  [ "$CB_CONFIG_MODE" = lean ] || return 0
+  [ -e "$CB_CONFIG_DIR/.credentials.json" ] || grep -q '"oauthAccount"' "$CB_CONFIG_DIR/.claude.json" 2>/dev/null || return 0
+  # (its whole answer, then matched here: a grep -q on a pipe can end it early, which pipefail takes for "no")
+  out="$(CLAUDE_CONFIG_DIR="$CB_CONFIG_DIR" env -u ANTHROPIC_BASE_URL -u ANTHROPIC_AUTH_TOKEN -u ANTHROPIC_API_KEY \
+    claude auth status </dev/null 2>/dev/null | head -c 65536)" || return 0
+  [[ $out =~ $re ]] || return 0
+  printf 'devos-claude: %s also holds a Claude account login (a /login made it). Claude Code on Bedrock never uses it — the LiteLLM key comes first — but it stays until /logout in devos-claude (or devos-claude auth logout) removes it.\n' \
+    "$(claude_config_show "$CB_CONFIG_DIR")"
+}
+
 # claude_config_resume_prefix -> what has to precede `devos-claude --resume` to find this session again:
 # nothing for the default folder, else the variable that picked the folder.
 claude_config_resume_prefix() {

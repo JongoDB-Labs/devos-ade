@@ -90,6 +90,13 @@ EOT
     command -v claude >/dev/null 2>&1 || die "Claude Code (claude) is not installed"
     restore_caller_locale; exec claude "$@" ;;
 esac
+# Claude Code on Bedrock signs in to no Claude account (JON-1050): it runs on the stack's LiteLLM key, which comes
+# before any login, so a sign-in from here would only leave a login in its folder that nothing uses. Your own claude
+# signs in to your plan.
+case "${1:-}:${2:-}" in
+  auth:login | setup-token:*)
+    die "Claude Code on Bedrock signs in to no Claude account: it runs on this stack's key. Your own claude signs in to your plan: claude auth login, or /login in it" ;;
+esac
 
 [ -f "$ENV_FILE" ] || die "stack not set up — run $STACK_DIR/stack setup"
 command -v claude >/dev/null 2>&1 || die "Claude Code (claude) is not installed"
@@ -160,6 +167,9 @@ export CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1   # Bedrock rejects Anthropic be
 # nothing (Claude Code 2.1.301: every MCP tool inline with or without it). Hence the lean config folder above.
 # No telemetry, error reporting or update checks from Bedrock sessions; plain `claude` is unaffected.
 export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
+# No Claude account in Bedrock sessions (as in the browser terminal): /login hidden, and a plan's /upgrade,
+# /usage-credits and claude.ai connectors with it — the key above comes first whatever the folder holds.
+export DISABLE_LOGIN_COMMAND=1 DISABLE_UPGRADE_COMMAND=1 DISABLE_EXTRA_USAGE_COMMAND=1 ENABLE_CLAUDEAI_MCP_SERVERS=false
 
 # One cost line on stderr (CLAUDE_BEDROCK_QUIET=1 hides it). Spend comes from LiteLLM with this key;
 # if that takes >2s or fails, the spend part is left out rather than delaying the launch.
@@ -214,7 +224,7 @@ if [ "$add_mcp" = 1 ]; then
 fi
 
 # For people at a terminal starting a session: a new folder's first-run questions; once: how to bring a CLAUDE.md along.
-if [ "${CLAUDE_BEDROCK_QUIET:-0}" != 1 ] && [ "$add_mcp" = 1 ] && [ -t 2 ]; then claude_config_notes >&2; fi
+if [ "${CLAUDE_BEDROCK_QUIET:-0}" != 1 ] && [ "$add_mcp" = 1 ] && [ -t 2 ]; then claude_config_notes >&2; claude_config_stray_login >&2; fi
 
 # Every request of this run carries a session id, so its cost can be looked up on exit (and found in
 # LiteLLM UI › Logs). Your own ANTHROPIC_CUSTOM_HEADERS are kept.

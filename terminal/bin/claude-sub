@@ -18,12 +18,15 @@ dir="$HOME/.claude-subscription"
 mcp="$HOME/.config/devos-ade/mcp.json"   # (the stack's shared MCP server: only with CLAUDE_SUB_STACK_MCP=1, below)
 
 # What the stack sets for Bedrock, or what would put another credential ahead of your login (Claude Code's own order:
-# a cloud provider switch, ANTHROPIC_AUTH_TOKEN, ANTHROPIC_API_KEY, an OAuth token in the environment — then /login)
+# a cloud provider switch, ANTHROPIC_AUTH_TOKEN, ANTHROPIC_API_KEY, an OAuth token in the environment — then /login),
+# and what keeps Bedrock's sessions off a Claude account (/login hidden, a plan's commands and connectors: yours here)
+code_auto="${BN_CODE_AUTO_MODE:-}"
 for v in $(compgen -e); do
   case "$v" in
     ANTHROPIC_* | CLAUDE_CODE_USE_* | CLAUDE_CODE_OAUTH_* | CLAUDE_BEDROCK_* | CLAUDE_CODE_SIMPLE | \
     CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS | CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC | CLAUDE_CONFIG_DIR | \
-    SHARED_MCP_TOKEN | BN_MCP_URL | AWS_*) unset "$v" ;;
+    DISABLE_LOGIN_COMMAND | DISABLE_UPGRADE_COMMAND | DISABLE_EXTRA_USAGE_COMMAND | ENABLE_CLAUDEAI_MCP_SERVERS | \
+    BN_CODE_AUTO_MODE | SHARED_MCP_TOKEN | BN_MCP_URL | AWS_*) unset "$v" ;;
   esac
 done
 # A tmux pane running it is marked as one of your subscriptions' tools (pane option @bn-sub): the Code page's @terminal
@@ -66,11 +69,17 @@ if [ "$session" = 1 ]; then
     extra+=("--mcp-config=$mcp")
     printf '%s\n' "claude-sub: CLAUDE_SUB_STACK_MCP=1 — the stack's shared MCP server (Chat's knowledge bases, the shared bucket, which it can write) is open to Claude on your plan in this session: what it reads goes to Anthropic under your plan's terms." >&2
   fi
+  auto_off=0
   case "$(printf '%s' "${TERMINAL_AUTO_MODE:-}" | tr '[:upper:]' '[:lower:]')" in
     true | 1 | yes | on) ;;
-    *) extra+=('--settings={"disableAutoMode":"disable"}') ;;
+    *) extra+=('--settings={"disableAutoMode":"disable"}'); auto_off=1 ;;
   esac
-  [ "${CLAUDE_SUB_QUIET:-0}" = 1 ] || [ ! -t 2 ] ||
+  if [ "${CLAUDE_SUB_QUIET:-0}" != 1 ] && [ -t 2 ]; then
     printf 'claude-sub · Claude Code on your Claude plan (config ~/.claude-subscription; /login signs in) — usage counts against your plan\n' >&2
+    # (the Code page's Auto mode on, the terminal's off: which switch it is — JON-1051)
+    case "$auto_off:$(printf '%s' "$code_auto" | tr '[:upper:]' '[:lower:]')" in
+      1:true | 1:1 | 1:yes | 1:on) printf '%s\n' "claude-sub: auto mode is off in the terminal — the Code page's Auto mode is its own; Settings › Claude Code › Auto mode in the terminal turns it on here" >&2 ;;
+    esac
+  fi
 fi
 exec "$CLAUDE_BIN" ${extra[@]+"${extra[@]}"} "$@"

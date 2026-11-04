@@ -19,10 +19,17 @@ esac
 # only the Code page's on they must leave it available (the Code page's sessions need it), so this adds Claude Code's
 # flag-tier switch to sessions started here — not to a subcommand (they refuse --settings). A convenience, not a
 # boundary: /usr/local/bin/claude called directly, or a --settings of yours (Claude Code takes the last), goes without it.
+# `claude` here is Claude Code on Bedrock (the terminal's key), so it signs in to no Claude account: `auth login` and
+# `setup-token` are refused, pointing to claude-sub (JON-1050; /login is hidden by the terminal's environment). With
+# the Code page's Auto mode on and this one off, an interactive session says which switch it is (JON-1051).
+_bn_on() { case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in true | 1 | yes | on) return 0 ;; esac; return 1; }
 claude() {
-  case "$(printf '%s' "${TERMINAL_AUTO_MODE:-}" | tr '[:upper:]' '[:lower:]')" in
-    true | 1 | yes | on) command claude "$@"; return ;;
+  case "${1:-}:${2:-}" in
+    auth:login | setup-token:*)
+      printf '%s\n' "claude: claude here is Claude Code on Bedrock (this terminal's key) and signs in to no Claude account. Claude on your plan is claude-sub — claude-sub auth login, or /login in it" >&2
+      return 2 ;;
   esac
+  if _bn_on "${TERMINAL_AUTO_MODE:-}"; then command claude "$@"; return; fi
   if [ -z "${_BN_CLAUDE_SUBCMDS+x}" ]; then
     _BN_CLAUDE_SUBCMDS="$(command claude --help 2>/dev/null </dev/null | awk '/^Commands:/ { f = 1; next } f && /^[^ ]/ { f = 0 }
       f && /^  [a-z]/ { n = split($1, a, "|"); for (i = 1; i <= n; i++) print a[i] }' || true)"
@@ -32,5 +39,8 @@ claude() {
     '' | -*) ;;
     *) for c in $_BN_CLAUDE_SUBCMDS; do [ "$c" = "$1" ] && { command claude "$@"; return; }; done ;;
   esac
+  if [ -t 2 ] && _bn_on "${BN_CODE_AUTO_MODE:-}"; then
+    printf '%s\n' "claude: auto mode is off in the terminal — the Code page's Auto mode is its own; Settings › Claude Code › Auto mode in the terminal turns it on here" >&2
+  fi
   command claude '--settings={"disableAutoMode":"disable"}' "$@"
 }

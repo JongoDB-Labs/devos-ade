@@ -234,6 +234,7 @@ EOF
   out="$(env ANTHROPIC_BASE_URL=http://gateway:8091 ANTHROPIC_AUTH_TOKEN=sk-terminal ANTHROPIC_MODEL=m ANTHROPIC_DEFAULT_OPUS_MODEL=o \
     ANTHROPIC_API_KEY=k CLAUDE_CODE_USE_BEDROCK=1 CLAUDE_CODE_OAUTH_TOKEN=t CLAUDE_BEDROCK_OPUS_MODEL=b CLAUDE_CONFIG_DIR=/elsewhere \
     CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 SHARED_MCP_TOKEN=s \
+    DISABLE_LOGIN_COMMAND=1 DISABLE_UPGRADE_COMMAND=1 DISABLE_EXTRA_USAGE_COMMAND=1 ENABLE_CLAUDEAI_MCP_SERVERS=false BN_CODE_AUTO_MODE=true \
     HTTPS_PROXY=http://egress:3128 NODE_USE_ENV_PROXY=1 MY_OWN=kept BN_CLAUDE_BIN="$stub" bash "$STACK_DIR/terminal/bin/claude-sub" hello)"
   assert_not_contains "$out" "ANTHROPIC_"
   assert_not_contains "$out" "CLAUDE_CODE_USE_BEDROCK"
@@ -241,6 +242,12 @@ EOF
   assert_not_contains "$out" "CLAUDE_BEDROCK_"
   assert_not_contains "$out" "SHARED_MCP_TOKEN"
   assert_not_contains "$out" "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"
+  # (what keeps Claude Code on Bedrock off a Claude account: /login and the plan's commands and connectors are yours here)
+  assert_not_contains "$out" "DISABLE_LOGIN_COMMAND"
+  assert_not_contains "$out" "DISABLE_UPGRADE_COMMAND"
+  assert_not_contains "$out" "DISABLE_EXTRA_USAGE_COMMAND"
+  assert_not_contains "$out" "ENABLE_CLAUDEAI_MCP_SERVERS"
+  assert_not_contains "$out" "BN_CODE_AUTO_MODE"
   assert_contains "$out" "CLAUDE_CONFIG_DIR=$HOME/.claude-subscription"
   assert_contains "$out" "DISABLE_AUTOUPDATER=1"
   assert_contains "$out" "HTTPS_PROXY=http://egress:3128"

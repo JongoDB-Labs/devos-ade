@@ -99,7 +99,9 @@ _wrapper_env() {
   mkdir -p "$TMP/bin"
   cat > "$TMP/bin/claude" <<'EOS'
 #!/bin/sh
-case "$1" in --help) printf 'Usage: claude\n\nCommands:\n  mcp            Configure MCP\n  plugin|plugins Manage plugins\n  doctor         Check\n'; exit 0 ;; esac
+case "$1" in --help) printf 'Usage: claude\n\nCommands:\n  auth           Manage authentication\n  mcp            Configure MCP\n  plugin|plugins Manage plugins\n  setup-token    Set up a token\n  doctor         Check\n'; exit 0 ;; esac
+# (STUB_AUTH=1: a Claude account login in the folder, as Claude Code's own `auth status` says it — asked without the key)
+if [ "$1 $2" = "auth status" ] && [ -n "${STUB_AUTH:-}" ] && [ -z "${ANTHROPIC_AUTH_TOKEN:-}" ]; then printf '{\n  "authMethod": "claude.ai"\n}\n'; exit 0; fi
 [ -z "${STUB_STDIN:-}" ] || { printf 'STDIN '; cat; }
 printf 'CLAUDE %s\n' "$*"
 printf 'HEADERS %s\n' "$(printf '%s' "$ANTHROPIC_CUSTOM_HEADERS" | tr '\n' '|')"
@@ -371,6 +373,35 @@ test_wrapper_subcommands_manage_the_same_config_folder() {
   assert_contains "$(cat "$TMP/out")" "CONFIG $HOME/.claude-bedrock"
   CLAUDE_BEDROCK_USE_MY_CONFIG=1 _run_wrapper mcp list > "$TMP/out" 2> /dev/null
   assert_contains "$(cat "$TMP/out")" "CONFIG <unset>"
+}
+
+# Claude Code on Bedrock signs in to no Claude account (JON-1050): `auth login` and `setup-token` refused before Claude
+# Code runs (your own claude is the one that signs in), `auth logout` passes; sessions get /login hidden and a plan's
+# commands and connectors off; a login left in the lean folder is said at a terminal
+test_wrapper_refuses_a_claude_account_sign_in_and_keeps_sessions_off_one() {
+  _need_python || return $?
+  _wrapper_env
+  local rc a
+  for a in "auth login" "setup-token"; do
+    rc=0; _run_wrapper $a > "$TMP/out" 2> "$TMP/err" || rc=$?
+    assert_eq "$rc" 1
+    assert_contains "$(cat "$TMP/err")" "Claude Code on Bedrock signs in to no Claude account: it runs on this stack's key. Your own claude signs in to your plan: claude auth login, or /login in it"
+    assert_eq "$(cat "$TMP/out")" ""
+  done
+  _run_wrapper auth logout > "$TMP/out" 2> /dev/null
+  assert_eq "$(head -n 1 "$TMP/out")" "CLAUDE auth logout"
+  STUB_DUMP="$TMP/dump" _run_wrapper -p hi > /dev/null 2>&1
+  assert_contains "$(cat "$TMP/dump")" "DISABLE_LOGIN_COMMAND=1"
+  assert_contains "$(cat "$TMP/dump")" "DISABLE_UPGRADE_COMMAND=1"
+  assert_contains "$(cat "$TMP/dump")" "DISABLE_EXTRA_USAGE_COMMAND=1"
+  assert_contains "$(cat "$TMP/dump")" "ENABLE_CLAUDEAI_MCP_SERVERS=false"
+  # a login in the lean folder: said at a terminal, with how to remove it
+  export PATH="$TMP/bin:$PATH"
+  _run_wrapper_tty "$TMP/tty" -p hi
+  assert_not_contains "$(cat "$TMP/tty")" "Claude account login"
+  printf '{"oauthAccount": {}}\n' > "$HOME/.claude-bedrock/.claude.json"
+  STUB_AUTH=1 _run_wrapper_tty "$TMP/tty" -p hi
+  assert_contains "$(cat "$TMP/tty")" "devos-claude: ~/.claude-bedrock also holds a Claude account login"
 }
 
 test_wrapper_quiet_hides_the_config_lines_but_still_uses_the_lean_folder() {
