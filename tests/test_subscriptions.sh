@@ -908,3 +908,35 @@ test_stack_subscriptions_takes_an_account_id_and_shows_each_account() {
   out="$( (cmd_subscriptions login codex:work --chat) 2>&1)" && return 1
   assert_contains "$out" "Chat's sandbox has one account a tool"
 }
+
+test_a_named_cursor_account_keeps_gh_glab_and_gits_identity_where_they_were() {
+  local b="$TMP/tools" r="$HOME/.subscriptions" out
+  mkdir -p "$b/cursor" "$r/cursor/work" "$HOME/.config/git"
+  printf '#!/bin/sh\nenv | grep -E "^(XDG_CONFIG_HOME|GH_CONFIG_DIR|GLAB_CONFIG_DIR|GIT_CONFIG_[A-Z]*_?[0-9]*|GIT_CONFIG_COUNT)=" | sort\n' > "$b/cursor/cursor-agent"; chmod +x "$b/cursor/cursor-agent"
+  export BN_TOOLS_DIR="$b" BN_SUBS_ROOT="$r"; unset TMUX TMUX_PANE GH_CONFIG_DIR GLAB_CONFIG_DIR GIT_CONFIG_COUNT XDG_CONFIG_HOME
+  local L="$STACK_DIR/terminal/bin/cursor-agent"
+  # the first account: exactly as it was (nothing set)
+  out="$(bash "$L" x 2>&1)"; assert_eq "$out" ""
+  # a named account: gh and glab stay in the old config folder; git's identity file is not lost (no file: no include)
+  out="$(BN_SUB_ACCOUNT=work bash "$L" x 2>&1)"
+  assert_contains "$out" "XDG_CONFIG_HOME=$r/cursor/work"
+  assert_contains "$out" "GH_CONFIG_DIR=$HOME/.config/gh"
+  assert_contains "$out" "GLAB_CONFIG_DIR=$HOME/.config/glab-cli"
+  assert_not_contains "$out" "GIT_CONFIG"
+  printf '[user]\n\tname = x\n' > "$HOME/.config/git/config"
+  out="$(BN_SUB_ACCOUNT=work bash "$L" x 2>&1)"
+  assert_contains "$out" "GIT_CONFIG_COUNT=1"
+  assert_contains "$out" "GIT_CONFIG_KEY_0=include.path"
+  assert_contains "$out" "GIT_CONFIG_VALUE_0=$HOME/.config/git/config"
+  # an include already there keeps its place; the count grows; a set GH_CONFIG_DIR and a moved old XDG folder are respected
+  out="$(BN_SUB_ACCOUNT=work GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=a.b GIT_CONFIG_VALUE_0=c GH_CONFIG_DIR=/mine bash "$L" x 2>&1)"
+  assert_contains "$out" "GIT_CONFIG_COUNT=2"
+  assert_contains "$out" "GIT_CONFIG_KEY_0=a.b"
+  assert_contains "$out" "GIT_CONFIG_KEY_1=include.path"
+  assert_contains "$out" "GH_CONFIG_DIR=/mine"
+  mkdir -p "$TMP/xdg/git"; printf '[user]\n' > "$TMP/xdg/git/config"
+  out="$(BN_SUB_ACCOUNT=work XDG_CONFIG_HOME="$TMP/xdg" bash "$L" x 2>&1)"
+  assert_contains "$out" "GH_CONFIG_DIR=$TMP/xdg/gh"
+  assert_contains "$out" "GIT_CONFIG_VALUE_0=$TMP/xdg/git/config"
+  assert_contains "$out" "XDG_CONFIG_HOME=$r/cursor/work"
+}

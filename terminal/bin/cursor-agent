@@ -24,6 +24,16 @@ if [ -n "${BN_SUB_ACCOUNT:-}" ]; then
   if ! [[ $BN_SUB_ACCOUNT =~ ^[a-z0-9][a-z0-9-]{0,19}$ ]] || [ ! -d "$adir" ] || [ -L "$adir" ] || [ -L "${adir%/*}" ]; then
     echo "cursor-agent: no account called '${BN_SUB_ACCOUNT//[^a-z0-9-]/?}' here (subscriptions accounts cursor)" >&2; exit 2
   fi
+  # Moving XDG_CONFIG_HOME would take the sandbox's other config with it — gh's and glab's logins, git's identity — so those
+  # stay where they were: gh and glab pinned to the old folder, git's file included by environment (command scope: it
+  # outranks ~/.gitconfig, as the identity in ~/.config/git/config already does for everything else)
+  old="${XDG_CONFIG_HOME:-$HOME/.config}"
+  [ -n "${GH_CONFIG_DIR:-}" ] || export GH_CONFIG_DIR="$old/gh"
+  [ -n "${GLAB_CONFIG_DIR:-}" ] || export GLAB_CONFIG_DIR="$old/glab-cli"
+  if [ -f "$old/git/config" ]; then
+    n="${GIT_CONFIG_COUNT:-0}"; [[ $n =~ ^[0-9]{1,3}$ ]] || n=0
+    export "GIT_CONFIG_KEY_$n=include.path" "GIT_CONFIG_VALUE_$n=$old/git/config" GIT_CONFIG_COUNT=$((n + 1))
+  fi
   export XDG_CONFIG_HOME="$adir"
 fi
 # A tmux pane running it is marked as one of your subscriptions' tools (pane option @bn-sub): the Code page's @terminal
