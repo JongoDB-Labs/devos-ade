@@ -92,7 +92,7 @@ export const CARRY_CHARS = QUOTE_MAX;
 // agentStore: the page's record of the sessions with your subscriptions' agents (agents/store.mjs); plan(): whether
 // Claude on your plan may be used (Settings' switch: its sessions are listed and resumed only then)
 export function makeApi({ call, sessions, projects = null, reloadPollMs = 1000, reloadMaxMs = 10000, log = () => {}, settingsKnown = () => null,
-  agentStore = null, plan = () => false }) {
+  agentStore = null, plan = () => false, planAccounts = async () => [] }) {
   const need = (v, what) => { if (v === null) throw new HttpError(400, `bad ${what}`); return v; };
   const okPath = (v) => short(v, 4096);
 
@@ -104,11 +104,21 @@ export function makeApi({ call, sessions, projects = null, reloadPollMs = 1000, 
   const noteCwd = (id, cwd) => { if (cwds.size >= 5000 && !cwds.has(id)) cwds.clear(); cwds.set(id, cwd); };
   // which sessions are Claude on your plan's (their transcripts are in its own folder): from the last list of them
   const planIds = new Set();
+  // and in which store: 'plan' (the first account's) or 'plan:NAME' (another account's folder in the sandbox), from the same list
+  const planStores = new Map();
   async function listSessions(q) {
     const { result } = await call({ op: 'sessions.list' });
     let planned = [];
     if (plan()) {
-      try { planned = (await call({ op: 'sessions.list', store: 'plan' })).result?.sessions ?? []; } catch (e) { log(`plan sessions not listed: ${short(e?.message || String(e), 200)}`); }
+      // (the first account's store, then each other account's — the names the sandbox's own status list gives)
+      let names = [];
+      try { names = (await planAccounts()).filter((n) => typeof n === 'string' && /^[a-z0-9][a-z0-9-]{0,19}$/.test(n)).slice(0, 8); } catch { names = []; }
+      for (const store of ['plan', ...names.map((n) => `plan:${n}`)]) {
+        try {
+          const got = (await call({ op: 'sessions.list', store })).result?.sessions ?? [];
+          for (const x of Array.isArray(got) ? got.slice(0, SESSIONS_MAX) : []) planned.push([x, store]);
+        } catch (e) { log(`plan sessions not listed (${store}): ${short(e?.message || String(e), 200)}`); }
+      }
     }
     // (a records file that cannot be read: every session by its folder in the Workspace, said in the log — the list
     // itself never fails for it)
@@ -127,24 +137,24 @@ export function makeApi({ call, sessions, projects = null, reloadPollMs = 1000, 
     const inGone = (cwd) => typeof cwd === 'string' && gone.some((g) => cwd === g || cwd.startsWith(`${g}/`));
     const rows = [];
     const both = [...(Array.isArray(result.sessions) ? result.sessions : []).slice(0, SESSIONS_MAX).map((x) => [x, 'bedrock']),
-      ...(Array.isArray(planned) ? planned : []).slice(0, SESSIONS_MAX).map((x) => [x, 'claude'])];
-    for (const [raw, harness] of both) {
+      ...planned.map(([x, store]) => [x, 'claude', store])];
+    for (const [raw, harness, store] of both) {
       const r = sessionRow(raw);
       if (!r) continue;
-      if (harness === 'claude') { if (planIds.size >= 5000) planIds.clear(); planIds.add(r.id); }
+      if (harness === 'claude') { if (planIds.size >= 5000) { planIds.clear(); planStores.clear(); } planIds.add(r.id); planStores.set(r.id, store); }
       // (a sandbox from before projects names no folder: its sessions are the workspace's, as they were)
       const cwd = raw.cwd === undefined || raw.cwd === null ? WS : raw.cwd;
       const outside = !cwdOk(cwd);
       if (outside && !inGone(cwd)) continue;
       noteCwd(r.id, cwd);
-      rows.push({ ...r, cwd, project: place(r.id, cwd), harness, ...(outside ? { gone: true } : {}), ...(archived.has(r.id) ? { archived: true } : {}) });
+      rows.push({ ...r, cwd, project: place(r.id, cwd), harness, ...(store && store !== 'plan' ? { account: store.slice(5) } : {}), ...(outside ? { gone: true } : {}), ...(archived.has(r.id) ? { archived: true } : {}) });
     }
     // the sessions with your subscriptions' agents (the page's own record of them)
     for (const a of agentStore ? agentStore.list().slice(0, SESSIONS_MAX) : []) {
       if (!cwdOk(a.cwd)) continue;
       noteCwd(a.id, a.cwd);
       rows.push({ id: a.id, title: a.title, first_prompt: a.title, branch: '', firstPrompt: a.title, lastPrompt: '', customTitle: '', gitBranch: '',
-        modified: a.modified, size: a.size, created: a.created, cwd: a.cwd, project: place(a.id, a.cwd), harness: a.harness, ...(archived.has(a.id) ? { archived: true } : {}) });
+        modified: a.modified, size: a.size, created: a.created, cwd: a.cwd, project: place(a.id, a.cwd), harness: a.harness, ...(a.account ? { account: a.account } : {}), ...(archived.has(a.id) ? { archived: true } : {}) });
     }
     rows.sort((a, b) => b.modified - a.modified);
     const open = new Map(sessions.list().map((s) => [s.id, s]));
@@ -163,7 +173,21 @@ export function makeApi({ call, sessions, projects = null, reloadPollMs = 1000, 
     return planIds.has(id) ? 'claude' : 'bedrock';
   }
   // (a session open here on another account of your plan: that account's transcripts — its sandbox folder; else the first's)
-  const storeField = (id) => (harnessOf(id) === 'claude' ? { store: sessions.get?.(id)?.account ? `plan:${sessions.get(id).account}` : 'plan' } : {});
+  // (its store: the open session's account, else the one the last list found it in)
+  const storeOf = (id) => { const a = sessions.get?.(id)?.account; return a ? `plan:${a}` : planStores.get(id) ?? 'plan'; };
+  const storeField = (id) => (harnessOf(id) === 'claude' ? { store: storeOf(id) } : {});
+  /** accountOf(id) -> the account a session to resume ran on (null: the first account's, or a tool without accounts), from
+   *  where it is found: the open session, the page's record of an agent's, the plan stores listed (once more when not in
+   *  the last list) — never from the request */
+  async function accountOf(id) {
+    const s = sessions.get?.(id);
+    if (s?.harness && s.harness !== 'bedrock') return s.account ?? null;
+    const a = agentStore?.get(id);
+    if (a) return a.account ?? null;
+    if (!planStores.has(id)) { try { await listSessions(''); } catch { /* not found: the first account's */ } }
+    const st = planStores.get(id);
+    return st && st !== 'plan' ? st.slice(5) : null;
+  }
   /** carryText(id) -> the conversation of a session as a preface for one with another harness (its last CARRY_CHARS) */
   async function carryText(id) {
     if (!isUuid(id)) throw new HttpError(400, 'bad session id');
@@ -955,7 +979,7 @@ export function makeApi({ call, sessions, projects = null, reloadPollMs = 1000, 
       }
     }
     sessions.forget?.(id);
-    cwds.delete(id); planIds.delete(id);
+    cwds.delete(id); planIds.delete(id); planStores.delete(id);
     log(`session ${id.slice(0, 8)} deleted from the Code page's menu`);
     try { projects?.forgetSession(id); } catch (e) { log(`projects: ${short(e?.message || String(e), 200)}`); }
     return { ok: true, deleted: id, ...(none ? { transcript: false } : {}) };
@@ -1006,7 +1030,14 @@ export function makeApi({ call, sessions, projects = null, reloadPollMs = 1000, 
     return { ok: true };
   }
 
-  return { listSessions, messages, parentOf, title, archive, deleteSession, sessionTerminal, pathTerminal, toTerminal, notRunning, cwdFor, harnessOf, carryText, permissions, permissionRemove, list, readFile, download, exportPlan, exportStream, writeFile, upload, mkdir, rename, remove, find, grep, gitDiff,
+  /** resumeAccount(id, asked) -> the account a session is resumed on: the one it ran on (accountOf), whether or not the page
+   *  names one; one the page names that disagrees is refused (409), never a pick between them */
+  async function resumeAccount(id, asked) {
+    const was = await accountOf(id);
+    if (asked !== undefined && asked !== null && asked !== was) throw new HttpError(409, `that session ran on ${was ? `the account ${was}` : 'the first account'}: it is resumed on it`);
+    return was;
+  }
+  return { listSessions, messages, parentOf, title, archive, deleteSession, sessionTerminal, pathTerminal, toTerminal, notRunning, cwdFor, harnessOf, accountOf, resumeAccount, carryText, permissions, permissionRemove, list, readFile, download, exportPlan, exportStream, writeFile, upload, mkdir, rename, remove, find, grep, gitDiff,
     gitStatus, gitLog, gitFile, gitStage, gitUnstage, gitCommit, gitDiscard, gitDraft, memory, memoryWrite, plugins, available, pluginAction,
     marketplaces: async () => ({ marketplaces: (await plugins()).marketplaces }), marketplaceAdd, marketplaceRemove, marketplaceUpdate, mcpAdd, mcpRemove,
     ports, stopPort, launch, launchStart, runTasks, runStart, runResults, runShow, terminalCapture,

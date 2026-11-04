@@ -729,6 +729,7 @@ export function normSessionInfo(v: unknown): SessionInfo | null {
     project: projectIdOk(o.project) ? o.project : WORKSPACE_ID,
     imported: importedFrom(o.imported),
     harness: harnessOf(o.harness),
+    ...(typeof o.account === 'string' && ACCOUNT_NAME.test(o.account) ? { account: o.account } : {}),
     ...(o.archived === true ? { archived: true } : {}),
   };
 }

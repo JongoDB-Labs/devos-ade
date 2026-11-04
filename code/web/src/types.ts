@@ -310,6 +310,8 @@ export interface SessionInfo {
   imported?: ImportedFrom | null;
   /** who answered in it: Claude Code on Bedrock (also when not said), Claude on your plan, a subscription's agent */
   harness?: Harness;
+  /** on another account of that tool than the first (its name) */
+  account?: string;
   /** archived by hand (Archive in its menu): listed under Archived, nothing of the session changed */
   archived?: boolean;
 }

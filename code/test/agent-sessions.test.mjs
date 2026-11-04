@@ -721,3 +721,51 @@ test('another account: a plan session and an agent carry its name to the sandbox
   assert.equal(kept, 'alt');
   assert.ok(first.id);
 });
+
+// ---- sessions of every Claude account: listed, loadable, resumed on their own account
+function accountsApi({ stores, agent = null, open = new Map() }) {
+  const calls = [];
+  const call = async (r) => {
+    calls.push(r);
+    if (r.op === 'sessions.list') {
+      const l = stores[r.store ?? 'bedrock'];
+      if (!l) throw new Error('no such store');
+      return { result: { sessions: l.map(([id, modified]) => ({ id, mtimeMs: modified, cwd: '/workspace', firstPrompt: `in ${r.store ?? 'bedrock'}`, created: 1, size: 1 })) } };
+    }
+    return { result: { entries: [] } };
+  };
+  return import('../server/api.mjs').then(({ makeApi }) => ({ calls,
+    api: makeApi({ call, sessions: { list: () => [], get: (id) => open.get(id) ?? null }, agentStore: agent, plan: () => true, planAccounts: async () => ['work', 'team-2'] }) }));
+}
+const IDS = { a: '11111111-1111-4111-8111-111111111111', w: '22222222-2222-4222-8222-222222222222', t: '33333333-3333-4333-8333-333333333333', b: '44444444-4444-4444-8444-444444444444' };
+
+test('every Claude account\'s sessions are listed, each with its account; the first and Bedrock\'s have none', async () => {
+  const { api, calls } = await accountsApi({ stores: { bedrock: [[IDS.b, 1]], plan: [[IDS.a, 4]], 'plan:work': [[IDS.w, 3]], 'plan:team-2': [[IDS.t, 2]] } });
+  const { sessions } = await api.listSessions('');
+  assert.deepEqual(sessions.map((s) => [s.id, s.harness, s.account ?? null]),
+    [[IDS.a, 'claude', null], [IDS.w, 'claude', 'work'], [IDS.t, 'claude', 'team-2'], [IDS.b, 'bedrock', null]]);
+  assert.deepEqual(calls.filter((c) => c.op === 'sessions.list').map((c) => c.store ?? null), [null, 'plan', 'plan:work', 'plan:team-2']);
+  // (loading, titling or deleting one asks its own account's store)
+  await api.title(IDS.w, { title: 'Mine' }).catch(() => {});
+  assert.ok(calls.some((c) => c.op === 'sessions.title' && c.store === 'plan:work'));
+  // (one account's store that cannot be listed leaves the others)
+  const bad = await accountsApi({ stores: { bedrock: [], plan: [[IDS.a, 4]], 'plan:team-2': [[IDS.t, 2]] } });
+  assert.deepEqual((await bad.api.listSessions('')).sessions.map((s) => s.id), [IDS.a, IDS.t]);
+});
+
+test('resume after a restart (nothing open, no list yet) is on the session\'s own account; one the page names that disagrees is refused', async () => {
+  const { api } = await accountsApi({ stores: { bedrock: [], plan: [[IDS.a, 4]], 'plan:work': [[IDS.w, 3]] } });
+  assert.equal(await api.resumeAccount(IDS.w, undefined), 'work');
+  assert.equal(await api.resumeAccount(IDS.w, 'work'), 'work');
+  assert.equal(await api.resumeAccount(IDS.a, null), null);
+  for (const [id, asked] of [[IDS.w, 'team-2'], [IDS.a, 'work'], [IDS.w, 'nope']]) {
+    await assert.rejects(() => api.resumeAccount(id, asked), (e) => e.status === 409 && /resumed on it/.test(e.message), `${id} ${asked}`);
+  }
+  // an agent's session: the account its record keeps
+  const agent = new AgentStore({ dir: tmp('bnr') });
+  const g = '55555555-5555-4555-8555-555555555555';
+  agent.put(g, { harness: 'codex', account: 'alt', ref: 'thr-1', cwd: '/workspace' });
+  const x = await accountsApi({ stores: { bedrock: [], plan: [] }, agent });
+  assert.equal(await x.api.resumeAccount(g, undefined), 'alt');
+  await assert.rejects(() => x.api.resumeAccount(g, 'work'), (e) => e.status === 409);
+});

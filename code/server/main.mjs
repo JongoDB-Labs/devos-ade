@@ -251,7 +251,8 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
     remove: (id) => proj().remove(id), file: (ids, pid) => proj().file(ids, pid), placer: () => proj().placer(), syncHosts: () => proj().syncHosts(),
       archive: (ids, on) => proj().archive(ids, on), archivedIds: () => proj().archivedIds(), forgetSession: (id) => proj().forgetSession(id), hosts: () => proj().hosts() },
     reloadPollMs, reloadMaxMs, log: logger,
-    settingsKnown: (id) => trust.known(id), agentStore: agents, plan: () => planAllowed === true });
+    settingsKnown: (id) => trust.known(id), agentStore: agents, plan: () => planAllowed === true,
+    planAccounts: async () => ((await subs()).tools?.claude?.accounts ?? []).map((a) => a.name) });
   // rootFor(v) -> the project a request names (?project= or {project}): its {id, rel, abs} from the records — never a
   // folder the page names; null (none, or the Workspace): the workspace, as every call was before projects
   const rootFor = (v) => {
@@ -389,8 +390,12 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
       // who answers: a resumed session as it ran (its own harness), a new one as asked (bedrock when not said)
       if (b.harness !== undefined && b.harness !== null && !harnessOk(b.harness)) throw new HttpError(400, 'bad harness: bedrock, claude, codex, copilot, cursor or grok');
       base.harness = isUuid(b.resume) ? api.harnessOf(b.resume) : (b.harness ?? 'bedrock');
-      // another account of that tool (a plan session, an agent): one the sandbox's own list names — never anything else
-      if (b.account !== undefined && b.account !== null) {
+      // a resumed session runs on the account it ran on (where its transcript is found); one the page names that disagrees
+      // with it is refused — never a pick between them
+      if (isUuid(b.resume) && (base.harness === 'claude' || AGENT_TOOLS.includes(base.harness))) {
+        const was = await api.resumeAccount(b.resume, b.account);
+        if (was) base.account = was;
+      } else if (b.account !== undefined && b.account !== null) {
         if (typeof b.account !== 'string' || !(base.harness === 'claude' || AGENT_TOOLS.includes(base.harness))) throw new HttpError(400, 'bad account');
         const has = (st) => (st.tools?.[base.harness]?.accounts ?? []).some((a) => a.name === b.account);
         if (!has(await subs()) && !has(await subs({ fresh: true }))) throw new HttpError(400, 'no such account (Settings › Your AI subscriptions lists them)');
