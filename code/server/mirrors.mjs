@@ -154,11 +154,31 @@ export function makeMirrors({ store = new GitHosts(), fetchImpl = globalThis.fet
     throw err(409, `${o}/${name} is on the git server already, so pick another name`);
   }
 
+  // create(name) -> {owner, name, repo}: the owner's new repository of that name, empty and private (keep.mjs: the project is in the Git
+  // tab from the moment it is kept; the first push then fills it). Only after nameFree said the name is free. Made the way a push to a
+  // repository that does not exist yet makes one (the server's push-to-create, private, as the sandbox's own push does through the
+  // terminal's gateway): a git receive-pack request with no commands, which asks for nothing to be changed and makes the repository.
+  // (Forgejo's own "create a repository" call needs the write:user scope, which the built-in host's token — repository scope only,
+  // never shown — does not have, and is not widened for this.) What the server then says is looked at: the repository must be there.
+  async function create(name) {
+    const { token, owner: o } = local();
+    if (typeof name !== 'string' || !NAME.test(name)) throw err(400, 'a repository name of letters, digits, . _ and - (at most 100)');
+    let res;
+    try {
+      res = await fetchImpl(`${base}/${o}/${name}.git/git-receive-pack`, { method: 'POST', body: '0000', redirect: 'error', signal: AbortSignal.timeout(60000),
+        headers: { Authorization: `Basic ${Buffer.from(`${o}:${token}`).toString('base64')}`, 'Content-Type': 'application/x-git-receive-pack-request', Accept: 'application/x-git-receive-pack-result' } });
+    } catch { throw err(502, 'the built-in git server did not answer (./stack logs forgejo; is the Code page running?)'); }
+    await res.text().catch(() => '');
+    if (!res.ok) throw err(res.status === 401 || res.status === 403 ? 502 : 400, `the git server would not make ${o}/${name} (HTTP ${res.status})`);
+    try { await api('GET', `/repos/${o}/${name}`); } catch (e) { throw err(502, `the git server did not make ${o}/${name}: ${e.message}`); }
+    return { owner: o, name, repo: `${o}/${name}` };
+  }
+
   // hosts() -> the host names the mirrors reach (the egress the git server gets is limited to them)
   async function hosts() {
     const set = new Set();
     for (const m of await list()) { try { set.add(new URL(m.remote).hostname); } catch { /* not a URL */ } }
     return [...set].sort();
   }
-  return { list, add, sync, remove, hosts, owner, nameFree };
+  return { list, add, sync, remove, hosts, owner, nameFree, create };
 }

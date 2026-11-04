@@ -31,7 +31,7 @@ function fake(answers = {}) {
   const fetchImpl = async (url, opts = {}) => {
     const u = new URL(url);
     const key = `${opts.method || 'GET'} ${u.pathname}${u.search}`;
-    calls.push({ key, headers: opts.headers, body: opts.body ? JSON.parse(opts.body) : null });
+    calls.push({ key, headers: opts.headers, body: opts.body ? (() => { try { return JSON.parse(opts.body); } catch { return opts.body; } })() : null });
     const a = Object.entries(answers).find(([k]) => key.startsWith(k));
     const [status, body] = a ? a[1] : [404, { message: 'not found' }];
     return { ok: status < 300, status, text: async () => JSON.stringify(body) };
@@ -150,4 +150,21 @@ test('the script: one JSON request on stdin, one line out; refusals as ok:false,
 
 test('the built-in host is the Local git server, kind other, marked builtin', () => {
   assert.equal(LOCALGIT.host, 'gateway');
+});
+
+test('create makes an empty private repository for a kept project the way a first push does (a receive-pack request with no commands, as the owner), looks that it is there, and a refusal or a repository that did not appear is said', async () => {
+  const f = fake({ 'POST /devos/kept-app.git/git-receive-pack': [200, {}], 'GET /api/v1/repos/devos/kept-app': [200, { private: true, empty: true }] });
+  const m = makeMirrors({ store: setup('create'), fetchImpl: f.fetchImpl, base: 'http://caddy:8099' });
+  const made = await m.create('kept-app');
+  assert.deepEqual(made, { owner: 'devos', name: 'kept-app', repo: 'devos/kept-app' });
+  assert.deepEqual(f.calls.map((c) => c.key), ['POST /devos/kept-app.git/git-receive-pack', 'GET /api/v1/repos/devos/kept-app']);
+  assert.equal(f.calls[0].body, '0000');
+  assert.equal(f.calls[0].headers.Authorization, `Basic ${Buffer.from(`devos:${LTOK}`).toString('base64')}`);
+  assert.equal(f.calls[0].headers['Content-Type'], 'application/x-git-receive-pack-request');
+  const refused = fake({ 'POST /devos/kept-app.git/git-receive-pack': [403, {}] });
+  await assert.rejects(makeMirrors({ store: setup('create2'), fetchImpl: refused.fetchImpl, base: 'http://caddy:8099' }).create('kept-app'), (e) => e.status === 502 && /would not make devos\/kept-app \(HTTP 403\)/.test(e.message));
+  const absent = fake({ 'POST /devos/kept-app.git/git-receive-pack': [200, {}] });   // (answered, and no repository: push-to-create is off there)
+  await assert.rejects(makeMirrors({ store: setup('create3'), fetchImpl: absent.fetchImpl, base: 'http://caddy:8099' }).create('kept-app'), (e) => e.status === 502 && /did not make devos\/kept-app/.test(e.message));
+  await assert.rejects(makeMirrors({ store: setup('create4'), fetchImpl: refused.fetchImpl, base: 'http://caddy:8099' }).create('../x'), (e) => e.status === 400);
+  assert.equal(refused.calls.length, 1, 'the bad name sent nothing');
 });

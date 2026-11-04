@@ -2533,7 +2533,7 @@ one command that sets it, never on a command line).
   computer only, by the code container — the holder of the connected hosts' credentials — through a second internal Caddy site
   (`:8099`, not published; reachable on Caddy's container networks) that passes a handful of API paths of the one service
   (the owner's repository list and one repository's record as reads, a migration, a repository's push mirrors and their
-  sync) and, for the portal's Git search, two GET searches, and nothing else: no delete of a repository, no admin or account API, no web UI, no cookies, no sign-in headers.
+  sync), one git request — a `POST …/git-receive-pack` of the content type git uses, with no commands in it, which makes the empty private repository of a project kept on the server (JON-1058; the server's push-to-create, as the sandbox's own first push does through the gateway, so `write:user` is still not needed) — and, for the portal's Git search, two GET searches, and nothing else: no delete of a repository, no admin or account API, no web UI, no cookies, no sign-in headers.
   Forgejo needs the owner's own repository-scoped token for each (`write:repository`; creating a repository for a mirror is
   a push or a migration, so `write:user` is not needed). The remote credential is a connected host's **access token** —
   never a sign-in's, whose token lasts hours and cannot be renewed inside Forgejo — handed to Forgejo, which keeps it

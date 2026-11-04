@@ -66,7 +66,7 @@ export function makeKeep({ store, remote, mirrors, now = () => Date.now(), log =
     const rec = store().localgit(id);
     const out = { available: owner !== null, owner, suggested: repoSlug(p.name), state: rec?.state ?? null };
     if (rec?.state !== 'kept') return out;
-    Object.assign(out, { repo: rec.repo, made: !!rec.pushedAt || Object.keys(rec.heads).length > 0, remote: rec.remote, auto: rec.auto, pushedAt: rec.pushedAt, lastError: rec.lastError, busy: running.has(id), unpushed: null,
+    Object.assign(out, { repo: rec.repo, made: rec.made || !!rec.pushedAt || Object.keys(rec.heads).length > 0, remote: rec.remote, auto: rec.auto, pushedAt: rec.pushedAt, lastError: rec.lastError, busy: running.has(id), unpushed: null,
       rejected: Object.keys(rec.rejected).map(rejectedText) });
     try {
       const st = await remote().state(rootOf(id).rel);
@@ -80,8 +80,9 @@ export function makeKeep({ store, remote, mirrors, now = () => Date.now(), log =
   }
 
   // keep(id, {name, auto}) -> the view: the name checked (on the server already, or held by another kept project: 409, nothing
-  // changed), its remote added (origin when the project has none, else local), and what it has pushed. The first push that has
-  // commits makes the repository (push to create); a project without commits is kept and its repository appears with its first.
+  // changed), the empty private repository made on the server at once (so the project is in the Git tab from the start, before
+  // any commit), its remote added (origin when the project has none, else local), and what it has pushed. A project without commits
+  // is kept with its repository empty; its first commit fills it. A repository that could not be made leaves nothing changed.
   async function keep(id, b = {}) {
     const owner = mirrors.owner();
     if (owner === null) throw err(409, 'the built-in git server is not connected as a Git host yet: ./stack up connects it');
@@ -98,8 +99,14 @@ export function makeKeep({ store, remote, mirrors, now = () => Date.now(), log =
     if (st.remotes.some((r) => r.name === remoteName)) throw err(409, `this repository has a remote named ${remoteName} already: rename it in the terminal first`);
     const made = await mirrors.nameFree(name);
     for (const other of store().keptIds()) if (other !== id && store().localgit(other)?.repo === made.repo) throw err(409, `${made.repo} is on the git server already, so pick another name`);
-    await remote().remoteSet({ repo: root.rel, name: remoteName, url: urlOf(made.owner, made.name) });
-    store().setLocalgit(id, () => ({ state: 'kept', repo: made.repo, remote: remoteName, auto: b.auto !== false, pushedAt: null, lastError: null, heads: {}, rejected: {} }));
+    const url = urlOf(made.owner, made.name);
+    await remote().remoteSet({ repo: root.rel, name: remoteName, url });
+    try { await mirrors.create(made.name); } catch (e) {
+      // (the remote just added goes again: nothing is kept, nothing changed, and the same name can be tried once the server answers)
+      await remote().remoteRemove({ repo: root.rel, name: remoteName, url }).catch(() => {});
+      throw e;
+    }
+    store().setLocalgit(id, () => ({ state: 'kept', repo: made.repo, remote: remoteName, auto: b.auto !== false, made: true, pushedAt: null, lastError: null, heads: {}, rejected: {} }));
     log(`keep: ${p.name} is kept as ${made.repo} (remote ${remoteName})`);
     await sync(id, { manual: true });
     return view(id);

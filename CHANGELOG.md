@@ -6,6 +6,21 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Fixed
+- **A `git commit` in the terminal or by Claude no longer stops at "unable to auto-detect email address" (JON-1058).** The
+  sandbox had no git identity, so a project made in the Terminal or by a Claude session could not be committed — and so never
+  reached the local git server. Its `/etc/gitconfig` now names "DevOS ADE" as the author when nothing else does; your
+  `~/.gitconfig`, a repository's own settings and the Code page's panel (which picks its own identity) are unchanged.
+- **A project kept on the local git server is in the Git tab at once (JON-1058).** *Keep it on your local git server* makes the
+  private, empty repository `devos/<name>` when it is ticked, not with the first commit, so a new project shows in Git before
+  anything is committed. (Forgejo's create call needs a wider token than the one the built-in host has, so it is made the way
+  the first push of a new repository makes one.)
+
+### Added
+- **User-journey checks (JON-1058).** `browser/journey-code-to-git`, `journey-terminal-folder-to-git` and
+  `journey-code-terminal-commit` follow one project through the Code page, the Terminal tab and the portal's Git tab by clicks
+  and typing alone, as a person does.
+
 ## [0.58.0] - 2026-11-04
 
 ### Added

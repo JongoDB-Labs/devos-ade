@@ -30,7 +30,7 @@
 # hosts' credentials and makes the mirrors, from ./stack git-server mirror …; the Code page lists their status). Port 8099 is
 # not published; it answers on Caddy's container networks — the code container reaches it over the network it shares with
 # Caddy. A few API paths of this one service and nothing else (a repository's own record, its push mirrors, a mirror sync,
-# a migration that makes a pull mirror, the owner's repository list); Forgejo needs the owner's own access token for
+# a migration that makes a pull mirror, the owner's repository list, and the one POST of git's that makes an empty private repository for a kept project); Forgejo needs the owner's own access token for
 # every one (this site adds none), and nothing that signs in for the portal, Tailscale or a reverse proxy goes through.
 # The portal's Git search (portal/portal/gitsearch.py) comes this way too, with a read-only token of its own: two GET searches.
 http://:8099 {
@@ -67,10 +67,19 @@ http://:8099 {
 			method POST
 			path /api/v1/repos/migrate
 		}
+		# (the one repository made empty and private when a project is kept on the server, code/server/mirrors.mjs create: a git
+		# receive-pack request with no commands — the server's push-to-create, the same reach the sandbox's own first push has through
+		# its gateway — and nothing else of git; Forgejo's own create call needs a wider token scope than the one this host has)
+		@create {
+			method POST
+			path_regexp ^/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+\.git/git-receive-pack$
+			header Content-Type application/x-git-receive-pack-request
+		}
 		@mirrors path_regexp ^/api/v1/repos/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+/(push_mirrors(/[A-Za-z0-9._-]+)?|push_mirrors-sync|mirror-sync)$
 		reverse_proxy @read forgejo:3000
 		reverse_proxy @search forgejo:3000
 		reverse_proxy @migrate forgejo:3000
+		reverse_proxy @create forgejo:3000
 		reverse_proxy @mirrors forgejo:3000
 		respond 404
 	}

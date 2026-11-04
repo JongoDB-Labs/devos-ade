@@ -73,16 +73,25 @@ function sandbox() {
 
 let n = 0;
 // a whole setup: records, Git hosts (the built-in one connected), a stand-in Forgejo, the Git panel's remote operations, keep
-function setup({ connected = true, existsName = null } = {}) {
+function setup({ connected = true, existsName = null, createFails = null } = {}) {
   const dir = path.join(ROOT, `s${++n}`);
   const hosts = new GitHosts({ dir });
   if (connected) hosts.addLocalGit({ ca: CA, token: LTOK, account: 'devos' });
   const projects = new Projects({ dir, hostsFile: path.join(dir, 'none.json') });
   const sb = sandbox();
   const api = [];
+  const made = new Set();
   const fetchImpl = async (url, opts = {}) => {
     const u = new URL(url);
-    api.push({ method: opts.method || 'GET', path: u.pathname, headers: opts.headers, body: opts.body ? JSON.parse(opts.body) : null });
+    api.push({ method: opts.method || 'GET', path: u.pathname, headers: opts.headers, body: opts.body ?? null });
+    // (the repository a keep makes, empty and private: a git receive-pack request with no commands — 200 — and the server then has it;
+    // createFails: the status the server answers instead)
+    if ((opts.method || 'GET') === 'POST' && u.pathname.endsWith('.git/git-receive-pack')) {
+      if (createFails) return { ok: false, status: createFails, text: async () => 'no' };
+      made.add(u.pathname.split('/')[2].replace(/\.git$/, ''));
+      return { ok: true, status: 200, text: async () => '' };
+    }
+    if ((opts.method || 'GET') === 'GET' && u.pathname.startsWith('/api/v1/repos/devos/') && made.has(u.pathname.split('/')[5])) return { ok: true, status: 200, text: async () => '{"private":true,"empty":true}' };
     // (the one question asked of the server: is there a repository of that name already? 200 yes, 404 no)
     if ((opts.method || 'GET') === 'GET' && u.pathname.startsWith('/api/v1/repos/devos/') && existsName !== null && u.pathname === `/api/v1/repos/devos/${existsName}`) {
       return { ok: true, status: 200, text: async () => JSON.stringify({ name: existsName }) };
@@ -117,12 +126,16 @@ test('the repository name: the project\'s name in the characters Forgejo takes',
   assert.ok(nameOk('a.b_c-d') && !nameOk('-a') && !nameOk('a b') && !nameOk('x.git') && !nameOk('x.WIKI') && !nameOk('') && !nameOk(7));
 });
 
-test('Keep it there: the name is checked, origin is the remote of a project that has none, and its branch pushed with upstream (the push makes the repository)', async () => {
+test('Keep it there: the name is checked, the empty private repository made at once, origin is the remote of a project that has none, and its branch pushed with upstream', async () => {
   const s = setup();
   const id = project(s);
   const v = await s.keep.keep(id, {});
-  assert.deepEqual(s.api.map((c) => [c.method, c.path]), [['GET', '/api/v1/repos/devos/My-App']], 'only a look at the name: nothing is created through the API');
+  assert.deepEqual(s.api.map((c) => [c.method, c.path]), [['GET', '/api/v1/repos/devos/My-App'], ['POST', '/devos/My-App.git/git-receive-pack'], ['GET', '/api/v1/repos/devos/My-App']],
+    'a look at the name, then the repository made (a receive-pack request with no commands: private and empty by the server\'s own push-to-create), then a look that it is there');
   assert.equal(s.api[0].headers.Authorization, `token ${LTOK}`);
+  assert.equal(s.api[1].body, '0000');
+  assert.equal(s.api[1].headers.Authorization, `Basic ${Buffer.from(`devos:${LTOK}`).toString('base64')}`);
+  assert.equal(s.api[1].headers['Content-Type'], 'application/x-git-receive-pack-request');
   assert.equal(s.sb.repos.get('app').remotes.origin, 'https://gateway:8093/devos/My-App.git');
   assert.equal(urlOf('devos', 'My-App'), 'https://gateway:8093/devos/My-App.git');
   assert.equal(`${LOCALGIT.host}:${LOCALGIT.port}`, 'gateway:8093');
@@ -148,12 +161,13 @@ test('a name of your own is checked; one on the server already is a plain 409 an
   assert.equal(v.repo, 'devos/other-name');
 });
 
-test('a name another kept project holds is a 409 too, before either has pushed; no commits: kept, made false, no push; the first push makes it (made true)', async () => {
+test('a name another kept project holds is a 409 too, before either has pushed; no commits: kept, the repository made (empty), no push; the first commit is pushed to it', async () => {
   const s = setup();
   const a = project(s, 'Fresh', 'fresh', { branches: {}, branch: 'main' });
   const b = project(s, 'Other', 'other');
   const v = await s.keep.keep(a, { name: 'shared' });
-  assert.deepEqual([v.state, v.repo, v.made, v.pushedAt, s.sb.nets().length], ['kept', 'devos/shared', false, null, 0]);
+  assert.deepEqual([v.state, v.repo, v.made, v.pushedAt, s.sb.nets().length], ['kept', 'devos/shared', true, null, 0]);
+  assert.deepEqual(s.api.filter((c) => c.method === 'POST').map((c) => c.path), ['/devos/shared.git/git-receive-pack'], 'made once, for the first');
   await assert.rejects(s.keep.keep(b, { name: 'shared' }), (e) => e.status === 409 && e.message === 'devos/shared is on the git server already, so pick another name');
   assert.equal(s.projects.localgit(b), null);
   assert.deepEqual(s.sb.repos.get('other').remotes, {});
@@ -175,7 +189,7 @@ test('a project that has a remote gets local beside it, pushed without upstream;
   const id2 = project(s, 'Two', 'two', { remotes: { origin: 'https://github.com/o/r.git', local: 'https://example.org/x.git' } });
   await assert.rejects(s.keep.keep(id2, {}), (e) => e.status === 409 && /remote named local already/.test(e.message));
   assert.equal(s.sb.repos.get('two').remotes.local, 'https://example.org/x.git');
-  assert.ok(s.api.every((c) => c.method === 'GET'), 'nothing but looks at a name');
+  assert.deepEqual(s.api.filter((c) => c.method === 'POST').map((c) => c.path), ['/devos/Cloned.git/git-receive-pack'], 'only the one kept is made: the refused keep made nothing');
 });
 
 test('not a repository, not connected, a read-only folder: refused before anything is made', async () => {
@@ -420,7 +434,7 @@ test('the records: checked when read, gone with the project, and the Workspace\'
   assert.equal(localgitRecord({ state: 'kept', repo: 'devos/x', remote: '-bad' }), null);
   assert.equal(localgitRecord({ state: 'maybe' }), null);
   const rec = localgitRecord({ state: 'kept', repo: 'devos/x', remote: 'origin', pushedAt: 5, lastError: 'a\nb', heads: { main: 'z', ok: sha('a'), '../x': sha('a') }, rejected: 'x' });
-  assert.deepEqual(rec, { state: 'kept', repo: 'devos/x', remote: 'origin', auto: true, pushedAt: 5, lastError: null, heads: { ok: sha('a') }, rejected: {} });
+  assert.deepEqual(rec, { state: 'kept', repo: 'devos/x', remote: 'origin', auto: true, made: false, pushedAt: 5, lastError: null, heads: { ok: sha('a') }, rejected: {} });
   assert.throws(() => s.projects.setLocalgit(id, () => ({ state: 'kept', repo: 'nope', remote: 'origin' })), /not a record/);
   assert.throws(() => s.projects.setLocalgit('p_00000000', () => ({ state: 'declined' })), /no such project/);
   assert.throws(() => s.projects.setLocalgit('bad', () => ({ state: 'declined' })), /bad project id/);
@@ -521,4 +535,17 @@ test('a remote that is still the repository made here, with the same push URL, s
   assert.equal(pointsHome({ urls: [HOME, HOME], pushUrls: [] }, 'devos', 'My-App'), false);
   assert.equal(pointsHome({ urls: [HOME], pushUrls: ['x'] }, 'devos', 'My-App'), false);
   assert.equal(pointsHome(undefined, 'devos', 'My-App'), false);
+});
+
+test('a repository the server will not make: nothing is kept, the remote just added goes again, and the same name works once it answers', async () => {
+  const s = setup({ createFails: 502 });
+  const id = project(s);
+  await assert.rejects(s.keep.keep(id, {}), (e) => e.status === 400 && /would not make devos\/My-App \(HTTP 502\)/.test(e.message));
+  assert.deepEqual(s.sb.repos.get('app').remotes, {}, 'the remote added for it is removed again');
+  assert.equal(s.projects.localgit(id), null);
+  assert.deepEqual(s.sb.nets(), []);
+  // a kept record from before the repository was made at keeping (no made) is made by its first push, as it was
+  const rec = s.projects.setLocalgit(id, () => ({ state: 'kept', repo: 'devos/old', remote: 'origin', pushedAt: null, heads: {}, rejected: {} }));
+  assert.equal(rec.made, false);
+  assert.equal((await s.keep.view(id)).made, false);
 });

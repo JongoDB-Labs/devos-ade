@@ -2440,9 +2440,9 @@ KEEP_A, KEEP_B = "e2e-keep-a", "e2e-keep-b"
 @saved
 def ui_keep_on_local_git(ctx):
     """Keeping a project on the built-in git server (JON-1005; no model calls; the throwaway's own git server, on as on a new
-    install): New project › An empty folder has "Keep it on your local git server" ticked — the Git panel says it is kept, and no
-    repository is on the server before a push (the first push makes it); a file committed in the panel is on the server within
-    30 s without a push, in the repository devos/<name> made by that push, private (Forgejo's API, as checks_git.py); another
+    install): New project › An empty folder has "Keep it on your local git server" ticked — the Git panel says it is kept, and the
+    empty private repository is on the server at once (JON-1058: in the Git tab before any commit); a file committed in the panel
+    is on the server within 30 s without a push, in the repository devos/<name>, private (Forgejo's API, as checks_git.py); another
     project's offer is answered Not for this project, and after a reload it is not asked again; Stop keeping it here leaves the
     repository on the server. Screenshots k1-k3."""
     need_on()
@@ -2479,9 +2479,10 @@ def ui_keep_on_local_git(ctx):
         page.get_by_test_id("new-project-create").click()
         see(dlg).to_have_count(0, timeout=60000)
         see(page.get_by_test_id("toast").last).to_contain_text("kept on your local git server", timeout=60000)
-        # (no commits yet: kept, and the repository is made by the first push, so none is expected on the server now)
-        st, _ = checks_git.forgejo(ctx, "GET", f"/api/v1/repos/{owner}/{KEEP_A}")
-        expect(st == 404, f"a repository before any push: HTTP {st}")
+        # (no commits yet: kept, and the repository is made at once — empty and private — so the project is in the Git tab from the start)
+        st, made0 = checks_git.forgejo(ctx, "GET", f"/api/v1/repos/{owner}/{KEEP_A}")
+        expect(st == 200 and isinstance(made0, dict) and made0.get("private") is True and made0.get("empty") is True,
+               f"the repository right after Keep (empty and private expected): HTTP {st} {str(made0)[:120]}")
         page.keyboard.press("Control+Shift+G")
         see(page.get_by_test_id("keep-repo")).to_have_text(f"{owner}/{KEEP_A}", timeout=30000)
         shot(page, "k2-code-git-panel-kept")
@@ -2505,7 +2506,7 @@ def ui_keep_on_local_git(ctx):
         expect(seen, "the commit was not on the server within 30 s")
         st, made = checks_git.forgejo(ctx, "GET", f"/api/v1/repos/{owner}/{KEEP_A}")
         private = made.get("private") if isinstance(made, dict) else None
-        expect(st == 200 and private is True, f"the repository the first push made is not private: HTTP {st}, private {private}")
+        expect(st == 200 and private is True, f"the repository is not private: HTTP {st}, private {private}")
         # B: a project with no answer yet; Not for this project; after a reload it is not asked again
         dlg = new_project(KEEP_B)
         page.get_by_test_id("new-project-keep").uncheck()
@@ -2542,8 +2543,8 @@ def ui_keep_on_local_git(ctx):
                 checks_git.forgejo(ctx, "DELETE", f"/api/v1/repos/{owner}/{d}")
         except Exception:  # noqa: BLE001 — cleanup never hides the failure
             pass
-    return (f"New project › an empty folder with Keep it on your local git server ticked was kept (the Git panel said so; no repository before "
-            f"a push); a commit made in the panel was on the server within 30 s, in {owner}/{KEEP_A} (private) made by that push; a project that was not kept made no repository, its "
+    return (f"New project › an empty folder with Keep it on your local git server ticked was kept (the Git panel said so; the empty private repository was "
+            f"on the server at once); a commit made in the panel was on the server within 30 s, in {owner}/{KEEP_A} (private); a project that was not kept made no repository, its "
             "offer was answered Not for this project and not asked again after a reload; Stop keeping it here left the repository; no CSP violations")
 
 

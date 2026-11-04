@@ -1497,7 +1497,9 @@ too.
   lands in the box as a draft for you to read; it never commits by itself. The panel shows who the commit is by (the
   repository's `user.name`/`user.email`, else the sandbox's `~/.gitconfig`, else "DevOS ADE Code page" — *Use yours
   from this computer…* there brings your own, [Bring your setup](#your-claude-code-setup-from-this-computer)), and the
-  last 20 commits. Commits made here run **no git hooks** (`pre-commit`, `commit-msg` …), no signing program and no editor,
+  last 20 commits. A `git commit` you or Claude run in the terminal is by "DevOS ADE" `<ade@devos-ade.invalid>` until you set your own
+  (`git config --global user.name …`, or *Use yours from this computer…*) — it would otherwise stop at "unable to auto-detect email address".
+  Commits made here run **no git hooks** (`pre-commit`, `commit-msg` …), no signing program and no editor,
   whatever the repository configures — your computer's git would run its hooks, so staged files that run on your
   computer are marked. Fetch, pull, push, clone and branches: [Remote repositories](#remote-repositories-git-hosts-clone-push-and-pull)
   below. [docs/security.md](docs/security.md#the-git-panel)
@@ -1548,9 +1550,9 @@ uninstall` removes it, turning the server off keeps it).
   ticked (an empty folder, a clone, a folder of the workspace; git init is implied), and a project that is not kept and has not
   said no gets a line at the top of its Git panel — *Keep this project on your local git server?* — with the repository's
   name (the project's, in the characters a repository takes) to change first. *Keep it there* checks the name
-  (one on the server already, or held by another kept project, is said, and nothing is changed), adds `devos/<name>` as the
-  project's remote (`origin`, or `local` beside a remote it has), and pushes; the first push with commits makes the private
-  repository (a project without commits is kept and its repository appears with its first). After that the project is pushed by itself — after a commit
+  (one on the server already, or held by another kept project, is said, and nothing is changed), makes the private
+  repository `devos/<name>` on the server at once (empty, so the project is in the Git tab from the start, before any commit),
+  adds it as the project's remote (`origin`, or `local` beside a remote it has), and pushes what the project has. After that the project is pushed by itself — after a commit
   made in the panel, after a session's turn, and every 10 minutes for what moved — each branch to the branch of that name,
   **never forced**: a branch the server would not take (it has commits the project does not) is shown as *the local git server has
   commits this project doesn't — pull first* and left alone. Automatic pushes stop, and the panel says why, if the remote is
