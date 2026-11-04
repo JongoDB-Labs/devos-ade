@@ -18,6 +18,15 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
     `XDG_CONFIG_HOME`, so that one); a name that is not one, or a folder that is not there, is refused.
   - The status file gains `account` and `first_name`; `/api/answers` lists each tool's `accounts`, the first first; the
     launch words accept `open|chat TOOL[:NAME]` and `add TOOL`. Chat's sandbox stays at one account a tool.
+- **Accounts in the pickers, Settings and the Code page (JON-1052).** The Terminal tab's and the Code page terminal's
+  Open menus list an entry for each account of a tool (`Codex · work`) and `Add an account…`, which opens a window running
+  `subscriptions add TOOL` (it asks for the name, then signs in). Settings › Your AI subscriptions shows each account of a
+  tool with its own Sign in, Sign out, Rename and Remove (Rename and Remove open the terminal running the command: it asks
+  before it removes anything). On the Code page a Claude plan session and an agent (Codex, Copilot, Cursor, Grok) can
+  start on another account: the Who answers menu has an item for each signed-in account, checked against the sandbox's own
+  list, and the sandbox only ever takes a name that is a real folder of `~/.subscriptions/TOOL`. Chat stays at one account
+  a tool, and Settings says so. A session on another Claude account keeps its transcript in that account's folder (its
+  history list shows the first account's sessions; one on another account is listed while it is open).
 
 ### Changed
 - **Windows are named after what runs in them (JON-1053).** The first window is `bedrock` (Claude Code on Bedrock, was
@@ -28,6 +37,11 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 ## [0.57.2] - 2026-11-04
 
 ### Fixed
+- **A named Cursor account no longer moves `gh`, `glab` and git's identity (JON-1052).** Cursor keeps its login under
+  `XDG_CONFIG_HOME`, so a second Cursor account pointed that at its own folder, and everything else that reads
+  `~/.config` there lost sight of GitHub's and GitLab's logins and git's `~/.config/git/config`. The launcher now pins
+  `GH_CONFIG_DIR` and `GLAB_CONFIG_DIR` to where they were and adds the old git config as an include in the process's
+  environment (command scope outranks `~/.gitconfig`). The first account is untouched.
 - **Claude Code on Bedrock signs in to no Claude account (JON-1050).** A `/login` in the terminal's Claude Code on
   Bedrock saved a Claude account login in its folder. Nothing used it — the stack's key comes first, so no request
   went to that account and its claude.ai connectors were not loaded (the notice said so) — but it stayed there. Now, in

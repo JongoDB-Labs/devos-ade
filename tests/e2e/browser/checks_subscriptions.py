@@ -47,6 +47,12 @@ def answers_api(ctx):
     expect(len(setup) >= 10 and all(re.fullmatch(r"setting:([A-Z][A-Z0-9_]+|\+[a-z-]{2,20})|signin:(terminal|chat)", x["target"]) and x["says"] for x in setup.values()),
            f"setup links: {setup}")
     expect(all(t["signed_in"] != "yes" for t in d["tools"]), "a tool says it is signed in in a fresh throwaway")
+    # (several accounts a tool: the first account first — its own name, "" when it has none —, at most 8; in a fresh
+    # throwaway only the first)
+    for t in d["tools"]:
+        accts = t.get("accounts")
+        expect(isinstance(accts, list) and 1 <= len(accts) <= 8 and "first_name" in t, f"{t['id']}: accounts {accts!r}")
+        expect(all(re.fullmatch(r"|[a-z0-9][a-z0-9-]{0,19}", a["name"]) for a in accts), f"{t['id']}: account names {accts!r}")
     if d["checked_at"]:
         expect(all(t["installed"] is True and t["version"] for t in d["tools"]), f"not every tool is in the sandbox: {d['tools']}")
     body = r.body.decode("utf-8", "replace")
@@ -74,6 +80,9 @@ def settings_row(ctx):
         expect(page.locator(f"#set-subscriptions li[data-tool={t}] [data-where=chat]").count() == 1, f"{t}: no Chat row")
     for t in ("cursor", "gemini"):
         expect(page.locator(f"#set-subscriptions li[data-tool={t}] [data-where=chat]").count() == 0, f"{t}: a Chat row")
+    # (each tool's card: its accounts with their own Sign in / Sign out / Rename / Remove, Add an account; Chat says one account a tool)
+    expect(page.locator("#set-subscriptions [data-act=subscriptions-account-add]").count() >= 1, "no Add an account… in the cards")
+    expect("one account a tool" in text, "Settings does not say Chat uses one account a tool")
     page.locator("#set-subs-chat-codex [data-act=subscriptions-chat-signin]").click()
     cmd = page.locator("#set-subs-chat-codex .set-cli")
     cmd.wait_for(state="visible", timeout=5000)
@@ -119,7 +128,12 @@ def terminal_open(ctx):
     bar = page.locator("#answers-bar")
     bar.wait_for(timeout=10000)
     values = page.eval_on_selector_all("#answers-terminal option", "os => os.map(o => o.value)")
-    expect(values == ["bedrock", "shell"] + TOOLS, f"the Open menu offers {values}")
+    # (an entry for each account, and "Add an account…" for each tool that is there: add:TOOL)
+    expect([v for v in values if not v.startswith("add:")] == ["bedrock", "shell"] + TOOLS, f"the Open menu offers {values}")
+    expect(set(v for v in values if v.startswith("add:")) <= {f"add:{t}" for t in TOOLS}, f"the Open menu's Add entries {values}")
+    expect(len([v for v in values if v.startswith("add:")]) >= 1, f"no Add an account… in the Open menu {values}")
+    # (the first window is called bedrock, a tool's after what runs in it: codex)
+    wait_text(terminal_frame(page), r"\bbedrock\b", 30)
     page.select_option("#answers-terminal", "codex")
     page.click("#answers-terminal-open")
     # (a launch token the portal made on this click: <iat>-<16 hex>-<32 hex>)
@@ -128,6 +142,7 @@ def terminal_open(ctx):
     wait_xterm(f)
     screen = wait_text(f, CODEX_SIGNIN, 60)
     expect(re.search(r"\bcodex\b", screen), "no codex window in tmux's status line")
+    expect(re.search(r"\bbedrock\b", screen), "the first window is not called bedrock")
     shot(page, "s3-terminal-open-codex")
     probs = rec.problems(allow=LOCKED_OK)
     rec.save()

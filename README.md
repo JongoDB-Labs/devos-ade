@@ -696,6 +696,15 @@ it says it is signed in; `subscriptions login TOOL` runs its sign-in (`./stack s
 sandbox's words here, each line marked `sandbox│`; what you type then reaches the sandbox only for Claude Code — the
 code from your browser — and Copilot — whether to keep its login in a file — and it says so first). Add `--chat` for
 Chat's sandbox: its own sign-ins, for your subscriptions as Chat models (`./stack subscriptions login codex --chat`).
+
+**Several accounts a tool** (up to 8, for example a work and a personal Claude plan): the first account is the tool
+itself, in the folder it always used; another is `TOOL:NAME` (`claude:work`), in `~/.subscriptions/TOOL/NAME`, a folder of
+its own that is never opened or copied. In the terminal: `subscriptions accounts`, `add TOOL [NAME]`, `remove TOOL:NAME`,
+`rename TOOL[:NAME] NEW`; `status`, `login`, `logout` and `open` take `TOOL:NAME`. The Open menus (Terminal tab, Code page
+terminal) list an entry for each account and *Add an account…*; Settings › *Your AI subscriptions* shows each account with
+its own *Sign in*, *Sign out*, *Rename* and *Remove*; the Code page's *Who answers* can start a Claude plan session or an agent
+on another account. Chat stays at one account a tool. Terminal windows are named after what runs in them: the first is
+`bedrock`, a tool's is `claude-max`, `codex-chatgpt`… (or `claude-work` for an account called work).
 Plain `claude` and
 `devos-claude` stay on Bedrock: `claude-sub` is the same, unmodified Claude Code in its own config folder
 (`~/.claude-subscription`), started without the stack's `ANTHROPIC_*` variables so it uses your login; only its
