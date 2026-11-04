@@ -24,8 +24,21 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   - `git push`, `pull` and `fetch` to `https://gateway:8093/devos/REPO.git` work in the Terminal tab, Claude's own git included.
     The sandbox's git trusts the server's certificate for that host and port alone (a folder with the certificate, never its key,
     mounted read-only), and the login is what it always was: the Code page's token, handed over per operation, only for a host you
-    let Claude use. That switch (**Git hosts › Local git server › Let Claude use this host**) stays off by default; until it is on,
-    git says which switch gives it a login. This replaces the README's "not wired yet".
+    let Claude use. That switch (**Git hosts › Local git server › Let Claude use this host**) is on by default for this host (see below);
+    where it is off, git says which switch gives it a login. This replaces the README's "not wired yet".
+  - **The Local git server is on for Claude and the terminal by default, and the default branch of a kept repository cannot be force-pushed or deleted
+    on the server.** *Let Claude use this host* is now on for the Local git server and for no other host (GitHub and the rest stay off), so
+    a new install's terminal can `git push` at once. `./stack up` turns it on once for an install from before, unless you set the switch yourself
+    (the hosts file's mark of your change, or the Activity line a change always wrote); after that mark a later *off* stays off. Every kept
+    repository's default branch gets a Forgejo branch protection (no force-push, no deletion; ordinary pushes by the same token are
+    unchanged, no allow-list): made when a project is kept, again after its first push (the first push of an empty repository picks the
+    default branch), and for repositories kept before this version when the Code page starts, then at each 10-minute sweep if the
+    default branch moved. A refusal is logged once and tried again; the keep itself still succeeds. Caddy's internal `:8099` site gains one
+    route for it, a POST to `/api/v1/repos/O/R/branch_protections` and nothing else of the rules; the token is the one it was
+    (`write:repository`), not widened. Checked against Forgejo 17.0.1: a rule by a plain name may exist before the branch does, and a
+    protected branch refuses force-push and deletion for every account.
+  - **Claude is told to commit.** The note written into a kept project says to commit finished work at the end of a task, with a short
+    message: a kept project pushes commits, not uncommitted changes.
   - `project add [DIR] [--name NAME] [--keep [--repo NAME]]`, `project new NAME [--keep]` and `project remote [REPO]` in the terminal:
     list a folder of `/workspace` as a Code project, optionally keep it on the local git server (needs the same switch), make a
     folder with `git init` and add it, or write the server as the repository's remote `local`. They reach the Code page over the

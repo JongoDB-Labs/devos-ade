@@ -2432,7 +2432,8 @@ operation you started, sent only where you saw it go.
   template (no hooks), no submodules, nothing of the sandbox's git configuration, into a new folder of the workspace
   (or the workspace folder while it is empty).
 - [x] **Claude's own git gets nothing — unless you let it, per host.** Neither `~/.git-credentials` nor an agent of
-  the Code page is anywhere in the sandbox by default. *Let Claude use this host* (off by default; turned on only from
+  the Code page is anywhere in the sandbox by default. *Let Claude use this host* (off by default for every host except the Local git server, where it is on, so the Terminal's git works at once: Claude, or text it
+  reads, can then push to the owner's repositories on the built-in server, though not force-push or delete the default branch of a kept one; turned on only from
   the computer running DevOS ADE, after a warning that Claude, or text it reads, could then push to any repository
   the token or key reaches) makes the code container keep `git.broker` open: bn-coded then answers
   `/tmp/bn-git/claude/cred.sock` (the image's `/etc/gitconfig` names `bn-git-credential`, which asks there when it is
@@ -2585,7 +2586,7 @@ one command that sets it, never on a command line).
   computer only, by the code container — the holder of the connected hosts' credentials — through a second internal Caddy site
   (`:8099`, not published; reachable on Caddy's container networks) that passes a handful of API paths of the one service
   (the owner's repository list and one repository's record as reads, a migration, a repository's push mirrors and their
-  sync), one git request — a `POST …/git-receive-pack` of the content type git uses, with no commands in it, which makes the empty private repository of a project kept on the server (JON-1058; the server's push-to-create, as the sandbox's own first push does through the gateway, so `write:user` is still not needed) — and, for the portal's Git search, two GET searches, and nothing else: no delete of a repository, no admin or account API, no web UI, no cookies, no sign-in headers.
+  sync), one POST of a branch protection to one repository (`/api/v1/repos/O/R/branch_protections`, Caddy's `@protect`: the Code page protects the default branch of every kept repository, which Forgejo 17.0.1 then refuses to force-push or delete for every account, an admin's too; the rule has no allow-list, so the token's ordinary pushes still work; it needs `write:repository` and the repository's owner, both the built-in host's, so the token is not widened; no read, change or delete of a rule is passed), one git request — a `POST …/git-receive-pack` of the content type git uses, with no commands in it, which makes the empty private repository of a project kept on the server (JON-1058; the server's push-to-create, as the sandbox's own first push does through the gateway, so `write:user` is still not needed) — and, for the portal's Git search, two GET searches, and nothing else: no delete of a repository, no admin or account API, no web UI, no cookies, no sign-in headers.
   Forgejo needs the owner's own repository-scoped token for each (`write:repository`; creating a repository for a mirror is
   a push or a migration, so `write:user` is not needed). The remote credential is a connected host's **access token** —
   never a sign-in's, whose token lasts hours and cannot be renewed inside Forgejo — handed to Forgejo, which keeps it
@@ -2607,7 +2608,7 @@ one command that sets it, never on a command line).
   the folder above it has the key the gateway serves with, and the sandbox is not given it). **The login is unchanged**: it is the Code
   page's token for the host (the same one, `write:repository`, no wider), asked for by `bn-git-credential` through
   `/tmp/bn-git/claude/cred.sock` — which exists only while some host lets Claude use it — and answered by the code container only for a
-  host with *Let Claude use this host* on (off by default; turned on only from this computer, after a warning), at most 30 a minute, each
+  host with *Let Claude use this host* on (off by default, except for the Local git server; turned on only from this computer, after a warning), at most 30 a minute, each
   use in Activity, nothing written to a file or the environment. The local server is a host like the others, so the sandbox's git
   cannot tell yours from Claude's: with the switch on, git in the terminal — a command of yours, Claude's, or text Claude read — can
   push to, create, and force-push or delete branches in any repository of the owner account `devos` on this computer's git server
