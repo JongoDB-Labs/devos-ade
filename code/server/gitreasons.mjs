@@ -101,6 +101,7 @@ export const GIT_REFUSALS = Object.freeze([
   'something of that name is there already',
   'busy: try again in a moment',
   'busy: another git change is on its way',
+  'busy: another new project is on its way',
 ]);
 // bn-coded's own fixed refusals in its other ops (the files, the terminal, Run, the launch configurations, sessions,
 // the permission rules, the watchlist …): the same — read plainly (checked the same way: the rest of bn-coded)

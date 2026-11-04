@@ -5897,7 +5897,7 @@ export const CHAT_SWEEP_MS = 5000;
 
 // --- one connection, one op ---
 const running = { claude: 0, cli: 0, agent: 0 };
-const helpers = { zip: 0, git: 0, grep: 0, gitRead: 0, gitWrite: 0, gitNet: 0, capture: 0, subs: 0 };
+const helpers = { zip: 0, git: 0, grep: 0, gitRead: 0, gitWrite: 0, gitNet: 0, projectNew: 0, capture: 0, subs: 0 };
 let brokerSock = null;
 let linkSock = null;
 export function serve(sock) {
@@ -6091,11 +6091,13 @@ export function serve(sock) {
           (kind === 'git' ? gitDiff(send, { root: r0 }) : fsGrep(req, { root: r0 })).then((r) => finish(T.RESULT, r), (e) => fail(e.message)).finally(() => { helpers[kind]--; });
           return undefined;
         }
-        // a new project's folder (and git init); whether the project folders are there
+        // a new project's folder (and git init); whether the project folders are there. One at a time, but apart from the git panel's
+        // changes: it touches no repository of the workspace's but the new folder, so a kept project pushing itself (a git change that can
+        // last a while) never makes New project's Create fail with "busy"
         case 'project.create':
-          if (helpers.gitWrite >= 1) return fail('busy: another git change is on its way');
-          helpers.gitWrite++;
-          projectCreate(req).then((r) => finish(T.RESULT, r), (e) => fail(e.message)).finally(() => { helpers.gitWrite--; });
+          if (helpers.projectNew >= 1) return fail('busy: another new project is on its way');
+          helpers.projectNew++;
+          projectCreate(req).then((r) => finish(T.RESULT, r), (e) => fail(e.message)).finally(() => { helpers.projectNew--; });
           return undefined;
         case 'project.check': return finish(T.RESULT, projectCheck(req));
         case 'project.trash': return finish(T.RESULT, projectTrash(req));
