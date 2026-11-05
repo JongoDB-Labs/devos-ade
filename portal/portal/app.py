@@ -518,10 +518,15 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
             # JON-1140: local single sign-on — a valid session mints the unlock without a second password. Only on a
             # PROVEN-local request (is_local: through our Caddy, not the remote marker — "not remote" is not enough, a
             # direct/forged request is not remote either): send the navigation to the app host's /.bn/session-unlock
-            # (→ /auth/<app>-session-unlock), which sets the unlock cookie and returns here. SU_MARK present but still no
-            # unlock = the cookie did not stick: show the password page instead of redirecting again. Anything not proven
-            # local (including remote) falls through to the password step-up — fails closed.
-            if is_local(request.headers, settings) and request.cookies.get(SU_MARK) is None:
+            # (→ /auth/<app>-session-unlock), which mints the unlock cookie and returns here. Anything not proven local
+            # (including remote) falls through to the password step-up — fails closed.
+            # Loop guard: SU_MARK means session-unlock just ran. If the unlock cookie is ABSENT despite that, it did not
+            # stick (cookies off) — show the password page rather than redirect forever. But a cookie that is PRESENT yet
+            # invalid (voided by Sign out, a password change or the 12h expiry) proves cookies work, so re-mint it: this
+            # is single sign-on after signing back in, not a loop.
+            unlock_missing = request.cookies.get(unlock_cookie_params(app, False)["key"]) is None
+            loop_risk = request.cookies.get(SU_MARK) is not None and unlock_missing
+            if is_local(request.headers, settings) and not loop_risk:
                 to = settings.origin(app, False) + "/.bn/session-unlock?next=" + quote(request.headers.get("x-forwarded-uri") or "/", safe="")
                 return _no_store(RedirectResponse(to, status_code=302))
             return _unlock_page(settings, rem, app=app, next_link=nxt)

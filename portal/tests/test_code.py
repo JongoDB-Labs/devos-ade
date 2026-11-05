@@ -414,6 +414,17 @@ def test_sign_out_voids_a_session_minted_unlock(cc):
     assert r.status_code == 302 and "/.bn/session-unlock" in r.headers["location"]
 
 
+def test_the_loop_guard_stops_only_when_the_unlock_cookie_did_not_stick(cc):
+    # JON-1140: SU_MARK means session-unlock just ran. Absent unlock cookie + SU_MARK = it did not stick (cookies off)
+    # → show the password form rather than redirect forever. But a PRESENT-but-invalid unlock cookie (voided by Sign out
+    # / a new password) proves cookies work → re-mint (single sign-on after signing back in), never a loop.
+    tok = session(cc)
+    r = verify(cc, {COOKIE: tok, "bn_su": "1"}, LOCAL)                       # no unlock cookie + marker → form (loop guard)
+    assert r.status_code == 401 and "Unlock the Code page" in r.text
+    r = verify(cc, {COOKIE: tok, "bn_su": "1", CODE_COOKIE: "stale-invalid"}, LOCAL)   # invalid cookie present → re-mint
+    assert r.status_code == 302 and "/.bn/session-unlock" in r.headers["location"]
+
+
 def test_session_and_unlock_open_it_and_the_websocket(cc):
     tok, ut = unlocked(cc)
     for h in (NAV, API, WS):

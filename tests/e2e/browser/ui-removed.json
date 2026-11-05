@@ -40,5 +40,29 @@
   "control": "button:Not now",
   "why": "Gone with the offer under Projects (see 'Add as project'): nothing is offered, so there is nothing to put off. A folder you took out of Code with Remove from Code is remembered and not added again; the 'Not now' folders of the first version are read as removed.",
   "changelog": "v0.59.0"
+ },
+ {
+  "state": "portal-code-tab-*",
+  "control": "#password",
+  "why": "Local single sign-on (JON-1140): on this computer the Code page unlocks from your portal session, so its second 'Portal password' field no longer appears locally. Remote access still shows the unlock form.",
+  "changelog": "v0.59.1"
+ },
+ {
+  "state": "portal-code-tab-*",
+  "control": "button:Unlock",
+  "why": "Local single sign-on (JON-1140): on this computer the Code page unlocks from your portal session, so its second-password 'Unlock' button no longer appears locally. Remote access still shows the unlock form.",
+  "changelog": "v0.59.1"
+ },
+ {
+  "state": "portal-terminal-off-*",
+  "control": "#password",
+  "why": "Local single sign-on (JON-1140): on this computer the terminal unlocks from your portal session, so its second 'Portal password' field no longer appears locally. Remote access still shows the unlock form.",
+  "changelog": "v0.59.1"
+ },
+ {
+  "state": "portal-terminal-off-*",
+  "control": "button:Unlock",
+  "why": "Local single sign-on (JON-1140): on this computer the terminal unlocks from your portal session, so its second-password 'Unlock' button no longer appears locally. Remote access still shows the unlock form.",
+  "changelog": "v0.59.1"
  }
 ]
