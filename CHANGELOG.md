@@ -4,7 +4,7 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.60.0] - 2026-11-05
 
 ### Added
 - **`./stack backup` and `./stack restore` now include the local git server (JON-1012).** The repositories you kept on the
@@ -4626,7 +4626,8 @@ Initial public release.
 - `bin/claude-bedrock`: runs Claude Code against Bedrock through LiteLLM without touching plain `claude`.
 - Cost transparency: Bedrock prices in `./stack costs` and the Open WebUI model picker, spend per key.
 
-[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.59.1...HEAD
+[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.60.0...HEAD
+[0.60.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.59.1...v0.60.0
 [0.59.1]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.59.0...v0.59.1
 [0.59.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.58.0...v0.59.0
 [0.58.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.57.2...v0.58.0
