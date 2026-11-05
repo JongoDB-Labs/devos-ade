@@ -258,6 +258,15 @@ def from_proxy(headers, settings: Settings) -> bool:
     return len(settings.proxy_secret) >= 32 and hmac.compare_digest(given.encode(), settings.proxy_secret.encode())
 
 
+def is_local(headers, settings: Settings) -> bool:
+    """A request PROVEN to come through our own Caddy on the LOCAL site: it carries the proxy secret (from_proxy — a
+    direct call to portal:8000, or a forged/missing header, cannot) and is not the remote-site marker. "Not remote"
+    alone is NOT enough — a direct, forged, missing-secret or ambiguous request is not remote either — so local-only
+    privilege (the Code page's and terminal's single sign-on, app.py) is granted only on this positive signal and fails
+    closed otherwise: no proxy secret, or any X-Portal-Remote marker, means not local."""
+    return from_proxy(headers, settings) and not headers.get("x-portal-remote")
+
+
 def is_remote(headers, settings: Settings) -> bool:
     """A request through the remote site: Caddy deletes any client-sent X-Portal-Remote everywhere and sets "1"
     only on the remote site blocks (caddy/remote-*.caddy), which answer only the Tailscale sidecar's network.

@@ -29,7 +29,7 @@ from . import settings as settings_mod
 from .config import CODE, TERMINAL, Settings
 from .security import (
     PREVIEW_COOKIE, TERMINAL_MAX_AGE, Handoff, LoginThrottle, PreviewCaps, PreviewCookies, Sessions, TerminalUnlocks,
-    cookie_params, is_remote,
+    cookie_params, is_local, is_remote,
     remote_identity_ok, safe_next, same_origin, session_login, tailscale_login, terminal_origin_ok, terminal_same_origin,
     unlock_cookie_params, verify_password,
 )
@@ -38,6 +38,7 @@ log = logging.getLogger("portal")
 STATIC = Path(__file__).parent / "static"
 MAX_FORM = 8192
 MAX_UNLOCK_FORM = 32768   # the Code page's unlock form: the password and a deep link (portal/code.py DEEP_LINK_MAX)
+SU_MARK = "bn_su"   # JON-1140: a short-lived marker session-unlock sets, so locked_verify breaks the redirect loop if the unlock cookie does not stick
 MAX_SESSIONS_BODY = 12 * 1024   # the Import sheet's request (Caddy caps /.bn/sessions at 16 KB)
 
 
@@ -514,6 +515,15 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
         if method in ("GET", "HEAD") and "text/html" in request.headers.get("accept", ""):
             # (the Code page: its deep links; the terminal: the pickers' words — answers.terminal_next)
             nxt = codepage.deep_link(request.headers.get("x-forwarded-uri")) if app == CODE else answers.terminal_next(request.headers.get("x-forwarded-uri"), roots())
+            # JON-1140: local single sign-on — a valid session mints the unlock without a second password. Only on a
+            # PROVEN-local request (is_local: through our Caddy, not the remote marker — "not remote" is not enough, a
+            # direct/forged request is not remote either): send the navigation to the app host's /.bn/session-unlock
+            # (→ /auth/<app>-session-unlock), which sets the unlock cookie and returns here. SU_MARK present but still no
+            # unlock = the cookie did not stick: show the password page instead of redirecting again. Anything not proven
+            # local (including remote) falls through to the password step-up — fails closed.
+            if is_local(request.headers, settings) and request.cookies.get(SU_MARK) is None:
+                to = settings.origin(app, False) + "/.bn/session-unlock?next=" + quote(request.headers.get("x-forwarded-uri") or "/", safe="")
+                return _no_store(RedirectResponse(to, status_code=302))
             return _unlock_page(settings, rem, app=app, next_link=nxt)
         return _no_store(PlainTextResponse(f"{NAME[app]} locked: unlock it with the portal password", status_code=401))
 
@@ -629,6 +639,40 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
         c = unlock_cookie_params(app, rem, settings.https)
         resp.set_cookie(c["key"], unlocks[app].issue(session_login(request.headers, settings)), max_age=TERMINAL_MAX_AGE,
                         path="/", domain=c["domain"], httponly=True, samesite="strict", secure=c["secure"])
+        return _no_store(resp)
+
+    async def code_session_unlock(request: Request) -> Response:
+        return await session_unlock(request, CODE)
+
+    async def terminal_session_unlock(request: Request) -> Response:
+        return await session_unlock(request, TERMINAL)
+
+    async def session_unlock(request: Request, app: str) -> Response:
+        """GET /.bn/session-unlock on the terminal's or the Code page's host (Caddy → here): on LOCAL access a valid
+        portal session mints that host's own unlock cookie — no second password (JON-1140). locked_verify sends a local
+        navigation here when the session is present but the unlock is not; the step-up password is kept for REMOTE
+        access (defence in depth over the internet). Same host, same-site Origin and session checks as the password
+        unlock; it only ever grants the session holder their own unlock. SU_MARK (short-lived) lets locked_verify break
+        the redirect loop if the cookie does not stick."""
+        host = (request.headers.get("host") or "").split(":")[0].lower()
+        # PROVEN-local only (is_local): a direct-to-portal, forged, missing-proxy-secret or remote request is refused,
+        # so a local single sign-on grant can never be minted off the local site — it fails closed.
+        if not is_local(request.headers, settings) or not settings.locked_on(app, False) or host != settings.app_host(app, False):
+            return _no_store(PlainTextResponse("not found", status_code=404))
+        if (deny := foreign_login(request)) is not None:
+            return deny
+        if not terminal_origin_ok(request.headers, settings, False, False, app, "GET"):
+            return _no_store(PlainTextResponse("cross-site unlock refused", status_code=403))
+        if not authed(request):
+            return _no_store(login_redirect(settings.origin(app, False) + "/", False))
+        nxt = (codepage.deep_link(request.query_params.get("next", "")) if app == CODE
+               else answers.terminal_next(request.query_params.get("next", ""), roots()))
+        resp = RedirectResponse(nxt or "/", status_code=303)
+        c = unlock_cookie_params(app, False, settings.https)
+        resp.set_cookie(c["key"], unlocks[app].issue(session_login(request.headers, settings)), max_age=TERMINAL_MAX_AGE,
+                        path="/", domain=c["domain"], httponly=True, samesite="strict", secure=c["secure"])
+        resp.set_cookie(SU_MARK, "1", max_age=30, path="/", domain=c["domain"], httponly=True, samesite="strict", secure=c["secure"])
+        log.warning("%s unlocked by the local session (single sign-on)", app)
         return _no_store(resp)
 
     # --- what the Code page asks the portal (Caddy routes /.bn/models and /.bn/spend here after the code host's
@@ -1860,6 +1904,8 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
             Route("/auth/terminal-unlock", terminal_unlock, methods=["POST"]),
             Route("/auth/terminal-launch", terminal_launch, methods=["POST"]),
             Route("/auth/code-unlock", code_unlock, methods=["POST"]),
+            Route("/auth/code-session-unlock", code_session_unlock, methods=["GET"]),
+            Route("/auth/terminal-session-unlock", terminal_session_unlock, methods=["GET"]),
             Route("/auth/code-models", code_models, methods=["GET"]),
             Route("/auth/code-spend", code_spend, methods=["GET"]),
             Route("/auth/code-answers", code_answers, methods=["GET"]),

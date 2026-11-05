@@ -384,6 +384,12 @@ import tls-{$LOCAL_TLS:off}.caddy
 	reverse_proxy @bn_unlock portal:8000 {
 		rewrite /auth/terminal-unlock
 	}
+	# JON-1140: local single sign-on — a valid local session mints the unlock here without the password (the portal
+	# refuses it for remote access). locked_verify redirects a local navigation here; the portal sets the cookie.
+	@bn_session_unlock path /.bn/session-unlock
+	reverse_proxy @bn_session_unlock portal:8000 {
+		rewrite /auth/terminal-session-unlock?{query}
+	}
 	# (the "Open … here?" page's Open: the portal makes a launch token for the words it names — the only way an address
 	# with the pickers' words gets past the check below without one made in the portal's own page)
 	request_body /.bn/launch {
@@ -461,6 +467,12 @@ import tls-{$LOCAL_TLS:off}.caddy
 	@bn_code_unlock path /.bn/unlock
 	reverse_proxy @bn_code_unlock portal:8000 {
 		rewrite /auth/code-unlock
+	}
+	# JON-1140: local single sign-on — a valid local session mints the Code unlock here without the password (the
+	# portal refuses it for remote access). locked_verify redirects a local navigation here; the portal sets the cookie.
+	@bn_code_session_unlock path /.bn/session-unlock
+	reverse_proxy @bn_code_session_unlock portal:8000 {
+		rewrite /auth/code-session-unlock?{query}
 	}
 }
 

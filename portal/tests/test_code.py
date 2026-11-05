@@ -35,6 +35,9 @@ TN = "tail1234.ts.net"
 R_PORTAL, R_CODE_HOST = f"bn.{TN}", f"bn-code.{TN}"
 PROXY = "p" * 64
 REMOTE = {"X-Portal-Remote": "1", "X-Portal-Proxy": PROXY, "Tailscale-User-Login": "me@example.com"}
+# a local browser navigation exactly as our Caddy forwards it: the proxy secret is what proves it came through Caddy
+# on the local site (is_local), which local single sign-on requires (JON-1140)
+LOCAL = {**NAV, "X-Portal-Proxy": PROXY}
 SID = "3f2a1b4c-5d6e-4f70-8192-a3b4c5d6e7f8"
 TERM_KEY = "sk-terminal-key"
 
@@ -45,7 +48,7 @@ def offline(request):
 
 @pytest.fixture
 def cs(settings):
-    return replace(settings, terminal=True, code=True,
+    return replace(settings, terminal=True, code=True, proxy_secret=PROXY,
                    keys=settings.keys + (("claude-code-terminal", "Terminal (browser)", TERM_KEY),))
 
 
@@ -306,14 +309,80 @@ def test_without_a_session_the_login(cc):
     assert verify(cc, {}, API).status_code == 401
 
 
-def test_a_session_alone_shows_the_code_pages_unlock_form(cc):
+def test_local_session_alone_auto_unlocks_the_code_page(cc):
+    # JON-1140: on local access a valid portal session unlocks the Code page itself — no second password (the old
+    # step-up unlock was redundant friction locally). A navigation with the session but no unlock cookie is sent to the
+    # code host's /.bn/session-unlock, which mints the unlock from the session; the page then opens.
     tok = session(cc)
-    r = verify(cc, {COOKIE: tok})
+    r = verify(cc, {COOKIE: tok}, LOCAL)
+    assert r.status_code == 302 and r.headers["location"] == f"{CODE}/.bn/session-unlock?next=%2F"
+    # the hand-off endpoint: the session mints the Code unlock cookie (no password), then back to the page
+    su = cc.get("/auth/code-session-unlock", params={"next": "/"},
+                headers={"Host": CODE_HOST, "Origin": CODE, "Sec-Fetch-Site": "same-origin", "X-Portal-Proxy": PROXY, "Cookie": f"{COOKIE}={tok}"})
+    cc.cookies.clear()
+    assert su.status_code == 303
+    raw = _cookie(su, CODE_COOKIE)
+    assert raw is not None, "session-unlock did not set the Code unlock cookie"
+    ut = raw.split(";", 1)[0].split("=", 1)[1]
+    # now the page and its websocket open with the session + the minted unlock — one sign-on
+    for h in (NAV, API, WS):
+        assert verify(cc, {COOKIE: tok, CODE_COOKIE: ut}, h).status_code == 200, h
+    # a non-navigation with only the session still 401s (it waits for the navigation to set the cookie first)
+    assert verify(cc, {COOKIE: tok}, API).status_code == 401
+    # loop guard: the marker present but the unlock still missing (the cookie did not stick) falls back to the password page
+    r = verify(cc, {COOKIE: tok, "bn_su": "1"})
     assert r.status_code == 401 and "Unlock the Code page" in r.text and 'action="/.bn/unlock"' in r.text
-    csp = r.headers["content-security-policy"]
-    assert f"frame-ancestors {PORTAL}" in csp and "default-src 'none'" in csp
-    r = verify(cc, {COOKIE: tok}, API)
-    assert r.status_code == 401 and "Code page locked" in r.text
+
+
+def test_session_unlock_needs_local_the_session_and_its_own_origin(cc):
+    tok = session(cc)
+    # not proven local (no proxy secret: a direct/forged request) -> not found, never mints an unlock (fails closed)
+    r = cc.get("/auth/code-session-unlock", params={"next": "/"}, headers={"Host": CODE_HOST, "Origin": CODE, "Cookie": f"{COOKIE}={tok}"})
+    cc.cookies.clear()
+    assert r.status_code == 404 and _cookie(r, CODE_COOKIE) is None
+    # the remote marker (even with the proxy secret) is not local -> not found
+    r = cc.get("/auth/code-session-unlock", params={"next": "/"},
+               headers={"Host": CODE_HOST, "Origin": CODE, "X-Portal-Proxy": PROXY, "X-Portal-Remote": "1", "Cookie": f"{COOKIE}={tok}"})
+    cc.cookies.clear()
+    assert r.status_code == 404 and _cookie(r, CODE_COOKIE) is None
+    # proven local but no session -> the login (never mints an unlock)
+    r = cc.get("/auth/code-session-unlock", params={"next": "/"}, headers={"Host": CODE_HOST, "Origin": CODE, "X-Portal-Proxy": PROXY})
+    cc.cookies.clear()
+    assert r.status_code in (302, 303) and "/login" in r.headers["location"] and _cookie(r, CODE_COOKIE) is None
+    # proven local, a session, but another site's Origin -> refused
+    r = cc.get("/auth/code-session-unlock", params={"next": "/"},
+               headers={"Host": CODE_HOST, "Origin": "http://evil.example", "X-Portal-Proxy": PROXY, "Cookie": f"{COOKIE}={tok}"})
+    cc.cookies.clear()
+    assert r.status_code == 403 and _cookie(r, CODE_COOKIE) is None
+    # only on the code host itself
+    r = cc.get("/auth/code-session-unlock", params={"next": "/"},
+               headers={"Host": "chat.devos-ade.localhost", "Origin": CODE, "X-Portal-Proxy": PROXY, "Cookie": f"{COOKIE}={tok}"})
+    cc.cookies.clear()
+    assert r.status_code == 404
+
+
+def test_a_local_grant_never_satisfies_the_remote_step_up(settings):
+    # JON-1140 negative control: local single sign-on must not leak to remote. Remote keeps the password step-up, and
+    # the local auto-unlock never fires there — it is gated on the positive is_local predicate (proven through our own
+    # Caddy on the local site, not the remote marker), so a local grant cannot be replayed off-site.
+    rs = replace(settings, terminal=True, code=True, remote_mode="tailscale", remote_host=R_PORTAL, proxy_secret=PROXY,
+                 remote_terminal=True, remote_app_hosts={"terminal": f"bn-terminal.{TN}", "code": R_CODE_HOST})
+    with _client(rs) as c:
+        # LOCAL material: a local session, then its local Code unlock (minted by the local auto-unlock)
+        tok = session(c)
+        su = c.get("/auth/code-session-unlock", params={"next": "/"}, headers={"Host": CODE_HOST, "Origin": CODE, "X-Portal-Proxy": PROXY, "Cookie": f"{COOKIE}={tok}"})
+        c.cookies.clear()
+        ut = _cookie(su, CODE_COOKIE).split(";", 1)[0].split("=", 1)[1]
+        assert verify(c, {COOKIE: tok, CODE_COOKIE: ut}).status_code == 200   # opens the LOCAL code host
+        # replayed on the REMOTE code host: refused — never 200, and the local auto-unlock never fires there
+        r = c.get(VERIFY, headers={**NAV, **REMOTE, "X-Forwarded-Host": R_CODE_HOST, "Cookie": f"{COOKIE}={tok}; {CODE_COOKIE}={ut}"})
+        assert r.status_code != 200 and "/.bn/session-unlock" not in r.headers.get("location", "")
+        # a VALID remote session, but no remote unlock, still gets the password step-up — never the local auto-unlock
+        r = c.post("/login", data={"password": PW, "next": "/"}, headers={"Origin": f"https://{R_PORTAL}", "Host": R_PORTAL, **REMOTE})
+        rtok = _cookie(r, "__Host-bn_session").split(";", 1)[0].split("=", 1)[1]
+        c.cookies.clear()
+        r = c.get(VERIFY, headers={**NAV, **REMOTE, "X-Forwarded-Host": R_CODE_HOST, "Cookie": f"__Host-bn_session={rtok}"})
+        assert r.status_code == 401 and "Unlock the Code page" in r.text and "/.bn/session-unlock" not in r.headers.get("location", "")
 
 
 def test_session_and_unlock_open_it_and_the_websocket(cc):
@@ -399,7 +468,8 @@ def test_deep_links_are_rebuilt_from_what_checks_out():
 
 def test_the_unlock_form_carries_a_deep_link_and_unlocking_goes_there(cc):
     tok = session(cc)
-    r = verify(cc, {COOKIE: tok}, {**NAV, "X-Forwarded-Uri": f"/?session={SID}&prompt=%22%3E%3Cscript%3Ex%3C%2Fscript%3E&evil=1"})
+    # bn_su: the loop-guard fallback shows the password form (local SSO redirects to it otherwise — JON-1140)
+    r = verify(cc, {COOKIE: tok, "bn_su": "1"}, {**NAV, "X-Forwarded-Uri": f"/?session={SID}&prompt=%22%3E%3Cscript%3Ex%3C%2Fscript%3E&evil=1"})
     assert r.status_code == 401
     m = re.search(r'<input type="hidden" name="next" value="([^"]*)">', r.text)
     assert m, r.text
@@ -420,7 +490,7 @@ def test_the_unlock_form_carries_a_deep_link_and_unlocking_goes_there(cc):
     r = cc.post("/auth/code-unlock", data={"password": "wrong", "next": "/?prompt=hi"}, headers={"Host": CODE_HOST, "Origin": CODE, "Cookie": f"{COOKIE}={tok}"})
     cc.cookies.clear()
     assert 'name="next" value="/?prompt=hi"' in r.text
-    assert 'name="next"' not in verify(cc, {COOKIE: tok}).text
+    assert 'name="next"' not in verify(cc, {COOKIE: tok, "bn_su": "1"}).text
     # too many form fields: no deep link, still a normal answer
     r = cc.post("/auth/code-unlock", data={"password": "wrong", **{f"f{i}": "x" for i in range(9)}}, headers={"Host": CODE_HOST, "Origin": CODE, "Cookie": f"{COOKIE}={tok}"})
     cc.cookies.clear()
@@ -431,7 +501,7 @@ def test_the_terminals_unlock_form_carries_no_deep_link(cs):
     with _client(cs) as c:
         tok = session(c)
         r = c.get("/auth/verify?app=terminal", headers={"Accept": "text/html", "X-Forwarded-Method": "GET", "X-Forwarded-Host": TERM_HOST,
-                                                        "X-Forwarded-Uri": f"/?session={SID}", "Cookie": f"{COOKIE}={tok}"})
+                                                        "X-Forwarded-Uri": f"/?session={SID}", "Cookie": f"{COOKIE}={tok}; bn_su=1"})
         assert r.status_code == 401 and 'name="next"' not in r.text and "{{next}}" not in r.text
 
 
@@ -697,7 +767,7 @@ def test_the_terminals_unlock_form_may_be_framed_by_the_code_page(settings, cs):
         with _client(s) as c:
             tok = session(c)
             r = c.get("/auth/verify?app=terminal", headers={"Accept": "text/html", "X-Forwarded-Method": "GET", "X-Forwarded-Host": TERM_HOST,
-                                                           "X-Forwarded-Uri": "/", "Cookie": f"{COOKIE}={tok}"})
+                                                           "X-Forwarded-Uri": "/", "Cookie": f"{COOKIE}={tok}; bn_su=1"})
             assert r.status_code == 401 and "Unlock the terminal" in r.text
             fa = r.headers["content-security-policy"].split("frame-ancestors ", 1)[1]
             assert fa == (f"{PORTAL} {CODE}" if framed else PORTAL), fa

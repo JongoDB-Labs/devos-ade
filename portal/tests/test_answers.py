@@ -390,7 +390,8 @@ def test_the_unlock_keeps_the_pickers_words_and_nothing_else(s):
         r = c.post("/login", data={"password": PW, "next": "/"}, headers={"Origin": PORTAL})
         tok = r.cookies.get(COOKIE)
         c.cookies.clear()
-        nav = {"Accept": "text/html", "X-Forwarded-Method": "GET", "X-Forwarded-Host": TERM_HOST, "Cookie": f"{COOKIE}={tok}"}
+        # bn_su: the loop-guard fallback shows the password form (local SSO redirects to it otherwise — JON-1140)
+        nav = {"Accept": "text/html", "X-Forwarded-Method": "GET", "X-Forwarded-Host": TERM_HOST, "Cookie": f"{COOKIE}={tok}; bn_su=1"}
         r = c.get("/auth/verify?app=terminal", headers={**nav, "X-Forwarded-Uri": f"/?arg=open&arg=codex&arg={TOK}"})
         assert r.status_code == 401 and f'name="next" value="/?arg=open&amp;arg=codex&amp;arg={TOK}"' in r.text
         r = c.get("/auth/verify?app=terminal", headers={**nav, "X-Forwarded-Uri": f"/?arg=open&arg=evil&arg={TOK}"})

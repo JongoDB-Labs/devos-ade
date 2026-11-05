@@ -31,6 +31,9 @@ VERIFY = "/auth/verify?app=terminal"
 TN = "tail1234.ts.net"
 R_PORTAL, R_TERM_HOST = f"bn.{TN}", f"bn-terminal.{TN}"
 PROXY = "p" * 64
+# a local browser navigation as our Caddy forwards it: the proxy secret proves it came through Caddy on the local site
+# (is_local), which local single sign-on requires (JON-1140)
+LOCAL = {**NAV, "X-Portal-Proxy": PROXY}
 REMOTE = {"X-Portal-Remote": "1", "X-Portal-Proxy": PROXY, "Tailscale-User-Login": "me@example.com"}
 
 
@@ -40,7 +43,7 @@ def offline(request):
 
 @pytest.fixture
 def ts(settings):
-    return replace(settings, terminal=True)
+    return replace(settings, terminal=True, proxy_secret=PROXY)
 
 
 def _client(s, base=PORTAL):
@@ -160,18 +163,30 @@ def test_without_a_session_the_terminal_sends_you_to_the_login(tc):
     assert verify(tc, {}, {**WS}).status_code == 401
 
 
-def test_a_session_alone_shows_the_unlock_page(tc):
+def test_local_session_alone_auto_unlocks_the_terminal(tc):
+    # JON-1140: on local access a valid portal session unlocks the terminal — no second password. A navigation with the
+    # session but no unlock cookie is sent to the terminal host's /.bn/session-unlock, which mints the unlock.
     tok = session(tc)
-    r = verify(tc, {COOKIE: tok})
+    r = verify(tc, {COOKIE: tok}, LOCAL)
+    assert r.status_code == 302 and r.headers["location"] == f"{TERM}/.bn/session-unlock?next=%2F"
+    su = tc.get("/auth/terminal-session-unlock", params={"next": "/"},
+                headers={"Host": TERM_HOST, "Origin": TERM, "X-Portal-Proxy": PROXY, "Cookie": f"{COOKIE}={tok}"})
+    tc.cookies.clear()
+    assert su.status_code == 303
+    raw = _cookie(su, TERMINAL_COOKIE)
+    assert raw is not None, "session-unlock did not set the terminal unlock cookie"
+    ut = raw.split(";", 1)[0].split("=", 1)[1]
+    assert verify(tc, {COOKIE: tok, TERMINAL_COOKIE: ut}).status_code == 200
+    # not a browser navigation (the WebSocket, an XHR) with only the session: a bare 401 (waits for the nav to set it)
+    assert verify(tc, {COOKIE: tok}, WS).status_code == 401
+    # the loop-guard fallback still shows the password form, with its CSP
+    r = verify(tc, {COOKIE: tok, "bn_su": "1"})
     assert r.status_code == 401 and "x-portal-user" not in r.headers
     assert 'action="/.bn/unlock"' in r.text and 'name="password"' in r.text
     assert f'href="{PORTAL}/static/login.css"' in r.text
     csp = r.headers["content-security-policy"]
     assert f"frame-ancestors {PORTAL}" in csp and "form-action 'self'" in csp and "default-src 'none'" in csp
     assert "x-frame-options" not in r.headers and r.headers["cache-control"] == "no-store"
-    # not a browser navigation (the WebSocket, an XHR): a bare 401
-    r = verify(tc, {COOKIE: tok}, WS)
-    assert r.status_code == 401 and "unlock" in r.text
 
 
 def test_session_and_unlock_open_the_terminal(tc):
@@ -188,9 +203,10 @@ def test_unlock_cookie_is_only_asked_for_on_the_terminal_host(tc):
     chat = {**NAV, "X-Forwarded-Host": "chat.devos-ade.localhost"}
     r = tc.get("/auth/verify", headers={**chat, "Cookie": f"{COOKIE}={tok}"})
     assert r.status_code == 200
-    # the terminal's name in X-Forwarded-Host alone (without ?app=terminal) asks for the unlock too
-    r = tc.get("/auth/verify", headers={**NAV, "Cookie": f"{COOKIE}={tok}"})
-    assert r.status_code == 401 and 'action="/.bn/unlock"' in r.text
+    # the terminal's name in X-Forwarded-Host alone (without ?app=terminal) takes the locked path too — locally that
+    # auto-unlocks from the session (JON-1140)
+    r = tc.get("/auth/verify", headers={**LOCAL, "Cookie": f"{COOKIE}={tok}"})
+    assert r.status_code == 302 and r.headers["location"].startswith(f"{TERM}/.bn/session-unlock")
 
 
 def test_foreign_origin_is_refused_even_when_unlocked(tc):
@@ -209,9 +225,11 @@ def test_sign_out_ends_the_unlock(tc):
     tok, ut = unlocked(tc)
     assert verify(tc, {COOKIE: tok, TERMINAL_COOKIE: ut}).status_code == 200
     assert tc.post("/logout", headers={"Origin": PORTAL, "Cookie": f"{COOKIE}={tok}"}).status_code == 303
-    tok2 = session(tc)   # signed in again: the old unlock is still void
-    r = verify(tc, {COOKIE: tok2, TERMINAL_COOKIE: ut})
-    assert r.status_code == 401 and 'action="/.bn/unlock"' in r.text
+    # the old unlock alone (no valid session) grants nothing
+    assert verify(tc, {TERMINAL_COOKIE: ut}, WS).status_code == 401
+    tok2 = session(tc)   # signed in again: the old unlock is void (revoked at sign-out); the new session auto-unlocks a fresh one
+    r = verify(tc, {COOKIE: tok2, TERMINAL_COOKIE: ut}, LOCAL)
+    assert r.status_code == 302 and "/.bn/session-unlock" in r.headers["location"]
 
 
 def test_a_new_password_voids_the_unlock(ts):
@@ -222,7 +240,8 @@ def test_a_new_password_voids_the_unlock(ts):
         assert not TerminalUnlocks(SECRET, Sessions(SECRET, new_hash)).valid(ut)
         r = c.post("/login", data={"password": "new password", "next": "/"}, headers={"Origin": PORTAL})
         tok2 = _cookie(r, COOKIE).split(";", 1)[0].split("=", 1)[1]
-        assert verify(c, {COOKIE: tok2, TERMINAL_COOKIE: ut}).status_code == 401
+        # the old unlock is void under the new password; the new session auto-unlocks a fresh one, never the stale cookie
+        assert verify(c, {COOKIE: tok2, TERMINAL_COOKIE: ut}, LOCAL).status_code == 302
 
 
 def test_unlock_expires_after_twelve_hours():
