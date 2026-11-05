@@ -6,6 +6,17 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Added
+- **`./stack backup` and `./stack restore` now include the local git server (JON-1012).** The repositories you kept on the
+  built-in git server (Forgejo) lived in one Docker volume that no backup copied, so a computer that lost its Docker volumes
+  lost them. A backup now also holds that volume (repositories, the server's own database and `app.ini`, as
+  `gitdata.tar.gz`), copied while the server is stopped for a few seconds so the database is consistent; it is started again
+  whatever happens, including a failed copy. Restore checks the archive before it changes anything, empties the volume,
+  unpacks the copy and re-applies your account, the Code page's host and the search token from `.env`.
+  - Backups made before this, and those made with the git server off, still restore (restore says it leaves the git server
+    as it is). A backup that holds git data is skipped, with a note, when `LOCALGIT=off` now.
+  - Settings' **Back up now** and the update's automatic backup include it too; the git server is the only service that pauses.
+
 ## [0.59.1] - 2026-11-05
 
 ### Fixed

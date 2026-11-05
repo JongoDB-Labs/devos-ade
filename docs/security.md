@@ -2622,7 +2622,9 @@ one command that sets it, never on a command line).
   the carve-out still passes only git's smart HTTP paths, and the token never enters the sandbox.
 - **Not covered yet.** A mirror
   to a GitLab or Gitea of your own behind a private CA (Forgejo has one CA store, not one per remote); remote access
-  (Tailscale / your domain) has no git site; `forgejo dump` is not part of `./stack backup`.
+  (Tailscale / your domain) has no git site. `./stack backup` and `./stack restore` do cover it: while it is on, the repositories,
+  its database and `app.ini` (one volume) are copied as `gitdata.tar.gz` with the server stopped for a few seconds (not
+  `forgejo dump`, which depends on the version); backups made before this, or with it off, restore without it.
 
 ### Signing in to a Git host (OAuth)
 
@@ -3826,7 +3828,7 @@ never reads, copies, keeps, passes on or relays a login.**
   `~/.copilot/` (plaintext once you agree, as the app asks: there is no keychain in the container),
   `~/.config/cursor/auth.json`, `~/.grok/auth.json`. They survive restarts, updates, rollbacks and `./stack terminal
   disable`; `./stack uninstall` (or `docker volume rm <project>_terminal-home`) removes them. **Backups never hold
-  them** (a backup is the databases, the buckets and `.env`): after a restore elsewhere you sign in again — a login
+  them** (a backup is the databases, the buckets, the local git server's volume when it is on, and `.env`): after a restore elsewhere you sign in again — a login
   copied between computers is what Codex's own docs warn about.
 - [x] **Status without the login.** `./stack subscriptions` and Settings' *Check again* run, in the sandbox, each app's
   own status command (`claude auth status`, `codex login status`, `cursor-agent status --format json`) and keep only

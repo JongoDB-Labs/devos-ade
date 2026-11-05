@@ -257,7 +257,7 @@ every model has a price, a display name and a cross-check entry.
 ## Backups, restore and AWS key rotation
 
 ```bash
-./stack backup                     # → backups/<timestamp>/ (both databases, both buckets, a copy of .env)
+./stack backup                     # → backups/<timestamp>/ (both databases, both buckets, the local git server's volume when on, a copy of .env)
 ./stack restore backups/<ts>       # replaces ALL current data (offers a backup of the current state first)
 ./stack rotate-aws                 # new AWS key: verified with AWS first, .env changed only if valid
 ```

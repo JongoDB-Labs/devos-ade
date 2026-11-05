@@ -2682,7 +2682,7 @@ troubleshooting: [docs/voice.md](docs/voice.md).
 | `./stack costs` | Prices for your enabled models + spend per key | none |
 | `./stack prices [--accept]` | Check prices now; `--accept` applies a refused change | none |
 | `./stack models [--recheck]` | Which models your key can use; `--recheck` re-probes | `--recheck`: < $0.01 |
-| `./stack backup [--nightly \| --portal]` | Databases + buckets + `.env` → `backups/<timestamp>/` (`--nightly`: the update helper's nightly backup, keeps `BACKUP_KEEP`; `--portal`: Settings' **Back up now**, keeps 5) | none |
+| `./stack backup [--nightly \| --portal]` | Databases + buckets + the local git server's repositories (when on; it pauses for a few seconds) + `.env` → `backups/<timestamp>/` (`--nightly`: the update helper's nightly backup, keeps `BACKUP_KEEP`; `--portal`: Settings' **Back up now**, keeps 5) | none |
 | `./stack restore DIR` | Replace all data with a backup, then test | ~$0.0001 |
 | `./stack update [--to <tag\|branch>] [--force]` | Backup, new code, pinned images, setup; with nothing new it says so and stops (`--force` runs setup anyway) | < $0.01 (nothing new: none) |
 | `./stack clean [--dry-run] [--yes]` | Remove this install's old images (lists them first; keeps one previous version); `--dry-run` only lists them | none |

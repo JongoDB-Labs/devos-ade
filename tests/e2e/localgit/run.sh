@@ -13,7 +13,8 @@
 #   refused, the token in no .git/config, event or host view; the gateway answers git's paths only (the web UI, the API,
 #   raw files: 404; no credential: 401); Forgejo, the internet and github.com are unreachable from that network; the web UI
 #   through the main Caddy behind the portal's check, framed by the portal only, other Host names refused; the repository
-#   survives a recreated container; mirroring: push and pull mirrors to a connected host (a second Forgejo plays GitHub, https with
+#   survives a recreated container; ./stack's backup and restore of its volume (copy, volume deleted, copy unpacked: same commit,
+#   same keys, the server stopped only for the copy and running again after);  mirroring: push and pull mirrors to a connected host (a second Forgejo plays GitHub, https with
 #   a certificate of this run's own) through Caddy's internal :8099 site, the git server's way out made by ./stack's own function only
 #   for that host and taken away with the last mirror, a host that way out was not made for refused, deletes and the admin API not
 #   passed by the internal site.
@@ -151,6 +152,36 @@ printf '%s' "$other" | grep -q 'Forgejo' && fail "another Host name never reache
 # --- persistence: the volume keeps the repositories ---
 dc up -d --no-deps --force-recreate --wait forgejo >/dev/null 2>&1
 check "the repository survives a recreated container" "$(dc exec -T forgejo curl -s -H "$auth" http://127.0.0.1:3000/api/v1/repos/devos/e2e-one | python3 -c 'import sys, json; print(json.load(sys.stdin)["full_name"])')" devos/e2e-one
+# --- ./stack backup and restore of the volume (JON-1012): the copy, the volume deleted, the copy unpacked ---
+# (./stack's own functions: a full ./stack backup needs Postgres and RustFS, which this suite does not start)
+api() { dc exec -T forgejo curl -s -H "$auth" "http://127.0.0.1:3000/api/v1/$1"; }
+sha_before="$(api repos/devos/e2e-one/branches/main | python3 -c 'import sys, json; print(json.load(sys.stdin)["commit"]["id"])')"
+prot_before="$(api repos/devos/e2e-one/branch_protections | python3 -c 'import sys, json; print(len(json.load(sys.stdin)))')"
+secret_before="$(dc exec -T forgejo sh -c "grep '^SECRET_KEY' /var/lib/gitea/app.ini | cksum" | tr -d '\r')"
+check "(before) the repository has a main commit" "${#sha_before}" 40
+mkdir -p "$S/bk"
+bstart=$SECONDS
+localgit_backup_into "$S/bk" && pass "localgit_backup_into copies the volume" || fail "localgit_backup_into copies the volume"
+printf 'info the backup step with the git server took %ss\n' "$((SECONDS - bstart))"
+[ -s "$S/bk/gitdata.tar.gz" ] && localgit_validate_archive "$S/bk/gitdata.tar.gz" && pass "gitdata.tar.gz is a readable archive" || fail "gitdata.tar.gz is a readable archive"
+check "the archive is readable by its owner only (mode 600)" "$(stat -c %a "$S/bk/gitdata.tar.gz" 2>/dev/null || stat -f %Lp "$S/bk/gitdata.tar.gz")" 600
+check "app.ini (with the server's own keys) is in it" "$(tar -tzf "$S/bk/gitdata.tar.gz" | grep -c 'app\.ini$')" 1
+for i in $(seq 1 60); do _lg_running && break; sleep 1; done
+_lg_running && pass "INVARIANT: the git server runs again after the backup" || fail "INVARIANT: the git server runs again after the backup"
+# the volume deleted (a machine that lost its Docker volumes)
+_LG_PROFILE=1 dc rm -sf forgejo >/dev/null 2>&1; docker volume rm "${P}_gitdata" >/dev/null 2>&1
+docker volume inspect "${P}_gitdata" >/dev/null 2>&1 && fail "the volume is deleted" || pass "the volume is deleted (the repositories are gone)"
+localgit_restore_from "$S/bk" && pass "localgit_restore_from unpacks the copy" || fail "localgit_restore_from unpacks the copy"
+dc up -d --no-deps --wait forgejo >/dev/null 2>&1 && pass "the git server starts on the restored volume" || fail "the git server starts on the restored volume"
+localgit_ensure_admin && pass "the owner account is re-applied from .env" || fail "the owner account is re-applied"
+check "the repository is back with the same main commit" "$(api repos/devos/e2e-one/branches/main | python3 -c 'import sys, json; print(json.load(sys.stdin)["commit"]["id"])')" "$sha_before"
+check "both branches are back" "$(api repos/devos/e2e-one/branches | python3 -c 'import sys, json; print(" ".join(sorted(b["name"] for b in json.load(sys.stdin))))')" "feature/x main"
+check "the server's own SECRET_KEY is the one it had" "$(dc exec -T forgejo sh -c "grep '^SECRET_KEY' /var/lib/gitea/app.ini | cksum" | tr -d '\r')" "$secret_before"
+check "main's protection is as it was" "$(api repos/devos/e2e-one/branch_protections | python3 -c 'import sys, json; print(len(json.load(sys.stdin)))')" "$prot_before"
+check "git sees the same commit (ls-remote on the repository)" "$(dc exec -T forgejo sh -c 'r=$(find /var/lib/gitea -type d -name e2e-one.git | head -n 1); git ls-remote "$r" refs/heads/main | cut -f1' | tr -d '\r')" "$sha_before"
+check "the token made before still works (its database came back)" "$(api repos/devos/e2e-one | python3 -c 'import sys, json; print(json.load(sys.stdin)["full_name"])')" devos/e2e-one
+check "files are the server's own again (uid 1000)" "$(dc exec -T forgejo sh -c 'stat -c %u /var/lib/gitea/app.ini' | tr -d '\r')" 1000
+
 # --- mirroring: Forgejo's own repository mirroring to a connected host, the way out only while a mirror exists ---
 # (a second Forgejo plays GitHub: https, a certificate of this run's own, on the network the git server gets only for a mirror)
 nets() { docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' "$(dc ps -q forgejo)" | tr ' ' '\n' | sed '/^$/d' | sort | tr '\n' ' '; }

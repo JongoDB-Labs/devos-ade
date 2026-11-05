@@ -2281,7 +2281,7 @@
       main.append(el("p", { class: "note set-extra", text: "No backups yet." }));
     }
     rw.append(el("details", { class: "set-details" }, el("summary", {}, "Details"),
-      el("p", { class: "note", text: "A backup holds both databases, every stored file and a copy of .env (backups/<time>-portal/, readable only by you; the newest 5 made here are kept). It takes seconds and no service stops; it is refused when the disk could not hold it twice." }),
+      el("p", { class: "note", text: "A backup holds both databases, every stored file, your local git server's repositories (when it is on) and a copy of .env (backups/<time>-portal/, readable only by you; the newest 5 made here are kept). It takes seconds; the git server pauses briefly while it is copied (no other service stops); it is refused when the disk could not hold it twice." }),
       el("p", { class: "note", text: "Restoring stays in the terminal (./stack restore backups/<time>): it replaces every chat, key and file with an older state, so it asks twice and should never be one click away from a browser." })));
     rw._actions.append(actionButton("backup", "Back up now"));
     return rw;
@@ -2318,7 +2318,7 @@
   const ACTION_TEXT = {
     "check-aws": ["Check the AWS key?", "Asks AWS who the key belongs to and whether it may call Bedrock (free: no model runs)."],
     "models-recheck": ["Re-check the models?", "About 2 minutes, < $0.01. The model gateway restarts twice; Chat and Claude Code requests in flight may fail."],
-    backup: ["Back up now?", "Databases, stored files and .env into backups/<time>/. No service stops."],
+    backup: ["Back up now?", "Databases, stored files, the local git server's repositories (when it is on) and .env into backups/<time>/. The git server pauses for a few seconds while it is copied; no other service stops."],
     test: ["Run the smoke test?", "About 10 seconds, ~$0.0001 of Bedrock."],
     report: ["Create a status report?", "Runs read-only ./stack commands on this computer and shows the result here."],
   };

@@ -1,7 +1,7 @@
 # The steps of a nothing-changed ./stack update of v0.49.0 and the seconds each took, measured on the Linux test host: the plan of the
 # first update on a computer that has not recorded one of its own (lib/plan.sh). LABEL <TAB> SECONDS, or the word skipped for a step
 # the update left out. A label stands without its trailing parenthesised part ("Services (9)" is "Services").
-Backup	4
+Backup	8
 New code	0
 AWS key check	skipped
 Ports and settings in .env	skipped
