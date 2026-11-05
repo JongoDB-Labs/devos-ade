@@ -911,7 +911,7 @@ test_test_checks_report_health_unlock_secret_and_isolation() {
   portal_curl() {
     case "$PORTAL_JAR $1 $2" in
       " code /") printf 302 ;;
-      "x code /") printf '<form method="post" action="/.bn/unlock"> 401' ;;
+      "x code /") printf '302 http://code.devos-ade.localhost/.bn/session-unlock?next=/' ;;   # local session → auto-unlock (JON-1140)
       "x code /ws") printf 403 ;;
       "x code /.bn/unlock") printf 303 ;;
       "x code /.bn/preview?port=9&format=json") printf '{"url": "http://p9-%s.devos-ade-preview.localhost/", "port": 9}' "$(printf 'a%.0s' $(seq 1 33))" ;;

@@ -1023,7 +1023,7 @@ test_test_checks_report_unlock_secret_gateway_and_isolation() {
   portal_curl() {
     case "$PORTAL_JAR $2 $*" in
       " / "*) printf 302 ;;
-      "x / "*) printf '<form method="post" action="/.bn/unlock"> 401' ;;
+      "x / "*) printf '302 http://terminal.devos-ade.localhost/.bn/session-unlock?next=/' ;;   # local session → auto-unlock (JON-1140)
       "x /ws "*) printf 403 ;;
     esac
   }
