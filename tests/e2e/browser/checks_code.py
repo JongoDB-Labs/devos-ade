@@ -2575,7 +2575,8 @@ def ui_keep_auto_commit(ctx):
     c = Code.on(page, rec, goto=False)
     owner = checks_git.OWNER
     _drop_projects(c, (KEEP_AC,))
-    c.api("DELETE", f"/api/fs?path={KEEP_AC}")
+    if KEEP_AC in {e["name"] for e in (c.api("GET", "/api/fs?path=.")["json"] or {}).get("entries", [])}:
+        c.api("DELETE", f"/api/fs?path={KEEP_AC}")  # only if present: a DELETE of a missing folder 404s, which csp_clean would flag
     checks_git.forgejo(ctx, "DELETE", f"/api/v1/repos/{owner}/{KEEP_AC}")
     sid = None
     try:
