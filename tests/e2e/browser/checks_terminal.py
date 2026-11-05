@@ -161,7 +161,12 @@ def terminal_frame(page, timeout=30):
 
 
 def unlock_in(page_or_frame, password: str):
-    page_or_frame.locator("h1", has_text="Unlock the terminal").wait_for(timeout=20000)
+    # fill the unlock form IF it appears; otherwise the page already unlocked itself from the session (local single
+    # sign-on, JON-1140). Callers that need the form (wrong-password checks) set the bn_su loop-guard cookie first.
+    try:
+        page_or_frame.locator("form[action='/.bn/unlock'] #password").wait_for(timeout=8000)
+    except Exception:
+        return
     page_or_frame.fill("#password", password)
     page_or_frame.click("form[action='/.bn/unlock'] button[type=submit]")
 
@@ -213,6 +218,9 @@ def locked_then_unlocked(ctx):
     need_on()
     page, rec = ctx.page("terminal-desktop")
     login(page)
+    # this check exercises the password unlock form (wrong password → error); locally a session would otherwise
+    # auto-unlock (JON-1140), so force the form with the loop-guard marker for this host
+    page.context.add_cookies([{"name": "bn_su", "value": "1", "url": TERM}])
     page.click(".tab[data-tab=terminal]")
     page.wait_for_selector("iframe[data-app=terminal]")
     expect(page.locator("iframe[data-app=terminal]").get_attribute("src") == TERM + "/", "terminal frame src")
@@ -411,8 +419,11 @@ def enforced(ctx):
     expect(r.status == 302 and loc.startswith(origin() + "/login?next="), f"no session: {r.status} {loc}")
     expect(ws_handshake(None, TERM) == 401, "WebSocket without a session")
     s = ctx.session()
+    # local single sign-on (JON-1140): a session alone, locally, auto-unlocks; bn_su forces the password form (remote/fallback)
     r = http("GET", "terminal", "/", HTML, cookie=s)
-    expect(r.status == 401 and "Unlock the terminal" in r.text, f"session only: HTTP {r.status}")
+    expect(r.status == 302 and "/.bn/session-unlock" in (r.header("location") or ""), f"session only auto-unlocks: {r.status}")
+    r = http("GET", "terminal", "/", HTML, cookie=s + "; bn_su=1")
+    expect(r.status == 401 and "Unlock the terminal" in r.text, f"session + bn_su → form: HTTP {r.status}")
     csp = r.header("content-security-policy") or ""
     expect(f"frame-ancestors {origin()}" in csp and r.header("x-frame-options") is None, f"unlock page CSP {csp}")
     expect(ws_handshake(s, TERM) == 401, "WebSocket with a session but no unlock")
@@ -501,9 +512,8 @@ def phone(ctx):
     t.on("websocket", lambda w: (sockets.append(f"open {w.url}"), w.on("close", lambda _w: sockets.append(f"closed {w.url}")),
                                  w.on("socketerror", lambda e: sockets.append(f"error {e}"))))
     t.wait_for_load_state()
-    t.locator("h1", has_text="Unlock the terminal").wait_for(timeout=20000)
-    shot(t, "45-phone-terminal-locked")
-    unlock_in(t, ENV["PORTAL_PASSWORD"])
+    shot(t, "45-phone-terminal")
+    unlock_in(t, ENV["PORTAL_PASSWORD"])   # local SSO auto-unlocks; fills the form only if one appears (JON-1140)
     try:
         wait_xterm(t)
     except AssertionError as e:
@@ -1119,9 +1129,11 @@ def sign_out(ctx):
     page.wait_for_url(re.compile(r"/login$"))
     page.goto(TERM + "/")
     expect("/login" in page.url and page.url.startswith(origin()), f"terminal after Sign out → {page.url}")
-    login(page)   # signed in again: the old unlock is void, the form is back
+    login(page)   # signed in again: the old unlock is void; locally the new session auto-unlocks (JON-1140)
     page.goto(TERM + "/")
-    page.locator("h1", has_text="Unlock the terminal").wait_for(timeout=20000)
+    page.wait_for_load_state()
+    expect("/login" not in page.url and page.locator("form[action='/.bn/unlock'] #password").count() == 0,
+           f"terminal auto-unlocked after re-login → {page.url}")
     rec.save()
     ctx.reset_session()
-    return "Sign out → the terminal host sends you to the login; signed in again, it asks for the password again"
+    return "Sign out → the terminal host sends you to the login; signed in again, the new session unlocks it (no second password)"

@@ -553,9 +553,11 @@ code_test_checks() {
   code="$(portal_curl code / -s -m 10 -o /dev/null -w '%{http_code}' -H 'Accept: text/html' || true)"
   _check "code host without a session → login" "$code" 302
   if portal_session_start; then
-    out="$(portal_curl code / -s -m 10 -w ' %{http_code}' -H 'Accept: text/html' || true)"
-    case "$out" in *'/.bn/unlock'*' 401') got=yes ;; *) got=no ;; esac
-    _check "code host with a session but no unlock → the unlock form" "$got" yes
+    # locally (through our own Caddy) a valid session unlocks the Code page itself — no second password (JON-1140): the
+    # navigation is sent to /.bn/session-unlock, which mints the unlock. (Remote access still shows the password form.)
+    out="$(portal_curl code / -s -m 10 -o /dev/null -w '%{http_code} %{redirect_url}' -H 'Accept: text/html' || true)"
+    case "$out" in '302 '*'/.bn/session-unlock'*) got=yes ;; *) got=no ;; esac
+    _check "code host with a local session → single sign-on (auto-unlock, no second password)" "$got" yes
     code="$(portal_curl code /ws -s -m 10 -o /dev/null -w '%{http_code}' -H 'Origin: http://evil.example' || true)"
     _check "code host refuses another site's Origin" "$code" 403
     portal_session_end

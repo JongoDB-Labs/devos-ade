@@ -455,8 +455,12 @@ def host(ctx):
     r = http("GET", "code", "/", HTML)
     expect(r.status == 302 and (r.header("location") or "").startswith(origin() + "/login?next="), f"no session: {r.status}")
     s = ctx.session()
+    # local single sign-on (JON-1140): a session alone, locally, auto-unlocks — the navigation is sent to
+    # /.bn/session-unlock, no password form. bn_su (the loop-guard marker) forces the password form, the remote/fallback path.
     r = http("GET", "code", "/", HTML, cookie=s)
-    expect(r.status == 401 and "Unlock the Code page" in r.text, f"session only: {r.status}")
+    expect(r.status == 302 and "/.bn/session-unlock" in (r.header("location") or ""), f"session only auto-unlocks: {r.status}")
+    r = http("GET", "code", "/", HTML, cookie=s + "; bn_su=1")
+    expect(r.status == 401 and "Unlock the Code page" in r.text, f"session + bn_su → form: {r.status}")
     expect(f"frame-ancestors {origin()}" in (r.header("content-security-policy") or ""), "unlock page framing")
     body = urlencode({"password": ENV["PORTAL_PASSWORD"]})
     for o in ("http://evil.example", origin(), origin("terminal")):

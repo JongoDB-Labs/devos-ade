@@ -691,12 +691,13 @@ def sweep_portal(browser, width, theme):
             p.wait_for_timeout(500)
         if f is None:
             raise AssertionError("no terminal frame")
-        f.locator("h1", has_text="Unlock the terminal").wait_for(timeout=20000)
-        capture(p, "terminal-unlock", full=False, frame_hosts=(f"terminal.{HOST}",))
-        f.fill("#password", ENV["PORTAL_PASSWORD"])
-        f.click("form[action='/.bn/unlock'] button[type=submit]")
-        p.wait_for_timeout(1500)
-        f = next((fr for fr in p.frames if fr.url.startswith(TERM)), f)
+        # local single sign-on (JON-1140) auto-unlocks; the ref stack still shows the form — fill it if present. The
+        # unlock screen no longer exists locally, so it is not captured (a form-vs-app diff would be a spurious finding).
+        if f.locator("form[action='/.bn/unlock'] #password").count():
+            f.fill("#password", ENV["PORTAL_PASSWORD"])
+            f.click("form[action='/.bn/unlock'] button[type=submit]")
+            p.wait_for_timeout(1500)
+            f = next((fr for fr in p.frames if fr.url.startswith(TERM)), f)
         f.locator(".xterm").wait_for(timeout=40000)
         p.wait_for_timeout(3000)
         capture(p, "terminal", full=False, frame_hosts=(f"terminal.{HOST}",))
@@ -804,12 +805,11 @@ def code_open(browser, width, theme, shoot=True):
     c, p = new_ctx(browser, width, theme)
     login(p)
     p.goto(CODE + "/")
-    p.locator("h1", has_text="Unlock the Code page").wait_for(timeout=20000)
-    if shoot:
-        CUR["page"] = "code"
-        capture(p, "unlock")
-    p.fill("#password", ENV["PORTAL_PASSWORD"])
-    p.click("form[action='/.bn/unlock'] button[type=submit]")
+    # local single sign-on (JON-1140) auto-unlocks; the ref stack still shows the form — fill it if present. The unlock
+    # screen no longer exists locally, so it is not captured (a form-vs-app diff would be a spurious finding).
+    if p.locator("form[action='/.bn/unlock'] #password").count():
+        p.fill("#password", ENV["PORTAL_PASSWORD"])
+        p.click("form[action='/.bn/unlock'] button[type=submit]")
     connected = "() => { const c = document.querySelector('[data-testid=conn]'); return c && /Connected/.test(c.textContent) }"
     p.get_by_test_id("conn").wait_for(timeout=30000)
     p.wait_for_function(connected, timeout=40000)
