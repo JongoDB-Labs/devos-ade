@@ -75,8 +75,13 @@ def csp_problems(csp: str) -> list[str]:
 
 
 def unlock_page(page):
-    """On the code host (top level or framed): the unlock form, then the page."""
-    page.locator("h1", has_text="Unlock the Code page").wait_for(timeout=20000)
+    """On the code host (top level or framed): fill the unlock form IF it appears; otherwise the page is already
+    unlocked — local single sign-on mints the unlock from the portal session, so no password form is shown (JON-1140).
+    Leaves the page unlocked either way."""
+    try:
+        page.locator("form[action='/.bn/unlock'] #password").wait_for(timeout=8000)
+    except Exception:
+        return   # auto-unlocked by the session (local SSO): no password form
     page.fill("#password", ENV["PORTAL_PASSWORD"])
     page.click("form[action='/.bn/unlock'] button[type=submit]")
 

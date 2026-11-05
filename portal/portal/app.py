@@ -494,7 +494,7 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
     NAME = {TERMINAL: "terminal", CODE: "Code page"}
 
     def unlocked(request: Request, rem: bool, app: str) -> bool:
-        return unlocks[app].valid(request.cookies.get(unlock_cookie_params(app, rem)["key"]), session_login(request.headers, settings))
+        return unlocks[app].valid(request.cookies.get(unlock_cookie_params(app, rem)["key"]), session_login(request.headers, settings), rem)
 
     def locked_verify(request: Request, rem: bool, app: str) -> Response:
         if not settings.locked_on(app, rem):
@@ -637,7 +637,7 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
         # terminal's: ?arg= words of the pickers only) or the page
         resp = RedirectResponse(nxt or "/", status_code=303)
         c = unlock_cookie_params(app, rem, settings.https)
-        resp.set_cookie(c["key"], unlocks[app].issue(session_login(request.headers, settings)), max_age=TERMINAL_MAX_AGE,
+        resp.set_cookie(c["key"], unlocks[app].issue(session_login(request.headers, settings), remote=rem), max_age=TERMINAL_MAX_AGE,
                         path="/", domain=c["domain"], httponly=True, samesite="strict", secure=c["secure"])
         return _no_store(resp)
 
@@ -663,13 +663,19 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
             return deny
         if not terminal_origin_ok(request.headers, settings, False, False, app, "GET"):
             return _no_store(PlainTextResponse("cross-site unlock refused", status_code=403))
+        # a top-level navigation only (the redirect from locked_verify) — never a subresource like <img>, which
+        # same-site content could otherwise use to mint the unlock silently with no Origin. Modern browsers mark these;
+        # old ones omit them, and then the Origin + session checks still apply (JON-1140 hardening).
+        if (request.headers.get("sec-fetch-mode") or "navigate") != "navigate" or \
+           (request.headers.get("sec-fetch-dest") or "document") not in ("document", "iframe", "empty"):
+            return _no_store(PlainTextResponse("cross-site unlock refused", status_code=403))
         if not authed(request):
             return _no_store(login_redirect(settings.origin(app, False) + "/", False))
         nxt = (codepage.deep_link(request.query_params.get("next", "")) if app == CODE
                else answers.terminal_next(request.query_params.get("next", ""), roots()))
         resp = RedirectResponse(nxt or "/", status_code=303)
         c = unlock_cookie_params(app, False, settings.https)
-        resp.set_cookie(c["key"], unlocks[app].issue(session_login(request.headers, settings)), max_age=TERMINAL_MAX_AGE,
+        resp.set_cookie(c["key"], unlocks[app].issue(session_login(request.headers, settings), remote=False), max_age=TERMINAL_MAX_AGE,
                         path="/", domain=c["domain"], httponly=True, samesite="strict", secure=c["secure"])
         resp.set_cookie(SU_MARK, "1", max_age=30, path="/", domain=c["domain"], httponly=True, samesite="strict", secure=c["secure"])
         log.warning("%s unlocked by the local session (single sign-on)", app)
@@ -709,7 +715,7 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
                         request.headers.get("sec-fetch-user", "-")[:8])
             return _terminal_from_code_page(settings, rem)
         login = session_login(request.headers, settings)
-        code = unlocks[CODE].claims(request.cookies.get(unlock_cookie_params(CODE, rem)["key"]), login)
+        code = unlocks[CODE].claims(request.cookies.get(unlock_cookie_params(CODE, rem)["key"]), login, rem)
         sess = session_claims(request)
         if code is None or sess is None:   # (code_guard checked both; a race with Sign out)
             return _no_store(PlainTextResponse("locked", status_code=401))
@@ -929,8 +935,8 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
         if data is None or (data["u"] or None) != login:
             return _error_page("This link has expired or was already used. Open the terminal again from the Code page.",
                                401, again, "Back to the Code page")
-        cookie = unlocks[TERMINAL].issue(login, iat=data["iat"])
-        if not unlocks[TERMINAL].valid(cookie, login):   # signed out, a new password, or the 12 hours are over
+        cookie = unlocks[TERMINAL].issue(login, iat=data["iat"], remote=rem)
+        if not unlocks[TERMINAL].valid(cookie, login, rem):   # signed out, a new password, or the 12 hours are over
             return _error_page("The Code page's unlock has ended (Sign out, a new password, or 12 hours). Unlock it again.",
                                401, again, "Back to the Code page")
         resp = RedirectResponse(answers.terminal_next(request.query_params.get("next"), roots()) or "/", status_code=303)
@@ -1019,7 +1025,7 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
         if path is None:
             return _no_store(JSONResponse({"error": "path: a path on the preview's own address, like /about?x=1"}, status_code=400))
         login = session_login(request.headers, settings)
-        unlock = unlocks[CODE].claims(request.cookies.get(unlock_cookie_params(CODE, rem)["key"]), login)
+        unlock = unlocks[CODE].claims(request.cookies.get(unlock_cookie_params(CODE, rem)["key"]), login, rem)
         if unlock is None:   # (code_guard checked it; a race with Sign out)
             return _no_store(JSONResponse({"error": "locked"}, status_code=401))
         if rem:
@@ -1128,7 +1134,7 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
         if request.headers.get("sec-fetch-site") != "same-origin":
             log.warning("artifact viewer refused: not from the Code page (Sec-Fetch-Site %s)", request.headers.get("sec-fetch-site", "none")[:40])
             return _no_store(JSONResponse({"available": False, "error": "open it from the Code page"}, status_code=403))
-        unlock = unlocks[CODE].claims(request.cookies.get(unlock_cookie_params(CODE, rem)["key"]), session_login(request.headers, settings))
+        unlock = unlocks[CODE].claims(request.cookies.get(unlock_cookie_params(CODE, rem)["key"]), session_login(request.headers, settings), rem)
         if unlock is None:   # (code_guard checked it; a race with Sign out)
             return _no_store(JSONResponse({"available": False, "error": "locked"}, status_code=401))
         host = f"{previews.artifact_label(unlock['iat'])}.artifact.{settings.preview_domain}"

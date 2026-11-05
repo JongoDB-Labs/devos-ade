@@ -359,6 +359,12 @@ def test_session_unlock_needs_local_the_session_and_its_own_origin(cc):
                headers={"Host": "chat.devos-ade.localhost", "Origin": CODE, "X-Portal-Proxy": PROXY, "Cookie": f"{COOKIE}={tok}"})
     cc.cookies.clear()
     assert r.status_code == 404
+    # a subresource (an <img> same-site content embeds), not a top-level navigation -> refused (JON-1140 hardening)
+    r = cc.get("/auth/code-session-unlock", params={"next": "/"},
+               headers={"Host": CODE_HOST, "Origin": CODE, "X-Portal-Proxy": PROXY,
+                        "Sec-Fetch-Mode": "no-cors", "Sec-Fetch-Dest": "image", "Cookie": f"{COOKIE}={tok}"})
+    cc.cookies.clear()
+    assert r.status_code == 403 and _cookie(r, CODE_COOKIE) is None
 
 
 def test_a_local_grant_never_satisfies_the_remote_step_up(settings):
@@ -383,6 +389,29 @@ def test_a_local_grant_never_satisfies_the_remote_step_up(settings):
         c.cookies.clear()
         r = c.get(VERIFY, headers={**NAV, **REMOTE, "X-Forwarded-Host": R_CODE_HOST, "Cookie": f"__Host-bn_session={rtok}"})
         assert r.status_code == 401 and "Unlock the Code page" in r.text and "/.bn/session-unlock" not in r.headers.get("location", "")
+        # THE replay control: the locally-minted unlock token, renamed into the remote unlock cookie, next to a VALID
+        # remote session — still refused, because the token is site-bound (r=local != remote) (JON-1140)
+        r = c.get(VERIFY, headers={**NAV, **REMOTE, "X-Forwarded-Host": R_CODE_HOST,
+                                   "Cookie": f"__Host-bn_session={rtok}; {REMOTE_CODE_COOKIE}={ut}"})
+        assert r.status_code == 401 and "Unlock the Code page" in r.text
+
+
+def test_sign_out_voids_a_session_minted_unlock(cc):
+    # JON-1140: a Code unlock auto-minted from the session is revoked by Sign out, exactly like a password unlock
+    # (shared revocation: Sessions.not_before).
+    tok = session(cc)
+    su = cc.get("/auth/code-session-unlock", params={"next": "/"},
+                headers={"Host": CODE_HOST, "Origin": CODE, "X-Portal-Proxy": PROXY, "Cookie": f"{COOKIE}={tok}"})
+    cc.cookies.clear()
+    ut = _cookie(su, CODE_COOKIE).split(";", 1)[0].split("=", 1)[1]
+    assert verify(cc, {COOKIE: tok, CODE_COOKIE: ut}).status_code == 200
+    assert cc.post("/logout", headers={"Origin": PORTAL, "Cookie": f"{COOKIE}={tok}"}).status_code == 303
+    # the old session-minted unlock alone grants nothing
+    assert verify(cc, {CODE_COOKIE: ut}, API).status_code == 401
+    # and after signing in again it is void — a navigation auto-mints a fresh one rather than accepting the old cookie
+    tok2 = session(cc)
+    r = verify(cc, {COOKIE: tok2, CODE_COOKIE: ut}, LOCAL)
+    assert r.status_code == 302 and "/.bn/session-unlock" in r.headers["location"]
 
 
 def test_session_and_unlock_open_it_and_the_websocket(cc):

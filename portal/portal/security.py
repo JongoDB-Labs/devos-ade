@@ -409,13 +409,16 @@ class TerminalUnlocks:
         self._sessions = sessions
         self._clock = clock
 
-    def issue(self, login: str | None = None, iat: float | None = None) -> str:
-        """iat: when the password was typed (default now). The Code page's terminal panel hands its own unlock's iat
-        over (app.py terminal_unlock_callback): one typing of the password, one 12-hour window, one Sign out."""
-        return self._ser.dumps({"v": 1, "fp": self._sessions.fingerprint, "iat": self._clock() if iat is None else iat, "u": login or ""})
+    def issue(self, login: str | None = None, iat: float | None = None, remote: bool = False) -> str:
+        """iat: when the password was typed (default now). remote: which site the unlock is for — a local unlock never
+        validates on the remote site and vice versa (JON-1140), so a locally-minted unlock cannot be renamed into the
+        remote cookie and replayed to skip the remote password step-up. The Code page's terminal panel hands its own
+        unlock's iat over (app.py terminal_unlock_callback): one typing of the password, one 12-hour window, one Sign out."""
+        return self._ser.dumps({"v": 1, "fp": self._sessions.fingerprint, "iat": self._clock() if iat is None else iat,
+                                "u": login or "", "r": bool(remote)})
 
-    def claims(self, token: str | None, login: str | None = None) -> dict | None:
-        """The unlock's data while it is valid (for this login), else None."""
+    def claims(self, token: str | None, login: str | None = None, remote: bool = False) -> dict | None:
+        """The unlock's data while it is valid (for this login and site), else None."""
         if not token or len(token) > 2048:
             return None
         try:
@@ -431,10 +434,12 @@ class TerminalUnlocks:
             return None
         if not isinstance(bound, str) or not hmac.compare_digest(bound.encode(), (login or "").encode()):
             return None
+        if bool(data.get("r")) != bool(remote):   # a local unlock is not a remote one, and vice versa (JON-1140)
+            return None
         return data
 
-    def valid(self, token: str | None, login: str | None = None) -> bool:
-        return self.claims(token, login) is not None
+    def valid(self, token: str | None, login: str | None = None, remote: bool = False) -> bool:
+        return self.claims(token, login, remote) is not None
 
 
 def terminal_origin_ok(headers, settings: Settings, remote: bool, websocket: bool, app: str = TERMINAL,
