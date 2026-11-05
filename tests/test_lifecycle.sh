@@ -13,6 +13,7 @@ _stub_dc() { # logs every dc call; pg_dump prints a fake dump unless PG_FAIL=1
     case "$*" in
       *pg_dump*) [ "${PG_FAIL:-0}" = 1 ] && { echo "pg_dump: connection refused" >&2; return 1; }; local args="$*"; printf 'PGDMP-%s' "${args##* }" ;;
       *"exec -T postgres true") [ "${PG_EXEC_FAIL:-0}" != 1 ] || return 1 ;;
+      "ps -q --status running forgejo" | "ps -aq forgejo") [ "${LG_RUNNING:-0}" != 1 ] || echo cid123 ;;
       *"pg_restore --list"*) cat > /dev/null; [ "${LIST_EMPTY:-0}" = 1 ] || echo "1; 0 0 ENCODING - ENCODING" ;;
       *pg_restore*) cat > "$TMP/restored.$(echo "$*" | sed 's/.* -d \([a-z]*\).*/\1/')" ;;
     esac
@@ -20,6 +21,28 @@ _stub_dc() { # logs every dc call; pg_dump prints a fake dump unless PG_FAIL=1
   }
   s3_job() { echo "s3 $*" >> "$TMP/calls"; mkdir -p "$1/s3/shared"; }
   chat_proxy_rm() { echo "chat_proxy_rm" >> "$TMP/calls"; }   # (Chat's own egress proxy: lib/terminal.sh, by its labels)
+  _stub_gitdata_docker
+}
+
+# The git server's volume (JON-1012): LG_VOL=1 = the volume exists; LG_RUNNING=1 = forgejo is up; TAR_FAIL=1 = the copy breaks.
+# docker volume inspect / docker run (the throwaway tar container) are logged to calls; a "backup" run writes a real tar.gz
+# of $TMP/gitsrc into the folder mounted at /backup, a "restore" run extracts the one it finds there into $TMP/gitvol.
+_stub_gitdata_docker() {
+  docker() {
+    echo "docker $*" >> "$TMP/calls"
+    case "$1 $2" in
+      "volume inspect") [ "${LG_VOL:-0}" = 1 ] ;;
+      "run --rm")
+        local a host='' script=''
+        for a in "$@"; do case "$a" in *:/backup*) host="${a%%:/backup*}" ;; esac; script="$a"; done
+        case "$script" in
+          *czf*) [ "${TAR_FAIL:-0}" != 1 ] || { echo "tar: boom" >&2; return 1; }
+                 tar -C "$TMP/gitsrc" -czf "$host/gitdata.tar.gz" . ;;
+          *xzf*) rm -rf "$TMP/gitvol"; mkdir -p "$TMP/gitvol"; tar -C "$TMP/gitvol" -xzf "$host/gitdata.tar.gz" ;;
+        esac ;;
+      *) return 1 ;;
+    esac
+  }
 }
 
 test_backup_writes_dumps_env_and_buckets() {
@@ -47,6 +70,139 @@ test_backup_failure_leaves_no_complete_looking_backup() {
   assert_contains "$out" "could not dump database litellm"
   assert_contains "$out" "incomplete backup was removed"
   assert_eq "$(ls -A "$STACK_DIR/backups" 2>/dev/null)" ""
+}
+
+_mk_gitsrc() { STACK_DIR="$TMP/stack"; mkdir -p "$STACK_DIR"; sed -n '/^  forgejo:/,/^    image:/p' "$T_ROOT/compose.yaml" > "$STACK_DIR/compose.yaml"; mkdir -p "$TMP/gitsrc/git/repositories/jon" "$TMP/gitsrc/gitea/conf"; echo "ref: refs/heads/main" > "$TMP/gitsrc/git/repositories/jon/HEAD"; echo "SECRET_KEY = k" > "$TMP/gitsrc/app.ini"; }
+
+test_backup_includes_the_git_servers_volume_when_it_is_on() {
+  STACK_DIR="$TMP/stack"; mkdir -p "$STACK_DIR"; _mk_gitsrc
+  printf 'LOCALGIT=on\n' > "$ENV_FILE"; _stub_dc; LG_VOL=1; LG_RUNNING=1
+  cmd_backup 2> "$TMP/err"
+  d="$(ls -d "$STACK_DIR"/backups/*)"
+  assert_eq "$(tar -xzOf "$d/gitdata.tar.gz" ./app.ini)" "SECRET_KEY = k"   # app.ini (its SECRET_KEY) is kept, not stripped
+  assert_eq "$(ls -l "$d/gitdata.tar.gz" | cut -c1-10)" "-rw-------"
+  assert_contains "$(cat "$TMP/err")" "git server"
+  assert_contains "$(cat "$TMP/calls")" "docker volume inspect"
+  assert_contains "$(cat "$TMP/calls")" ":/v:ro"      # the volume is only read
+}
+
+test_backup_skips_the_git_server_when_it_is_off_or_has_no_volume() {
+  STACK_DIR="$TMP/stack"; mkdir -p "$STACK_DIR"; _mk_gitsrc
+  printf 'LOCALGIT=off\n' > "$ENV_FILE"; _stub_dc; LG_VOL=1; LG_RUNNING=1
+  cmd_backup 2> "$TMP/err"
+  assert_eq "$(ls "$STACK_DIR"/backups/*/gitdata.tar.gz 2>/dev/null | wc -l | tr -d ' ')" 0
+  assert_not_contains "$(cat "$TMP/calls")" "dc stop forgejo"
+  assert_not_contains "$(cat "$TMP/calls")" "docker run"
+  # on, but no volume yet (the server never started)
+  rm -rf "$STACK_DIR/backups"; : > "$TMP/calls"; printf 'LOCALGIT=on\n' > "$ENV_FILE"; LG_VOL=0
+  cmd_backup 2> "$TMP/err"
+  assert_eq "$(ls "$STACK_DIR"/backups/*/gitdata.tar.gz 2>/dev/null | wc -l | tr -d ' ')" 0
+  assert_not_contains "$(cat "$TMP/calls")" "docker run"
+}
+
+test_backup_stops_forgejo_around_the_copy_and_starts_it_again() {
+  STACK_DIR="$TMP/stack"; mkdir -p "$STACK_DIR"; _mk_gitsrc
+  printf 'LOCALGIT=on\n' > "$ENV_FILE"; _stub_dc; LG_VOL=1; LG_RUNNING=1
+  cmd_backup 2> "$TMP/err"
+  c="$(grep -n 'dc stop forgejo\|docker run\|dc start forgejo' "$TMP/calls" | sed 's/^[0-9]*://' | cut -c1-20)"
+  assert_eq "$c" "dc stop forgejo
+docker run --rm --us
+dc start forgejo"
+  # it was not running to begin with (the owner stopped it): it stays that way
+  rm -rf "$STACK_DIR/backups"; : > "$TMP/calls"; LG_RUNNING=0
+  cmd_backup 2> "$TMP/err"
+  assert_not_contains "$(cat "$TMP/calls")" "dc start forgejo"
+  assert_contains "$(cat "$TMP/calls")" "docker run"
+}
+
+test_backup_never_leaves_forgejo_stopped_even_when_the_copy_fails() {
+  # INVARIANT (JON-1012): a backup never leaves the git server stopped.
+  STACK_DIR="$TMP/stack"; mkdir -p "$STACK_DIR"; _mk_gitsrc
+  printf 'LOCALGIT=on\n' > "$ENV_FILE"; _stub_dc; LG_VOL=1; LG_RUNNING=1; TAR_FAIL=1
+  if out="$( (cmd_backup) 2>&1)"; then echo "should fail" >&2; return 1; fi
+  assert_contains "$out" "could not copy the git server"
+  assert_contains "$out" "incomplete backup was removed"
+  c="$(cat "$TMP/calls")"
+  assert_contains "$c" "dc stop forgejo"
+  assert_contains "$c" "dc start forgejo"
+  assert_eq "$(grep -n 'dc stop forgejo\|dc start forgejo' "$TMP/calls" | sed 's/^[0-9]*://')" "dc stop forgejo
+dc start forgejo"
+  assert_eq "$(ls -A "$STACK_DIR/backups" 2>/dev/null)" ""
+  # an interrupt (the shell leaves) in the middle of the copy: the exit hook starts it again
+  : > "$TMP/calls"; TAR_FAIL=0
+  docker() { echo "docker $*" >> "$TMP/calls"; case "$1 $2" in "volume inspect") return 0 ;; "run --rm") exit 130 ;; esac; }
+  ( cmd_backup ) >/dev/null 2>&1 || true
+  assert_contains "$(cat "$TMP/calls")" "dc start forgejo"
+}
+
+test_validate_backup_rejects_a_corrupt_or_empty_git_archive() {
+  printf 'X=1\n' > "$ENV_FILE"; _mk_backup 'X=1\n'; _stub_dc; ASSUME_YES=1
+  confirm() { return 0; }   # (validation comes first: nothing here may reach a backup of the real checkout)
+  printf 'not a tar' > "$B/gitdata.tar.gz"
+  if out="$( (cmd_restore "$B") 2>&1)"; then return 1; fi
+  assert_contains "$out" "gitdata.tar.gz is not a readable archive"
+  assert_contains "$out" "nothing was changed"
+  assert_not_contains "$(cat "$TMP/calls")" "dc stop"
+  mkdir -p "$TMP/empty"; tar -C "$TMP/empty" -czf "$B/gitdata.tar.gz" .
+  : > "$TMP/calls"
+  if out="$( (cmd_restore "$B") 2>&1)"; then return 1; fi
+  assert_contains "$out" "gitdata.tar.gz"
+  assert_not_contains "$(cat "$TMP/calls")" "dc stop"
+  # a name that leaves the volume
+  python3 -c 'import sys,tarfile,io
+t=tarfile.open(sys.argv[1],"w:gz"); i=tarfile.TarInfo("../escape"); i.size=1; t.addfile(i,io.BytesIO(b"x")); t.close()' "$B/gitdata.tar.gz"
+  : > "$TMP/calls"
+  if out="$( (cmd_restore "$B") 2>&1)"; then return 1; fi
+  assert_contains "$out" "gitdata.tar.gz"
+  assert_not_contains "$(cat "$TMP/calls")" "dc stop"
+}
+
+test_restore_replaces_the_git_volume_and_reapplies_the_account() {
+  printf 'LOCALGIT=on\nSHARED_MCP_PORT=8765\nSHARED_MCP_TOKEN=t0k\n' > "$ENV_FILE"; _mk_backup 'LOCALGIT=on\n'; _stub_dc; LG_VOL=1; _mk_gitsrc
+  tar -C "$TMP/gitsrc" -czf "$B/gitdata.tar.gz" .
+  mkdir -p "$TMP/gitvol"; echo stale > "$TMP/gitvol/stale"
+  confirm() { case "$1" in *"backup of the current state"*) return 1 ;; *) return 0 ;; esac; }
+  cmd_test() { :; }; localgit_after_up() { echo "AFTER_UP" >> "$TMP/calls"; }; ASSUME_YES=1
+  cmd_restore "$B" 2> "$TMP/err"
+  assert_eq "$(cat "$TMP/gitvol/app.ini")" "SECRET_KEY = k"
+  assert_eq "$([ -e "$TMP/gitvol/stale" ] && echo stale || echo gone)" "gone"   # (the stub extracts into a fresh folder; the real job empties the volume first)
+  c="$(cat "$TMP/calls")"
+  assert_contains "$c" "dc rm -sf forgejo"
+  assert_contains "$c" "AFTER_UP"
+  assert_contains "$(cat "$TMP/err")" "git server"
+  # the script itself empties the volume before it extracts
+  assert_contains "$(grep 'xzf' "$TMP/calls")" "rm -rf {}"
+  assert_not_contains "$(grep 'xzf' "$TMP/calls")" ":/v:ro"      # the volume is written, the backup only read
+  assert_contains "$(grep 'xzf' "$TMP/calls")" ":/backup:ro,z"
+  assert_eq "$(grep -n 'dc rm -sf forgejo\|xzf\|AFTER_UP' "$TMP/calls" | sed 's/^[0-9]*://' | cut -c1-11 | tr '\n' ' ')" "dc rm -sf f docker run  AFTER_UP "
+}
+
+test_restore_leaves_the_git_server_alone_when_the_backup_has_no_archive() {
+  printf 'LOCALGIT=on\nSHARED_MCP_PORT=8765\nSHARED_MCP_TOKEN=t0k\n' > "$ENV_FILE"; _mk_backup 'LOCALGIT=on\n'; _stub_dc; LG_VOL=1
+  confirm() { case "$1" in *"backup of the current state"*) return 1 ;; *) return 0 ;; esac; }
+  cmd_test() { :; }; ASSUME_YES=1
+  cmd_restore "$B" 2> "$TMP/err"
+  assert_not_contains "$(cat "$TMP/calls")" "dc rm -sf forgejo"
+  assert_not_contains "$(cat "$TMP/calls")" "docker run"
+  assert_contains "$(cat "$TMP/err")" "git server data"
+}
+
+test_restore_skips_the_git_archive_when_the_server_is_off_now() {
+  printf 'LOCALGIT=off\nSHARED_MCP_PORT=8765\nSHARED_MCP_TOKEN=t0k\n' > "$ENV_FILE"; _mk_backup 'LOCALGIT=on\n'; _stub_dc; LG_VOL=1; _mk_gitsrc
+  tar -C "$TMP/gitsrc" -czf "$B/gitdata.tar.gz" .
+  confirm() { case "$1" in *"backup of the current state"*) return 1 ;; *) return 0 ;; esac; }
+  cmd_test() { :; }; ASSUME_YES=1
+  cmd_restore "$B" 2> "$TMP/err"
+  assert_not_contains "$(cat "$TMP/calls")" "docker run"
+  assert_contains "$(cat "$TMP/err")" "LOCALGIT=off"
+}
+
+test_an_old_backup_without_a_git_archive_is_still_a_backup() {
+  STACK_DIR="$TMP/stack"
+  _mk_backup 'X=1\n'
+  _is_backup "$B" || return 1
+  [ ! -e "$B/gitdata.tar.gz" ]
+  rm "$B/openwebui.dump"; ! _is_backup "$B"
 }
 
 test_restore_requires_a_backup_dir() {

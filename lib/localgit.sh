@@ -240,6 +240,68 @@ localgit_remove() {
   _LG_PROFILE=1 dc rm -sf forgejo >/dev/null 2>&1 || warn "could not remove the git server's container — ./stack down removes it"
 }
 
+# --- backup / restore of the repositories (JON-1012) ---
+# Everything the server keeps (repositories, its SQLite database, app.ini with its own SECRET_KEY) is one volume, gitdata.
+# ./stack backup copies it with the server stopped for the length of the copy (a live SQLite file copied under a writer can be
+# torn; `forgejo dump` is version-sensitive and wants scratch space the read-only container lacks) and starts it again whatever
+# happens; ./stack restore empties the volume and unpacks the copy. app.ini is kept whole: its keys encrypt fields in the database.
+
+# localgit_volume -> the repositories' volume
+localgit_volume() { printf '%s_gitdata\n' "$(project_name)"; }
+# _lg_image -> the git server's image, as compose.yaml names it (no pull of anything new: it is on this computer already)
+_lg_image() { awk '/^  forgejo:/ { f = 1; next } f && /^  [a-z]/ { f = 0 } f && $1 == "image:" { print $2; exit }' "$STACK_DIR/compose.yaml" 2>/dev/null || true; }
+# _lg_volume_job VOLMODE HOST_DIR HOSTMODE SCRIPT — SCRIPT (sh) in a throwaway container of the git server's image, as root (to
+# read and write files of the server's user), with the volume at /v and HOST_DIR at /backup ("ro" = read-only, "" = writable).
+# LG_UID / LG_GID in its environment: who owns the file the job makes in HOST_DIR (not on rootless Docker, where root is you).
+_lg_volume_job() {
+  local vmode="$1" host="$2" hmode="$3" script="$4" img own=()
+  img="$(_lg_image)"; [ -n "$img" ] || return 1
+  _docker_rootless || own=(-e "LG_UID=$(id -u)" -e "LG_GID=$(id -g)")
+  docker run --rm --user 0 ${own[@]+"${own[@]}"} -v "$(localgit_volume):/v${vmode:+:$vmode}" \
+    -v "$host:/backup:${hmode:+$hmode,}z" --entrypoint sh "$img" -c "$script"
+}
+
+# The server is stopped for the copy only when it was running; _lg_resume starts it again (also from the EXIT trap: ^C)
+_LG_PAUSED=''
+_lg_resume() {
+  [ -n "$_LG_PAUSED" ] || return 0
+  _LG_PAUSED=''; off_exit _lg_resume
+  dc start forgejo >/dev/null 2>&1 || warn "the git server did not start again after the backup — ./stack up"
+}
+
+# localgit_backup_into DIR — DIR/gitdata.tar.gz, when the server is on and its volume exists (nothing otherwise). Returns 1
+# when the copy failed; the server runs again either way.
+localgit_backup_into() {
+  local rc=0
+  localgit_on || return 0
+  docker volume inspect "$(localgit_volume)" >/dev/null 2>&1 || return 0
+  if [ -n "$(dc ps -q --status running forgejo 2>/dev/null | head -n 1)" ]; then
+    _LG_PAUSED=1; on_exit _lg_resume
+    dc stop forgejo >/dev/null 2>&1 || warn "backup: the git server did not stop cleanly — copying anyway"
+  fi
+  # shellcheck disable=SC2016  # (expanded by the container's sh)
+  _lg_volume_job ro "$1" '' 'set -e; umask 077; tar -C /v -czf /backup/gitdata.tar.gz .; chmod 600 /backup/gitdata.tar.gz
+    [ -z "${LG_UID:-}" ] || chown "$LG_UID:$LG_GID" /backup/gitdata.tar.gz' >/dev/null || rc=1
+  _lg_resume
+  return "$rc"
+}
+
+# localgit_validate_archive FILE -> 0 when FILE is a readable gzip tar with entries that stay inside the volume
+localgit_validate_archive() {
+  local lst
+  lst="$(tar -tzf "$1" 2>/dev/null)" || return 1
+  printf '%s\n' "$lst" | grep -vE '^[.]?/?$' >/dev/null || return 1   # (a bare "./" is an empty volume)
+  ! printf '%s\n' "$lst" | grep -E '^/|(^|/)\.\.(/|$)' >/dev/null
+}
+
+# localgit_restore_from DIR — the volume emptied and DIR/gitdata.tar.gz unpacked into it (the container removed first, started
+# by the caller's up). Returns 1 on failure.
+localgit_restore_from() {
+  docker volume inspect "$(localgit_volume)" >/dev/null 2>&1 || dc up --no-start --no-deps forgejo >/dev/null 2>&1 || true
+  _LG_PROFILE=1 dc rm -sf forgejo >/dev/null 2>&1 || true
+  _lg_volume_job '' "$1" ro 'set -e; find /v -mindepth 1 -maxdepth 1 -exec rm -rf {} +; tar -C /v -xzf /backup/gitdata.tar.gz' >/dev/null
+}
+
 # localgit_rollback_cleanup — ./stack rollback to a version without it: the container removed by its Compose labels (the
 # repositories' volume stays; the network goes after the up, lib/rollback.sh)
 localgit_rollback_cleanup() {

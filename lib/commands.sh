@@ -1946,7 +1946,7 @@ _backup_buckets_exec() {
 # _backup_named SUFFIX — writes backups/<ts>[-SUFFIX]/ and sets LAST_BACKUP (backups/<ts>…) for callers
 # that want to name it in messages. ./stack update uses SUFFIX=auto so it can prune its own backups.
 _backup_named() {
-  local dir tmp db
+  local dir tmp db gitnote=' '
   [ -f "$ENV_FILE" ] || die "nothing to back up — run ./stack setup first"
   _backup_space_check
   dir="$STACK_DIR/backups/$(date +%Y%m%d-%H%M%S)${1:+-$1}"; tmp="$dir.partial"
@@ -1969,11 +1969,15 @@ _backup_named() {
   cp "$ENV_FILE" "$tmp/.env"   # encrypted DB fields need the same secrets
   # the project folders of this computer (lib/projects.sh: the list, not the folders themselves)
   [ ! -f "$(projects_file)" ] || cp "$(projects_file)" "$tmp/project-folders.tsv"
+  # the local git server's repositories, database and config (lib/localgit.sh): its volume copied while it is stopped
+  localgit_backup_into "$tmp" ||
+    die "could not copy the git server's repositories — the incomplete backup was removed; the git server was started again (./stack logs forgejo)"
+  [ ! -f "$tmp/gitdata.tar.gz" ] || gitnote=", the git server's repositories "
   chmod -R go-rwx "$tmp"       # dumps hold chats, hashed keys and encrypted credentials
   mv "$tmp" "$dir"
   _BACKUP_PARTIAL=''; off_exit _cleanup_partial_backup
   LAST_BACKUP="${dir#"$STACK_DIR"/}"
-  log "backup written to ${dir#"$STACK_DIR"/} ($(du -sh "$dir" 2>/dev/null | cut -f1 | tr -d ' ')) — databases, buckets and a copy of .env (contains secrets; keep it private)"
+  log "backup written to ${dir#"$STACK_DIR"/} ($(du -sh "$dir" 2>/dev/null | cut -f1 | tr -d ' ')) — databases, buckets${gitnote:-}and a copy of .env (contains secrets; keep it private)"
 }
 
 # _restore_key_trio BACKUP_DIR — the restored databases only know the keys that existed at backup time, so
@@ -2023,6 +2027,9 @@ _validate_backup() {
   # First that commands run in the postgres container at all: a failing exec must not read as an unreadable dump.
   dc exec -T postgres true </dev/null >/dev/null 2>&1 ||
     die "cannot run commands in the postgres container (./stack status; ./stack logs postgres) — nothing was changed"
+  # the git server's copy (optional: older backups, and those made with the server off, have none)
+  [ ! -f "$dir/gitdata.tar.gz" ] || localgit_validate_archive "$dir/gitdata.tar.gz" ||
+    die "$dir/gitdata.tar.gz is not a readable archive of the git server's data (empty, damaged or with names outside it) — nothing was changed"
   for db in litellm openwebui; do
     n="$(dc exec -T postgres pg_restore --list < "$dir/$db.dump" 2>/dev/null | grep -c '^[0-9]' || true)"
     [ "${n:-0}" -gt 0 ] ||
@@ -2093,6 +2100,17 @@ cmd_restore() {
     projects_write "$(cat "$dir/project-folders.tsv")"; projects_sync >/dev/null 2>&1 || true
     log "restored the list of project folders (./stack project list)"
   fi
+  # the local git server's repositories (lib/localgit.sh): its volume replaced while the container is gone; the up below starts it
+  local gitback=''
+  if [ ! -f "$dir/gitdata.tar.gz" ]; then
+    log "the backup has no git server data (made before it was included, or with LOCALGIT=off) — the git server is left as it is"
+  elif ! localgit_on; then
+    warn "the backup holds the git server's repositories, but LOCALGIT=off now — skipped (./stack config set LOCALGIT on, then restore again to bring them back)"
+  else
+    log "restoring the git server's repositories, database and config"
+    localgit_restore_from "$dir" || die "restoring the git server's volume failed (databases and buckets are restored, the git server is stopped); $hint"
+    gitback=1
+  fi
   ensure_portal_password_hash   # lib/settings.sh: a .env copied from an older backup has no PORTAL_PASSWORD_HASH yet
   write_mcp_config
   # .env may have changed: recreate the containers that read these keys, then start everything else.
@@ -2104,6 +2122,7 @@ cmd_restore() {
   dc up -d --wait --force-recreate open-webui shared-mcp
   # shellcheck disable=SC2046  # word-split the service list on purpose
   dc up -d --wait $(stack_services)
+  [ -z "$gitback" ] || localgit_after_up   # lib/localgit.sh: the owner account, Code host and read token from .env, on the restored server
   remote_up_hook
   ensure_portal_reachable   # lib/portal.sh: Docker Desktop forwarding the portal's port to the Caddy it replaced
   settings_reconcile_with_session   # lib/settings.sh: the backup's databases may carry an older owner email or Admin password
