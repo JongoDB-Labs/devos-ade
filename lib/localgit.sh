@@ -257,7 +257,9 @@ _lg_volume_job() {
   local vmode="$1" host="$2" hmode="$3" script="$4" img own=()
   img="$(_lg_image)"; [ -n "$img" ] || return 1
   _docker_rootless || own=(-e "LG_UID=$(id -u)" -e "LG_GID=$(id -g)")
-  docker run --rm --user 0 ${own[@]+"${own[@]}"} -v "$(localgit_volume):/v${vmode:+:$vmode}" \
+  # (no network, no new privileges, and only the capabilities tar and chown need to read and write the server user's files)
+  docker run --rm --network none --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER \
+    --security-opt no-new-privileges --user 0 ${own[@]+"${own[@]}"} -v "$(localgit_volume):/v${vmode:+:$vmode}" \
     -v "$host:/backup:${hmode:+$hmode,}z" --entrypoint sh "$img" -c "$script"
 }
 
@@ -266,7 +268,8 @@ _LG_PAUSED=''
 _lg_resume() {
   [ -n "$_LG_PAUSED" ] || return 0
   _LG_PAUSED=''; off_exit _lg_resume
-  dc start forgejo >/dev/null 2>&1 || warn "the git server did not start again after the backup — ./stack up"
+  dc start forgejo >/dev/null 2>&1 ||
+    warn "!! THE GIT SERVER IS STILL STOPPED: it did not start again after the backup — run ./stack up now (./stack logs forgejo says why)"
 }
 
 # localgit_backup_into DIR — DIR/gitdata.tar.gz, when the server is on and its volume exists (nothing otherwise). Returns 1
@@ -277,7 +280,12 @@ localgit_backup_into() {
   docker volume inspect "$(localgit_volume)" >/dev/null 2>&1 || return 0
   if [ -n "$(dc ps -q --status running forgejo 2>/dev/null | head -n 1)" ]; then
     _LG_PAUSED=1; on_exit _lg_resume
-    dc stop forgejo >/dev/null 2>&1 || warn "backup: the git server did not stop cleanly — copying anyway"
+    if ! dc stop forgejo >/dev/null 2>&1; then
+      # a copy of a database a running server may be writing can be torn: no copy at all, said loudly (the rest of the backup stands)
+      warn "!! BACKUP WARNING: the git server could not be stopped, so its repositories were LEFT OUT of this backup (a copy while it runs could be torn) — run ./stack backup again"
+      _lg_resume
+      return 0
+    fi
   fi
   # shellcheck disable=SC2016  # (expanded by the container's sh)
   _lg_volume_job ro "$1" '' 'set -e; umask 077; tar -C /v -czf /backup/gitdata.tar.gz .; chmod 600 /backup/gitdata.tar.gz
@@ -290,6 +298,8 @@ localgit_backup_into() {
 localgit_validate_archive() {
   local lst
   lst="$(tar -tzf "$1" 2>/dev/null)" || return 1
+  # only plain files and folders: no link (symbolic or hard), device or fifo (the type letter of tar -tv)
+  ! tar -tvzf "$1" 2>/dev/null | cut -c1 | grep -v '^[-d]$' >/dev/null || return 1
   printf '%s\n' "$lst" | grep -vE '^[.]?/?$' >/dev/null || return 1   # (a bare "./" is an empty volume)
   ! printf '%s\n' "$lst" | grep -E '^/|(^|/)\.\.(/|$)' >/dev/null
 }

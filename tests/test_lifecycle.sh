@@ -106,7 +106,7 @@ test_backup_stops_forgejo_around_the_copy_and_starts_it_again() {
   cmd_backup 2> "$TMP/err"
   c="$(grep -n 'dc stop forgejo\|docker run\|dc start forgejo' "$TMP/calls" | sed 's/^[0-9]*://' | cut -c1-20)"
   assert_eq "$c" "dc stop forgejo
-docker run --rm --us
+docker run --rm --ne
 dc start forgejo"
   # it was not running to begin with (the owner stopped it): it stays that way
   rm -rf "$STACK_DIR/backups"; : > "$TMP/calls"; LG_RUNNING=0
@@ -133,6 +133,54 @@ dc start forgejo"
   docker() { echo "docker $*" >> "$TMP/calls"; case "$1 $2" in "volume inspect") return 0 ;; "run --rm") exit 130 ;; esac; }
   ( cmd_backup ) >/dev/null 2>&1 || true
   assert_contains "$(cat "$TMP/calls")" "dc start forgejo"
+}
+
+test_the_volume_job_copies_the_right_volume_with_few_privileges() {
+  STACK_DIR="$TMP/stack"; mkdir -p "$STACK_DIR"; _mk_gitsrc
+  printf 'COMPOSE_PROJECT_NAME=pj1\nLOCALGIT=on\n' > "$ENV_FILE"; _stub_dc; LG_VOL=1; LG_RUNNING=1
+  cmd_backup 2>/dev/null
+  r="$(grep '^docker run' "$TMP/calls")"
+  assert_contains "$r" " -v pj1_gitdata:/v:ro "
+  assert_contains "$r" "--network none"
+  assert_contains "$r" "--cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER"
+  assert_contains "$r" "--security-opt no-new-privileges"
+}
+
+test_backup_leaves_the_git_server_out_loudly_when_it_cannot_be_stopped() {
+  STACK_DIR="$TMP/stack"; mkdir -p "$STACK_DIR"; _mk_gitsrc
+  printf 'LOCALGIT=on\n' > "$ENV_FILE"; _stub_dc; LG_VOL=1; LG_RUNNING=1
+  eval "_lc_$(declare -f dc)"
+  dc() { case "$*" in "stop forgejo") echo "dc stop forgejo" >> "$TMP/calls"; return 1 ;; esac; _lc_dc "$@"; }
+  cmd_backup 2> "$TMP/err"
+  d="$(ls -d "$STACK_DIR"/backups/*)"
+  assert_eq "$([ -e "$d/gitdata.tar.gz" ] && echo has || echo none)" none
+  assert_eq "$(cat "$d/litellm.dump")" "PGDMP-litellm"   # the rest of the backup stands
+  assert_not_contains "$(cat "$TMP/calls")" "docker run"
+  assert_contains "$(cat "$TMP/err")" "LEFT OUT of this backup"
+}
+
+test_validate_archive_rejects_links_devices_and_absolute_names() {
+  . "$STACK_DIR/lib/localgit.sh"
+  python3 -c 'import sys,tarfile,io
+k=sys.argv[1]; t=tarfile.open(sys.argv[2],"w:gz")
+f=tarfile.TarInfo("ok"); f.size=1; t.addfile(f,io.BytesIO(b"x"))
+if k=="sym": i=tarfile.TarInfo("l"); i.type=tarfile.SYMTYPE; i.linkname="/etc/passwd"; t.addfile(i)
+if k=="hard": i=tarfile.TarInfo("h"); i.type=tarfile.LNKTYPE; i.linkname="ok"; t.addfile(i)
+if k=="fifo": i=tarfile.TarInfo("p"); i.type=tarfile.FIFOTYPE; t.addfile(i)
+if k=="abs": i=tarfile.TarInfo("/abs"); i.size=1; t.addfile(i,io.BytesIO(b"x"))
+t.close()' good "$TMP/good.tgz"
+  localgit_validate_archive "$TMP/good.tgz" || { echo "a plain archive was refused" >&2; return 1; }
+  for k in sym hard fifo abs; do
+    python3 -c 'import sys,tarfile,io
+k=sys.argv[1]; t=tarfile.open(sys.argv[2],"w:gz")
+f=tarfile.TarInfo("ok"); f.size=1; t.addfile(f,io.BytesIO(b"x"))
+if k=="sym": i=tarfile.TarInfo("l"); i.type=tarfile.SYMTYPE; i.linkname="/etc/passwd"; t.addfile(i)
+if k=="hard": i=tarfile.TarInfo("h"); i.type=tarfile.LNKTYPE; i.linkname="ok"; t.addfile(i)
+if k=="fifo": i=tarfile.TarInfo("p"); i.type=tarfile.FIFOTYPE; t.addfile(i)
+if k=="abs": i=tarfile.TarInfo("/abs"); i.size=1; t.addfile(i,io.BytesIO(b"x"))
+t.close()' "$k" "$TMP/$k.tgz"
+    if localgit_validate_archive "$TMP/$k.tgz"; then echo "$k member accepted" >&2; return 1; fi
+  done
 }
 
 test_validate_backup_rejects_a_corrupt_or_empty_git_archive() {

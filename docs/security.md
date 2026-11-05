@@ -2623,7 +2623,7 @@ one command that sets it, never on a command line).
 - **Not covered yet.** A mirror
   to a GitLab or Gitea of your own behind a private CA (Forgejo has one CA store, not one per remote); remote access
   (Tailscale / your domain) has no git site. `./stack backup` and `./stack restore` do cover it: while it is on, the repositories,
-  its database and `app.ini` (one volume) are copied as `gitdata.tar.gz` with the server stopped for a few seconds (not
+  its database and `app.ini` (one volume) are copied as `gitdata.tar.gz` with the server stopped while it is copied (longer for large repositories; not
   `forgejo dump`, which depends on the version); backups made before this, or with it off, restore without it.
 
 ### Signing in to a Git host (OAuth)
