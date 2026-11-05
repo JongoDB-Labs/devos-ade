@@ -929,6 +929,7 @@ export const getProjectKeep = (id: string): Promise<KeepView> => keepView('GET',
 export const keepProject = (id: string, name?: string): Promise<KeepView> => keepView('POST', id, '', name ? { name } : {});
 export const keepPushNow = (id: string): Promise<KeepView> => keepView('POST', id, '/push', {});
 export const keepAuto = (id: string, on: boolean): Promise<KeepView> => keepView('POST', id, '/auto', { on });
+export const keepAutoCommit = (id: string, on: boolean): Promise<KeepView> => keepView('POST', id, '/autocommit', { on });
 export const keepDecline = (id: string): Promise<KeepView> => keepView('POST', id, '/decline', {});
 /** Stop keeping it here: the remote goes, the repository stays on the server. */
 export async function keepStop(id: string): Promise<{ repo: string; removed: boolean }> {

@@ -4,7 +4,7 @@
 // (the repository, its issues, its pull requests), automatic pushes on or off, and Stop keeping it here.
 import { useEffect, useState } from 'preact/hooks';
 import { useSel } from '../store';
-import { store, declineKeep, keepOnLocalGit, openPortalGit, pushKept, refreshKeep, setKeepAuto, stopKeeping } from '../app';
+import { store, declineKeep, keepOnLocalGit, openPortalGit, pushKept, refreshKeep, setKeepAuto, setKeepAutoCommit, stopKeeping } from '../app';
 import { keptLine, keptShown, offerShown, repoNameOk } from '../keep';
 import { ago, label } from '../text';
 import { Icon, Spinner } from './icons';
@@ -140,6 +140,13 @@ function Kept({ id }: { id: string }) {
           </button>
           </>
         )}
+      </div>
+      <div class="gitr-row">
+        <label class="gitr-check small">
+          <input type="checkbox" checked={k.autoCommit} disabled={off} onChange={(e) => void setKeepAutoCommit(id, (e.currentTarget as HTMLInputElement).checked)} data-testid="keep-autocommit" />
+          Commit my work automatically
+        </label>
+        <span class="gitr-more small">At the end of each agent turn, DevOS ADE commits your changes and pushes them here, so you don't have to ask. Secrets and ignored files are skipped.</span>
       </div>
       <div class="gitr-row">
         <label class="gitr-check small">

@@ -2600,6 +2600,8 @@ export async function pushKept(id: string): Promise<void> {
 }
 /** Automatic pushes on or off. */
 export const setKeepAuto = (id: string, on: boolean): Promise<KeepView | null> => keepAct(id, 'auto', () => api.keepAuto(id, on));
+/** Commit my work at the end of each agent turn, on or off (off until asked for). */
+export const setKeepAutoCommit = (id: string, on: boolean): Promise<KeepView | null> => keepAct(id, 'autocommit', () => api.keepAutoCommit(id, on));
 /** Stop keeping it here: the remote and the record go; the repository stays on the server with what was pushed. */
 export async function stopKeeping(id: string): Promise<boolean> {
   if (get().keep.busy) return false;

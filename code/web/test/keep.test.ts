@@ -5,6 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { boxShown, gitPlace, gitPlaceUrl, keptLine, keptShown, newProjectBody, normKeep, offerShown, repoNameOk, repoSlug } from '../src/keep';
+import { keepAutoCommit } from '../src/api';
 
 const view = (over: Record<string, unknown> = {}) => ({ available: true, owner: 'devos', suggested: 'My-App', state: null, auto: true, pushedAt: null, lastError: null, busy: false, ...over });
 const kept = (over: Record<string, unknown> = {}) => view({ state: 'kept', repo: 'devos/My-App', remote: 'origin', made: true, unpushed: [], rejected: [], ...over });
@@ -105,4 +106,22 @@ test('the portal\'s Git page: the repository, its issues and its pull requests â
   assert.equal(gitPlaceUrl('https://portal.example/some/path?q=1', 'devos/x'), 'https://portal.example/#git/devos/x');
   for (const bad of [null, undefined, '', 'javascript:alert(1)', 'not a url']) assert.equal(gitPlaceUrl(bad, 'devos/x'), null, String(bad));
   assert.equal(gitPlaceUrl('http://bn.localhost', null), null);
+});
+
+test('Commit my work automatically: off unless the backend says so, only for a kept project; the toggle posts to its route', async () => {
+  assert.equal(normKeep(kept())?.autoCommit, false);
+  assert.equal(normKeep(kept({ autoCommit: 'yes' }))?.autoCommit, false);
+  assert.equal(normKeep(kept({ autoCommit: true }))?.autoCommit, true);
+  assert.equal(normKeep(view({ autoCommit: true }))?.autoCommit, false, 'not for a project that is not kept');
+  const sent: { url: string; body: unknown }[] = [];
+  const real = globalThis.fetch;
+  globalThis.fetch = (async (u: string, init: RequestInit) => {
+    sent.push({ url: String(u), body: JSON.parse(String(init.body)) });
+    return new Response(JSON.stringify(kept({ autoCommit: true })), { status: 200, headers: { 'content-type': 'application/json' } });
+  }) as typeof fetch;
+  try {
+    const v = await keepAutoCommit('ws', true);
+    assert.equal(v.autoCommit, true);
+    assert.deepEqual(sent[0], { url: '/api/projects/ws/keep/autocommit', body: { on: true } });
+  } finally { globalThis.fetch = real; }
 });

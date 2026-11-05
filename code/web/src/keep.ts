@@ -25,6 +25,8 @@ export interface KeepView {
   /** the repository exists on the server (the first push with commits makes it) */
   made: boolean;
   auto: boolean;
+  /** commit my work at the end of each agent turn (off until asked for) */
+  autoCommit: boolean;
   /** when it was last pushed (ms), or null */
   pushedAt: number | null;
   lastError: string | null;
@@ -66,6 +68,7 @@ export function normKeep(v: unknown): KeepView | null {
     made: state === 'kept' && o.made === true,
     remote: state === 'kept' && typeof o.remote === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(o.remote) ? o.remote : null,
     auto: o.auto !== false,
+    autoCommit: state === 'kept' && o.autoCommit === true,
     pushedAt: typeof o.pushedAt === 'number' && Number.isFinite(o.pushedAt) && o.pushedAt > 0 ? o.pushedAt : null,
     lastError: typeof o.lastError === 'string' && o.lastError ? label(o.lastError, 400) : null,
     busy: o.busy === true,
