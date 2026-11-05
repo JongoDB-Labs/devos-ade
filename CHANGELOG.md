@@ -4,6 +4,19 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Commit my work automatically (JON-1139).** A project kept on your local git server can now commit for you: tick *Commit my
+  work automatically* in the Git panel (off until you do) and, at the end of each agent turn, DevOS ADE commits the project's
+  pending changes on the branch that is checked out — you never have to ask Claude to commit — and the automatic push you
+  already have sends it. The commit carries the trailer `DevOS-ADE-Auto-Commit: end-of-turn`. It does nothing on a clean tree
+  (so never a second commit after Claude's own), stages files by name (never `git add -A`; ignored files are never in it),
+  and never amends or force-pushes. If the changes hold a credential file (`.env`, keys, `id_rsa`, `*credentials*` …) or
+  something secret-shaped in a file (the same scanner as session imports), nothing is committed that turn and the Git panel says
+  *Auto-sync paused this turn*; commit by hand, and the next clean turn goes on by itself. No commits mid-turn or on a timer,
+  and no merging: those are separate.
+
 ## [0.60.0] - 2026-11-05
 
 ### Added

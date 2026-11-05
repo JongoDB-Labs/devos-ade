@@ -2557,6 +2557,87 @@ def ui_keep_on_local_git(ctx):
             "offer was answered Not for this project and not asked again after a reload; Stop keeping it here left the repository; no CSP violations")
 
 
+KEEP_AC = "e2e-keep-autocommit"
+
+
+@check("browser", "code-ui-keep-auto-commit")
+@saved
+def ui_keep_auto_commit(ctx):
+    """Commit my work automatically (JON-1139; Haiku, two short turns; the throwaway's own git server): a kept project's Git panel
+    has the toggle, off until ticked; with it on, a session that only WRITES a file (it is never told to commit or push) leaves a
+    commit on the local git server, marked by the DevOS-ADE-Auto-Commit trailer; a turn that writes a .env is not committed (the
+    panel says the auto-sync paused, and the secret is not on the server); main stays protected (a forced push is refused).
+    Screenshot ka1."""
+    need_on()
+    if not checks_git.ON:
+        raise Skip("the built-in git server is off in this throwaway (LOCALGIT=off)")
+    page, rec = ui_page(ctx, "code-ui-keep-auto-commit")
+    c = Code.on(page, rec, goto=False)
+    owner = checks_git.OWNER
+    _drop_projects(c, (KEEP_AC,))
+    c.api("DELETE", f"/api/fs?path={KEEP_AC}")
+    checks_git.forgejo(ctx, "DELETE", f"/api/v1/repos/{owner}/{KEEP_AC}")
+    sid = None
+    try:
+        r = c.api("POST", "/api/projects", {"kind": "new", "folder": KEEP_AC, "git": True, "keep": True})
+        expect(r["status"] == 200 and (r["json"].get("keep") or {}).get("state") == "kept", f"the project, kept: {r['status']} {r['text'][:200]}")
+        pid = r["json"]["project"]["id"]
+        page.reload()
+        see(page.get_by_test_id("conn")).to_have_text("Connected", timeout=30000)
+        c = Code.on(page, rec, goto=False)
+        # the toggle: there, off
+        page.keyboard.press("Control+Shift+G")
+        tog = page.get_by_test_id("keep-autocommit")
+        see(tog).to_be_visible(timeout=30000)
+        see(tog).not_to_be_checked()
+        expect(c.api("GET", f"/api/projects/{pid}/keep")["json"].get("autoCommit") is False, "autoCommit is not off by default")
+        tog.check()
+        deadline = time.time() + 30
+        while time.time() < deadline and c.api("GET", f"/api/projects/{pid}/keep")["json"].get("autoCommit") is not True:
+            time.sleep(1)
+        expect(c.api("GET", f"/api/projects/{pid}/keep")["json"].get("autoCommit") is True, "the toggle did not turn it on")
+        shot(page, "ka1-code-git-panel-autocommit")
+        # a turn that writes a file and is not asked to commit
+        r = c.api("POST", "/api/sessions", {"project": pid, "model": HAIKU, "mode": "acceptEdits"})
+        expect(r["status"] == 200, f"a session: {r['status']} {r['text'][:200]}")
+        sid = r["json"]["id"]
+        c.request({"type": "attach", "session": sid, "since": 0})
+        c.turn(sid, f"Use the Write tool to create the file /workspace/{KEEP_AC}/notes.txt containing the word hello. Do not run git.")
+        deadline = time.time() + 60
+        got = None
+        while time.time() < deadline and got is None:
+            st, f = checks_git.forgejo(ctx, "GET", f"/api/v1/repos/{owner}/{KEEP_AC}/commits?limit=5")
+            if st == 200 and isinstance(f, list) and f:
+                got = f
+            else:
+                time.sleep(2)
+        expect(got, "no commit reached the local git server after the turn")
+        msg = got[0]["commit"]["message"]
+        expect("DevOS-ADE-Auto-Commit: end-of-turn" in msg, f"the commit is not marked: {msg!r}")
+        st, raw = checks_git.forgejo(ctx, "GET", f"/api/v1/repos/{owner}/{KEEP_AC}/contents/notes.txt")
+        expect(st == 200, f"notes.txt is not in the repository: HTTP {st}")
+        # a turn that writes a secret file: nothing is committed, and the panel says why
+        before = len(got)
+        c.turn(sid, f"Use the Write tool to create the file /workspace/{KEEP_AC}/.env containing the line API_TOKEN=abc123. Do not run git.")
+        time.sleep(8)
+        st, raw = checks_git.forgejo(ctx, "GET", f"/api/v1/repos/{owner}/{KEEP_AC}/contents/.env")
+        expect(st == 404, f".env reached the server: HTTP {st}")
+        k = c.api("GET", f"/api/projects/{pid}/keep")["json"]
+        expect("Auto-sync paused" in (k.get("lastError") or ""), f"no notice of the pause: {k.get('lastError')!r}")
+        csp_clean(page, rec)
+    finally:
+        try:
+            if sid:
+                c.api("DELETE", f"/api/sessions/{sid}")
+            _drop_projects(c, (KEEP_AC,))
+            c.api("DELETE", f"/api/fs?path={KEEP_AC}")
+            checks_git.forgejo(ctx, "DELETE", f"/api/v1/repos/{owner}/{KEEP_AC}")
+        except Exception:  # noqa: BLE001 — cleanup never hides the failure
+            pass
+    return ("Commit my work automatically was off until ticked; a Haiku turn that only wrote a file left a commit on the local git server "
+            "marked DevOS-ADE-Auto-Commit; a turn that wrote a .env was not committed (the panel said the auto-sync paused); no CSP violations")
+
+
 SESS_PROJ = "e2e-sess-proj"
 
 
