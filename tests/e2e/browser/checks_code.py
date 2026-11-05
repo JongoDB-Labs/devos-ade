@@ -2616,14 +2616,41 @@ def ui_keep_auto_commit(ctx):
         expect("DevOS-ADE-Auto-Commit: end-of-turn" in msg, f"the commit is not marked: {msg!r}")
         st, raw = checks_git.forgejo(ctx, "GET", f"/api/v1/repos/{owner}/{KEEP_AC}/contents/notes.txt")
         expect(st == 200, f"notes.txt is not in the repository: HTTP {st}")
-        # a turn that writes a secret file: nothing is committed, and the panel says why
-        before = len(got)
+        def commits():
+            st, f = checks_git.forgejo(ctx, "GET", f"/api/v1/repos/{owner}/{KEEP_AC}/commits?limit=50")
+            return f if st == 200 and isinstance(f, list) else []
+
+        def notice_with(word, secs=60):
+            end = time.time() + secs
+            while time.time() < end:
+                t = c.api("GET", f"/api/projects/{pid}/keep")["json"].get("lastError") or ""
+                if "Auto-sync paused" in t and word in t:
+                    return t
+                time.sleep(2)
+            return c.api("GET", f"/api/projects/{pid}/keep")["json"].get("lastError") or ""
+
+        # a turn that writes a secret file: nothing is committed, and the panel says why (the .env)
+        before = len(commits())
+        expect(before == len(got), f"commit count before the .env turn: {before} vs {len(got)}")
         c.turn(sid, f"Use the Write tool to create the file /workspace/{KEEP_AC}/.env containing the line API_TOKEN=abc123. Do not run git.")
-        time.sleep(8)
+        t = notice_with(".env")
+        expect("Auto-sync paused" in t and ".env" in t, f"no notice naming the .env: {t!r}")
+        time.sleep(5)
         st, raw = checks_git.forgejo(ctx, "GET", f"/api/v1/repos/{owner}/{KEEP_AC}/contents/.env")
         expect(st == 404, f".env reached the server: HTTP {st}")
-        k = c.api("GET", f"/api/projects/{pid}/keep")["json"]
-        expect("Auto-sync paused" in (k.get("lastError") or ""), f"no notice of the pause: {k.get('lastError')!r}")
+        expect(len(commits()) == before, "a commit was made with a .env pending")
+        # a file too large to be read whole, a key after the first 256 KiB: fail closed (nothing committed, not even the small file)
+        c.api("DELETE", f"/api/fs?path={KEEP_AC}/.env")
+        key = "ghp" + "_" + "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8"
+        c.api("PUT", f"/api/fs/file?path={KEEP_AC}/big.txt", {"text": ("filler line of text\n" * 15000) + f"token = {key}\n"})
+        c.turn(sid, f"Use the Write tool to create the file /workspace/{KEEP_AC}/small.txt containing the word ok. Do not run git.")
+        t = notice_with("big.txt")
+        expect("Auto-sync paused" in t and "big.txt" in t and "could not be checked" in t, f"no notice for the large file: {t!r}")
+        time.sleep(5)
+        for f in ("big.txt", "small.txt"):
+            st, _ = checks_git.forgejo(ctx, "GET", f"/api/v1/repos/{owner}/{KEEP_AC}/contents/{f}")
+            expect(st == 404, f"{f} reached the server: HTTP {st}")
+        expect(len(commits()) == before, "a commit was made with a file that could not be checked")
         csp_clean(page, rec)
     finally:
         try:
@@ -2635,7 +2662,7 @@ def ui_keep_auto_commit(ctx):
         except Exception:  # noqa: BLE001 — cleanup never hides the failure
             pass
     return ("Commit my work automatically was off until ticked; a Haiku turn that only wrote a file left a commit on the local git server "
-            "marked DevOS-ADE-Auto-Commit; a turn that wrote a .env was not committed (the panel said the auto-sync paused); no CSP violations")
+            "marked DevOS-ADE-Auto-Commit; a turn that wrote a .env, and one with a ~300 KB file holding a key, were not committed (the panel named each; the commit count did not change); no CSP violations")
 
 
 SESS_PROJ = "e2e-sess-proj"

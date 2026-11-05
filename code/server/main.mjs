@@ -306,7 +306,7 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
   let keepApi = null;
   const keeper = () => {
     if (!keepApi) { keepApi = makeKeep({ store: proj, remote: () => gitRemote(), mirrors: mirrorsApi, log: logger,
-      git: { status: (r) => api.gitStatus(r), file: (r, o) => api.gitFile({ repo: r, ...o }), stage: (r, paths) => api.gitStage({ repo: r, paths }), commit: (r, message) => api.gitCommit({ repo: r, message }) } }); if (keepSweepMs > 0) keepApi.start(keepSweepMs); }
+      git: { status: (r) => api.gitStatus(r), file: (r, o) => api.gitFile({ repo: r, ...o }), stage: (r, paths) => api.gitStage({ repo: r, paths }), unstage: (r, paths) => api.gitUnstage({ repo: r, paths }), commit: (r, message) => api.gitCommit({ repo: r, message }) } }); if (keepSweepMs > 0) keepApi.start(keepSweepMs); }
     return keepApi;
   };
   // New project with keep: true — the folder is a git repository first (git init when it is not), then kept; a failure of the

@@ -310,10 +310,12 @@ export function makeKeep({ store, remote, mirrors, git = null, now = () => Date.
   async function commitOnce(id) {
     const rec = store().localgit(id);
     if (rec?.state !== 'kept' || rec.autoCommit !== true || !git) return null;
-    const root = rootOf(id);
-    if (root.mode === 'ro') return null;
     let out;
-    try { out = await autoCommit({ git, repo: root.rel }); } catch (e) { out = { committed: false, error: failText(e) }; }
+    try {
+      const root = rootOf(id);
+      if (root.mode === 'ro') return null;
+      out = await autoCommit({ git, repo: root.rel });
+    } catch (e) { out = { committed: false, error: failText(e) }; }
     const text = out.paused ?? (out.error ? `Auto-sync could not commit: ${out.error}` : null);
     if (text) log(`keep ${id}: ${text}`);
     store().setLocalgit(id, (cur) => {
