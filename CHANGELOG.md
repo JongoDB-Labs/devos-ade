@@ -6,6 +6,23 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.59.1] - 2026-11-05
+
+### Fixed
+- **One sign-on for the whole app on this computer: the Code page and the Terminal no longer ask for the password again
+  (JON-1140).** Signing in to the portal already covered Home, Chat and Git, but the Code page and the Terminal each wanted a
+  second unlock — the same portal password typed again — and that unlock lasted only 12 hours, so they kept asking. On local
+  access a valid portal session now unlocks them by itself: no second password, no 12-hour re-prompt. This is also what made
+  Chat's **Make it a project** fail with "DevOS ADE did not answer": the hand-off opened the Code page while it was still
+  locked. It now opens straight through.
+  - **Remote access is unchanged.** Reaching the Code page or the Terminal over the internet (Tailscale or your own domain)
+    still asks for the password — the step-up stays where it guards against the open internet. A session or an unlock made on
+    this computer cannot be replayed to skip it (the unlock is bound to the site it was made for).
+  - **Nothing else is loosened.** The portal password still gates every sign-in, a request is trusted as "local" only when it
+    came through this computer's own proxy (never a header a page could forge), cross-site requests are still refused, and
+    signing out or changing the password still ends every unlock at once.
+  - **To get it:** existing installs update from Home › Update now.
+
 ## [0.59.0] - 2026-11-04
 
 ### Fixed
@@ -4598,7 +4615,8 @@ Initial public release.
 - `bin/claude-bedrock`: runs Claude Code against Bedrock through LiteLLM without touching plain `claude`.
 - Cost transparency: Bedrock prices in `./stack costs` and the Open WebUI model picker, spend per key.
 
-[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.59.0...HEAD
+[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.59.1...HEAD
+[0.59.1]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.59.0...v0.59.1
 [0.59.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.58.0...v0.59.0
 [0.58.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.57.2...v0.58.0
 [0.57.2]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.57.1...v0.57.2
