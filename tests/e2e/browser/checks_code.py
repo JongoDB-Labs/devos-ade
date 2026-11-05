@@ -2597,11 +2597,12 @@ def ui_keep_auto_commit(ctx):
         see(tog).to_be_visible(timeout=30000)
         see(tog).not_to_be_checked()
         expect(c.api("GET", f"/api/projects/{pid}/keep")["json"].get("autoCommit") is False, "autoCommit is not off by default")
-        tog.check()
+        tog.click()  # a plain click, not .check(): the box is controlled by k.autoCommit and only reflects on after the backend round-trip + the panel's refetch, which .check()'s immediate-state assertion races
         deadline = time.time() + 30
         while time.time() < deadline and c.api("GET", f"/api/projects/{pid}/keep")["json"].get("autoCommit") is not True:
             time.sleep(1)
         expect(c.api("GET", f"/api/projects/{pid}/keep")["json"].get("autoCommit") is True, "the toggle did not turn it on")
+        see(tog).to_be_checked(timeout=15000)  # the panel refetches and the controlled box now shows on
         shot(page, "ka1-code-git-panel-autocommit")
         # a turn that writes a file and is not asked to commit
         r = c.api("POST", "/api/sessions", {"project": pid, "model": HAIKU, "mode": "acceptEdits"})
