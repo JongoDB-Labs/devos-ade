@@ -10,6 +10,7 @@
 // repository, the remote, the commit each branch had when last pushed, and the branches the server refused.
 import { HostError, LOCALGIT } from './githosts.mjs';
 import { short } from './validate.mjs';
+import { autoCommit, PAUSED } from './autocommit.mjs';
 
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
 const RESERVED = /\.(git|wiki|rss|atom)$/i;
@@ -46,7 +47,7 @@ export const rejectedText = (branch) => `${branch}: the local git server has com
 
 // makeKeep({store, remote, mirrors}) -> the API of keeping (main.mjs routes): store() — the project records (projects.mjs);
 // remote() — gitremote.mjs's API (state, remoteSet, remoteRemove, plan, run); mirrors — mirrors.mjs (owner, nameFree)
-export function makeKeep({ store, remote, mirrors, now = () => Date.now(), log = () => {} }) {
+export function makeKeep({ store, remote, mirrors, git = null, now = () => Date.now(), log = () => {} }) {
   const running = new Map();   // project id -> the run in progress
   const complained = new Set();   // repositories whose failed protection was logged already
   const guarded = new Map();   // 'owner/name' -> the branches known to be protected on the server (this start's memory: a restart looks again)
@@ -68,7 +69,7 @@ export function makeKeep({ store, remote, mirrors, now = () => Date.now(), log =
     const rec = store().localgit(id);
     const out = { available: owner !== null, owner, suggested: repoSlug(p.name), state: rec?.state ?? null };
     if (rec?.state !== 'kept') return out;
-    Object.assign(out, { repo: rec.repo, made: rec.made || !!rec.pushedAt || Object.keys(rec.heads).length > 0, remote: rec.remote, auto: rec.auto, pushedAt: rec.pushedAt, lastError: rec.lastError, busy: running.has(id), unpushed: null,
+    Object.assign(out, { repo: rec.repo, made: rec.made || !!rec.pushedAt || Object.keys(rec.heads).length > 0, remote: rec.remote, auto: rec.auto, autoCommit: rec.autoCommit === true, pushedAt: rec.pushedAt, lastError: rec.lastError, busy: running.has(id), unpushed: null,
       rejected: Object.keys(rec.rejected).map(rejectedText) });
     try {
       const st = await remote().state(rootOf(id).rel);
@@ -140,7 +141,7 @@ export function makeKeep({ store, remote, mirrors, now = () => Date.now(), log =
       await remote().remoteRemove({ repo: root.rel, name: remoteName, url }).catch(() => {});
       throw e;
     }
-    store().setLocalgit(id, () => ({ state: 'kept', repo: made.repo, remote: remoteName, auto: b.auto !== false, made: true, pushedAt: null, lastError: null, heads: {}, rejected: {} }));
+    store().setLocalgit(id, () => ({ state: 'kept', repo: made.repo, remote: remoteName, auto: b.auto !== false, autoCommit: false, made: true, pushedAt: null, lastError: null, heads: {}, rejected: {} }));
     log(`keep: ${p.name} is kept as ${made.repo} (remote ${remoteName})`);
     // (before the first push, so the default branch is guarded from its first commit; the server's default branch is the branch of that push
     // when the repository was empty, so it is asked again after it)
@@ -253,6 +254,12 @@ export function makeKeep({ store, remote, mirrors, now = () => Date.now(), log =
     if (on) trigger(id);
     return view(id);
   }
+  // setAutoCommit(id, on) -> the view: the end-of-turn commit on or off (off by default; see autocommit.mjs)
+  async function setAutoCommit(id, on) {
+    if (typeof on !== 'boolean') throw err(400, 'on: true or false');
+    asKept(id, () => store().setLocalgit(id, (cur) => (cur?.state === 'kept' ? { ...cur, autoCommit: on, lastError: !on && cur.lastError?.startsWith(PAUSED) ? null : cur.lastError } : cur)));
+    return view(id);
+  }
   // decline(id) -> the view: not for this project, and not asked again (it can still be kept from the Git panel's menu)
   async function decline(id) {
     store().setLocalgit(id, (cur) => {
@@ -291,9 +298,41 @@ export function makeKeep({ store, remote, mirrors, now = () => Date.now(), log =
   function committed(repo) {
     try { for (const id of store().keptIds()) if (store().rootOf(id)?.rel === (repo ?? '')) trigger(id); } catch (e) { log(`keep: ${short(e?.message, 200)}`); }
   }
-  /** turnEnded(cwd) — a session's turn ended in this working folder */
-  function turnEnded(cwd) {
-    try { if (typeof cwd === 'string') { const p = store().folderOf(cwd); if (p?.id) trigger(p.id); } } catch (e) { log(`keep: ${short(e?.message, 200)}`); }
+  // the end-of-turn commit (autocommit.mjs), one at a time per project; what it could not do is told on the record (lastError)
+  // — a pause (secrets) or a failure — and taken off again when a later turn has nothing wrong
+  const committing = new Map();   // project id -> the commit in progress
+  function commitTurn(id) {
+    const run = (committing.get(id) || Promise.resolve()).catch(() => {}).then(() => commitOnce(id));
+    committing.set(id, run);
+    run.finally(() => { if (committing.get(id) === run) committing.delete(id); }).catch(() => {});
+    return run;
+  }
+  async function commitOnce(id) {
+    const rec = store().localgit(id);
+    if (rec?.state !== 'kept' || rec.autoCommit !== true || !git) return null;
+    const root = rootOf(id);
+    if (root.mode === 'ro') return null;
+    let out;
+    try { out = await autoCommit({ git, repo: root.rel }); } catch (e) { out = { committed: false, error: failText(e) }; }
+    const text = out.paused ?? (out.error ? `Auto-sync could not commit: ${out.error}` : null);
+    if (text) log(`keep ${id}: ${text}`);
+    store().setLocalgit(id, (cur) => {
+      if (cur?.state !== 'kept' || cur.repo !== rec.repo) return cur;
+      if (text) return { ...cur, lastError: short(text, 300) };
+      return cur.lastError?.startsWith(PAUSED) || cur.lastError?.startsWith('Auto-sync could not') ? { ...cur, lastError: null } : cur;
+    });
+    return out;
+  }
+  /** turnEnded(cwd) — a session's turn ended in this working folder: its pending work committed first when the project asks
+   *  for that, then what moved is pushed */
+  async function turnEnded(cwd) {
+    try {
+      if (typeof cwd !== 'string') return;
+      const p = store().folderOf(cwd);
+      if (!p?.id) return;
+      if (store().localgit(p.id)?.autoCommit === true) await commitTurn(p.id).catch((e) => log(`keep ${p.id}: ${short(e?.message, 200)}`));
+      trigger(p.id);
+    } catch (e) { log(`keep: ${short(e?.message, 200)}`); }
   }
   /** keptRepo(cwd) -> 'owner/name' when the project a working folder is in is kept (automatic pushes on), else null — for Claude's git note */
   function keptRepo(cwd) {
@@ -328,5 +367,5 @@ export function makeKeep({ store, remote, mirrors, now = () => Date.now(), log =
   }
   const close = () => { clearInterval(timer); timer = null; };
 
-  return { view, keep, pushNow, setAuto, decline, stop, sync, committed, turnEnded, keptRepo, sweep, guardAll, start, close };
+  return { view, keep, pushNow, setAuto, setAutoCommit, commitTurn, decline, stop, sync, committed, turnEnded, keptRepo, sweep, guardAll, start, close };
 }

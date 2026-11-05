@@ -115,7 +115,7 @@ export function localgitRecord(r) {
   if (!r || typeof r !== 'object') return null;
   if (r.state === 'declined') return { state: 'declined' };
   if (r.state !== 'kept' || typeof r.repo !== 'string' || !OWNER_REPO.test(r.repo) || typeof r.remote !== 'string' || !REMOTE.test(r.remote)) return null;
-  return { state: 'kept', repo: r.repo, remote: r.remote, auto: r.auto !== false, made: r.made === true, pushedAt: Number.isInteger(r.pushedAt) && r.pushedAt > 0 ? r.pushedAt : null,
+  return { state: 'kept', repo: r.repo, remote: r.remote, auto: r.auto !== false, autoCommit: r.autoCommit === true, made: r.made === true, pushedAt: Number.isInteger(r.pushedAt) && r.pushedAt > 0 ? r.pushedAt : null,
     lastError: typeof r.lastError === 'string' && r.lastError && !ODD.test(r.lastError) ? r.lastError.slice(0, 300) : null, heads: commits(r.heads), rejected: commits(r.rejected) };
 }
 

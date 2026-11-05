@@ -305,7 +305,8 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
   // keeping a project on the built-in git server (keep.mjs): the automatic pushes run from the first use of it, and every 10 minutes
   let keepApi = null;
   const keeper = () => {
-    if (!keepApi) { keepApi = makeKeep({ store: proj, remote: () => gitRemote(), mirrors: mirrorsApi, log: logger }); if (keepSweepMs > 0) keepApi.start(keepSweepMs); }
+    if (!keepApi) { keepApi = makeKeep({ store: proj, remote: () => gitRemote(), mirrors: mirrorsApi, log: logger,
+      git: { status: (r) => api.gitStatus(r), file: (r, o) => api.gitFile({ repo: r, ...o }), stage: (r, paths) => api.gitStage({ repo: r, paths }), commit: (r, message) => api.gitCommit({ repo: r, message }) } }); if (keepSweepMs > 0) keepApi.start(keepSweepMs); }
     return keepApi;
   };
   // New project with keep: true — the folder is a git repository first (git init when it is not), then kept; a failure of the
@@ -511,7 +512,7 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
     }
     // keeping a project on the built-in git server (keep.mjs): where it stands; keep it (a repository made there, its remote
     // added, what it has pushed); push now; automatic pushes on or off; not for this project; stop keeping it
-    if ((mm = /^\/api\/projects\/(ws|p_[0-9a-f]{8})\/keep(?:\/(push|auto|decline))?$/.exec(p))) {
+    if ((mm = /^\/api\/projects\/(ws|p_[0-9a-f]{8})\/keep(?:\/(push|auto|autocommit|decline))?$/.exec(p))) {
       const id = mm[1], what = mm[2] || '';
       recordOf(id);
       if (!what && m === 'GET') return send(res, 200, await keeper().view(id));
@@ -519,6 +520,7 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
       if (!what && m === 'DELETE') return send(res, 200, await keeper().stop(id));
       if (what === 'push' && m === 'POST') return send(res, 200, await keeper().pushNow(id));
       if (what === 'auto' && m === 'POST') return send(res, 200, await keeper().setAuto(id, (await readJson(req))?.on));
+      if (what === 'autocommit' && m === 'POST') return send(res, 200, await keeper().setAutoCommit(id, (await readJson(req))?.on));
       if (what === 'decline' && m === 'POST') return send(res, 200, await keeper().decline(id));
     }
     if ((mm = /^\/api\/projects\/(ws|p_[0-9a-f]{8})(?:\/(sessions|terminal|git-init|settings|trust|export))?$/.exec(p))) {

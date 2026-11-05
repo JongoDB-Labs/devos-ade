@@ -457,7 +457,7 @@ test('the records: checked when read, gone with the project, and the Workspace\'
   assert.equal(localgitRecord({ state: 'kept', repo: 'devos/x', remote: '-bad' }), null);
   assert.equal(localgitRecord({ state: 'maybe' }), null);
   const rec = localgitRecord({ state: 'kept', repo: 'devos/x', remote: 'origin', pushedAt: 5, lastError: 'a\nb', heads: { main: 'z', ok: sha('a'), '../x': sha('a') }, rejected: 'x' });
-  assert.deepEqual(rec, { state: 'kept', repo: 'devos/x', remote: 'origin', auto: true, made: false, pushedAt: 5, lastError: null, heads: { ok: sha('a') }, rejected: {} });
+  assert.deepEqual(rec, { state: 'kept', repo: 'devos/x', remote: 'origin', auto: true, autoCommit: false, made: false, pushedAt: 5, lastError: null, heads: { ok: sha('a') }, rejected: {} });
   assert.throws(() => s.projects.setLocalgit(id, () => ({ state: 'kept', repo: 'nope', remote: 'origin' })), /not a record/);
   assert.throws(() => s.projects.setLocalgit('p_00000000', () => ({ state: 'declined' })), /no such project/);
   assert.throws(() => s.projects.setLocalgit('bad', () => ({ state: 'declined' })), /bad project id/);
