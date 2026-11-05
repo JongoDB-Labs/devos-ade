@@ -2579,12 +2579,18 @@ def ui_keep_auto_commit(ctx):
     checks_git.forgejo(ctx, "DELETE", f"/api/v1/repos/{owner}/{KEEP_AC}")
     sid = None
     try:
-        r = c.api("POST", "/api/projects", {"kind": "new", "folder": KEEP_AC, "git": True, "keep": True})
-        expect(r["status"] == 200 and (r["json"].get("keep") or {}).get("state") == "kept", f"the project, kept: {r['status']} {r['text'][:200]}")
-        pid = r["json"]["project"]["id"]
-        page.reload()
-        see(page.get_by_test_id("conn")).to_have_text("Connected", timeout=30000)
-        c = Code.on(page, rec, goto=False)
+        # made through New project (as ui_keep_on_local_git does), so the Code page has it open: the kept view is the open project's
+        page.get_by_test_id("side-sessions").click()
+        page.get_by_test_id("new-project").click()
+        page.get_by_test_id("new-project-name").fill(KEEP_AC)
+        dlg = page.get_by_test_id("new-project-dialog")
+        see(page.get_by_test_id("new-project-keep")).to_be_checked(timeout=30000)
+        page.get_by_test_id("new-project-create").click()
+        see(dlg).to_have_count(0, timeout=60000)
+        see(page.get_by_test_id("toast").last).to_contain_text("kept on your local git server", timeout=60000)
+        pid = next((x["id"] for x in c.api("GET", "/api/projects")["json"]["projects"] if x.get("root") == KEEP_AC), None)
+        expect(pid, "the new project is not in /api/projects")
+        expect((c.api("GET", f"/api/projects/{pid}/keep")["json"] or {}).get("state") == "kept", "the project is not kept")
         # the toggle: there, off
         page.keyboard.press("Control+Shift+G")
         tog = page.get_by_test_id("keep-autocommit")
