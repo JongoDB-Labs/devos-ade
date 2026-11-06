@@ -632,7 +632,7 @@ def show_projects_widget(page):
 
 
 def panel_note(page) -> str:
-    return page.evaluate("() => { const n = document.querySelector('.tp-none'); return n && !n.hidden ? n.textContent : ''; }")
+    return page.evaluate("() => { const n = document.querySelector('[data-widget=projects] .tp-none'); return n && !n.hidden ? n.textContent : ''; }")
 
 
 def wait_panel(page, what: str, pred, timeout=40):
@@ -1018,11 +1018,17 @@ def widgets_projects(ctx):
         run_in(page, 1, "echo cwd=$(pwd)")
         wait_text(f, rf"^cwd={re.escape(target)}$", 20)
         shot(page, "terminal-widgets-projects")
+        # end the shell this opened: its window is the shared session's active one, and the next window made (Ctrl-b c) would start in
+        # this project's folder — the active window must be the base /workspace shell again
+        run_in(page, 1, "exit")
+        wait_text(f, r"^terminal /workspace \$", 20)
         rec.save()
     finally:
         reset_layout(page)
         try:
-            _drop_projects(Code(ctx, "terminal-widgets-projects-clean"), (PROJ_ROOT,))
+            cc = Code(ctx, "terminal-widgets-projects-clean")
+            _drop_projects(cc, (PROJ_ROOT,))
+            cc.api("DELETE", f"/api/fs?path={PROJ_ROOT}")
         except Exception:  # noqa: BLE001 — tidying never hides the failure
             pass
     return f"projects: the workspace, the Code page's project {PROJ_NAME} (by name) and the known project folders listed; Open a shell here ({target}) opens a shell window there in view 1"
