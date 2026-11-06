@@ -4,7 +4,7 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.62.0] - 2026-11-06
 
 ### Fixed
 - **The Terminal page's Projects panel now lists your Code page projects (JON-1158).** It showed "No project folders yet" and only
@@ -4649,7 +4649,8 @@ Initial public release.
 - `bin/claude-bedrock`: runs Claude Code against Bedrock through LiteLLM without touching plain `claude`.
 - Cost transparency: Bedrock prices in `./stack costs` and the Open WebUI model picker, spend per key.
 
-[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.61.0...HEAD
+[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.62.0...HEAD
+[0.62.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.61.0...v0.62.0
 [0.61.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.60.0...v0.61.0
 [0.60.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.59.1...v0.60.0
 [0.59.1]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.59.0...v0.59.1
