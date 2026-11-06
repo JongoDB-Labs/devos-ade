@@ -27,6 +27,6 @@
   "check": "small target",
   "sig": "^small target\\|terminal\\|form#tp-cmd-form\\.tp-form > label\\.tp-check > input#tp-cmd-run$",
   "state": "^terminal",
-  "why": "The quick-command form's \"Run it\" checkbox measures about 23 px at 320 px (it was at the 24 px boundary in v0.61.0). Pre-existing and unrelated to JON-1158, which does not touch that form. The real fix (a larger hit area for the checkbox) is tracked in a JON-1158 follow-up; remove this entry with that change."
+  "why": "The quick-command form's \"Run it\" checkbox measures about 23 px at 320 px (it was at the 24 px boundary in v0.61.0). Pre-existing and unrelated to JON-1158, which does not touch that form. The real fix (a larger hit area for the checkbox) is tracked in JON-1220; remove this entry with that change."
  }
 ]
