@@ -81,6 +81,7 @@ body.tp-dragging, body.tp-dragging * { user-select: none; cursor: col-resize; }
 .tp-proj-name { display: grid; min-width: 0; }
 .tp-proj-name strong { overflow: hidden; text-overflow: ellipsis; }
 .tp-proj-name small { color: var(--muted); overflow-wrap: anywhere; }
+.tp-proj-gone .tp-proj-name { opacity: .6; }
 
 .tp .quiet:focus-visible, .tp .wg-btn:focus-visible, .tp .action:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 

@@ -120,6 +120,11 @@
      "type": "volume"
     },
     {
+     "source": "code-projects-public",
+     "target": "/var/lib/bn-code-public",
+     "type": "volume"
+    },
+    {
      "read_only": true,
      "source": "<STATE>/projects/public",
      "target": "/etc/bn-code/projects",
@@ -234,6 +239,12 @@
     {
      "source": "portal-state",
      "target": "/state",
+     "type": "volume"
+    },
+    {
+     "read_only": true,
+     "source": "code-projects-public",
+     "target": "/data/code-projects",
      "type": "volume"
     }
    ]
@@ -502,6 +513,10 @@
   "chat-socket": {
    "external": false,
    "name": "devos-ade_chat-socket"
+  },
+  "code-projects-public": {
+   "external": false,
+   "name": "devos-ade_code-projects-public"
   },
   "code-socket": {
    "external": false,

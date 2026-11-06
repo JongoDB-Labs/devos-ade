@@ -760,3 +760,93 @@ def test_an_account_or_an_add_needs_a_token_for_exactly_its_words(s):
                      {"mode": "add", "tool": "codex", "folder": "/workspace"}, {"mode": "open", "tool": "bedrock:x", "folder": ""},
                      {"mode": "open", "tool": "claude:Work", "folder": ""}):
             assert c.post("/auth/terminal-launch", data=form, headers=hdr).status_code == 400, form
+
+
+# --- the Code page's projects on the Terminal page (JON-1158): the code container's summary, read as untrusted ---
+
+def _summary(s, rows, name="projects-summary.json", raw=None):
+    d = s.code_projects_dir
+    d.mkdir(parents=True, exist_ok=True)
+    (d / name).write_text(raw if raw is not None else json.dumps({"written_at": 1700000000, "projects": rows}))
+
+
+def _row(i="p_0123abcd", name="App", root="app", **o):
+    return {"id": i, "name": name, "root": root, "path": "/workspace/" + root if root else "/workspace", "host": False, "mode": "rw",
+            "gone": False, "folder": "ok", "kept": False, **o}
+
+
+@pytest.fixture
+def cs(s, tmp_path):
+    return replace(s, code_projects_dir=tmp_path / "code-projects")
+
+
+def test_code_projects_rows_are_copied_field_by_field(cs):
+    _summary(cs, [_row(kept=True), _row("ws", "Workspace", ""), _row("p_89abcdef", "src", "/projects/src", host=True, mode="ro", path="/projects/src"),
+                  _row("p_00000001", "Gone", "old", folder="missing", extra="x", token="ghp_nope")])
+    d = st.code_projects(cs.code_projects_dir)
+    assert d["present"] and d["written_at"] == 1700000000
+    assert [p["id"] for p in d["projects"]] == ["p_0123abcd", "ws", "p_89abcdef", "p_00000001"]
+    assert d["projects"][0] == {"id": "p_0123abcd", "name": "App", "path": "/workspace/app", "host": False, "mode": "rw", "gone": False, "folder": "ok", "kept": True}
+    assert d["projects"][2]["host"] and d["projects"][2]["mode"] == "ro" and d["projects"][2]["path"] == "/projects/src"
+    assert d["projects"][3]["folder"] == "missing"
+    assert "ghp_nope" not in json.dumps(d)
+
+
+def test_code_projects_untrusted_rows_are_dropped(cs):
+    bad = [_row("../etc"), _row("p_XYZ"), _row("p_00000001", "a\nb"), _row("p_00000002", "x‮y"), _row("p_00000003", ""), _row("p_00000004", "n" * 81),
+           _row("p_00000005", "ok", "a", path="/etc/passwd"), _row("p_00000006", "ok", "a", path="/workspace/../x"),
+           _row("p_00000007", "ok", ".hid"), _row("p_00000008", "ok", "a", path="/workspace/b"),
+           _row("p_00000009", "ok", "a\x00b"),
+           _row("p_0000000a", "ok", "z" * 100 + "/" + "z" * 100 + "/" + "z" * 60),
+           _row("p_0000000b", "ok", "x", host=True, path="/workspace/x"), _row("p_0000000c", "ok", "rel", host=True, path="rel"),
+           _row("p_0000000d", "ok", "/a/../b", host=True, path="/a/../b"), _row("ws", "W", "", path="/workspace/x"), "nope", 7, None,
+           _row("p_0000000e", "ok", "e", path=["/workspace/e"]), _row(5)]
+    _summary(cs, bad + [_row("p_0123abcd")])
+    assert [p["id"] for p in st.code_projects(cs.code_projects_dir)["projects"]] == ["p_0123abcd"]
+
+
+def test_code_projects_duplicates_and_cap(cs):
+    _summary(cs, [_row("p_0123abcd"), _row("p_0123abcd", "Again", "again"), _row("p_00000001", "Other", "other2")])
+    assert [p["id"] for p in st.code_projects(cs.code_projects_dir)["projects"]] == ["p_0123abcd", "p_00000001"]   # (the repeated id goes; a second path does not)
+    _summary(cs, [_row(f"p_{i:08x}", f"n{i}", f"d{i}") for i in range(200)])
+    assert len(st.code_projects(cs.code_projects_dir)["projects"]) == 64
+
+
+def test_code_projects_tolerates_a_missing_corrupt_or_wrong_file(cs):
+    assert st.code_projects(cs.code_projects_dir) == {"present": False, "written_at": None, "projects": []}   # no folder at all
+    for raw in ("{not json", "[]", '{"projects": "x"}', '{"written_at": 1}', "\xff\xfe", "x" * (70 * 1024)):
+        _summary(cs, [], raw=raw)
+        assert st.code_projects(cs.code_projects_dir)["present"] is False, raw
+    _summary(cs, [])
+    assert st.code_projects(cs.code_projects_dir) == {"present": True, "written_at": 1700000000, "projects": []}
+    (cs.code_projects_dir / "projects-summary.json").write_text(json.dumps({"projects": [_row()], "written_at": "soon"}))
+    assert st.code_projects(cs.code_projects_dir)["written_at"] is None
+
+
+def test_code_projects_symlink_is_not_followed(cs, tmp_path):
+    real = tmp_path / "real.json"
+    real.write_text(json.dumps({"projects": [_row()]}))
+    cs.code_projects_dir.mkdir()
+    (cs.code_projects_dir / "projects-summary.json").symlink_to(real)
+    assert st.code_projects(cs.code_projects_dir)["present"] is False
+
+
+def test_build_has_projects_only_with_code_on_and_a_summary(cs):
+    _summary(cs, [_row(), _row("p_89abcdef", "src", "/projects/src", host=True, path="/projects/src")])
+    d = answers.build(cs, False)
+    assert [p["name"] for p in d["projects"]] == ["App", "src"]
+    assert d["folders"] == []   # (the host folders stay ./stack's own list)
+    assert "projects" not in answers.build(replace(cs, code=False), False)
+    assert "projects" not in answers.build(replace(cs, terminal=False), False)
+    (cs.code_projects_dir / "projects-summary.json").unlink()
+    assert "projects" not in answers.build(cs, False)
+    _summary(cs, [], raw="{broken")
+    assert "projects" not in answers.build(cs, False)
+    _summary(cs, [])
+    assert answers.build(cs, False)["projects"] == []
+
+
+def test_a_code_project_with_an_odd_name_still_passes_folder_ok(cs):
+    _summary(cs, [_row("p_0123abcd", "My App é 日本", "my app é 日本"), _row("p_00000001", "Deep", "a/b/c/d")])
+    for p in st.code_projects(cs.code_projects_dir)["projects"]:
+        assert answers.folder_ok(p["path"]), p

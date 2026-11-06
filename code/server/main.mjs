@@ -250,11 +250,14 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
       if (Array.isArray(r.mcpServers)) toAttached(s.id, { type: 'mcp', session: s.id, servers: mcpOf(r.mcpServers) });
     },
   });
+  // the portal's Terminal page lists the projects too (projects.mjs summary): once at the start, then at every change
+  if (proj().publicDir) { try { proj().syncHosts(); proj().writeSummary(); } catch (e) { logger(`projects: ${short(e?.message || String(e), 200)}`); } }
   function onStateBoth(a, b) { toAll(stateMsg(a)); toAll(stateMsg(b)); }
   const api = makeApi({ call, sessions: mgr, projects: { list: () => proj().list(), get: (id) => proj().get(id), add: (b) => proj().add(b), rename: (id, n) => proj().rename(id, n),
     remove: (id, o) => proj().remove(id, o), file: (ids, pid) => proj().file(ids, pid), placer: () => proj().placer(), syncHosts: () => proj().syncHosts(),
       archive: (ids, on) => proj().archive(ids, on), archivedIds: () => proj().archivedIds(), forgetSession: (id) => proj().forgetSession(id), hosts: () => proj().hosts(),
-      removedRoots: () => proj().removedRoots(), notices: () => proj().notices(), dismissNotice: (id) => proj().dismissNotice(id), localgit: (id) => proj().localgit(id) },
+      removedRoots: () => proj().removedRoots(), notices: () => proj().notices(), dismissNotice: (id) => proj().dismissNotice(id), localgit: (id) => proj().localgit(id),
+      writeSummary: (o) => proj().writeSummary(o) },
     autoScan: autoProjectMs === null ? null : () => auto().scan(),
     reloadPollMs, reloadMaxMs, log: logger,
     settingsKnown: (id) => trust.known(id), agentStore: agents, plan: () => planAllowed === true,

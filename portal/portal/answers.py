@@ -211,9 +211,20 @@ def chat_models(models: dict) -> list[dict]:
 
 
 def folders(status_dir: Path) -> list[dict]:
-    """The project folders of this computer the sandbox sees (./stack project; settings.project_folders): {name, path}."""
+    """The project folders of this computer the sandbox sees (./stack project; settings.project_folders): {id, name, path, mode, pending}."""
     from . import settings as st   # (settings imports nothing of this module)
-    return [{"name": f["name"], "path": f["path"]} for f in st.project_folders(status_dir).get("folders", []) if f.get("ok")]
+    return [{"id": f["id"], "name": f["name"], "path": f["path"], "mode": f["mode"], "pending": f["pending"]}
+            for f in st.project_folders(status_dir).get("folders", []) if f.get("ok")]
+
+
+def code_projects(s, remote: bool = False) -> list[dict] | None:
+    """The Code page's projects for the Terminal page's Projects panel ({id, name, path, host, mode, gone, folder, kept}; settings.
+    code_projects), or None: Code is off here, or the code container has not written its list (yet) — the panel then says so."""
+    from . import settings as st
+    if not s.code_on(remote):
+        return None
+    d = st.code_projects(s.code_projects_dir)
+    return d["projects"] if d["present"] else None
 
 
 def plan_models(s, remote: bool, rows: list[dict], links: dict | None = None, egress: str | None = None) -> list[dict]:
@@ -257,12 +268,18 @@ def build(s, remote: bool, models: dict | None = None) -> dict:
     t = tools(s.catalog_dir, s.status_dir)
     links = setup_links(s.catalog_dir)
     t["plan_models"] = plan_models(s, remote, t["tools"], links, current_egress(s))
-    return {"terminal": {"enabled": bool(s.terminal), "here": s.terminal_on(remote), "reason": terminal_reason(s, remote)},
+    out = {"terminal": {"enabled": bool(s.terminal), "here": s.terminal_on(remote), "reason": terminal_reason(s, remote)},
             "basics": list(BASICS), **t, "models": chat_models(models) if models is not None else [],
             # Experiential Labs on (its models file is there: the portal never holds its key); off, Chat's picker shows
             # where its key goes in (catalog/setup-links.tsv explabs-off)
             "explabs": bool((models or {}).get("explabs")),
             "folders": folders(s.status_dir), "openrouter": bool(getattr(s, "openrouter_api_key", "")), "setup": links}
+    # the Code page's projects, beside the folders of this computer (the Terminal page's Projects panel): only while Code runs here
+    # and its container has written its list — without the field the page says so
+    projects = code_projects(s, remote)
+    if projects is not None:
+        out["projects"] = projects
+    return out
 
 
 # --- the terminal's words: what the pickers add to its address (?arg=MODE&arg=TOOL&arg=TOKEN[&arg=FOLDER]) — and the

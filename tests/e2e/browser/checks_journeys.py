@@ -334,6 +334,15 @@ def terminal_folder_to_git(ctx):
         except AssertionError:
             j.step(False, f"{J4} (a package.json, no git) was not added with Start git here, or Start git here did not lead to keeping it")
         shot(page, "j2-2-added-node")
+        # (JON-1158: the Terminal tab, still open, lists the same project in its Projects panel, as kept)
+        try:
+            T.show_projects_widget(tp)
+            T.wait_panel(tp, f"/workspace/{J2} is not listed as a kept project", lambda rs: any(x["path"] == f"/workspace/{J2}" and x["id"] == pid and "kept" in x["flags"] for x in rs))
+            shot(tp, "j2-2-terminal-panel")
+        except AssertionError as e:
+            j.step(False, f"the Terminal tab's Projects panel does not list {J2} as kept: {e}")
+        finally:
+            T.reset_layout(tp)
         if pid:
             show_projects(page)   # (the project's row is on the Projects tab)
             _proj(page, pid).get_by_test_id("project-show").click()

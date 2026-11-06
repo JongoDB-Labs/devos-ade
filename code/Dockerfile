@@ -86,7 +86,7 @@ COPY --from=web /src/dist/ ./web/dist/
 # checkout written with umask 077 (the update helper's) has 600 files — the server then failed with EACCES on its own
 # main.mjs. (The portal, shared-mcp and stt images do the same; node_modules and web/dist are already a+r.)
 RUN chmod -R a+rX /opt/code/package.json /opt/code/server \
- && mkdir -p /var/lib/bn-code /run/bn-chat && chmod 1777 /var/lib/bn-code /run/bn-chat
+ && mkdir -p /var/lib/bn-code /var/lib/bn-code-public /run/bn-chat && chmod 1777 /var/lib/bn-code /var/lib/bn-code-public /run/bn-chat
 # /var/lib/bn-code: the code-state volume (compose.code.yaml) starts as a copy of this folder — writable by the user
 # compose runs this as (TERMINAL_UID, unknown here), which keeps Git hosts in a folder of its own, mode 700, in it.
 # /run/bn-chat: the chat-socket volume, when this container is the first to mount it (it starts before Chat's sandbox):

@@ -860,6 +860,7 @@ export function makeApi({ call, sessions, projects = null, reloadPollMs = 1000, 
     if (autoScan) { let t; try { await Promise.race([autoScan(), new Promise((r) => { t = setTimeout(r, AUTO_WAIT_MS); })]); } catch { /* logged there */ } finally { clearTimeout(t); } }
     const list = store().list();
     const f = await folders(list);
+    store().writeSummary?.({ folders: f });   // (the portal's Terminal page lists these too: projects.mjs summary)
     const added = (store().notices?.() ?? []).filter((n) => list.some((p) => p.id === n.id)).map((n) => {
       const lg = store().localgit(n.id);
       return { id: n.id, at: n.at, kept: lg?.state === 'kept' ? lg.repo : null, declined: lg?.state === 'declined' };

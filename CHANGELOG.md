@@ -4,6 +4,16 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- **The Terminal page's Projects panel now lists your Code page projects (JON-1158).** It showed "No project folders yet" and only
+  the workspace even when you had projects on the Code page (or made one with Chat's *Make it a project*), because it read only the
+  folders of this computer. The Code page now writes its project names and folders (nothing secret) into a small read-only file the
+  portal reads, so Chat, Code and Terminal show one list: each project by name with its folder, a *kept* mark, and a *folder
+  missing* mark when its folder is gone. The panel refreshes when you come back to it, and when the Code page is off it says so
+  instead of the false "none yet" note.
+
 ## [0.61.0] - 2026-11-05
 
 ### Added

@@ -307,6 +307,32 @@
   // the bodies of a save: this screen (or null: back to the default), and the quick commands (or null: none)
   const savePatchScreen = (device, s) => ({ version: VERSION, pages: { terminal: { [device]: isDefaultScreen(device, s) ? null : s } } });
   const savePatchCommands = (list) => ({ version: VERSION, pages: { terminal: { commands: list.length ? list : null } } });
+  // The Terminal page's Projects panel (JON-1158): the workspace, the Code page's projects (answers.projects: null while Code is
+  // off here or has not written its list) and the folders of this computer (answers.folders), one row each, by folder — a folder
+  // both name is one row, the Code page's word first. A row: {id, path, name, kept, missing, ro, pending, host}.
+  const WS_ROW = { id: "ws", path: "/workspace", name: "the workspace", kept: false, missing: false, ro: false, pending: null, host: false };
+  function projectRows(projects, folders) {
+    const rows = [{ ...WS_ROW }];
+    const take = (r) => { if (r.path !== "/workspace" && !rows.some((x) => x.path === r.path || (r.id && x.id === r.id))) rows.push(r); };
+    for (const p of Array.isArray(projects) ? projects : []) {
+      if (!p || typeof p.path !== "string" || typeof p.name !== "string") continue;
+      take({ id: typeof p.id === "string" ? p.id : p.path, path: p.path, name: p.name, kept: p.kept === true, missing: p.folder === "missing" || p.gone === true,
+        ro: p.mode === "ro", pending: null, host: p.host === true });
+    }
+    for (const f of Array.isArray(folders) ? folders : []) {
+      if (!f || typeof f.path !== "string") continue;
+      take({ id: typeof f.id === "string" ? f.id : f.path, path: f.path, name: f.name || f.path, kept: false, missing: false, ro: f.mode === "ro",
+        pending: ["add", "ro", "rw"].includes(f.pending) ? f.pending : null, host: true });
+    }
+    return rows;
+  }
+  // the sentence under the list: none while there are projects; else why there are none, and only what is true (Code off, or its list not
+  // there yet: the workspace and your computer's folders are all that is listed)
+  function projectsNote(rows, codeListed) {
+    if (rows.length > 1) return codeListed ? "" : "The Code page is off (or has not listed its projects yet): the workspace and your computer's project folders are listed.";
+    return codeListed ? "No projects yet. A project made on the Code page, in Chat (Make it a project) or by ./stack project add shows here."
+      : "The Code page is off (or has not listed its projects yet), so only the workspace is listed. Your computer's project folders show here once added (./stack project add).";
+  }
   // what the key bar sends: the names ttyd-keys.js knows (terminal/ttyd-keys.js has the same table)
   const KEYS = [["esc", "Esc"], ["tab", "Tab"], ["up", "Up"], ["down", "Down"], ["left", "Left"], ["right", "Right"], ["home", "Home"], ["end", "End"],
     ["pgup", "PgUp"], ["pgdn", "PgDn"], ["ctrl-c", "Ctrl-C"], ["ctrl-b", "Ctrl-b"]];
@@ -360,7 +386,7 @@
   const pure = { TRAY_GAP, scrollPad, stuckFrom, keptRoom, stickTray, VERSION, MAX_BYTES, CACHE, COLS, HEIGHTS, HEIGHT_REM, HOME, TERMINAL, PAGES, available, minSpan, clampSpan, defaults, normalize,
     isDefault, usedSpan, shown, moveBy, moveBefore, setSpan, resizeBy, setHeight, heightStep, hide, show, reset, entry, parseDoc, savePatch, styleFor, rowSpan, titleOf,
     VIEWS_MAX, SPLITS, COMMANDS_MAX, COMMAND_LABEL_MAX, COMMAND_TEXT_MAX, KEYS, TERMINAL_PX, screenDefaults, normalizeScreen, isDefaultScreen, addView, closeView,
-    setSplit, dragWeights, arrange, commandProblem, normalizeCommands, saveCommand, removeCommand, screenEntry, commandsEntry, savePatchScreen, savePatchCommands };
+    setSplit, dragWeights, arrange, commandProblem, normalizeCommands, saveCommand, removeCommand, screenEntry, commandsEntry, savePatchScreen, savePatchCommands, projectRows, projectsNote };
   root.bnWidgets = { _pure: pure };
   if (typeof document === "undefined" || typeof document.querySelector !== "function") return;
 

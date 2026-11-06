@@ -45,6 +45,8 @@ services:
       # a session or a Chat answer on your plan is started only while it is on; off by default — Anthropic's two texts
       # pull apart, README "Your AI subscriptions"). A change recreates this container.
       CODE_CLAUDE_PLAN: ${CODE_CLAUDE_PLAN:-false}
+      # Where the projects' summary for the portal goes (the code-projects-public volume, below)
+      CODE_PUBLIC_DIR: /var/lib/bn-code-public
       # Chat's models on your subscriptions: the key Open WebUI's connection to :8096 carries (through caddy:8098), never on a
       # command line, never in the sandbox
       CODE_CHAT_KEY: ${CODE_CHAT_KEY:-}
@@ -69,6 +71,10 @@ services:
       # container's alone: never the sandbox's, never in .env, the portal or a backup (a token is entered again, a key
       # made again, after `docker volume rm`).
       - code-state:/var/lib/bn-code
+      # The projects' names and folders for the portal's Terminal page (JON-1158): one file, projects-summary.json (mode 644,
+      # whole or not at all), written here at every change — no token, no key (those stay in code-state above). The portal
+      # mounts this volume read-only: it cannot reach this container, so the file is the only way across.
+      - code-projects-public:/var/lib/bn-code-public
       # The project folders of this computer (./stack project; lib/projects.sh writes roots.json in it): their ids, names,
       # paths in the sandbox and read-only switches — never a path the sandbox says. The folder, read-only (a new list
       # renamed into it is seen at once); never created by Docker (./stack makes it).
@@ -215,6 +221,10 @@ services:
       PREVIEW_DOMAIN: ${PREVIEW_DOMAIN:-devos-ade-preview.localhost}
       REMOTE_PREVIEW_HOST: ${REMOTE_PREVIEW_HOST:-}
       REMOTE_PREVIEW: ${REMOTE_PREVIEW:-}
+    # The Code page's projects as the code container lists them (names and folders alone: projects-summary.json), read-only:
+    # the Terminal page's Projects panel shows them beside the folders of this computer (answers.py projects)
+    volumes:
+      - code-projects-public:/data/code-projects:ro
 
 networks:
   code-link:
@@ -225,6 +235,7 @@ networks:
 
 volumes:
   code-state:
+  code-projects-public:
   chat-socket:
   subs-chat-claude:
   subs-chat-codex:

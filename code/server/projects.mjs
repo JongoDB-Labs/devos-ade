@@ -129,9 +129,16 @@ export const REMOVED_MAX = 200, AUTO_MAX = 64;
 const empty = () => ({ version: 1, projects: [], filed: {}, archived: {}, hostTrust: {}, gone: [], seen: [], localgit: {}, removed: [], auto: [] });
 const WORKSPACE = Object.freeze({ id: WORKSPACE_ID, name: 'Workspace', root: '', created: null, workspace: true });
 
+// The one-way summary of the projects for the portal's Terminal page (JON-1158): the portal cannot reach this container, and
+// code-state holds git tokens and keys, so the names and folders alone go into a volume of their own (compose.code.yaml:
+// code-projects-public — read-write here, read-only in the portal). Mode 644 (the portal is another user); no secret in it.
+export const PUBLIC_DIR = process.env.CODE_PUBLIC_DIR || '';
+export const SUMMARY_FILE = 'projects-summary.json';
+
 export class Projects {
-  constructor({ dir = STATE_DIR, now = () => Date.now(), hostsFile = HOSTS_FILE } = {}) {
+  constructor({ dir = STATE_DIR, now = () => Date.now(), hostsFile = HOSTS_FILE, publicDir = PUBLIC_DIR } = {}) {
     this.dir = path.join(dir, 'projects');
+    this.publicDir = publicDir;
     this.jsonFile = path.join(this.dir, 'projects.json');
     this.now = now;
     this.hostsFile = hostsFile;
@@ -207,6 +214,32 @@ export class Projects {
     const tmp = path.join(this.dir, `.projects-${process.pid}-${crypto.randomBytes(6).toString('hex')}`);
     fs.writeFileSync(tmp, JSON.stringify(v), { mode: 0o600, flag: 'wx' });
     fs.renameSync(tmp, this.jsonFile);
+    this.writeSummary({ v });
+  }
+  /** summary(v, folders) -> {written_at, projects: [{id, name, root, path, host, mode, gone, folder, kept}]}: Workspace first,
+   *  then the others as list() has them. folder: 'ok' or 'missing' (folders: Map(id -> {folder}) from the sandbox's look, when
+   *  there is one; else the record's word: a folder no longer added is missing). kept: on the built-in git server. */
+  summary(v = this.read(), folders = null) {
+    const rows = [{ ...WORKSPACE }, ...[...v.projects, ...this.hostRecords(v)].sort((a, b) => a.name.localeCompare(b.name) || a.root.localeCompare(b.root))];
+    return { written_at: Math.floor(this.now() / 1000), projects: rows.slice(0, PROJECTS_MAX + HOSTS_MAX + 1).map((p) => {
+      const f = folders?.get?.(p.id)?.folder;
+      return { id: p.id, name: p.name, root: p.root, path: absOf(p.root), host: p.host === true, mode: p.host ? (p.mode === 'ro' ? 'ro' : 'rw') : 'rw',
+        gone: p.gone === true, folder: p.gone || (f && f !== 'dir' && f !== 'unmounted') ? 'missing' : 'ok', kept: v.localgit[p.id]?.state === 'kept' };
+    }) };
+  }
+  /** writeSummary({v, folders}) — the summary into publicDir, whole or not at all (a temporary file renamed, mode 644). Never
+   *  fails a change of the records: what cannot be written is left as it was (the portal says the list is old). */
+  writeSummary({ v, folders = null } = {}) {
+    if (!this.publicDir) return false;
+    try {
+      const out = JSON.stringify(this.summary(v ?? this.read(), folders));
+      fs.mkdirSync(this.publicDir, { recursive: true });
+      const tmp = path.join(this.publicDir, `.summary-${process.pid}-${crypto.randomBytes(6).toString('hex')}`);
+      fs.writeFileSync(tmp, out, { mode: 0o644, flag: 'wx' });
+      try { fs.chmodSync(tmp, 0o644); } catch { /* umask */ }
+      fs.renameSync(tmp, path.join(this.publicDir, SUMMARY_FILE));
+      return true;
+    } catch { return false; }
   }
   update(fn) { const v = this.read(); const out = fn(v); this.write(v); return out; }
 

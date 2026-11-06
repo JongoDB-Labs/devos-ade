@@ -14,9 +14,10 @@ import time
 from playwright.sync_api import expect as see
 
 import checks_git
+import checks_terminal as T
 from checks_browser import _last_answer, chat_frame, frame_of, login, owui_api, shot
 from checks_code import CODE, HAIKU, LOCKED_OK, Code, _drop_projects, ask, code_frame, need_haiku, unlock_page
-from common import Skip, check, expect, need, origin
+from common import ENV, Skip, check, expect, need, origin
 
 
 @check("browser", "journey-chat-to-git")
@@ -109,7 +110,20 @@ def chat_to_git(ctx):
         probs = rec.problems(allow=LOCKED_OK + [r"^401 GET " + re.escape(CODE) + r"/\?handoff=", r"No token found in localStorage"])
         rec.save()
         expect(not probs, f"errors: {probs[:6]}")
-        return f"{HAIKU}: a chat about {name} → Make it a project → the dialog (read-only, nothing made) → Create → kept, a session read the chat → README.md in {owner}/{name} and in the Git tab"
+        # 6. (JON-1158) the Terminal tab's Projects panel lists the new project too, as kept: one list for Chat's project, Code and Terminal
+        page.goto(origin() + "/")
+        page.click(".tab[data-tab=terminal]")
+        tf = T.terminal_frame(page)
+        if tf.locator("h1", has_text="Unlock the terminal").count() or tf.locator("#password").count():
+            T.unlock_in(tf, ENV["PORTAL_PASSWORD"])
+        try:
+            T.show_projects_widget(page)
+            T.wait_panel(page, f"/workspace/{name} is not listed as a kept project",
+                         lambda rs: any(x["path"] == f"/workspace/{name}" and x["id"] == proj["id"] and "kept" in x["flags"] for x in rs))
+            shot(page, "journey-5-terminal-panel")
+        finally:
+            T.reset_layout(page)
+        return f"{HAIKU}: a chat about {name} → Make it a project → the dialog (read-only, nothing made) → Create → kept, a session read the chat → README.md in {owner}/{name} and in the Git tab → listed (kept) in the Terminal tab's Projects panel"
     finally:
         # what this check made: its session, the project's record and folder, the repository, the chat
         try:

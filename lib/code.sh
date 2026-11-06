@@ -660,7 +660,7 @@ code_rollback_cleanup() {
 code_uninstall_cleanup() {
   local p; p="$(project_name)"
   code_network_cleanup
-  docker volume rm "${p}_code-state" >/dev/null 2>&1 || true
+  docker volume rm "${p}_code-state" "${p}_code-projects-public" >/dev/null 2>&1 || true
   # (Chat's own sign-ins: by their exact names)
   docker volume rm "${p}_subs-chat-claude" "${p}_subs-chat-codex" "${p}_subs-chat-copilot" "${p}_subs-chat-grok" >/dev/null 2>&1 || true
   docker image rm "$p/code:local" "$p/code:previous" >/dev/null 2>&1 || true

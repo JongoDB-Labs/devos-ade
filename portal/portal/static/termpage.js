@@ -377,22 +377,34 @@
   // --- projects: the folders the pickers know ---
   const projList = h("ul", { class: "tp-projects", "aria-label": "Project folders" });
   const projNone = h("p", { class: "note tp-none", text: "Loading the project folders…" });
-  let folders = null;
-  async function loadFolders() {
+  let rows = null, codeListed = false;
+  async function loadFolders(force) {
     try {
-      const d = await window.bnAnswers.load(false);
-      folders = d && Array.isArray(d.folders) ? [{ path: "/workspace", name: "the workspace" }, ...d.folders.filter((f) => f && typeof f.path === "string")] : [];
-    } catch (_) { folders = []; }
+      const d = await window.bnAnswers.load(force === true);
+      // projects: the Code page's own (answers.py: only while Code runs here and has listed them); folders: your computer's
+      codeListed = !!d && Array.isArray(d.projects);
+      rows = W.projectRows(d && d.projects, d && d.folders);
+    } catch (_) { codeListed = false; rows = W.projectRows(null, null); }
     paintProjects();
   }
   function paintProjects() {
-    if (!folders) return;
-    projNone.hidden = folders.length > 1;
-    projNone.textContent = "No project folders yet: the Code page's projects and your computer's project folders show here.";
-    projList.replaceChildren(...folders.map((f) => h("li", { class: "tp-proj", "data-path": f.path },
-      h("span", { class: "tp-proj-name" }, h("strong", { text: f.name || f.path }), h("small", { text: f.path })),
-      h("button", { type: "button", class: "quiet tp-open-shell", "data-path": f.path, "aria-label": `Open a shell in ${f.name || f.path}`, text: "Open a shell here" }))));
+    if (!rows) return;
+    const note = W.projectsNote(rows, codeListed);
+    projNone.hidden = !note;
+    projNone.textContent = note;
+    projList.replaceChildren(...rows.map((f) => {
+      const flags = [f.kept ? "kept" : "", f.missing ? "folder missing" : "", f.ro ? "read-only" : "", f.pending ? "restart to apply" : ""].filter(Boolean);
+      return h("li", { class: `tp-proj${f.missing ? " tp-proj-gone" : ""}`, "data-path": f.path, "data-id": f.id },
+        h("span", { class: "tp-proj-name" }, h("strong", { text: f.name || f.path }), h("small", { text: f.path }),
+          ...(flags.length ? [h("small", { class: "tp-proj-flags", text: flags.join(" · ") })] : [])),
+        h("button", { type: "button", class: "quiet tp-open-shell", "data-path": f.path, "aria-label": `Open a shell in ${f.name || f.path}`, text: "Open a shell here",
+          ...(f.missing ? { disabled: "" } : {}) }));
+    }));
   }
+  // the list is read when the page opens and again when you come back to it (a project made on the Code page, in Chat or by ./stack since)
+  const reloadProjects = () => { if (built && current && !document.hidden) loadFolders(true); };
+  document.addEventListener("visibilitychange", reloadProjects);
+  window.addEventListener("focus", reloadProjects);
   projList.addEventListener("click", (ev) => {
     const b = ev.target.closest(".tp-open-shell");
     if (!b) return;

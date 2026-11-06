@@ -98,6 +98,7 @@ class Settings:
     update_check: bool = False  # from_env turns it on unless UPDATE_CHECK=false; off in tests (no network)
     update_dir: Path = Path("/data/update-check")
     status_dir: Path = Path("/data/status")
+    code_projects_dir: Path = Path("/data/code-projects")   # the code container's project summary (compose.code.yaml; read-only)
     # One-click actions through the host helper (portal/admin.py): the only folder they write is request_dir.
     request_dir: Path = Path("/data/requests")
     remote_admin_actions: bool = False  # REMOTE_ADMIN_ACTIONS=true allows them from remote (non-localhost) access
@@ -345,6 +346,7 @@ def from_env(env: dict | None = None) -> Settings:
         update_check=(env.get("UPDATE_CHECK") or "true").strip().lower() not in ("false", "0", "no", "off"),
         update_dir=Path(env.get("PORTAL_UPDATE_DIR", "/data/update-check")),
         status_dir=Path(env.get("PORTAL_STATUS_DIR", "/data/status")),
+        code_projects_dir=Path(env.get("PORTAL_CODE_PROJECTS_DIR", "/data/code-projects")),
         request_dir=Path(env.get("PORTAL_REQUEST_DIR", "/data/requests")),
         remote_admin_actions=_on(env.get("REMOTE_ADMIN_ACTIONS")),
         app_hosts=app_hosts,

@@ -1703,6 +1703,15 @@ is always there and has no record). The records are kept by the code container i
 sandbox. At most 64; a folder is 1 to 4 names, none starting with `.`, at most 160 bytes, no control or
 direction-changing character; a record that does not fit (a file someone changed) is dropped, never trusted.
 
+The Terminal page's Projects panel lists them too (JON-1158). The portal cannot reach the code container (no shared network),
+and `code-state` holds Git tokens and keys, so the code container writes a one-way summary into a volume of its own
+(`<project>_code-projects-public`, `projects-summary.json`: mode 644, written whole by a rename; read-write in `code`,
+read-only in `portal` at `/data/code-projects`). It holds only `id`, `name`, `root`, `path`, `host`, `mode`, `gone`, `folder`
+and `kept` of each project: no token, key, remote or setting. The portal treats it as untrusted (`settings.code_projects`:
+at most 64 rows, the id `ws` or `p_` and 8 hex, a one-line name of at most 80 characters, a path that is the workspace, a folder
+of it as `folder_ok` takes it, or a folder of this computer outside the workspace; a row that does not fit is dropped; a
+missing, old or corrupt file means no list, and the panel says so).
+
 The model you picked last for new sessions is kept beside them (`prefs/prefs.json`, the same modes: `GET` / `PUT
 /api/prefs`, the page's own Origin for a change), so every browser and device of your sign-in starts alike: model ids
 only (never one of Claude Code's aliases, at most 128 characters), anything else refused (400) or read as no choice.

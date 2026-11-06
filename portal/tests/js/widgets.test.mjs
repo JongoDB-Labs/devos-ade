@@ -478,3 +478,48 @@ test("the compact tray keeps the status line announced and the help in the page 
   assert.doesNotMatch(css, /\.wg-stuck [^{]*\.wg-status[^{]*\{[^}]*display: none/, "display none would silence the live region");
   assert.doesNotMatch(css, /\.wg-stuck[^{]*\{[^}]*transition/, "no animation of the compaction");
 });
+
+// --- the Terminal page's Projects panel (JON-1158): the workspace, the Code page's projects and your computer's folders ---
+
+test("projects panel: the workspace, then the Code page's projects, then the folders of this computer, one row per folder", () => {
+  const rows = W.projectRows(
+    [{ id: "ws", name: "Workspace", path: "/workspace" }, { id: "p_0123abcd", name: "My App", path: "/workspace/app", kept: true, folder: "ok" },
+      { id: "p_89abcdef", name: "src", path: "/projects/src", host: true, mode: "ro" }],
+    [{ id: "p_89abcdef", name: "src", path: "/projects/src", mode: "ro" }, { id: "p_00000001", name: "notes", path: "/projects/notes", mode: "rw", pending: "add" }]);
+  assert.deepEqual(plain(rows.map((r) => [r.id, r.name, r.path])), [["ws", "the workspace", "/workspace"], ["p_0123abcd", "My App", "/workspace/app"],
+    ["p_89abcdef", "src", "/projects/src"], ["p_00000001", "notes", "/projects/notes"]]);
+  assert.equal(by(rows, "p_0123abcd").kept, true);
+  assert.equal(by(rows, "p_89abcdef").ro, true);
+  assert.equal(by(rows, "p_00000001").pending, "add");
+  assert.equal(by(rows, "p_00000001").host, true);
+});
+
+test("projects panel: a project the Code page lists wins over the same folder from ./stack, by path and by id", () => {
+  const rows = W.projectRows([{ id: "p_89abcdef", name: "Code's name", path: "/projects/src", host: true }], [{ id: "p_89abcdef", name: "stack name", path: "/projects/src" }]);
+  assert.deepEqual(plain(rows.map((r) => r.name)), ["the workspace", "Code's name"]);
+});
+
+test("projects panel: a missing folder is marked; bad rows and the workspace's twin are left out", () => {
+  const rows = W.projectRows([{ id: "p_0123abcd", name: "Gone", path: "/workspace/gone", folder: "missing" }, { id: "p_00000002", name: "Old", path: "/projects/old", gone: true, host: true },
+    null, 7, { id: "p_1", name: 5, path: "/workspace/x" }, { name: "x" }, { id: "p_00000003", name: "dup", path: "/workspace" }], [null, { name: "no path" }]);
+  assert.deepEqual(plain(rows.map((r) => [r.path, r.missing])), [["/workspace", false], ["/workspace/gone", true], ["/projects/old", true]]);
+});
+
+test("projects panel: Code off (null) or a list that is not an array falls back to the workspace and the folders", () => {
+  for (const projects of [null, undefined, "x", {}]) {
+    const rows = W.projectRows(projects, [{ id: "p_0123abcd", name: "app", path: "/projects/app" }]);
+    assert.deepEqual(plain(rows.map((r) => r.path)), ["/workspace", "/projects/app"]);
+  }
+  assert.deepEqual(plain(W.projectRows(null, null).map((r) => r.path)), ["/workspace"]);
+});
+
+test("projects panel: the note is shown only when it is true", () => {
+  const only = W.projectRows([], []), more = W.projectRows([{ id: "p_0123abcd", name: "App", path: "/workspace/app" }], []);
+  // projects exist: no "none" note when Code listed them; an honest one when Code did not
+  assert.equal(W.projectsNote(more, true), "");
+  assert.match(W.projectsNote(W.projectRows(null, [{ name: "a", path: "/projects/a" }]), false), /Code page is off/);
+  // nothing but the workspace: a note either way, and it never says "no project folders" while Code lists some
+  assert.match(W.projectsNote(only, true), /^No projects yet/);
+  assert.match(W.projectsNote(only, false), /Code page is off/);
+  assert.doesNotMatch(W.projectsNote(more, true), /No project/);
+});

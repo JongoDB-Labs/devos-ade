@@ -299,7 +299,7 @@ teardown() {
     # The browser terminal (--terminal) lives in overlay files that `down` without them does not read: its volume
     # and networks go by name — a network up to 5 times, a second apart (Docker may still hold the endpoint of a
     # container that has just gone; one it never lets go is said below).
-    docker volume rm "${PROJECT}_terminal-home" "${PROJECT}_terminal-socket" "${PROJECT}_code-socket" "${PROJECT}_preview-socket" "${PROJECT}_code-state" >/dev/null 2>&1 || true
+    docker volume rm "${PROJECT}_terminal-home" "${PROJECT}_terminal-socket" "${PROJECT}_code-socket" "${PROJECT}_preview-socket" "${PROJECT}_code-state" "${PROJECT}_code-projects-public" >/dev/null 2>&1 || true
     for net in "${PROJECT}_terminal" "${PROJECT}_terminal-out" "${PROJECT}_terminal-link" "${PROJECT}_terminal-proxy"; do
       for n in 1 2 3 4 5; do
         docker network rm "$net" >/dev/null 2>&1 && break

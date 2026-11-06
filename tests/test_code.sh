@@ -643,12 +643,16 @@ assert o["environment"]["OPENAI_API_KEYS"].startswith(";") or o["environment"]["
 assert c["user"] == "501:20" and c["read_only"] and c["cap_drop"] == ["ALL"] and "ports" not in c
 assert [(v["source"], v["target"], v.get("read_only")) for v in c["volumes"]][:3] == [("code-socket", "/run/bn-code", True), ("chat-socket", "/run/bn-chat", True),
   ("code-state", "/var/lib/bn-code", None)], c["volumes"]
+# (the project summary for the portal: its own volume, read-write here and read-only in the portal; never code-state)
+assert [(v["source"], v["target"], v.get("read_only")) for v in c["volumes"][3:4]] == [("code-projects-public", "/var/lib/bn-code-public", None)], c["volumes"]
+assert [(v["source"], v["target"], v.get("read_only")) for v in s["portal"]["volumes"] if v["source"] == "code-projects-public"] == [("code-projects-public", "/data/code-projects", True)]
+assert not any(v.get("source") == "code-projects-public" for n, x in s.items() if n not in ("code", "portal") for v in x.get("volumes") or [])
 # (the project folders public list: a folder of the stack, read-only, never created by Docker)
-assert [(v["type"], v["source"].endswith("/.state/projects/public"), v["target"], v.get("read_only"), bool(v["bind"].get("create_host_path"))) for v in c["volumes"][3:]] == [
+assert [(v["type"], v["source"].endswith("/.state/projects/public"), v["target"], v.get("read_only"), bool(v["bind"].get("create_host_path"))) for v in c["volumes"][4:]] == [
   ("bind", True, "/etc/bn-code/projects", True, False)], c["volumes"]
 # (Git hosts: the code container's own volume, never the sandbox's)
 assert not any(v.get("source") == "code-state" for n, x in s.items() if n != "code" for v in x.get("volumes") or [])
-assert sorted(c["environment"]) == ["CODE_ALLOW_BYPASS", "CODE_AUTO_MODE", "CODE_CHAT_KEY", "CODE_CLAUDE_PLAN", "CODE_PROXY_SECRET", "CODE_WORKSPACE_LABEL",
+assert sorted(c["environment"]) == ["CODE_ALLOW_BYPASS", "CODE_AUTO_MODE", "CODE_CHAT_KEY", "CODE_CLAUDE_PLAN", "CODE_PROXY_SECRET", "CODE_PUBLIC_DIR", "CODE_WORKSPACE_LABEL",
   "GIT_GITHUB_APP_SLUG", "GIT_GITHUB_CLIENT_ID", "GIT_GITLAB_CLIENT_ID", "HOME", "TERMINAL_EGRESS"], c["environment"]
 assert c["environment"]["CODE_CLAUDE_PLAN"] == "false" and "CODE_CLAUDE_PLAN" not in t["environment"]
 # (Git hosts sign-in: public application IDs, blank by default: the apps of devos-ade; no network of its own for it)

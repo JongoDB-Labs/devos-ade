@@ -21,6 +21,9 @@ from common import ENV, HOST, PORT, TARGET_IP, Skip, check, expect, http, origin
 from checks_browser import login, shot
 
 ON = ENV.get("TERMINAL_ENABLED") == "true"
+# the Code page project the Projects widget checks make (JON-1158): its folder in the workspace, its name, and where the terminal opens
+PROJ_ROOT, PROJ_NAME = "e2e-term-proj", "E2E Term Project"
+PROJ_PATH = f"/workspace/{PROJ_ROOT}"
 CLAUDE = os.environ.get("E2E_TERMINAL_CLAUDE") == "1"
 HOSTILE = os.environ.get("E2E_TERMINAL_HOSTILE") == "1"
 # What the main Caddy takes away from whatever answers on ttyd's socket (caddy/Caddyfile, terminal_page)
@@ -609,6 +612,39 @@ def add_back(page, wid: str):
     page.wait_for_selector(f"[data-widget={wid}]:not([hidden])")
 
 
+# The Projects widget's rows (JON-1158): the workspace, the Code page's projects (the code container's summary, through the
+# portal's /api/answers) and the folders of this computer
+PANEL_ROWS = """() => [...document.querySelectorAll('.tp-proj')].map((e) => ({path: e.dataset.path, id: e.dataset.id,
+  name: e.querySelector('strong').textContent, flags: (e.querySelector('.tp-proj-flags') || {}).textContent || '', gone: e.classList.contains('tp-proj-gone'),
+  button: !!e.querySelector('.tp-open-shell:not([disabled])')}))"""
+PANEL_ALLOW = [r"^429 GET .*/api/answers", r"^409 .*", r"^404 .*"]   # (transient: the panel polls /api/answers; a window moved under it)
+
+
+def show_projects_widget(page):
+    """The Projects widget on the Terminal page (it is off in the default layout), with its rows."""
+    if not page.locator("[data-widget=projects]:not([hidden])").count():
+        customize(page)
+        add_back(page, "projects")
+    page.wait_for_selector(".tp-proj")
+
+
+def panel_note(page) -> str:
+    return page.evaluate("() => { const n = document.querySelector('.tp-none'); return n && !n.hidden ? n.textContent : ''; }")
+
+
+def wait_panel(page, what: str, pred, timeout=40):
+    """The widget's rows once PRED(rows) holds. The page reads the list again when you come back to it (focus): that is sent
+    each time, as a person returning from the Code page does."""
+    t0, rows = time.time(), []
+    while time.time() - t0 < timeout:
+        page.evaluate("() => window.dispatchEvent(new Event('focus'))")
+        page.wait_for_timeout(900)
+        rows = page.evaluate(PANEL_ROWS)
+        if pred(rows):
+            return rows
+    raise AssertionError(f"the Projects panel: {what}; rows {rows}")
+
+
 def add_terminal(page, n: int):
     """Add a terminal and wait until view N shows tmux, in a window of its own, at a clean prompt: a view's session
     outlives the check that made it (Close only detaches), so what an earlier check left running there (cat -v) is
@@ -946,6 +982,12 @@ def widgets_messages(ctx):
 @check("browser", "terminal-widgets-open-a-shell-in-a-project")
 def widgets_projects(ctx):
     need_on()
+    from checks_code import Code, _drop_projects
+    # a project of the Code page (JON-1158): made through its API before the Terminal tab opens (ctx.page closes the other pages)
+    c = Code(ctx, "terminal-widgets-projects-code")
+    _drop_projects(c, (PROJ_ROOT,))
+    r = c.api("POST", "/api/projects", {"kind": "new", "folder": PROJ_ROOT, "name": PROJ_NAME, "git": False})
+    expect(r["status"] == 200, f"the Code project: {r['status']} {r['text'][:200]}")
     page, rec = open_terminal(ctx, "terminal-widgets-projects")
     try:
         customize(page)
@@ -953,9 +995,14 @@ def widgets_projects(ctx):
         page.wait_for_selector(".tp-proj")
         names = page.eval_on_selector_all(".tp-proj", "els => els.map((e) => e.dataset.path)")
         expect(names and names[0] == "/workspace", f"the project list {names}")
+        # the Code page's project is listed by its name, with its folder, and the "none yet" note is not shown
+        rows = wait_panel(page, f"no row for {PROJ_PATH} named {PROJ_NAME}", lambda rs: any(x["path"] == PROJ_PATH and x["name"] == PROJ_NAME for x in rs))
+        names = [x["path"] for x in rows]
+        expect(not panel_note(page).startswith("No project"), f"a false 'No project folders' note: {panel_note(page)!r}")
+        expect(len(set(names)) == len(names), f"a folder listed twice {names}")
         every = page.eval_on_selector_all(".tp-open-shell", "els => els.map((b) => [b.getAttribute('aria-label'), b.getBoundingClientRect().height])")
         expect(all(a and a.startswith("Open a shell in ") for a, _ in every), f"unnamed buttons {every}")
-        target = names[1] if len(names) > 1 else names[0]
+        target = PROJ_PATH
         page.click(f".tp-open-shell[data-path='{target}']")
         page.wait_for_function("(p) => /arg=open&arg=shell&arg=/.test(document.querySelector('iframe[data-app=terminal]').src) && (p === '/workspace' || document.querySelector('iframe[data-app=terminal]').src.endsWith(encodeURIComponent(p)))",
                                arg=target, timeout=15000)
@@ -971,7 +1018,84 @@ def widgets_projects(ctx):
         rec.save()
     finally:
         reset_layout(page)
-    return f"projects: the workspace and the known project folders listed; Open a shell here ({target}) opens a shell window there in view 1"
+        try:
+            _drop_projects(Code(ctx, "terminal-widgets-projects-clean"), (PROJ_ROOT,))
+        except Exception:  # noqa: BLE001 — tidying never hides the failure
+            pass
+    return f"projects: the workspace, the Code page's project {PROJ_NAME} (by name) and the known project folders listed; Open a shell here ({target}) opens a shell window there in view 1"
+
+
+@check("browser", "terminal-projects-follow-the-code-page")
+def projects_follow_code(ctx):
+    """JON-1158: the Terminal page's Projects widget is the Code page's list (one source), not a list of its own: a rename shows with the
+    same folder, a removed record goes, every project of the Code page is a row, and with no list from Code (Code off) the widget falls back
+    to the workspace and the folders of this computer with a note that is true."""
+    need_on()
+    from checks_code import Code, _drop_projects
+    c = Code(ctx, "terminal-projects-follow-code")
+    _drop_projects(c, (PROJ_ROOT,))
+    r = c.api("POST", "/api/projects", {"kind": "new", "folder": PROJ_ROOT, "name": PROJ_NAME, "git": False})
+    expect(r["status"] == 200, f"the Code project: {r['status']} {r['text'][:200]}")
+    pid = r["json"]["project"]["id"]
+    # (the Code page's own list, as the Code page has it: every project of the workspace that is not gone)
+    listed = c.api("GET", "/api/projects")["json"]["projects"]
+    code_paths = {x["path"] for x in listed if not x.get("host") and not x.get("gone") and not x.get("workspace")}
+    expect(PROJ_PATH in code_paths, f"the project is not in the Code page's list {code_paths}")
+    # a second browser for the Terminal tab (a person has both open): the Code client stays where it was
+    from checks_journeys import extra_page
+    tp, trec = extra_page(ctx, "terminal-projects-follow-code-term")
+    login(tp)
+    tp.click(".tab[data-tab=terminal]")
+    f = terminal_frame(tp)
+    if f.locator("h1", has_text="Unlock the terminal").count() or f.locator("#password").count():
+        unlock_in(f, ENV["PORTAL_PASSWORD"])
+    try:
+        show_projects_widget(tp)
+        rows = wait_panel(tp, f"{PROJ_PATH} is not listed", lambda rs: any(x["path"] == PROJ_PATH for x in rs))
+        # one source: every project of the Code page is a row, and the row for each is named as the Code page names it
+        by_path = {x["path"]: x for x in rows}
+        expect(code_paths <= set(by_path), f"Code page projects missing from the panel: {sorted(code_paths - set(by_path))}")
+        expect(by_path[PROJ_PATH]["name"] == PROJ_NAME and by_path[PROJ_PATH]["id"] == pid, f"the row {by_path[PROJ_PATH]}")
+        shot(tp, "terminal-projects-follow-code-1")
+        # a rename on the Code page: the panel shows the new name, the same folder
+        renamed = PROJ_NAME + "-renamed"
+        expect(c.api("POST", f"/api/projects/{pid}", {"name": renamed})["status"] == 200, "rename")
+        rows = wait_panel(tp, "the new name is not shown", lambda rs: any(x["path"] == PROJ_PATH and x["name"] == renamed for x in rs))
+        expect(sum(1 for x in rows if x["id"] == pid) == 1, f"the renamed project twice {rows}")
+        # the record removed (the folder stays): the row goes (or, if the Code page still lists the folder, it is marked missing)
+        expect(c.api("DELETE", f"/api/projects/{pid}")["status"] == 200, "remove")
+        wait_panel(tp, "the removed project is still listed", lambda rs: not any(x["path"] == PROJ_PATH and not x["gone"] for x in rs))
+        # no list from Code (Code off, or the code container has not written it): the workspace and the folders of this computer, and the note
+        # says so: the portal's answer without its `projects` field, as it is then
+        tp.route("**/api/answers*", _answers_without_projects)
+        rows = wait_panel(tp, "no fallback list", lambda rs: bool(rs) and rs[0]["path"] == "/workspace" and all(x["path"] != PROJ_PATH for x in rs))
+        note = panel_note(tp)
+        expect("Code page is off" in note, f"the note without Code's list: {note!r}")
+        expect(not note.startswith("No project folders"), f"the old false note: {note!r}")
+        shot(tp, "terminal-projects-follow-code-2")
+        problems = [x for x in trec.problems(allow=LOCKED_OK + PANEL_ALLOW) if x.startswith("pageerror") or x.startswith("console.error")]
+        trec.save()
+        expect(not problems, f"errors on the Terminal page: {problems[:5]}")
+    finally:
+        try:
+            tp.unroute("**/api/answers*")
+            reset_layout(tp)
+            _drop_projects(c, (PROJ_ROOT,))
+            c.api("DELETE", f"/api/fs?path={PROJ_ROOT}")
+        except Exception:  # noqa: BLE001 — tidying never hides the failure
+            pass
+    return "Terminal Projects widget: every Code page project is a row (named as there); a rename shows with the same folder; a removed record's row goes; with no list from Code it falls back to the workspace and the computer's folders with a note that says so, no JS error"
+
+
+def _answers_without_projects(route):
+    """The portal's /api/answers as it is while Code is off (or has not written its list): the same JSON without `projects`."""
+    resp = route.fetch()
+    try:
+        d = resp.json()
+        d.pop("projects", None)
+        route.fulfill(response=resp, json=d)
+    except Exception:  # noqa: BLE001 — not JSON (a 401, a 429): pass it on as it is
+        route.fulfill(response=resp)
 
 
 @check("browser", "terminal-widgets-keyboard-only")

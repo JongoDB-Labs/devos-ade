@@ -25,6 +25,7 @@ import re
 import secrets
 import tempfile
 import time
+import unicodedata
 from pathlib import Path
 
 from . import brand, hostfiles
@@ -65,6 +66,7 @@ REVEAL = ("LITELLM_UI_PASSWORD", "RUSTFS_ACCESS_KEY", "RUSTFS_SECRET_KEY", "LITE
 DIAG_ACTIONS = ("check-aws", "models-recheck", "backup", "test", "report", "restart-litellm", "restart-open-webui",
                 "restart-shared-mcp", "restart-stt", "restart-rustfs", "restart-caddy", "restart-searxng")
 PROJECT_ACTIONS = ("project-pick", "project-remove", "project-mode-ro")
+CODE_PROJECTS = "projects-summary.json"        # the Code page's projects, written by the code container (code/server/projects.mjs summary)
 PROJECTS = "projects.json"                     # ./stack's list of project folders (lib/projects.sh)
 SESSIONS_ACTIONS = ("sessions-revoke",)
 # what the Code page's Import sheet asks of the computer through the portal (ses-<nonce>.json: lib/sessions.sh), and its
@@ -93,6 +95,12 @@ SUBS_SIGNOUT_CHAT_TOOLS = ("claude", "codex", "grok")
 SUBS_SIGNOUT = {"subscriptions-signout": SUBS_SIGNOUT_TOOLS, "subscriptions-signout-chat": SUBS_SIGNOUT_CHAT_TOOLS}
 MAX_PROJECTS_FILE = 64 * 1024
 PROJECT_ID = re.compile(r"p_[0-9a-f]{8}")
+CODE_PROJECT_ID = re.compile(r"ws|p_[0-9a-f]{8}")
+# a folder of the workspace as the Code page's projects are (1 to 4 names, none starting with "."), or the workspace itself
+WORKSPACE_PATH = re.compile(r"/workspace(?:/[^/.\x00-\x1f\x7f][^/\x00-\x1f\x7f]{0,99}){0,4}")
+ODD_CATEGORIES = ("Cc", "Cf", "Cs", "Co", "Cn", "Zl", "Zp")   # (answers.ODD: nothing that could turn or hide a name's text)
+MAX_CODE_PROJECTS_FILE = 64 * 1024
+MAX_CODE_PROJECTS = 64
 PROJECT_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 NAME = re.compile(r"[A-Z][A-Z0-9_]{1,40}")
 HEX64 = re.compile(r"[0-9a-f]{64}")
@@ -328,6 +336,45 @@ def project_folders(status_dir: Path) -> dict:
             leaving.append({"path": p, "mode": x["mode"]})
     return {"written_at": d.get("written_at") if isinstance(d.get("written_at"), int) else None, "max": 16, "folders": out,
             "leaving": leaving, "running": d.get("running") is True}
+
+
+def _plain(v, n: int) -> bool:
+    """A one-line text of 1 to N characters, no control, format, private-use, unassigned or separator character."""
+    return isinstance(v, str) and 0 < len(v) <= n and v.strip() == v and not any(unicodedata.category(c) in ODD_CATEGORIES for c in v)
+
+
+def code_projects(code_projects_dir: Path) -> dict:
+    """The Code page's projects as the code container lists them (code/server/projects.mjs summary): {"present", "written_at",
+    "projects": [{id, name, root, path, host, mode, gone, folder, kept}]}. That container handles the sandbox's output, so the file
+    is as untrusted as any: at most 64 rows, every field checked, a row that does not fit dropped (a missing, unreadable, old or
+    wrong file: present False, no projects). Secrets are not in it, and are not read from it: only these fields are copied."""
+    d = _read_json(code_projects_dir / CODE_PROJECTS, MAX_CODE_PROJECTS_FILE)
+    if not isinstance(d.get("projects"), list):
+        return {"present": False, "written_at": None, "projects": []}
+    out = []
+    for p in d["projects"][:MAX_CODE_PROJECTS]:
+        if not isinstance(p, dict) or not isinstance(p.get("id"), str) or not CODE_PROJECT_ID.fullmatch(p["id"]):
+            continue
+        name, where, root, host = p.get("name"), p.get("path"), p.get("root"), p.get("host") is True
+        if not _plain(name, 80) or not isinstance(where, str) or not isinstance(root, str) or len(where) > 1024 or (not host and len(where.encode("utf-8", "ignore")) > 251):
+            continue
+        if host:   # a folder of this computer: id p_…, an absolute path in the sandbox, none in or around the workspace
+            if p["id"] == "ws" or root != where or not where.startswith("/") or where == "/" or where.endswith("/") \
+                    or re.search(r"[\x00-\x1f\x7f]", where) or any(unicodedata.category(c) in ODD_CATEGORIES for c in where) \
+                    or where == "/workspace" or where.startswith("/workspace/") or "/../" in where + "/":
+                continue
+        elif p["id"] == "ws":
+            if where != "/workspace" or root != "":
+                continue
+        elif not WORKSPACE_PATH.fullmatch(where) or where == "/workspace" or root != where[len("/workspace/"):] \
+                or any(unicodedata.category(c) in ODD_CATEGORIES for c in where):
+            continue
+        if any(x["id"] == p["id"] or x["path"] == where for x in out):
+            continue
+        out.append({"id": p["id"], "name": name, "path": where, "host": host, "mode": "ro" if p.get("mode") == "ro" else "rw",
+                    "gone": p.get("gone") is True, "folder": "missing" if p.get("folder") == "missing" or p.get("gone") is True else "ok",
+                    "kept": p.get("kept") is True})
+    return {"present": True, "written_at": d["written_at"] if isinstance(d.get("written_at"), int) else None, "projects": out}
 
 
 def backups(status_dir: Path) -> dict:
