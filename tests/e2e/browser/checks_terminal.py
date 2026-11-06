@@ -1018,9 +1018,10 @@ def widgets_projects(ctx):
         run_in(page, 1, "echo cwd=$(pwd)")
         wait_text(f, rf"^cwd={re.escape(target)}$", 20)
         shot(page, "terminal-widgets-projects")
-        # end the shell this opened: its window is the shared session's active one, and the next window made (Ctrl-b c) would start in
-        # this project's folder — the active window must be the base /workspace shell again
-        run_in(page, 1, "exit")
+        # this shell's window is the shared session's active one, and the next window made (Ctrl-b c) starts in the active pane's
+        # folder — cd back to /workspace so a later check's new window does not start in this project (the window respawns bash on
+        # exit, so closing it is not reliable; changing its folder is)
+        run_in(page, 1, "cd /workspace")
         wait_text(f, r"^terminal /workspace \$", 20)
         rec.save()
     finally:
