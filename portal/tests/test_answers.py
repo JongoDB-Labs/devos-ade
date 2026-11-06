@@ -785,21 +785,21 @@ def test_code_projects_rows_are_copied_field_by_field(cs):
                   _row("p_00000001", "Gone", "old", folder="missing", extra="x", token="ghp_nope")])
     d = st.code_projects(cs.code_projects_dir)
     assert d["present"] and d["written_at"] == 1700000000
-    assert [p["id"] for p in d["projects"]] == ["p_0123abcd", "ws", "p_89abcdef", "p_00000001"]
+    assert [p["id"] for p in d["projects"]] == ["p_0123abcd", "ws", "p_00000001"]   # (a host row is ignored: ./stack's list has those)
     assert d["projects"][0] == {"id": "p_0123abcd", "name": "App", "path": "/workspace/app", "host": False, "mode": "rw", "gone": False, "folder": "ok", "kept": True}
-    assert d["projects"][2]["host"] and d["projects"][2]["mode"] == "ro" and d["projects"][2]["path"] == "/projects/src"
-    assert d["projects"][3]["folder"] == "missing"
+    assert not any(p["host"] for p in d["projects"])
+    assert d["projects"][2]["folder"] == "missing"
     assert "ghp_nope" not in json.dumps(d)
 
 
 def test_code_projects_untrusted_rows_are_dropped(cs):
-    bad = [_row("../etc"), _row("p_XYZ"), _row("p_00000001", "a\nb"), _row("p_00000002", "x‮y"), _row("p_00000003", ""), _row("p_00000004", "n" * 81),
+    bad = [_row("../etc"), _row("p_XYZ"), _row("p_00000001", "a\nb"), _row("p_000000f1", "nb\u00a0sp"), _row("p_00000002", "x‮y"), _row("p_00000003", ""), _row("p_00000004", "n" * 81),
            _row("p_00000005", "ok", "a", path="/etc/passwd"), _row("p_00000006", "ok", "a", path="/workspace/../x"),
            _row("p_00000007", "ok", ".hid"), _row("p_00000008", "ok", "a", path="/workspace/b"),
            _row("p_00000009", "ok", "a\x00b"),
            _row("p_0000000a", "ok", "z" * 100 + "/" + "z" * 100 + "/" + "z" * 60),
            _row("p_0000000b", "ok", "x", host=True, path="/workspace/x"), _row("p_0000000c", "ok", "rel", host=True, path="rel"),
-           _row("p_0000000d", "ok", "/a/../b", host=True, path="/a/../b"), _row("ws", "W", "", path="/workspace/x"), "nope", 7, None,
+           _row("p_0000000d", "ok", "/etc", host=True, path="/etc"), _row("p_0000000f", "ok", "/root/.ssh", host=True, path="/root/.ssh"), _row("ws", "W", "", path="/workspace/x"), "nope", 7, None,
            _row("p_0000000e", "ok", "e", path=["/workspace/e"]), _row(5)]
     _summary(cs, bad + [_row("p_0123abcd")])
     assert [p["id"] for p in st.code_projects(cs.code_projects_dir)["projects"]] == ["p_0123abcd"]
@@ -834,7 +834,7 @@ def test_code_projects_symlink_is_not_followed(cs, tmp_path):
 def test_build_has_projects_only_with_code_on_and_a_summary(cs):
     _summary(cs, [_row(), _row("p_89abcdef", "src", "/projects/src", host=True, path="/projects/src")])
     d = answers.build(cs, False)
-    assert [p["name"] for p in d["projects"]] == ["App", "src"]
+    assert [p["name"] for p in d["projects"]] == ["App"]
     assert d["folders"] == []   # (the host folders stay ./stack's own list)
     assert "projects" not in answers.build(replace(cs, code=False), False)
     assert "projects" not in answers.build(replace(cs, terminal=False), False)

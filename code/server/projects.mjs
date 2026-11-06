@@ -136,9 +136,12 @@ export const PUBLIC_DIR = process.env.CODE_PUBLIC_DIR || '';
 export const SUMMARY_FILE = 'projects-summary.json';
 
 export class Projects {
-  constructor({ dir = STATE_DIR, now = () => Date.now(), hostsFile = HOSTS_FILE, publicDir = PUBLIC_DIR } = {}) {
+  constructor({ dir = STATE_DIR, now = () => Date.now(), hostsFile = HOSTS_FILE, publicDir = PUBLIC_DIR, log = null } = {}) {
     this.dir = path.join(dir, 'projects');
     this.publicDir = publicDir;
+    this.log = log;
+    this.lastSummary = null;   // the last payload written (without written_at): an unchanged one is not written again
+    this.summaryFailed = false;
     this.jsonFile = path.join(this.dir, 'projects.json');
     this.now = now;
     this.hostsFile = hostsFile;
@@ -217,10 +220,10 @@ export class Projects {
     this.writeSummary({ v });
   }
   /** summary(v, folders) -> {written_at, projects: [{id, name, root, path, host, mode, gone, folder, kept}]}: Workspace first,
-   *  then the others as list() has them. folder: 'ok' or 'missing' (folders: Map(id -> {folder}) from the sandbox's look, when
+   *  then the folders of the workspace that are projects (the folders of this computer are not here: the portal has them from ./stack). folder: 'ok' or 'missing' (folders: Map(id -> {folder}) from the sandbox's look, when
    *  there is one; else the record's word: a folder no longer added is missing). kept: on the built-in git server. */
   summary(v = this.read(), folders = null) {
-    const rows = [{ ...WORKSPACE }, ...[...v.projects, ...this.hostRecords(v)].sort((a, b) => a.name.localeCompare(b.name) || a.root.localeCompare(b.root))];
+    const rows = [{ ...WORKSPACE }, ...[...v.projects].sort((a, b) => a.name.localeCompare(b.name) || a.root.localeCompare(b.root))];
     return { written_at: Math.floor(this.now() / 1000), projects: rows.slice(0, PROJECTS_MAX + HOSTS_MAX + 1).map((p) => {
       const f = folders?.get?.(p.id)?.folder;
       return { id: p.id, name: p.name, root: p.root, path: absOf(p.root), host: p.host === true, mode: p.host ? (p.mode === 'ro' ? 'ro' : 'rw') : 'rw',
@@ -231,15 +234,23 @@ export class Projects {
    *  fails a change of the records: what cannot be written is left as it was (the portal says the list is old). */
   writeSummary({ v, folders = null } = {}) {
     if (!this.publicDir) return false;
+    let tmp = null;
     try {
-      const out = JSON.stringify(this.summary(v ?? this.read(), folders));
+      const sum = this.summary(v ?? this.read(), folders);
+      const key = JSON.stringify(sum.projects);
+      if (key === this.lastSummary) return true;
       fs.mkdirSync(this.publicDir, { recursive: true });
-      const tmp = path.join(this.publicDir, `.summary-${process.pid}-${crypto.randomBytes(6).toString('hex')}`);
-      fs.writeFileSync(tmp, out, { mode: 0o644, flag: 'wx' });
+      tmp = path.join(this.publicDir, `.summary-${process.pid}-${crypto.randomBytes(6).toString('hex')}`);
+      fs.writeFileSync(tmp, JSON.stringify(sum), { mode: 0o644, flag: 'wx' });
       try { fs.chmodSync(tmp, 0o644); } catch { /* umask */ }
       fs.renameSync(tmp, path.join(this.publicDir, SUMMARY_FILE));
+      this.lastSummary = key;
       return true;
-    } catch { return false; }
+    } catch (e) {
+      if (tmp) { try { fs.unlinkSync(tmp); } catch { /* not there */ } }
+      if (!this.summaryFailed) { this.summaryFailed = true; try { this.log?.(`projects: the summary for the portal cannot be written (${String(e?.message || e).slice(0, 200)})`); } catch { /* logging never fails a change */ } }
+      return false;
+    }
   }
   update(fn) { const v = this.read(); const out = fn(v); this.write(v); return out; }
 

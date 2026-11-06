@@ -188,7 +188,7 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
   const subs = subsStatus ?? makeStatus({ call, log: logger });
   // the project records (projects.mjs): made on first use, as Git hosts are
   let projectStore = projects;
-  const proj = () => (projectStore ??= new Projects());
+  const proj = () => (projectStore ??= new Projects({ log: logger }));
   // your choices for new sessions (userprefs.mjs): kept for your sign-in, so every browser and device starts alike
   let prefsStore = userPrefs;
   const prefs = () => (prefsStore ??= new UserPrefs());

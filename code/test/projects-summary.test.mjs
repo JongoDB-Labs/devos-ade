@@ -22,12 +22,12 @@ test('summary: shape, Workspace first, host folders flagged, no extra fields', (
   store.add({ root: 'app', name: 'App' });
   const s = read();
   assert.equal(s.written_at, NOW / 1000);
-  assert.deepEqual(s.projects.map((p) => p.name), ['Workspace', 'App', 'src']);
+  assert.deepEqual(s.projects.map((p) => p.name), ['Workspace', 'App']);   // (the folders of this computer are not in it)
   const app = s.projects[1];
   assert.match(app.id, /^p_[0-9a-f]{8}$/);
   assert.deepEqual(Object.keys(app).sort(), ['folder', 'gone', 'host', 'id', 'kept', 'mode', 'name', 'path', 'root']);
   assert.deepEqual({ ...app, id: 'x' }, { id: 'x', name: 'App', root: 'app', path: '/workspace/app', host: false, mode: 'rw', gone: false, folder: 'ok', kept: false });
-  assert.deepEqual(s.projects[2], { id: 'p_aaaaaaaa', name: 'src', root: '/projects/src', path: '/projects/src', host: true, mode: 'ro', gone: false, folder: 'ok', kept: false });
+  assert.ok(!s.projects.some((p) => p.host || p.id === 'p_aaaaaaaa'));
   assert.equal(s.projects[0].id, 'ws');
   assert.equal(s.projects[0].path, '/workspace');
 });
@@ -46,14 +46,12 @@ test('summary: the file is mode 644, whole (no temporary left), and rewritten at
   assert.deepEqual(fs.readdirSync(pub), [SUMMARY_FILE]);
 });
 
-test('summary: a folder no longer added is gone and missing; the sandbox look overrides folder', () => {
+test('summary: the sandbox look overrides folder; no folder of this computer, even one no longer added', () => {
   const { store, read, hostsFile } = rig();
   store.syncHosts();
   fs.writeFileSync(hostsFile, JSON.stringify({ roots: [] }));
   store.syncHosts();
-  const g = read().projects.find((x) => x.id === 'p_aaaaaaaa');
-  assert.equal(g.gone, true);
-  assert.equal(g.folder, 'missing');
+  assert.ok(!read().projects.some((x) => x.id === 'p_aaaaaaaa'));
   const q = store.add({ root: 'app' });
   assert.equal(store.writeSummary({ folders: new Map([[q.id, { folder: 'missing', git: false }]]) }), true);
   assert.equal(read().projects.find((x) => x.id === q.id).folder, 'missing');
@@ -82,9 +80,29 @@ test('summary: no publicDir, no file; an unwritable one never fails a change', (
 });
 
 test('summary: written at boot (writeSummary with no change) from what is stored', () => {
-  const { store, pub, read } = rig();
+  const { store, pub, read, hostsFile } = rig();
   store.add({ root: 'app' });
   fs.rmSync(path.join(pub, SUMMARY_FILE));
+  const boot = new Projects({ dir: path.dirname(store.dir), now: () => NOW, hostsFile, publicDir: pub });   // (a new process: nothing remembered)
+  assert.equal(boot.writeSummary(), true);
+  assert.equal(read().projects.length, 2);
+});
+
+test('summary: an unchanged one is not written again; a failed write leaves no temporary file and is logged once', () => {
+  const logs = [];
+  const { store, pub } = rig({ log: (m) => logs.push(m) });
+  store.add({ root: 'app' });
+  const f = path.join(pub, SUMMARY_FILE);
+  const t0 = fs.statSync(f).mtimeMs, ino = fs.statSync(f).ino;
   assert.equal(store.writeSummary(), true);
-  assert.equal(read().projects.length, 3);
+  assert.equal(fs.statSync(f).ino, ino);
+  assert.equal(fs.statSync(f).mtimeMs, t0);
+  // a rename that cannot happen (the target is a folder): the temporary file goes, one log line
+  fs.rmSync(f);
+  fs.mkdirSync(f);
+  store.rename(store.list().find((p) => p.root === 'app').id, 'Other');
+  store.rename(store.list().find((p) => p.root === 'app').id, 'Third');
+  assert.deepEqual(fs.readdirSync(pub), [SUMMARY_FILE]);
+  assert.equal(logs.length, 1);
+  assert.match(logs[0], /summary for the portal cannot be written/);
 });

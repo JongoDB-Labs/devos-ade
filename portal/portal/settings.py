@@ -340,7 +340,7 @@ def project_folders(status_dir: Path) -> dict:
 
 def _plain(v, n: int) -> bool:
     """A one-line text of 1 to N characters, no control, format, private-use, unassigned or separator character."""
-    return isinstance(v, str) and 0 < len(v) <= n and v.strip() == v and not any(unicodedata.category(c) in ODD_CATEGORIES for c in v)
+    return isinstance(v, str) and 0 < len(v) <= n and v.strip() == v and not any(unicodedata.category(c) in ODD_CATEGORIES or (c != " " and unicodedata.category(c) == "Zs") for c in v)
 
 
 def code_projects(code_projects_dir: Path) -> dict:
@@ -358,12 +358,9 @@ def code_projects(code_projects_dir: Path) -> dict:
         name, where, root, host = p.get("name"), p.get("path"), p.get("root"), p.get("host") is True
         if not _plain(name, 80) or not isinstance(where, str) or not isinstance(root, str) or len(where) > 1024 or (not host and len(where.encode("utf-8", "ignore")) > 251):
             continue
-        if host:   # a folder of this computer: id p_…, an absolute path in the sandbox, none in or around the workspace
-            if p["id"] == "ws" or root != where or not where.startswith("/") or where == "/" or where.endswith("/") \
-                    or re.search(r"[\x00-\x1f\x7f]", where) or any(unicodedata.category(c) in ODD_CATEGORIES for c in where) \
-                    or where == "/workspace" or where.startswith("/workspace/") or "/../" in where + "/":
-                continue
-        elif p["id"] == "ws":
+        if host:   # (the folders of this computer come from ./stack's own list: answers.folders — never from this file)
+            continue
+        if p["id"] == "ws":
             if where != "/workspace" or root != "":
                 continue
         elif not WORKSPACE_PATH.fullmatch(where) or where == "/workspace" or root != where[len("/workspace/"):] \
