@@ -2627,7 +2627,7 @@ def devpreviews(browser):
     assert 300 < box[0] <= 390 and 640 < box[1] <= 844, box
     p.shot("preview-desktop-phone-viewport.png")
     page.locator("[data-testid=preview-pane]:not(.hidden) [data-testid=viewport-tablet]").click()
-    expect(page.locator("[data-testid=preview-pane]:not(.hidden) .pv-foot")).to_contain_text("Tablet 768 × 1024")
+    expect(page.locator("[data-testid=preview-pane]:not(.hidden) .pv-foot")).to_contain_text("Tablet 834 × 1112")
     page.locator("[data-testid=preview-pane]:not(.hidden) [data-testid=viewport-fill]").click()
     expect(page.locator("[data-testid=preview-pane]:not(.hidden) .pv-foot")).to_have_count(0)
     # a path on the server; something that is not a path is refused

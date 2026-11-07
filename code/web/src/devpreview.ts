@@ -48,8 +48,8 @@ export function switchedAway<T extends { kind: string; key: string; port?: numbe
 export type Viewport = 'fill' | 'desktop' | 'tablet' | 'phone';
 export const VIEWPORTS: { id: Viewport; label: string; w: number; h: number; icon: string }[] = [
   { id: 'fill', label: 'Fit the pane', w: 0, h: 0, icon: 'panelRight' },
-  { id: 'desktop', label: 'Desktop 1280 × 800', w: 1280, h: 800, icon: 'monitor' },
-  { id: 'tablet', label: 'Tablet 768 × 1024', w: 768, h: 1024, icon: 'tablet' },
+  { id: 'desktop', label: 'Desktop 1440 × 900', w: 1440, h: 900, icon: 'monitor' },
+  { id: 'tablet', label: 'Tablet 834 × 1112', w: 834, h: 1112, icon: 'tablet' },
   { id: 'phone', label: 'Phone 390 × 844', w: 390, h: 844, icon: 'phone' },
 ];
 

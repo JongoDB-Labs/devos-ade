@@ -4,6 +4,16 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.62.1] - 2026-11-07
+
+### Changed
+- **The Code page's web preview uses the shared DevOS device sizes for Tablet and Desktop (JON-196).** The live
+  dev-server preview's Tablet preset is now 834 × 1112 (was 768 × 1024) and Desktop is 1440 × 900 (was 1280 × 800) —
+  the real iPad and laptop CSS sizes of the shared DevOS responsive-preview contract, so previewing on Tablet or
+  Desktop shows your dev server at the widths its media queries are written for. These are the same three sizes every
+  DevOS client offers whatever device you are on; Phone (390 × 844) is unchanged, as is *Fit the pane*. The preview
+  still sizes a real CSS viewport (not a zoom or a scaled screenshot) and keeps your chosen size per preview.
+
 ## [0.62.0] - 2026-11-06
 
 ### Fixed

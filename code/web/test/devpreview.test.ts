@@ -40,10 +40,13 @@ test('the address field: paths on the preview only', () => {
 });
 
 test('viewports and fitting them into the pane', () => {
-  assert.deepEqual(VIEWPORTS.map((v) => v.id), ['fill', 'desktop', 'tablet', 'phone']);
+  // The shared DevOS responsive-preview presets (JON-196): phone unchanged, tablet/desktop aligned to iPad/laptop CSS sizes.
+  assert.deepEqual(VIEWPORTS.map((v) => [v.id, v.w, v.h]), [
+    ['fill', 0, 0], ['desktop', 1440, 900], ['tablet', 834, 1112], ['phone', 390, 844],
+  ]);
   assert.equal(fitScale(390, 844, 1000, 1000), 1);
-  assert.equal(fitScale(1280, 800, 664, 1000), 0.5);
-  assert.equal(fitScale(1280, 800, 0, 0), 1);
+  assert.equal(fitScale(1440, 900, 744, 1000), 0.5);
+  assert.equal(fitScale(1440, 900, 0, 0), 1);
   assert.ok(fitScale(10000, 10000, 100, 100) >= 0.1);
 });
 
