@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 
 from playwright.sync_api import expect as see
 
@@ -34,12 +35,33 @@ def _write(c: Code, path: str, text: str):
     expect(r["status"] == 200, f"write {path}: {r['status']} {r['text'][:200]}")
 
 
+def _see_task_row(page, row):
+    """Wait for a run-panel task row to render, robust under load (JON-1221).
+
+    The panel reads its tasks from one /api/run fetch on mount (a server-side scan of package.json/Makefile).
+    Under the sharded full matrix (full2 shard, LANES 8-16) that scan can run slower than a single 20s wait, so
+    the API already lists the task but the UI row render races and the check flaked. Wait a load-tolerant total,
+    re-triggering the panel's "Look again" refresh between tries so a slow or dropped first fetch self-heals. A
+    genuinely-absent row still fails (after 90s), so this cannot mask a real defect."""
+    deadline = time.monotonic() + 90
+    while True:
+        try:
+            see(row).to_be_visible(timeout=15000)
+            return
+        except AssertionError:
+            if time.monotonic() >= deadline:
+                raise
+            refresh = page.locator('[data-testid=run-panel] [aria-label="Look again"]')
+            if refresh.count():
+                refresh.first.click()
+
+
 def _run_from_panel(page, name: str):
     """The Run panel's Run on the task `name`, then the confirmation's "Run it" (its full argv checked)."""
     if not page.get_by_test_id("run-panel").is_visible():
         page.get_by_test_id("run-status").click()
     row = page.locator(f"[data-testid=run-panel] [data-testid=run-task][data-name='{name}']")
-    see(row).to_be_visible(timeout=20000)
+    _see_task_row(page, row)
     row.get_by_test_id("run-start").click()
     dlg = page.get_by_test_id("run-confirm")
     see(dlg.get_by_test_id("run-argv").locator("li")).to_have_count(5)
