@@ -4,6 +4,18 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.62.2] - 2026-11-10
+
+### Fixed
+- **Adding a model server works again — the helper no longer refuses every check (JON-533 follow-up).** Settings ›
+  Models & providers › *Run models yourself* got stuck on "Checking…" and never connected, and models you had
+  running (Ollama, LU Labs, any OpenAI-compatible server) never showed up, because the update helper refused every
+  model-server check before it could run. The helper's own rate-limit for these checks read two settings
+  (`LOCAL_SERVER_MIN_INTERVAL_S`, `LOCAL_SERVER_MAX_PER_DAY`) that were never given defaults, so under the helper's
+  strict shell they threw an "unbound variable" error and the check was reported as "the helper did not answer." The
+  defaults are now defined beside their siblings (a probe is cheap and read-only, so 1 s apart, up to 600 a day), and
+  a regression test sources the helper libraries the same strict way and fails if either default goes missing again.
+
 ## [0.62.1] - 2026-11-07
 
 ### Changed

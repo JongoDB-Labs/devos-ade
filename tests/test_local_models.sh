@@ -272,6 +272,16 @@ test_the_helper_checks_a_local_request_field_by_field() {
   done
 }
 
+test_the_model_server_rate_limit_vars_are_defined_so_the_check_is_not_refused_under_set_u() {
+  # Regression: LOCAL_SERVER_MIN_INTERVAL_S / LOCAL_SERVER_MAX_PER_DAY were referenced by _act_limits (settings_helper.sh)
+  # but, unlike their siblings, were never given defaults in the block above — so under the helper's `set -u` every
+  # local-server/local-probe check threw "unbound variable" and the model server was refused. They must be bound once
+  # the helper libs are sourced, exactly as the running helper sources them.
+  ( set -u; . "$STACK_DIR/lib/helper.sh"; . "$STACK_DIR/lib/settings_helper.sh"
+    : "${LOCAL_SERVER_MIN_INTERVAL_S?}" "${LOCAL_SERVER_MAX_PER_DAY?}" ) 2>/dev/null \
+    || { echo "LOCAL_SERVER_* rate-limit defaults are missing (unbound under set -u)" >&2; return 1; }
+}
+
 test_the_form_check_is_read_only_so_it_carries_no_password_and_nothing_else_may_go_without_one() {
   . "$STACK_DIR/lib/helper.sh"; . "$STACK_DIR/lib/settings_helper.sh"
   _lm_env; mkdir -p "$STATE_DIR/helper"

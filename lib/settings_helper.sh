@@ -70,6 +70,11 @@ ACT_MAX_BYTES=3072   # (a project action carries a few more fields than a diagno
 LOCAL_HELPER_ACTIONS="local-pull local-remove local-server local-probe local-stop local-runtime local-runtime-stop"
 LOCAL_MIN_INTERVAL_S="${LOCAL_MIN_INTERVAL_S:-5}"
 LOCAL_MAX_PER_DAY="${LOCAL_MAX_PER_DAY:-200}"
+# The model-server check/add's own limits (local-server, local-probe): a probe is cheap and read-only, so more generous
+# than a download. These MUST be defined here beside their siblings — _act_limits reads them under the helper's `set -u`,
+# so leaving them undefined made every model-server check throw "unbound variable" and be refused.
+LOCAL_SERVER_MIN_INTERVAL_S="${LOCAL_SERVER_MIN_INTERVAL_S:-1}"
+LOCAL_SERVER_MAX_PER_DAY="${LOCAL_SERVER_MAX_PER_DAY:-600}"
 settings_capability_file() { printf '%s/helper-settings.json\n' "$(status_dir)"; }
 report_file() { printf '%s/report.txt\n' "$(status_dir)"; }
 
