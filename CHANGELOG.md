@@ -4,6 +4,25 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.63.0] - 2026-11-11
+
+### Changed
+
+- **Core services brought to their newest tested releases.** *Update now* (or `./stack update`) moves them: RustFS
+  1.0.3 → 1.0.4, SearXNG 2026.10.24 → 2026.11.6, the AWS CLI 2.38.5 → 2.39.6, Ollama 0.40.11 → 0.40.15 (container
+  and the Mac sidecar), the Node base image 24.22.1 → 24.22.2, the Python Alpine base (digest), GitHub Copilot CLI
+  1.0.103 → 1.0.107, gh 2.103.2 → 2.103.3, and newer pinned Python packages in the portal, shared-MCP and
+  speech-to-text images (pydantic 2.14.1 → 2.14.3, boto3/botocore 1.43.118 → 1.43.126, sse-starlette 3.5.1 → 3.7.0,
+  anyio, click and others; `--require-hashes` locks re-made). Every image stays pinned by digest. Built by
+  `bin/bump-core-services`, which takes only releases at least three days past their build (so a tag pulled within
+  days is never pinned).
+- **Held this cycle (not regressions — each kept at its working version and tracked):** LiteLLM stays 1.106.3 —
+  1.108 changes its admin UI and its proxy count-tokens route in ways ADE's embed and checks need updating for first.
+  The Codex CLI stays 0.164.0 — the 0.167.0 build does not run in the terminal sandbox. Open WebUI stays 0.12.4 —
+  0.13.1 ships security fixes but has no CVE/advisory id assigned yet (so the three-day cooldown cannot be skipped
+  for it), and the version that carries them clears the wait shortly. Caddy stays 2.11.7 — its 2.11.9 image was
+  re-pushed inside the cooldown. Tailscale is unchanged.
+
 ## [0.62.2] - 2026-11-10
 
 ### Fixed
