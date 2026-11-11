@@ -51,7 +51,7 @@ SHARD_WEIGHTS = {"checks_browser": 474, "checks_code": 415, "checks_layout": 287
 SHARD_PART1_S = 500
 # The app versions the app-specific selectors were written against (compose.yaml pins them; browser.sh passes the
 # pinned tags). Checks that drive these UIs skip, saying why, on any other version instead of failing obscurely.
-TESTED_WITH = {"open-webui": "v0.12.4-slim", "litellm": "1.106.3", "rustfs": "1.0.3"}
+TESTED_WITH = {"open-webui": "v0.12.4-slim", "litellm": "1.106.3", "rustfs": "1.0.4"}
 PINNED = {"open-webui": os.environ.get("E2E_OWUI_TAG", ""), "litellm": os.environ.get("E2E_LITELLM_TAG", ""),
           "rustfs": os.environ.get("E2E_RUSTFS_TAG", "")}
 # Where the *.HOST names and 127.0.0.1-published ports are reachable from this container.

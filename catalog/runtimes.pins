@@ -2,8 +2,8 @@
 # pinned: the version and the SHA-256 of the file downloaded. The same ARG form as terminal/Dockerfile's, so
 # bin/bump-core-services moves them (targets "ollama"). On Linux each runs as a container instead, pinned by digest in
 # compose.yaml.
-ARG OLLAMA_VERSION=0.40.11
-ARG OLLAMA_SHA256_DARWIN=aea7d3f2e32371b7644a6e2ec8d4f26820a0e3965918cce8a46cef3e947f6291
+ARG OLLAMA_VERSION=0.40.15
+ARG OLLAMA_SHA256_DARWIN=607c79d5d6315ef9d896db83adde736a4c0057196329843544e79b95afb260a8
 # llama.cpp (github.com/ggml-org/llama.cpp): its stable release and the build it is (the release's nightly-tag.txt), and
 # the SHA-256 of that build's macOS archives (llama-<build>-bin-macos-arm64|x64.tar.gz). Linux: compose.yaml's llamacpp
 # images (server-<build>, and server-cuda-<build> in compose.llamacpp-gpu.yaml), pinned by digest. Bumped by hand.

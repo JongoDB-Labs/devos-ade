@@ -32,7 +32,7 @@ services:
     logging: *logging
 
   rustfs:
-    image: rustfs/rustfs:1.0.3@sha256:9ca9559533b537d10482fe923288b676ad08f92a7069d9a17327fbae3cab688b
+    image: rustfs/rustfs:1.0.4@sha256:ed9210d6411d77ffceb70d94b964a3cb7d225983368bc25bebe01e995293dcc2
     restart: unless-stopped
     environment:
       RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:?run ./stack setup}
@@ -45,7 +45,7 @@ services:
 
   # One-shot: waits for RustFS, creates buckets idempotently, exits 0.
   rustfs-init:
-    image: amazon/aws-cli:2.38.5@sha256:c8156a0e74e13929a42d7e60f0d4e14e7d28d980cd21822505d4bff80e5460c1
+    image: amazon/aws-cli:2.39.6@sha256:eccdb3ec77e159d43ca6a750a70738c546883138be7f094498294a1477ec7e42
     depends_on: [rustfs]
     restart: "no"
     environment:
@@ -312,7 +312,7 @@ services:
   # WEBSEARCH_SEARXNG_SECRET, in its environment only: without one, SearXNG's own placeholder, which it refuses to start
   # with.
   searxng:
-    image: searxng/searxng:2026.10.24-ef0ec03da@sha256:7c7cbe509429e82755104b2a95f52085a98633c95d53f44e4e905fa3a59f08c8
+    image: searxng/searxng:2026.11.6-a3013ef11@sha256:db2fb02636f8e3d15f9b59a3f9ed924afdfbcecb3768bdcf461cb878c50f9e57
     profiles: ["searxng"]
     restart: unless-stopped
     user: "977:977"   # the image's searxng user (its entrypoint would otherwise run as root)
@@ -581,7 +581,7 @@ services:
   # 127.0.0.1:11434. Its models are the ollama-models volume. compose.ollama-gpu.yaml adds the NVIDIA GPUs. Cloud
   # features off; nothing is pulled but what ./stack local-models pull asks for (from Hugging Face).
   ollama:
-    image: ollama/ollama:0.40.11@sha256:dea72d1e22270fe095b68fdf756d2b489d615643c5a2eaebbc5f569181e322d8
+    image: ollama/ollama:0.40.15@sha256:0e59999e0e8f9fd4e704bd788a89b7e4cad399367fb1365f8c102ac662288761
     profiles: ["ollama"]
     restart: unless-stopped
     cap_drop: [ALL]

@@ -16,7 +16,7 @@
 #            the backend and the sandbox's bn-coded and bn-preview (with Debian's git and ripgrep, as in the sandbox),
 #            and the sandbox's egress proxy (terminal/egress/bn-egress.mjs)
 #   (last)   the runtime image — what setup and update build (no target): web and deps only, never webtest, gitnew or test
-FROM node:24.22.1-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea AS web
+FROM node:24.22.2-trixie-slim@sha256:0820eaa85e07d0490446dd01d14707e17e6108a36988cf374899cd057eb3812d AS web
 WORKDIR /src
 # build-web.sh always exists; "web*" adds code/web's files when there is such a folder (nothing otherwise)
 COPY build-web.sh web* /src/
@@ -41,7 +41,7 @@ COPY --from=terminal bin/bn-coded.mjs bin/bn-git-credential bin/bn-gh /opt/termi
 ENV BN_TERMINAL_DIR=/opt/terminal BN_TEST_REQUIRE_CONFIG_HOOKS=1 BN_TEST_EXPECT_SANDBOX=1
 RUN git --version && node --test --test-reporter=spec test/bn-coded-git.test.mjs test/bn-coded-remote.test.mjs && touch /tmp/gitnew-tested
 
-FROM node:24.22.1-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea AS deps
+FROM node:24.22.2-trixie-slim@sha256:0820eaa85e07d0490446dd01d14707e17e6108a36988cf374899cd057eb3812d AS deps
 WORKDIR /opt/code
 COPY package.json package-lock.json .npmrc ./
 RUN npm ci --omit=optional --omit=dev --ignore-scripts --no-audit --no-fund --loglevel=error --fetch-retries=5 --fetch-retry-maxtimeout=120000 --fetch-timeout=300000 \
@@ -76,7 +76,7 @@ ENV BN_TERMINAL_DIR=/opt/terminal BN_TEST_EXPECT_SANDBOX=1
 RUN node --test --test-reporter=spec $(for f in test/*.test.mjs; do grep -qxF "${f#test/}" test/one-at-a-time.txt || echo "$f"; done) \
  && node --test --test-concurrency=1 --test-reporter=spec $(sed 's|^|test/|' test/one-at-a-time.txt)
 
-FROM node:24.22.1-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea
+FROM node:24.22.2-trixie-slim@sha256:0820eaa85e07d0490446dd01d14707e17e6108a36988cf374899cd057eb3812d
 WORKDIR /opt/code
 COPY --from=deps /opt/code/node_modules ./node_modules
 COPY package.json ./

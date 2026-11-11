@@ -265,7 +265,7 @@
   },
   "rustfs": {
    "container_name": null,
-   "image": "rustfs/rustfs:1.0.3@sha256:9ca9559533b537d10482fe923288b676ad08f92a7069d9a17327fbae3cab688b",
+   "image": "rustfs/rustfs:1.0.4@sha256:ed9210d6411d77ffceb70d94b964a3cb7d225983368bc25bebe01e995293dcc2",
    "labels": {},
    "networks": [
     "default"
@@ -281,7 +281,7 @@
   },
   "rustfs-init": {
    "container_name": null,
-   "image": "amazon/aws-cli:2.38.5@sha256:c8156a0e74e13929a42d7e60f0d4e14e7d28d980cd21822505d4bff80e5460c1",
+   "image": "amazon/aws-cli:2.39.6@sha256:eccdb3ec77e159d43ca6a750a70738c546883138be7f094498294a1477ec7e42",
    "labels": {},
    "networks": [
     "default"
@@ -291,7 +291,7 @@
   },
   "searxng": {
    "container_name": null,
-   "image": "searxng/searxng:2026.10.24-ef0ec03da@sha256:7c7cbe509429e82755104b2a95f52085a98633c95d53f44e4e905fa3a59f08c8",
+   "image": "searxng/searxng:2026.11.6-a3013ef11@sha256:db2fb02636f8e3d15f9b59a3f9ed924afdfbcecb3768bdcf461cb878c50f9e57",
    "labels": {},
    "networks": [
     "websearch",
