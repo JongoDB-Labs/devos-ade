@@ -915,8 +915,13 @@ UI = "e2e-ui"
 MKT = "e2e-mkt"
 
 
-def ui_page(ctx, name, device="desktop", session=None):
-    """The Code page on the code host, signed in and unlocked, connected; `session`: the one it shows first."""
+def ui_page(ctx, name, device="desktop", session=None, fresh_ws=False):
+    """The Code page on the code host, signed in and unlocked, connected; `session`: the one it shows first.
+
+    `fresh_ws`: open on a clean Workspace with no session carried over. Use it for checks that act on the
+    Workspace itself (e.g. the Run panel on /workspace): otherwise a project + a waiting session that an
+    earlier check in this worker left active are picked up by app init, scoping the project-relative UI to
+    that project while the check's own API calls stay on the Workspace — the two then disagree (JON-1238)."""
     page, rec = ctx.page(name, device)
     page.add_init_script(CSP_GUARD)
     if session:
@@ -930,6 +935,17 @@ def ui_page(ctx, name, device="desktop", session=None):
     page.wait_for_load_state("domcontentloaded")
     see(page.get_by_test_id("conn")).to_have_text("Connected", timeout=30000)
     default_layout(page)
+    if fresh_ws:
+        # The fresh re-open MUST be the last navigation here. app init strips ?project/?new from the URL
+        # (history.replaceState with withoutDeepLink), so any reload after this — e.g. default_layout's own
+        # reload, above — would re-run init on the bare URL (fresh=false) and re-pick a leftover waiting
+        # session. default_layout only resets server-side prefs, which survive this goto, so it runs first.
+        # ?new=1 sets the deep link's `fresh`, which skips init's waiting-session auto-pick; ?project=ws forces
+        # the Workspace project — so no leftover journey project/session is inherited. (After unlock so the
+        # unlock form POST can't drop the query.)
+        page.goto(CODE + "/?project=ws&new=1")
+        page.wait_for_load_state("domcontentloaded")
+        see(page.get_by_test_id("conn")).to_have_text("Connected", timeout=30000)
     if session:
         # its transcript merges in after the live replay (an ended one shows only the transcript): let it settle
         see(page.get_by_test_id("msg-user").first).to_be_visible(timeout=30000)
