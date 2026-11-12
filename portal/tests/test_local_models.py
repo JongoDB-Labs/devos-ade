@@ -210,7 +210,7 @@ def app(settings, tmp_path):
     sd, rq = tmp_path / "status", tmp_path / "requests"
     sd.mkdir(); rq.mkdir()
     (sd / "helper.json").write_text(json.dumps({"heartbeat": int(time.time()), "pid": 1, "version": "v0.3.0", "rollback": {"available": False}}))
-    (sd / "helper-settings.json").write_text(json.dumps({"settings": 1, "diagnostics": list(st.DIAG_ACTIONS), "local": list(st.LOCAL_ACTIONS) + ["local-server", "local-probe", "local-stop"],
+    (sd / "helper-settings.json").write_text(json.dumps({"settings": 1, "diagnostics": list(st.DIAG_ACTIONS), "local": list(st.LOCAL_ACTIONS) + ["local-server", "local-probe", "local-discover", "local-stop"],
                                                           "written_at": int(time.time())}))
     s = replace(settings, status_dir=sd, request_dir=rq, shared_mcp_token="mcp-token-0123456789abcdef")
     c = TestClient(create_app(s, transport=httpx.MockTransport(hf)), follow_redirects=False, base_url="http://devos-ade.localhost")
@@ -755,3 +755,70 @@ def test_the_stop_request_writer_takes_the_op_and_nothing_else(tmp_path):
     d = tmp_path / "s"; d.mkdir()
     (d / "helper-settings.json").write_text(json.dumps({"settings": 1, "local": ["local-pull", "local-stop", "local-evil"], "written_at": int(time.time())}))
     assert st.capability(d)["local"] == ["local-pull", "local-stop"]
+
+
+# --- auto-detect of servers already running on this computer (JON-1262) ---
+
+def _found(sd, found, ref="deadbeef", at=None):
+    (sd / "discover.json").write_text(json.dumps({"ref": ref, "at": int(time.time()) if at is None else at, "found": found}))
+
+
+def test_discovered_is_read_field_by_field(tmp_path):
+    (tmp_path).mkdir(exist_ok=True)
+    _found(tmp_path, [{"port": 11434, "url": "http://127.0.0.1:11434", "count": 1, "models": [{"id": "ollama/qwen", "context": 8192}]}])
+    d = lm.read_discovered(tmp_path)
+    assert d["ref"] == "deadbeef" and [c["port"] for c in d["found"]] == [11434]
+    assert d["found"][0]["models"] == [{"id": "ollama/qwen", "context": 8192}]
+    # a scan older than two minutes is not offered
+    _found(tmp_path, [], at=int(time.time()) - 300)
+    assert lm.read_discovered(tmp_path) is None
+    # a bad ref, or no file, is None
+    _found(tmp_path, [], ref="nothex!!")
+    assert lm.read_discovered(tmp_path) is None
+    assert lm.read_discovered(tmp_path / "nowhere") is None
+    # odd fields are dropped, not trusted
+    _found(tmp_path, [{"port": 99999, "url": "http://x", "models": []},               # bad port
+                      {"port": 8000, "url": "not a url", "models": []},                # bad url
+                      {"port": 5000, "url": "http://127.0.0.1:5000", "models": [{"id": "bad id!", "context": -1}, {"id": "ok/m", "context": 4096}]}])
+    d = lm.read_discovered(tmp_path)
+    assert [c["port"] for c in d["found"]] == [5000]
+    assert d["found"][0]["models"] == [{"id": "ok/m", "context": 4096}]
+
+
+def test_the_discover_request_writer_takes_only_a_ref(tmp_path):
+    n = st.write_local_discover_action(tmp_path, ref="abcd1234", now=1000)
+    b = json.loads((tmp_path / f"act-{n}.json").read_text())
+    assert b == {"action": "local-discover", "requested_at": 1000, "nonce": n, "ref": "abcd1234"}
+    for bad in ("", "nothex", "x" * 40, None):
+        with pytest.raises(ValueError):
+            st.write_local_discover_action(tmp_path, ref=bad)
+
+
+def test_auto_detect_asks_the_helper_without_a_password_and_names_no_address(app):
+    c, sd, rq = app
+    r = c.post("/api/local-models/discover", headers=H, content="{}")
+    assert r.status_code == 202, r.text
+    d = r.json()
+    assert set(d) == {"id", "op", "ref"} and d["op"] == "discover"
+    b = _last(rq)
+    assert list(b) == ["action", "requested_at", "nonce", "ref"]        # only the ref — no address, key or password
+    assert b["action"] == "local-discover" and b["ref"] == d["ref"] and "auth" not in b and PW not in json.dumps(b)
+
+
+def test_auto_detect_needs_the_capability_and_the_list_says_so(app):
+    c, sd, rq = app
+    # an update helper that cannot discover: the route refuses and the list says it is off
+    (sd / "helper-settings.json").write_text(json.dumps({"settings": 1, "local": list(st.LOCAL_ACTIONS) + ["local-server"], "written_at": int(time.time())}))
+    assert c.post("/api/local-models/discover", headers=H, content="{}").status_code == 503
+    assert c.get("/api/local-models", headers=API).json()["can_discover"] is False
+
+
+def test_the_list_route_offers_what_the_scan_found(app):
+    c, sd, rq = app
+    _status(sd, runtime={"kind": "ollama", "how": ""})
+    _found(sd, [{"port": 1234, "url": "http://127.0.0.1:1234", "count": 2, "models": [{"id": "lmstudio/a", "context": 4096}, {"id": "lmstudio/b", "context": None}]}])
+    j = c.get("/api/local-models", headers=API).json()
+    assert j["can_discover"] is True
+    assert [c["port"] for c in j["discovered"]["found"]] == [1234]
+    assert j["discovered"]["found"][0]["count"] == 2
+

@@ -372,6 +372,35 @@ test_the_password_free_check_reaches_this_computer_only_judged_on_the_pinned_add
   assert_eq "$(cat "$ENV_FILE")" "$before"
 }
 
+# JON-1262: the auto-detect scan finds a server already running on this computer, lists its models, and offers neither a
+# port with nothing on it nor one already saved. A fake curl answers OpenAI-compatible on two loopback ports only.
+test_msrv_discover_finds_servers_running_on_this_computer() {
+  _lm_env 'MODEL_SERVERS=mine=http://127.0.0.1:8000'
+  export DEVOS_ADE_TESTING=1 MSRV_TEST_RESOLVE=''
+  : > "$TMP/curl.args"
+  curl() {
+    local out='' a prev='' url=''
+    for a in "$@"; do [ "$prev" = -o ] && out="$a"; case "$a" in http://*) url="$a" ;; esac; prev="$a"; done
+    printf '%s\n' "$*" >> "$TMP/curl.args"; cat >/dev/null 2>&1 || true
+    case "$url" in
+      http://127.0.0.1:8128/v1/models) [ -z "$out" ] || printf '%s' "$VLLM" > "$out"; printf '200'; return 0 ;;
+      http://127.0.0.1:1234/v1/models) [ -z "$out" ] || printf '%s' '{"object":"list","data":[{"id":"lm/studio","max_model_len":4096}]}' > "$out"; printf '200'; return 0 ;;
+      *) printf '000'; return 7 ;;    # (connection refused on every other port)
+    esac
+  }
+  MSRV_DISCOVER_PORTS='8128 1234 8000 9' msrv_discover abcd1234
+  local out; out="$(cat "$(msrv_discover_file)")"
+  assert_contains "$out" '"ref":"abcd1234"'
+  assert_contains "$out" '"port":8128'
+  assert_contains "$out" '"port":1234'
+  assert_contains "$out" 'qwen/Qwen3-8B'                              # 8128's first model (its context too)
+  assert_contains "$out" '"context":32768'
+  case "$out" in *'"port":8000'*) echo "discover offered a server already saved"; return 1 ;; esac
+  case "$out" in *'"port":9'*) echo "discover offered a port with nothing on it"; return 1 ;; esac
+  # the checked address of 8000 is never even contacted (it is excluded before the probe)
+  case "$(cat "$TMP/curl.args")" in *127.0.0.1:8000*) echo "a saved server was probed anyway"; return 1 ;; esac
+}
+
 test_the_helper_starts_a_server_request_through_a_private_file_and_the_key_is_never_on_a_command_line() {
   . "$STACK_DIR/lib/helper.sh"; . "$STACK_DIR/lib/settings_helper.sh"
   _lm_env; mkdir -p "$STATE_DIR/helper"
