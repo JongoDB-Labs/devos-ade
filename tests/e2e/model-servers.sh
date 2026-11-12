@@ -5,7 +5,8 @@
 # container's IP, all its models are enabled, one throwaway LiteLLM container (bne2e-msrv-litellm) serves the rendered
 # config, and: 1 the probe lists the model with its context; 2 a probe without the key says 401; 3 a chat completion goes
 # through LiteLLM to the server by IP; 4 it is booked at $0; 5 the Code page's rows list it as Local and free;
-# 6 a server that is stopped is said to be "connection refused"; 7 removing the server unregisters its models and its key.
+# 6 a server that is stopped is said to be "connection refused"; 7 removing the server unregisters its models and its key;
+# 8 the auto-detect (JON-1262) finds a server running on this computer's own loopback and lists its model.
 # Needs: Docker on LINUX (the host reaches the container's IP directly; on Docker Desktop for Mac a container's IP is not
 # reachable from the host, so use the localhost mapping check in tests/test_local_models.sh instead). The Linux host also
 # needs outbound access to pull the LiteLLM image if it is not there. --out DIR (default tests/e2e/out).
@@ -58,6 +59,16 @@ elif [ -n "$ORIG" ] && awk -v c="$ORIG" -v d="${COST:-0}" 'BEGIN { exit !(c + 0 
 else fail "4 the answer was booked at '${COST:-none}' (worked out as '${ORIG:-nothing}'), not \$0"; fi
 R="$(code_models_rows "" 2>/dev/null | awk -F'\t' '$1 == "ms/fake/fake/tiny-chat"')"
 { [ "$(printf '%s' "$R" | cut -f3)" = Local ] && [ "$(printf '%s' "$R" | cut -f9)" = 1 ]; } && ok "5 the Code page lists it as Local and free" || fail "5 rows: '$R'"
+# 8 auto-detect: a fake server on this computer's own loopback is found by the scan (the saved 'fake' is on a container IP,
+# not 127.0.0.1, so it is not in the loopback scan — nothing to exclude here; test_local_models.sh covers the exclusion)
+DPORT=8128
+FAKE_HOST=127.0.0.1 FAKE_PORT="$DPORT" python3 "$HERE/fake-openai.py" >/dev/null 2>&1 & DPID=$!
+for _ in $(seq 1 20); do curl -s -m 2 -o /dev/null "http://127.0.0.1:$DPORT/v1/models" && break; sleep 0.5; done
+MSRV_DISCOVER_PORTS="$DPORT" msrv_discover "$(python3 -I -c 'import secrets; print(secrets.token_hex(8))')"
+DJSON="$(cat "$(msrv_discover_file)" 2>/dev/null)"
+case "$DJSON" in *"\"port\":$DPORT"*fake/tiny-chat*) ok "8 auto-detect found the server on localhost:$DPORT with its model" ;; *) fail "8 auto-detect: $DJSON" ;; esac
+kill "$DPID" 2>/dev/null
+
 docker stop "$FK" >/dev/null; st="$(msrv_probe fake)"
 case "$st" in down*refused* | down*"no answer"*) ok "6 a stopped server is said so: ${st#*$'\t'}" ;; *) fail "6 stopped server: $st" ;; esac
 msrv_rm fake >/dev/null 2>&1
