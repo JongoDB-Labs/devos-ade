@@ -608,14 +608,17 @@
   }
   function discoveredCandidates() {
     const d = state && state.discovered;
-    if (!state || !state.can_discover || !d || !Array.isArray(d.found) || !d.found.length) return [];
-    const saved = new Set((state.servers || []).map((s) => portOf(s.url)).filter(Boolean));
+    // wait until the runtimes are known: else a DevOS-managed runtime on a scanned port could flash as "Found" before we can filter it out
+    if (!state || !state.can_discover || !d || !Array.isArray(d.found) || !d.found.length || !(state.runtimes && state.runtimes.known)) return [];
+    // only a server saved on THIS computer hides a discovery: a saved remote server on :11434 must not hide a local Ollama on :11434
+    const saved = new Set((state.servers || []).filter((s) => onThisComputer(s.url)).map((s) => portOf(s.url)).filter(Boolean));
     const managed = managedRuntimePorts();
     return d.found.filter((c) => c.port && !saved.has(c.port) && !managed.has(c.port));
   }
   function addFound(c) {   // one tap: fill the form and go straight to picking models (the scan already listed them; Save re-checks on this computer)
-    srv.url = `localhost:${c.port}`; srv.name = NAME_BY_PORT[c.port] || ""; srv.key = ""; srv.trust = false;
-    srv.probe = { status: "ok", url: c.url, models: c.models || [], warning: "", trust: false, ref: "" };
+    const nm = NAME_BY_PORT[c.port] || "";
+    srv.url = `localhost:${c.port}`; srv.name = taken(nm) ? "" : nm; srv.key = ""; srv.trust = false;   // (a taken name would repoint that server: let uniqueName make a fresh one)
+    srv.probe = { status: "ok", url: `http://127.0.0.1:${c.port}`, models: c.models || [], warning: "", trust: false, ref: "" };   // (the address is this computer's, built from the port — never taken from the status file)
     srv.picked = new Set((c.models || []).map((m) => m.id)); srv.note = ""; render();
   }
   function foundBlock() {

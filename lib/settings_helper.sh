@@ -429,7 +429,8 @@ _act_limits() {
   case "$1" in
     project-pick) _kind_limits pick-jobs "$(_helper_num "$PICK_MIN_INTERVAL_S" 60)" "$(_helper_num "$PICK_MAX_PER_DAY" 10)" ;;
     local-stop | local-runtime-stop) _kind_limits stop-jobs 1 "$(_helper_num "$LOCAL_MAX_PER_DAY" 200)" ;;
-    local-server | local-probe | local-discover) _kind_limits server-jobs "$(_helper_num "$LOCAL_SERVER_MIN_INTERVAL_S" 1)" "$(_helper_num "$LOCAL_SERVER_MAX_PER_DAY" 600)" ;;
+    local-discover) _kind_limits discover-jobs "$(_helper_num "$LOCAL_SERVER_MIN_INTERVAL_S" 1)" "$(_helper_num "$LOCAL_SERVER_MAX_PER_DAY" 600)" ;;   # (its own bucket: an auto-scan never blocks a Check or a Save)
+    local-server | local-probe) _kind_limits server-jobs "$(_helper_num "$LOCAL_SERVER_MIN_INTERVAL_S" 1)" "$(_helper_num "$LOCAL_SERVER_MAX_PER_DAY" 600)" ;;
     local-*) _kind_limits local-jobs "$(_helper_num "$LOCAL_MIN_INTERVAL_S" 5)" "$(_helper_num "$LOCAL_MAX_PER_DAY" 200)" ;;
     *) _diag_limits "$1" ;;
   esac
@@ -651,7 +652,8 @@ helper_run_diag() {
 # at a time (./stack local-models says so itself too); its progress is .state/status/local-models.json.
 local_helper_start() {
   local action="$1" f="$2" nonce="$3" repo quant bytes tools ctx pm lic logf
-  if [ "$action" = local-server ] || [ "$action" = local-probe ] || [ "$action" = local-discover ]; then _kind_count server-jobs "$action"; local_server_start "$f"; return 0; fi
+  if [ "$action" = local-discover ]; then _kind_count discover-jobs "$action"; local_server_start "$f"; return 0; fi
+  if [ "$action" = local-server ] || [ "$action" = local-probe ]; then _kind_count server-jobs "$action"; local_server_start "$f"; return 0; fi
   if [ "$action" = local-stop ]; then   # (while the download runs: f is pause or cancel)
     _kind_count stop-jobs "$action"
     ( cd "$STACK_DIR" && exec env DEVOS_ADE_JOB_ORIGIN=helper DEVOS_ADE_NO_OPEN=1 NO_COLOR=1 "$STACK_DIR/stack" local-models "$f" ) </dev/null > "$(helper_dir)/local-stop.log" 2>&1 &

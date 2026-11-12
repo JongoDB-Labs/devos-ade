@@ -776,13 +776,20 @@ def test_discovered_is_read_field_by_field(tmp_path):
     _found(tmp_path, [], ref="nothex!!")
     assert lm.read_discovered(tmp_path) is None
     assert lm.read_discovered(tmp_path / "nowhere") is None
-    # odd fields are dropped, not trusted
-    _found(tmp_path, [{"port": 99999, "url": "http://x", "models": []},               # bad port
-                      {"port": 8000, "url": "not a url", "models": []},                # bad url
-                      {"port": 5000, "url": "http://127.0.0.1:5000", "models": [{"id": "bad id!", "context": -1}, {"id": "ok/m", "context": 4096}]}])
+    # odd fields are dropped or ignored, never trusted
+    _found(tmp_path, [{"port": 99999, "models": []},                                  # bad port: dropped
+                      {"port": 8000, "url": "javascript:evil", "models": []},          # the file's url is ignored: it is rebuilt from the port
+                      {"port": 5000, "url": "http://127.0.0.1:5000", "models": [{"id": "bad id!", "context": -1}, {"id": 7, "context": "x"}, {"id": "ok/m", "context": 4096}]}])
     d = lm.read_discovered(tmp_path)
-    assert [c["port"] for c in d["found"]] == [5000]
-    assert d["found"][0]["models"] == [{"id": "ok/m", "context": 4096}]
+    assert [c["port"] for c in d["found"]] == [8000, 5000]                             # 99999 dropped; 8000 kept
+    assert d["found"][0]["url"] == "http://127.0.0.1:8000"                             # never the file's "javascript:evil"
+    assert d["found"][1]["models"] == [{"id": "ok/m", "context": 4096}]               # 'bad id!' and the non-string id dropped
+    # a ref that is not a string, and a scan dated in the future, are both refused without raising
+    bad = json.loads((tmp_path / "discover.json").read_text()); bad["ref"] = 5
+    (tmp_path / "discover.json").write_text(json.dumps(bad))
+    assert lm.read_discovered(tmp_path) is None
+    _found(tmp_path, [], at=int(time.time()) + 9999)
+    assert lm.read_discovered(tmp_path) is None
 
 
 def test_the_discover_request_writer_takes_only_a_ref(tmp_path):

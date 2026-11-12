@@ -404,23 +404,26 @@ def read_discovered(status_dir: Path, now: float | None = None) -> dict | None:
     there is no recent scan. The page filters these further against its saved servers and its own runtimes."""
     now = time.time() if now is None else now
     d = hostfiles.read_json(status_dir / DISCOVER_FILE, 64 * 1024)
-    at = _int(d.get("at"))
-    if at is None or not re.fullmatch(r"[0-9a-f]{8,32}", d.get("ref") or "") or now - at > DISCOVER_MAX_AGE_S:
+    at, ref = _int(d.get("at")), d.get("ref")
+    # a ref that is not a hex string, or a scan older than two minutes or dated in the future, is no scan to offer
+    if at is None or not isinstance(ref, str) or not re.fullmatch(r"[0-9a-f]{8,32}", ref) or not (0 <= now - at <= DISCOVER_MAX_AGE_S):
         return None
     found = []
     for c in (d.get("found") if isinstance(d.get("found"), list) else [])[:16]:
         if not isinstance(c, dict):
             continue
-        port, url = _int(c.get("port")), _text(c.get("url"), 60)
-        if port is None or not (1 <= port <= 65535) or not re.fullmatch(r"https?://[A-Za-z0-9.:\[\]-]{1,60}", url):
+        port = _int(c.get("port"))
+        if port is None or not (1 <= port <= 65535):
             continue
         models = []
         for m in (c.get("models") if isinstance(c.get("models"), list) else [])[:200]:
-            if isinstance(m, dict) and _MODEL_ID.fullmatch(m.get("id") or ""):
+            mid = m.get("id") if isinstance(m, dict) else None
+            if isinstance(mid, str) and _MODEL_ID.fullmatch(mid):
                 ctx = _int(m.get("context"))
-                models.append({"id": m["id"], "context": ctx if ctx and ctx > 0 else None})
-        found.append({"port": port, "url": url, "count": _int(c.get("count")) or len(models), "models": models})
-    return {"ref": d["ref"], "at": at, "found": found}
+                models.append({"id": mid, "context": ctx if ctx and ctx > 0 else None})
+        # the address is always this computer's, rebuilt from the port — nothing the file says is trusted as a URL
+        found.append({"port": port, "url": f"http://127.0.0.1:{port}", "count": _int(c.get("count")) or len(models), "models": models})
+    return {"ref": ref, "at": at, "found": found}
 
 
 # --- the model runtimes DevOS ADE installs and runs itself (lib/runtimes.sh: status/runtimes.json) ---
