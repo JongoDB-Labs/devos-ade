@@ -749,6 +749,39 @@ msrv_probe_all() {
     ( CFG_ORDER=''; cfg_put MODEL_SERVER_MODELS "$(get_env MODEL_SERVER_MODELS)"; config_apply local cli '' ) >/dev/null 2>&1 || true
   fi
 }
+# --- discover: the model servers already running on this computer (Settings › Model servers "Found on this computer",
+# JON-1262). A read-only scan of a fixed allowlist of this computer's OWN ports: each is asked for /v1/models exactly as
+# Check server does (msrv_probe_url, loopback only, with every SSRF guard of lib/msrv_target.py), and a port that answers
+# OpenAI-compatible and is not already a saved server becomes a candidate. Nothing is saved and the gateway is untouched;
+# a port a DevOS runtime already runs is filtered out by the page (it knows its own runtimes), so this stays a dumb
+# "what is answering" scan. No address is ever taken from the request — the ports are fixed here.
+MSRV_DISCOVER_PORTS="${MSRV_DISCOVER_PORTS:-11434 1234 8000 8080 1337 5000 8128}"   # Ollama, LM Studio, vLLM/llama.cpp, llama-server/LocalAI, Jan, text-generation-webui, (another common one)
+msrv_discover_file() { printf '%s/discover.json\n' "$(status_dir)"; }
+_msrv_models_json() {   # "id|ctx;id|ctx" -> JSON array body: {"id":..,"context":N|null},...
+  local out='' sep='' id ctx
+  while IFS='|' read -r id ctx; do
+    [ -n "$id" ] || continue
+    case "$ctx" in '' | *[!0-9]* | 0) ctx=null ;; esac
+    out="$out$sep{\"id\":$(_local_q "$id" 128),\"context\":$ctx}"; sep=','
+  done < <(printf '%s\n' "$1" | tr ';' '\n')   # (trailing newline so `read` sees the last/only segment)
+  printf '%s' "$out"
+}
+# msrv_discover [REF] -> status/discover.json {"ref","at","found":[{"port","url","count","models":[{"id","context"}]}]}
+msrv_discover() {
+  local ref="${1:-0}" port u r st ids addr found='' sep='' saved
+  [[ $ref =~ ^[0-9a-f]{8,32}$ ]] || ref=0
+  saved="$(msrv_rows | awk -F'\t' '{ print $2 }')"          # saved server URLs: never offered again (the page also dedupes)
+  for port in $MSRV_DISCOVER_PORTS; do
+    case "$port" in '' | *[!0-9]*) continue ;; esac
+    [ "$port" -ge 1 ] && [ "$port" -le 65535 ] || continue
+    u="http://127.0.0.1:$port"
+    printf '%s\n' "$saved" | grep -qxF "$u" && continue
+    r="$(msrv_probe_url "$u" "" 0 loopback)"; IFS=$'\t' read -r st ids addr <<< "$r"
+    [ "$st" = ok ] || continue                              # only a port that answered /v1/models with at least one model
+    found="$found$sep{\"port\":$port,\"url\":$(_local_q "$u" 60),\"count\":$(printf '%s' "$ids" | awk -F';' '{ print NF }'),\"models\":[$(_msrv_models_json "$ids")]}"; sep=','
+  done
+  printf '{"ref":%s,"at":%s,"found":[%s]}\n' "$(_local_q "$ref" 32)" "$(date +%s)" "$found" | _local_put "$(msrv_discover_file)"
+}
 msrv_status_of() { awk -F'\t' -v n="$1" '$1 == n { print $2 "\t" $3; exit }' "$(msrv_state_file)" 2>/dev/null; }
 # msrv_enabled -> TAB rows "name id ctx" for what MODEL_SERVER_MODELS registers (name:* = all the last probe saw)
 msrv_enabled() {
@@ -1531,7 +1564,8 @@ cmd_local_models() {
         disable) msrv_enable "${1:-}" "${2:-}" off ;;
         probe | list) msrv_probe_all; local_status_write
           msrv_rows | while IFS=$'\t' read -r n u t; do printf '%s  %s  %s\n    %s\n' "$n" "$u" "$(msrv_reached_as "$n")" "$(msrv_status_of "$n" | awk -F'\t' '{ print $1 ": " $2 }')"; done ;;
-        *) die "usage: ./stack local-models server [list | add NAME URL [--trust] | apply FILE | key NAME | enable NAME ID|* | disable NAME ID|* | rm NAME | probe]" ;;
+        discover) msrv_discover "${1:-0}"; [ -n "${1:-}" ] || cat "$(msrv_discover_file)" 2>/dev/null ;;   # (the update helper passes a ref; a bare call prints what it found)
+        *) die "usage: ./stack local-models server [list | add NAME URL [--trust] | apply FILE | key NAME | enable NAME ID|* | disable NAME ID|* | rm NAME | probe | discover]" ;;
       esac ;;
     uninstall) local_mlx_uninstall "$@"; log "MLX server and environment removed$([ "${1:-}" = --models ] && echo ", and its models")" ;;
     pull) [ -f "$ENV_FILE" ] || die "run ./stack setup first"; guard_project; local_pull "$@" ;;

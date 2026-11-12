@@ -393,6 +393,36 @@ def read_status(status_dir: Path, now: float | None = None) -> dict:
             "job": _clean_job(d.get("job") if isinstance(d.get("job"), dict) else {})}
 
 
+# --- discover: the servers already running on this computer, from the last scan (lib/local_models.sh msrv_discover) ---
+DISCOVER_FILE = "discover.json"
+DISCOVER_MAX_AGE_S = 120             # older than this: no scan is current, so nothing is offered (a fresh one is asked for)
+
+
+def read_discovered(status_dir: Path, now: float | None = None) -> dict | None:
+    """.state/status/discover.json: the model servers found answering on this computer's own ports in the last scan
+    (the Model servers card's auto-detect, JON-1262). Field by field, nothing trusted as markup or a path; None when
+    there is no recent scan. The page filters these further against its saved servers and its own runtimes."""
+    now = time.time() if now is None else now
+    d = hostfiles.read_json(status_dir / DISCOVER_FILE, 64 * 1024)
+    at = _int(d.get("at"))
+    if at is None or not re.fullmatch(r"[0-9a-f]{8,32}", d.get("ref") or "") or now - at > DISCOVER_MAX_AGE_S:
+        return None
+    found = []
+    for c in (d.get("found") if isinstance(d.get("found"), list) else [])[:16]:
+        if not isinstance(c, dict):
+            continue
+        port, url = _int(c.get("port")), _text(c.get("url"), 60)
+        if port is None or not (1 <= port <= 65535) or not re.fullmatch(r"https?://[A-Za-z0-9.:\[\]-]{1,60}", url):
+            continue
+        models = []
+        for m in (c.get("models") if isinstance(c.get("models"), list) else [])[:200]:
+            if isinstance(m, dict) and _MODEL_ID.fullmatch(m.get("id") or ""):
+                ctx = _int(m.get("context"))
+                models.append({"id": m["id"], "context": ctx if ctx and ctx > 0 else None})
+        found.append({"port": port, "url": url, "count": _int(c.get("count")) or len(models), "models": models})
+    return {"ref": d["ref"], "at": at, "found": found}
+
+
 # --- the model runtimes DevOS ADE installs and runs itself (lib/runtimes.sh: status/runtimes.json) ---
 RUNTIMES_FILE = "runtimes.json"
 RUNTIME_IDS = ("ollama", "llamacpp", "lmstudio", "vllm")

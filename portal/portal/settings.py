@@ -270,8 +270,8 @@ def capability(status_dir: Path, now: float | None = None) -> dict:
     projects = [a for a in d.get("projects") or [] if a in PROJECT_ACTIONS] if ok else []
     sessions = [a for a in d.get("sessions") or [] if a in SESSIONS_ACTIONS + SESSIONS_REQUESTS] if ok else []
     subs = [a for a in d.get("subscriptions") or [] if a in SUBS_ACTIONS] if ok else []
-    local = [a for a in d.get("local") or [] if a in LOCAL_ACTIONS + ("local-server", "local-probe", "local-stop", "local-runtime",
-                                                                      "local-runtime-stop")] if ok else []
+    local = [a for a in d.get("local") or [] if a in LOCAL_ACTIONS + ("local-server", "local-probe", "local-discover", "local-stop",
+                                                                      "local-runtime", "local-runtime-stop")] if ok else []
     return {"settings": ok, "diagnostics": acts, "projects": projects, "sessions": sessions, "subscriptions": subs, "local": local,
             "screen": ok and d.get("screen") is True}
 
@@ -1001,6 +1001,20 @@ def write_local_probe_action(request_dir: Path, *, url: str, trust: bool = False
     raw = json.dumps(body, separators=(",", ":")).encode("ascii")
     if len(raw) > 3072:
         raise ValueError("too large")
+    _write_atomic(request_dir, "act", f"act-{nonce}.json", raw)
+    return nonce
+
+
+def write_local_discover_action(request_dir: Path, *, ref: str, now: float | None = None) -> str:
+    """REQUEST_DIR/act-<nonce>.json: the Model servers card's auto-detect (JON-1262) — scan this computer's own common
+    ports for a server already running. Read-only and this computer only, so NO password (the portal writes it only
+    behind its session, CSRF and origin checks). No address or key is carried: the ports are a fixed allowlist in the
+    stack (lib/local_models.sh), only the ref. -> nonce"""
+    if not re.fullmatch(r"[0-9a-f]{8,32}", ref):
+        raise ValueError("bad request")
+    nonce = secrets.token_hex(16)
+    body = {"action": "local-discover", "requested_at": int(time.time() if now is None else now), "nonce": nonce, "ref": ref}
+    raw = json.dumps(body, separators=(",", ":")).encode("ascii")
     _write_atomic(request_dir, "act", f"act-{nonce}.json", raw)
     return nonce
 

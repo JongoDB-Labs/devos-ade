@@ -678,6 +678,7 @@ def routes(ctx: Ctx) -> list[Route]:
                                        "hf_token_set": bool((rows.get("HF_TOKEN") or {}).get("set")),
                                        "wait": data["stale"] and not data["known"],
                                        "runtimes": lm.read_runtimes(s.status_dir), "can_runtime": ok and "local-runtime" in cap,
+                                       "can_discover": ok and "local-discover" in cap, "discovered": lm.read_discovered(s.status_dir),
                                        "choice": choice if choice in ("auto", "mlx", "dmr", "ollama", "llamacpp", "lmstudio", "vllm") else "auto"}))
 
     async def local_models_search(request: Request) -> Response:
@@ -989,12 +990,42 @@ def routes(ctx: Ctx) -> list[Route]:
         server_rate.hit()
         return _no_store(JSONResponse({"id": nonce, "op": "probe", "ref": ref}, status_code=202))
 
+    discover_rate = RateLimit(1, 20)
+
+    async def local_models_discover(request: Request) -> Response:
+        """The Model servers card's auto-detect (JON-1262): scan this computer's own common ports for a server already
+        running. Read-only and this computer only, so no password — but the same door otherwise (session, X-Requested-With,
+        same Origin, the remote rule). The scan is the helper's, on this computer; the portal fetches nothing and sends no
+        address (the ports are a fixed allowlist in the stack). The result is read back from the status, matched by ref."""
+        if (deny := ctx.api_guard(request)) is not None:
+            return deny
+        if not same_origin(request.headers, s):
+            return err(403, "cross-site request refused")
+        if not allowed(request):
+            return err(403, "Settings changes are off for remote access (REMOTE_ADMIN_ACTIONS in .env).")
+        ok, why = _local_can(request)
+        if ok and "local-discover" not in st.capability(s.status_dir)["local"]:
+            ok, why = False, "This update helper cannot look for local servers yet: ./stack helper install refreshes it."
+        if not ok:
+            return err(403 if not allowed(request) else 503, why)
+        if wait := discover_rate.retry_after():
+            return err(429, f"Please wait {wait} s before looking again.", wait)
+        ref = secrets.token_hex(8)
+        try:
+            nonce = st.write_local_discover_action(s.request_dir, ref=ref)
+        except OSError as e:
+            log.warning("cannot write the discover request to %s (%s)", s.request_dir, e)
+            return err(500, "Could not hand the request to the helper (see ./stack logs portal).")
+        discover_rate.hit()
+        return _no_store(JSONResponse({"id": nonce, "op": "discover", "ref": ref}, status_code=202))
+
     return [
         Route("/api/local-models", local_models_get, methods=["GET"]),
         Route("/api/local-models/search", local_models_search, methods=["GET"]),
         Route("/api/local-models/change", local_models_change, methods=["POST"]),
         Route("/api/local-models/server", local_models_server, methods=["POST"]),
         Route("/api/local-models/probe", local_models_probe, methods=["POST"]),
+        Route("/api/local-models/discover", local_models_discover, methods=["POST"]),
         Route("/api/local-models/stop", local_models_stop, methods=["POST"]),
         Route("/api/local-models/runtime", local_models_runtime, methods=["POST"]),
         Route("/api/local-models/runtime-stop", local_models_runtime_stop, methods=["POST"]),

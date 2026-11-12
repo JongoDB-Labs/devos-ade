@@ -67,7 +67,7 @@ PICK_MAX_PER_DAY="${PICK_MAX_PER_DAY:-10}"
 ACT_MAX_BYTES=3072   # (a project action carries a few more fields than a diagnostic; a local-model download a few more: its facts)
 # Local models (lib/local_models.sh): a download or a removal, started in the background (no stack lock while it downloads);
 # its progress is in .state/status/local-models.json. Every field fixed: a Hugging Face repo and quant name, never a path or URL.
-LOCAL_HELPER_ACTIONS="local-pull local-remove local-server local-probe local-stop local-runtime local-runtime-stop"
+LOCAL_HELPER_ACTIONS="local-pull local-remove local-server local-probe local-discover local-stop local-runtime local-runtime-stop"
 LOCAL_MIN_INTERVAL_S="${LOCAL_MIN_INTERVAL_S:-5}"
 LOCAL_MAX_PER_DAY="${LOCAL_MAX_PER_DAY:-200}"
 # The model-server check/add's own limits (local-server, local-probe): a probe is cheap and read-only, so more generous
@@ -356,6 +356,10 @@ act_check_request() {
     action="${BASH_REMATCH[1]}"; ts="${BASH_REMATCH[2]}"; n="${BASH_REMATCH[3]}"; auth="-"
     project="probe-local||${BASH_REMATCH[4]}|${BASH_REMATCH[5]}|${BASH_REMATCH[6]}||${BASH_REMATCH[7]}"
     [ "${#BASH_REMATCH[4]}" -le 200 ] && [ "${#BASH_REMATCH[6]}" -le 280 ] || { echo "a field is too long" >&2; return 1; }
+  # (the Model servers card's auto-detect, JON-1262: a read-only scan of this computer's own common ports for a server
+  # already running, so no password; no address is carried — the ports are a fixed allowlist in lib/local_models.sh — only the ref)
+  elif _sv_re "$body" '^\{"action":"(local-discover)","requested_at":([0-9]{1,12}),"nonce":"([0-9a-f]{32})","ref":"([0-9a-f]{8,32})"\}$'; then
+    action="${BASH_REMATCH[1]}"; ts="${BASH_REMATCH[2]}"; n="${BASH_REMATCH[3]}"; auth="-"; project="discover||||||${BASH_REMATCH[4]}"
   # (Pause or Cancel of the running download: no password either — it stops, and spends nothing; the op in project's place)
   elif _sv_re "$body" '^\{"action":"(local-stop)","requested_at":([0-9]{1,12}),"nonce":"([0-9a-f]{32})","op":"(pause|cancel)"\}$'; then
     action="${BASH_REMATCH[1]}"; ts="${BASH_REMATCH[2]}"; n="${BASH_REMATCH[3]}"; auth="-"; project="${BASH_REMATCH[4]}"
@@ -425,7 +429,7 @@ _act_limits() {
   case "$1" in
     project-pick) _kind_limits pick-jobs "$(_helper_num "$PICK_MIN_INTERVAL_S" 60)" "$(_helper_num "$PICK_MAX_PER_DAY" 10)" ;;
     local-stop | local-runtime-stop) _kind_limits stop-jobs 1 "$(_helper_num "$LOCAL_MAX_PER_DAY" 200)" ;;
-    local-server | local-probe) _kind_limits server-jobs "$(_helper_num "$LOCAL_SERVER_MIN_INTERVAL_S" 1)" "$(_helper_num "$LOCAL_SERVER_MAX_PER_DAY" 600)" ;;
+    local-server | local-probe | local-discover) _kind_limits server-jobs "$(_helper_num "$LOCAL_SERVER_MIN_INTERVAL_S" 1)" "$(_helper_num "$LOCAL_SERVER_MAX_PER_DAY" 600)" ;;
     local-*) _kind_limits local-jobs "$(_helper_num "$LOCAL_MIN_INTERVAL_S" 5)" "$(_helper_num "$LOCAL_MAX_PER_DAY" 200)" ;;
     *) _diag_limits "$1" ;;
   esac
@@ -647,7 +651,7 @@ helper_run_diag() {
 # at a time (./stack local-models says so itself too); its progress is .state/status/local-models.json.
 local_helper_start() {
   local action="$1" f="$2" nonce="$3" repo quant bytes tools ctx pm lic logf
-  if [ "$action" = local-server ] || [ "$action" = local-probe ]; then _kind_count server-jobs "$action"; local_server_start "$f"; return 0; fi
+  if [ "$action" = local-server ] || [ "$action" = local-probe ] || [ "$action" = local-discover ]; then _kind_count server-jobs "$action"; local_server_start "$f"; return 0; fi
   if [ "$action" = local-stop ]; then   # (while the download runs: f is pause or cancel)
     _kind_count stop-jobs "$action"
     ( cd "$STACK_DIR" && exec env DEVOS_ADE_JOB_ORIGIN=helper DEVOS_ADE_NO_OPEN=1 NO_COLOR=1 "$STACK_DIR/stack" local-models "$f" ) </dev/null > "$(helper_dir)/local-stop.log" 2>&1 &
@@ -686,6 +690,11 @@ runtime_helper_start() {
 local_server_start() {
   local f="$1" op name url trust key models ref rf
   IFS='|' read -r op name url trust key models ref <<< "$f"
+  if [ "$op" = discover ]; then   # (no request file: discover carries no address or key, only a ref; the ports are fixed in the stack)
+    ( cd "$STACK_DIR" && exec env DEVOS_ADE_JOB_ORIGIN=helper DEVOS_ADE_NO_OPEN=1 NO_COLOR=1 "$STACK_DIR/stack" local-models server discover "$ref" ) \
+      </dev/null > "$(helper_dir)/local-server.log" 2>&1 &
+    return 0
+  fi
   rf="$(mktemp "$(helper_dir)/server-req.XXXXXX")" || return 0; chmod 600 "$rf"
   printf 'op=%s\nname=%s\nurl=%s\ntrust=%s\nkey=%s\nmodels=%s\nref=%s\n' "$op" "$name" "$url" "$trust" "$key" "$models" "$ref" > "$rf"
   ( cd "$STACK_DIR" && exec env DEVOS_ADE_JOB_ORIGIN=helper DEVOS_ADE_NO_OPEN=1 NO_COLOR=1 "$STACK_DIR/stack" local-models server apply "$rf" ) \
@@ -726,7 +735,7 @@ settings_poll_once() {
           _remember_nonce "$res"
           # (local-probe, local-stop and local-runtime-stop are the requests with no password: read-only, or a stop;
           # rate-limited like the rest)
-          if { { [ "$action" = local-probe ] || [ "$action" = local-stop ] || [ "$action" = local-runtime-stop ]; } && [ "$auth" = - ] || reason="$(_auth_ok "$auth" 2>&1)"; } && reason="$(_act_limits "$action" 2>&1)"; then
+          if { { [ "$action" = local-probe ] || [ "$action" = local-discover ] || [ "$action" = local-stop ] || [ "$action" = local-runtime-stop ]; } && [ "$auth" = - ] || reason="$(_auth_ok "$auth" 2>&1)"; } && reason="$(_act_limits "$action" 2>&1)"; then
             auth=''
             case "$action" in
               local-*) local_helper_start "$action" "$project" "$res"; return 0 ;;   # (in the background: no lock, no job slot)

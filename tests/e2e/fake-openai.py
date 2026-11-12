@@ -1,10 +1,15 @@
 """A tiny OpenAI-compatible server for tests/e2e/model-servers.sh (standard library only): GET /v1/models and POST
-/v1/chat/completions; with FAKE_KEY set it wants that bearer key (401 otherwise). It answers with a fixed sentence."""
+/v1/chat/completions; with FAKE_KEY set it wants that bearer key (401 otherwise). It answers with a fixed sentence.
+The bind host and port come from FAKE_HOST (default 0.0.0.0) and FAKE_PORT or argv[1] (default 8000), so the
+discover test (JON-1262) can run one on each loopback port it checks."""
 import json
 import os
+import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 KEY = os.environ.get("FAKE_KEY", "")
+HOST = os.environ.get("FAKE_HOST", "0.0.0.0")
+PORT = int(os.environ.get("FAKE_PORT") or (sys.argv[1] if len(sys.argv) > 1 else 8000))
 
 
 class H(BaseHTTPRequestHandler):
@@ -40,4 +45,4 @@ class H(BaseHTTPRequestHandler):
         pass
 
 
-HTTPServer(("0.0.0.0", 8000), H).serve_forever()
+HTTPServer((HOST, PORT), H).serve_forever()

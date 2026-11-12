@@ -38,12 +38,35 @@
     if (before && state.choice && before !== state.choice) rtChoiceAt = Date.now();
     render();
     for (const fn of listeners) { try { fn(); } catch (_) { /* a listener's own trouble */ } }
+    // the auto-detect of servers already running here (JON-1262): once per open, when the helper can and this is not the
+    // download-only panel; the scan's answer arrives in state.discovered, matched by the ref we asked for.
+    if (state && !state.error && state.can_discover && !srv.discoverTried && part !== "download") runDiscover();
+    if (srv.discoverRef && state && state.discovered && state.discovered.ref === srv.discoverRef) srv.discoverRef = "";
     clearTimeout(timer);
-    // quickly while a download or a runtime's job runs (or is being stopped), or until the first file is there; otherwise
-    // only when looked at again. A new "Downloads go to": the runtime line is read again once the helper rewrote it.
+    const waitingDiscover = srv.discoverRef && Date.now() - (srv.discoverSince || 0) < 20000;
+    // quickly while a download or a runtime's job runs (or is being stopped), while the auto-detect scan is still out, or
+    // until the first file is there; otherwise only when looked at again.
     if (live() || stopping || rtJobLive() || rtSending) timer = setTimeout(load, 1000);
+    else if (waitingDiscover) timer = setTimeout(load, 1000);
     else if (state && state.wait) timer = setTimeout(load, 2000);
     else if (rtChoiceAt && Date.now() - rtChoiceAt < 30000 && ((state.at || 0) + 1) * 1000 < rtChoiceAt) timer = setTimeout(() => load(true), 2000);
+  }
+
+  // auto-detect servers already running on this computer (JON-1262): one read-only scan on open — no password (loopback
+  // only, the helper's own, with every SSRF guard). On an older helper, a 429 or any error we just skip it: the manual
+  // Add form stays, so nothing is lost. The result is read back through load() in state.discovered, matched by ref.
+  async function runDiscover() {
+    srv.discoverTried = true;
+    try {
+      const r = await fetch("/api/local-models/discover", { method: "POST", credentials: "same-origin", cache: "no-store",
+        headers: { ...API_HEADERS, "Content-Type": "application/json" }, body: "{}" });
+      if (r.status === 401) { location.assign("/login"); return; }
+      if (!r.ok) return;
+      const d = await r.json().catch(() => ({}));
+      if (!d.ref) return;
+      srv.discoverRef = d.ref; srv.discoverSince = Date.now();
+      clearTimeout(timer); timer = setTimeout(load, 700);
+    } catch (_) { /* leave the auto-detect off; the manual Add works */ }
   }
 
   // Pause keeps what arrived (Resume continues from it); Cancel deletes it. No password: they only stop something (the portal's
@@ -380,7 +403,8 @@
   // password and goes through the update helper, like the rest of Settings; the key is never shown again and never comes back.
   const NAME_OK = /^[a-z0-9][a-z0-9-]{0,23}$/;
   const FAIL = { down: "Not reachable", blocked: "Refused", numeric: "Not an address it will use", dns: "Name does not resolve" };
-  let srv = { url: "", name: "", key: "", trust: false, probe: null, picked: null, wait: null, note: "", staged: {}, keyFor: null, keyText: "" };
+  let srv = { url: "", name: "", key: "", trust: false, probe: null, picked: null, wait: null, note: "", staged: {}, keyFor: null, keyText: "",
+    discoverTried: false, discoverRef: "", discoverSince: 0 };   // auto-detect of servers already running here (JON-1262)
 
   const nameFrom = (url) => {
     const host = url.replace(/^[a-z]+:\/\//i, "").replace(/[/:?#].*$/, "").replace(/^\[|\]$/g, "").toLowerCase();
@@ -572,6 +596,45 @@
     return el("li", { class: "lm-item", "data-server-row": s.name }, main, acts);
   }
 
+  // --- "Found on this computer": the servers the last scan saw running here (JON-1262), minus ones already saved and ones
+  // a DevOS runtime runs itself (that one shows under "This computer"; the scan stays a dumb "what is answering" list) ---
+  const KIND_BY_PORT = { 11434: "Ollama", 1234: "LM Studio", 8000: "vLLM or llama.cpp", 8080: "llama.cpp or LocalAI", 1337: "Jan", 5000: "a local server", 8128: "a local server" };
+  const NAME_BY_PORT = { 11434: "ollama", 1234: "lmstudio", 8000: "vllm", 8080: "llamacpp", 1337: "jan" };
+  const portOf = (u) => { const m = /:(\d{1,5})(?:\/|$)/.exec(String(u || "")); return m ? Number(m[1]) : 0; };
+  function managedRuntimePorts() {
+    const ports = new Set(), P = { ollama: 11434, llamacpp: 11438, lmstudio: 11439 };
+    for (const r of (state.runtimes && state.runtimes.runtimes) || []) if (P[r.id] && r.managed) ports.add(P[r.id]);
+    return ports;
+  }
+  function discoveredCandidates() {
+    const d = state && state.discovered;
+    if (!state || !state.can_discover || !d || !Array.isArray(d.found) || !d.found.length) return [];
+    const saved = new Set((state.servers || []).map((s) => portOf(s.url)).filter(Boolean));
+    const managed = managedRuntimePorts();
+    return d.found.filter((c) => c.port && !saved.has(c.port) && !managed.has(c.port));
+  }
+  function addFound(c) {   // one tap: fill the form and go straight to picking models (the scan already listed them; Save re-checks on this computer)
+    srv.url = `localhost:${c.port}`; srv.name = NAME_BY_PORT[c.port] || ""; srv.key = ""; srv.trust = false;
+    srv.probe = { status: "ok", url: c.url, models: c.models || [], warning: "", trust: false, ref: "" };
+    srv.picked = new Set((c.models || []).map((m) => m.id)); srv.note = ""; render();
+  }
+  function foundBlock() {
+    const cands = discoveredCandidates();
+    if (!cands.length) return null;
+    const wrap = el("div", { class: "lm-found", id: "ms-found" }, el("h4", { class: "lm-h", text: "Found on this computer" }));
+    for (const c of cands) {
+      const kind = KIND_BY_PORT[c.port] || "a model server";
+      const row = el("div", { class: "lm-found-row", "data-found-port": String(c.port) },
+        el("span", { class: "lm-found-what" }, "⚡ ", el("b", { text: `localhost:${c.port}` }), ` — ${kind}, ${c.count} model${c.count === 1 ? "" : "s"}`));
+      const add = el("button", { type: "button", class: "action primary", "data-add-found": String(c.port), text: "Add" });
+      add.disabled = !state.can_change || !!srv.wait;
+      add.addEventListener("click", () => addFound(c));
+      row.append(add); wrap.append(row);
+    }
+    wrap.append(el("p", { class: "note", text: "Already running here, over an OpenAI-compatible API. Add one and its models join Chat, the Code page and the Terminal, marked Local, at $0 — nothing is saved until you add it." }));
+    return wrap;
+  }
+
   function servers(thisComputer) {
     const list = state.servers || [];
     const sec = el("div", { class: "lm-sec lm-servers", id: "lm-servers" });
@@ -580,7 +643,11 @@
     for (const s of list) ul.append(serverRow(s));
     if (ul.children.length) sec.append(el("h4", { class: "lm-h", text: thisComputer ? "Where models run" : "Your model servers" }), ul);
     if (!list.length) sec.append(el("p", { class: "note", id: "ms-empty", text: "No model servers yet." }));
-    sec.append(...(part === "server" ? [] : [el("h4", { class: "lm-h", id: "ms-add-h", text: "Add a model server" })]), el("p", { class: "note", text: "Any OpenAI-compatible server works, on this computer or another on your network." }), addForm(), probeResult());
+    const fb = foundBlock();
+    if (fb) sec.append(fb);
+    sec.append(...(part === "server" ? [] : [el("h4", { class: "lm-h", id: "ms-add-h", text: "Add a model server" })]),
+      el("p", { class: "note", text: "A model server is any OpenAI-compatible server — Ollama, LM Studio, vLLM, llama.cpp, or another computer on your network. Add one and its models show in Chat, the Code page and the Terminal, marked Local, at $0." }),
+      addForm(), probeResult());
     if (srv.wait) sec.append(el("p", { class: "note", role: "status", id: "ms-wait", text: srv.wait.op === "probe" ? "Checking the server…" : "Waiting for the update helper…" }));
     if (srv.note) sec.append(el("p", { class: `note ${/did not|not |refused|cannot/i.test(srv.note) ? "lm-warn warn" : ""}`, id: "ms-note", role: "status", text: srv.note }));
     return sec;
@@ -654,14 +721,14 @@
   window.bnLocal = {
     // settings.js: the row's frame, to fill, and what it lends (the password dialog)
     mount(frame, h) {
-      helpers = h; part = ""; box = el("div", { class: "lm-box", id: "lm-box", "aria-busy": "false" });
+      helpers = h; part = ""; srv.discoverTried = false; box = el("div", { class: "lm-box", id: "lm-box", "aria-busy": "false" });
       frame._main.append(box);
       if (state) render(); else box.append(el("p", { class: "note", text: "Looking…" }));   // (a redraw of Settings keeps what was read)
       load(!state);
     },
     // Browse models: the same form and flow in a panel of its own (focus: "download" | "server" | "" for both)
     panel(container, h, focus) {
-      helpers = h || null; want = focus || ""; part = want; openFind = want === "download";
+      helpers = h || null; want = focus || ""; part = want; openFind = want === "download"; srv.discoverTried = false;
       box = el("div", { class: "lm-box", id: "lm-box", "aria-busy": "false" });
       container.replaceChildren(box);
       if (state) render(); else box.append(el("p", { class: "note", text: "Looking…" }));
