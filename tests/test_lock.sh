@@ -170,7 +170,7 @@ test_the_helpers_jobs_and_other_commands_leave_no_terminal_record() {
   assert_contains "$(cat "$STACK_DIR/stack")" '_BN_CMD_DONE=1'
   # (a settings change's ./stack is not exec'd: its exit status goes through a file, lib/settings_helper.sh)
   # (+ the runtimes' requests and their log, JON-829)
-  assert_eq "$(grep -c 'env DEVOS_ADE_JOB_ORIGIN=helper' "$STACK_DIR/lib/helper.sh" "$STACK_DIR/lib/settings_helper.sh" | cut -d: -f2 | tr '\n' ' ')" "2 9 "
+  assert_eq "$(grep -c 'env DEVOS_ADE_JOB_ORIGIN=helper' "$STACK_DIR/lib/helper.sh" "$STACK_DIR/lib/settings_helper.sh" | cut -d: -f2 | tr '\n' ' ')" "2 10 "
 }
 
 test_the_helper_ends_a_record_whose_command_is_gone() {
