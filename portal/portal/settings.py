@@ -1010,7 +1010,7 @@ def write_local_discover_action(request_dir: Path, *, ref: str, now: float | Non
     ports for a server already running. Read-only and this computer only, so NO password (the portal writes it only
     behind its session, CSRF and origin checks). No address or key is carried: the ports are a fixed allowlist in the
     stack (lib/local_models.sh), only the ref. -> nonce"""
-    if not re.fullmatch(r"[0-9a-f]{8,32}", ref):
+    if not ref or not isinstance(ref, str) or not re.fullmatch(r"[0-9a-f]{8,32}", ref):
         raise ValueError("bad request")
     nonce = secrets.token_hex(16)
     body = {"action": "local-discover", "requested_at": int(time.time() if now is None else now), "nonce": nonce, "ref": ref}
