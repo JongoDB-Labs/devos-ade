@@ -775,7 +775,7 @@ msrv_discover() {
     case "$port" in '' | *[!0-9]*) continue ;; esac
     [ "$port" -ge 1 ] && [ "$port" -le 65535 ] || continue
     u="http://127.0.0.1:$port"
-    printf '%s\n' "$saved" | grep -qxF "$u" && continue
+    printf '%s\n' "$saved" | grep -xF "$u" >/dev/null && continue   # (grep reads to the end: no SIGPIPE on the printf, tests/test_common.sh)
     r="$(msrv_probe_url "$u" "" 0 loopback)"; IFS=$'\t' read -r st ids addr <<< "$r"
     [ "$st" = ok ] || continue                              # only a port that answered /v1/models with at least one model
     found="$found$sep{\"port\":$port,\"url\":$(_local_q "$u" 60),\"count\":$(printf '%s' "$ids" | awk -F';' '{ print NF }'),\"models\":[$(_msrv_models_json "$ids")]}"; sep=','
