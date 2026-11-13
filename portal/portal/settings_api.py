@@ -1008,8 +1008,11 @@ def routes(ctx: Ctx) -> list[Route]:
             ok, why = False, "This update helper cannot look for local servers yet: ./stack helper install refreshes it."
         if not ok:
             return err(403 if not allowed(request) else 503, why)
-        if wait := discover_rate.retry_after():
-            return err(429, f"Please wait {wait} s before looking again.", wait)
+        if discover_rate.retry_after():
+            # auto-fired and silent: a recent scan still stands, so this is not an error the page must show. A 429 here
+            # would make the browser log "Failed to load resource" (a console error the settings e2e flags); 200 with
+            # no ref means "use the scan you already have" and still runs no new scan (the rate limit is kept).
+            return _no_store(JSONResponse({"op": "discover", "throttled": True}, status_code=200))
         ref = secrets.token_hex(8)
         try:
             nonce = st.write_local_discover_action(s.request_dir, ref=ref)

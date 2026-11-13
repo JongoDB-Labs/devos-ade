@@ -39,8 +39,10 @@
     render();
     for (const fn of listeners) { try { fn(); } catch (_) { /* a listener's own trouble */ } }
     // the auto-detect of servers already running here (JON-1262): once per open, when the helper can and this is not the
-    // download-only panel; the scan's answer arrives in state.discovered, matched by the ref we asked for.
-    if (state && !state.error && state.can_discover && !srv.discoverTried && part !== "download") runDiscover();
+    // download-only panel; the scan's answer arrives in state.discovered, matched by the ref we asked for. Skip the scan
+    // when a recent one still stands (reopening within 15 s reuses it), so repeated opens don't pile up requests.
+    const discoverFresh = state && state.discovered && state.discovered.at && Date.now() - state.discovered.at * 1000 < 15000;
+    if (state && !state.error && state.can_discover && !srv.discoverTried && part !== "download" && !discoverFresh) runDiscover();
     if (srv.discoverRef && state && state.discovered && state.discovered.ref === srv.discoverRef) srv.discoverRef = "";
     clearTimeout(timer);
     const waitingDiscover = srv.discoverRef && Date.now() - (srv.discoverSince || 0) < 20000;

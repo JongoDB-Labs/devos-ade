@@ -829,3 +829,16 @@ def test_the_list_route_offers_what_the_scan_found(app):
     assert [c["port"] for c in j["discovered"]["found"]] == [1234]
     assert j["discovered"]["found"][0]["count"] == 2
 
+
+
+def test_auto_detect_is_quiet_when_throttled_not_a_console_error(app):
+    c, sd, rq = app
+    r1 = c.post("/api/local-models/discover", headers=H, content="{}")
+    assert r1.status_code == 202 and r1.json()["ref"]
+    # a second scan right away is throttled, but as a plain 200 (no ref) — never a 4xx the browser would log as an error
+    r2 = c.post("/api/local-models/discover", headers=H, content="{}")
+    assert r2.status_code == 200, r2.text
+    d = r2.json()
+    assert d.get("throttled") is True and "ref" not in d
+    # only the first scan was handed to the helper
+    assert len(list(rq.glob("act-*.json"))) == 1
