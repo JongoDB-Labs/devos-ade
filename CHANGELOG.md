@@ -4,6 +4,21 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.64.0] - 2026-11-13
+
+### Added
+
+- **Model servers: DevOS ADE finds the ones already running on your Mac.** Open Settings › Models & providers › Local
+  models, and the **Model servers** card now checks this computer's usual ports (Ollama, LM Studio, vLLM, llama.cpp and
+  a few more) and shows any server already running there under **"Found on this computer"**, with a one-tap **Add** — no
+  need to know the address. Tap Add, pick the models, confirm, and they join Chat, the Code page and the Terminal, marked
+  Local, at $0. The check is read-only and needs no password (it only looks at this computer's own addresses); saving
+  still asks you to confirm. A server you have already added, or one a DevOS runtime runs itself, is not offered again.
+  The card now also says, in plain words, what a model server is. (JON-1262)
+
+### To get it
+Existing installs: Home › Update now.
+
 ## [0.63.0] - 2026-11-11
 
 ### Changed
