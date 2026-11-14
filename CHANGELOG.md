@@ -4,6 +4,21 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.65.1] - 2026-11-14
+
+### Fixed
+
+- **The terminal's Copilot CLI trust audit now matches the version it ships, and the match is checked on every
+  release.** The Code page's terminal tells you what the pinned Copilot CLI reads of a project's `.github/` before you
+  trust a folder; that surface is audited against a recorded version. A core-services bump had moved the pinned Copilot
+  CLI ahead of the recorded one, and the only check of the two was in an image test stage the drift releases did not
+  build, so the mismatch went unnoticed. The recorded version is realigned to the shipped one (its `.github/` reading
+  was re-audited and is unchanged), and the invariant is now also asserted in the always-run gate, so a future bump
+  cannot ship past it without the audit moving too. No change to what the terminal reads or trusts. (JON-1277)
+
+### To get it
+Existing installs: Home › Update now.
+
 ## [0.65.0] - 2026-11-14
 
 ### Changed

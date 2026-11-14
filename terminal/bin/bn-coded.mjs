@@ -2791,7 +2791,7 @@ export const AGENT_FILES = Object.freeze(['lsp.json', '.lsp.json']);
 // one: a new pin means a new audit): its folders, read whole; any other folder there is listed by its name alone (no
 // pinned tool reads it: its name is in the hash, not what it holds — trustable); every file directly under .github/ is
 // read whole but GitHub's own (GITHUB_INERT), images and the instruction files (read as instructions, as CLAUDE.md is)
-export const COPILOT_AUDITED = '1.0.103';
+export const COPILOT_AUDITED = '1.0.107';
 export const COPILOT_GITHUB_DIRS = Object.freeze(['agents', 'copilot', 'extensions', 'hooks', 'skills', 'plugin']);
 export const GITHUB_INSTRUCTIONS = Object.freeze(['copilot-instructions.md', 'instructions']);
 // the files directly in .github/ that the pinned Copilot reads (listed whole, as every file there but GitHub's own is;

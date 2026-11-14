@@ -862,6 +862,18 @@ test_spawn_server_in_the_terminal_image() {
   assert_not_contains "$c" "pcre2'"
 }
 
+test_the_copilot_pin_matches_the_audited_version() {
+  # The Copilot CLI the terminal image installs must be the one its .github/ read surface was audited against
+  # (COPILOT_AUDITED in bn-coded.mjs): a new pin means a new audit. code/test/trust-frontmatter.test.mjs asserts this
+  # in the image's test stage, but that stage is not always built; this keeps the invariant in the always-run shell
+  # gate, so a core-services bump that moves the pin can never ship past it without the audit moving too.
+  pin="$(sed -n 's/^ARG COPILOT_VERSION=\(.*\)/\1/p' "$STACK_DIR/terminal/Dockerfile")"
+  audited="$(sed -n "s/^export const COPILOT_AUDITED = '\(.*\)';\$/\1/p" "$STACK_DIR/terminal/bin/bn-coded.mjs")"
+  [ -n "$pin" ] || { echo "no ARG COPILOT_VERSION in terminal/Dockerfile" >&2; return 1; }
+  [ -n "$audited" ] || { echo "no COPILOT_AUDITED in terminal/bin/bn-coded.mjs" >&2; return 1; }
+  assert_eq "$pin" "$audited"   # bump COPILOT_AUDITED (and re-audit the .github/ surface) when the pin moves
+}
+
 test_git_sandbox_said_has_one_fixed_line() {
   # what git in the sandbox says is shown apart, with this line beside it: the server's, the page's and the mock's are
   # the same words (code/test/githosts.test.mjs and the page's check prove where it shows)
