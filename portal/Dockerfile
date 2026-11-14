@@ -31,7 +31,12 @@ RUN mkdir -p /src /out && python -m portal.searchindex /src /out/docs-index.json
 FROM node:24.22.2-trixie-slim@sha256:0820eaa85e07d0490446dd01d14707e17e6108a36988cf374899cd057eb3812d AS jstest
 WORKDIR /app
 COPY --from=repo catalo[g]/setup-links.tsv /catalog/
-COPY portal/static/*.js ./portal/static/
+# the scripts, plus the stylesheets and page shells some tests read whole (source("app.css"), source("index.html"), …):
+# just those, not the images, so a new source("x.css") cannot ENOENT when the stage rebuilds (it was *.js only before)
+COPY portal/static/*.js portal/static/*.css portal/static/*.html ./portal/static/
+# the Terminal page's key/clipboard scripts live with the terminal; its tests read them at /terminal (the tests are at
+# /app/tests/js, so their ../../../terminal resolves to the image root, not /app)
+COPY --from=repo terminal/ttyd-key[s].js terminal/ttyd-clipboar[d].js /terminal/
 COPY tests/js/ ./tests/js/
 RUN node --test --test-reporter=spec tests/js/*.test.mjs && touch /tmp/js-tested
 
