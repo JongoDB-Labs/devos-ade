@@ -738,3 +738,30 @@ class MainTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+class WriteManifestTests(unittest.TestCase):
+    def _prev(self):
+        return bump.HEADER + "\n".join([
+            "searxng\tSearXNG\t2026.10.27-aaa\t2026-10-27\thttps://old\t2026-10-27",
+            "litellm\tLiteLLM\t1.106.5\t2026-10-20\thttps://ll\t2026-10-20",
+            "postgres\tPostgres\t0.8.7\t2026-10-01\thttps://pg\t2026-10-01",
+        ]) + "\n"
+
+    def _rows(self, out):
+        return {l.split("\t")[0]: l for l in out.splitlines() if l and not l.startswith("#")}
+
+    def test_only_bump_updates_the_bumped_row_and_keeps_the_rest_byte_for_byte(self):
+        now = bump.parse_time(NOW)
+        m = bump.Move("searxng", "2026.10.27-aaa", "2026.11.11-bbb", "2026.11.14-ccc", "https://new", "", now)
+        out = bump.write_manifest({"searxng": m}, now, self._prev())
+        self.assertTrue(out.startswith(bump.HEADER))
+        rows = self._rows(out)
+        self.assertIn("2026.11.14-ccc", rows["searxng"])          # the true newest, not the chosen pin
+        self.assertEqual(rows["litellm"], "litellm\tLiteLLM\t1.106.5\t2026-10-20\thttps://ll\t2026-10-20")
+        self.assertEqual(rows["postgres"], "postgres\tPostgres\t0.8.7\t2026-10-01\thttps://pg\t2026-10-01")
+
+    def test_full_run_with_no_prev_writes_from_moves_and_does_not_resurrect_prev_only_rows(self):
+        now = bump.parse_time(NOW)
+        m = bump.Move("searxng", "x", "y", "2026.11.14-ccc", "https://new", "", now)
+        out = bump.write_manifest({"searxng": m}, now, "")
+        self.assertIn("searxng\tSearXNG\t2026.11.14-ccc", out)
+        self.assertNotIn("litellm", out)   # not in moves and not in prev -> absent

@@ -4,6 +4,23 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.65.0] - 2026-11-14
+
+### Changed
+
+- **Two core services brought to their newest tested releases.** *Update now* (or `./stack update`) moves them: SearXNG
+  2026.11.6 → 2026.11.11 and the AWS CLI used to set up the RustFS bucket 2.39.6 → 2.40.0. Both are pinned by digest.
+
+### Fixed
+
+- **The "newest upstream" table (`catalog/core-services.tsv`) now updates on a partial bump too.** Previously it was
+  rewritten only on a full `bump-core-services` run, so a focused bump that holds a service left the table stale — which
+  made the release's own version check fail. It now keeps the rows it did not touch and updates the rest. (This also
+  clears the stale SearXNG and bucket-setup rows a previous bump left behind.)
+
+### To get it
+Existing installs: Home › Update now.
+
 ## [0.64.0] - 2026-11-13
 
 ### Added
