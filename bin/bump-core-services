@@ -740,14 +740,24 @@ HEADER = ("# The core services DevOS ADE pins, and the newest stable upstream re
           "#\n# id (compose service)  name  newest_upstream  released (date)  notes_url  checked (date)\n")
 
 
-def write_manifest(moves: dict, now: dt.datetime) -> str:
+def write_manifest(moves: dict, now: dt.datetime, prev: str = "") -> str:
+    # keep the rows of services this run did not touch, so --only updates only what it bumped and never drops the rest
+    # (before: the manifest was written only on a full run — a --only bump left every row stale, JON-1264)
+    old = {}
+    for line in prev.splitlines():
+        cols = line.split("\t")
+        if line.strip() and not line.startswith("#") and len(cols) >= 6:
+            old[cols[0]] = cols[:6]
     rows = []
     for t in targets():
-        if not isinstance(t, ImageTarget) or not t.service or t.name not in moves:
+        if not isinstance(t, ImageTarget) or not t.service:
             continue
-        m = moves[t.name]
-        rows.append("\t".join([t.service, t.label, m.newest, (m.newest_released or now).strftime("%Y-%m-%d"),
-                               m.newest_url or m.url, now.astimezone().strftime("%Y-%m-%d")]))
+        m = moves.get(t.name)
+        if m is not None:
+            rows.append("\t".join([t.service, t.label, m.newest, (m.newest_released or now).strftime("%Y-%m-%d"),
+                                   m.newest_url or m.url, now.astimezone().strftime("%Y-%m-%d")]))
+        elif t.service in old:
+            rows.append("\t".join(old[t.service]))
     return HEADER + "\n".join(rows) + "\n"
 
 
@@ -834,8 +844,8 @@ def main(argv=None, net=None, root=None, runner=None, out=sys.stdout) -> int:
                   else "security override: advisory pending") + ("; " + m.why if m.why else "")).strip()
     ml = list(moves.values())
     print(table(ml), file=out)
-    if not only and not errors:
-        fs.put(MANIFEST, write_manifest(moves, now))
+    if not errors:   # write on every bump, --only included (write_manifest keeps the rows this run did not touch)
+        fs.put(MANIFEST, write_manifest(moves, now, fs.get(MANIFEST)))
     for m in ml:
         if m.why.startswith("REVIEW") or "is now public" in m.why:
             print(f"!! {m.name}: {m.why}", file=out)
