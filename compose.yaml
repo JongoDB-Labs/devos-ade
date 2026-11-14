@@ -45,7 +45,7 @@ services:
 
   # One-shot: waits for RustFS, creates buckets idempotently, exits 0.
   rustfs-init:
-    image: amazon/aws-cli:2.39.6@sha256:eccdb3ec77e159d43ca6a750a70738c546883138be7f094498294a1477ec7e42
+    image: amazon/aws-cli:2.40.1@sha256:4ade0fe3e60e0b9e1fb0910f86c6d992baf4e12d3172c25a3c8c11f6c81cee08
     depends_on: [rustfs]
     restart: "no"
     environment:
@@ -312,7 +312,7 @@ services:
   # WEBSEARCH_SEARXNG_SECRET, in its environment only: without one, SearXNG's own placeholder, which it refuses to start
   # with.
   searxng:
-    image: searxng/searxng:2026.11.6-a3013ef11@sha256:db2fb02636f8e3d15f9b59a3f9ed924afdfbcecb3768bdcf461cb878c50f9e57
+    image: searxng/searxng:2026.11.11-626105eec@sha256:606fc8852a53f0be4ac05116950ff480f6f56b8ef7d77b366868cc76478036e5
     profiles: ["searxng"]
     restart: unless-stopped
     user: "977:977"   # the image's searxng user (its entrypoint would otherwise run as root)
