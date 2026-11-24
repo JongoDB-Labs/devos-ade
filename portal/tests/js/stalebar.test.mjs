@@ -2,7 +2,8 @@
 // <meta name="bn-build">; /api/admin/status answers the running one.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { load } from "./load.mjs";
+import vm from "node:vm";
+import { load, source } from "./load.mjs";
 
 const S = load("stalebar.js").bnStale._pure;
 
@@ -15,4 +16,8 @@ test("stale only when the server names a different, non-empty build", () => {
 test("a page that has no build of its own (an old server) is never told it is stale", () => {
   assert.equal(S.isStale("", "bbbb"), false);
   assert.equal(S.isStale(undefined, "bbbb"), false);
+});
+
+test("app.js still compiles with the build constant (a duplicate global name would stop the whole page)", () => {
+  assert.doesNotThrow(() => new vm.Script(source("app.js"), { filename: "app.js" }));
 });

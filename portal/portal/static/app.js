@@ -21,7 +21,7 @@ const APP_URLS = (() => {
 })();
 // The page's own build (the server's fingerprint of these scripts, styles and markup): stalebar.js compares it with the
 // one /api/admin/status answers, so a page left open across an update says so (JON-1127).
-const BUILD = (() => {
+const PAGE_BUILD = (() => {
   try { return document.querySelector('meta[name="bn-build"]').content; } catch (e) { return ""; }
 })();
 const appUrl = (app) => APP_URLS[app] || `${location.protocol}//${app}.${location.host}${APPS[app]}`;
@@ -994,7 +994,7 @@ async function pollAdmin() {
     }
     if (awaiting && !awaiting.toggle && adminState) { a.in_progress = true; a.job = adminState.job; }
     renderAdmin(a);
-    if (window.bnStale) window.bnStale.check(a.build, BUILD);
+    if (window.bnStale) window.bnStale.check(a.build, PAGE_BUILD);
     nextAdmin(a.in_progress || awaiting ? 2500 : a.late ? ADMIN_LATE_MS : REFRESH_MS);
   } catch (e) {
     if (e.message === "signed out") return;

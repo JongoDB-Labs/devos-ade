@@ -1,6 +1,6 @@
 // A page left open across an update (JON-1127): the portal page never reloads itself, so a tab kept open runs the old
 // scripts (a Chat hand-off the old page has no listener for just times out). The server puts a fingerprint of the page's
-// files into <meta name="bn-build"> (app.js reads it as BUILD) and answers the running one in /api/admin/status, which
+// files into <meta name="bn-build"> (app.js reads it as PAGE_BUILD) and answers the running one in /api/admin/status, which
 // Home polls (app.js pollAdmin → check). When they differ, a bar (index.html #stale-bar) says so, once, with Reload. It
 // never reloads by itself: the person may be typing in a frame. Loaded after app.js. Text only.
 "use strict";
