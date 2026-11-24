@@ -45,7 +45,7 @@ services:
 
   # One-shot: waits for RustFS, creates buckets idempotently, exits 0.
   rustfs-init:
-    image: amazon/aws-cli:2.40.1@sha256:4ade0fe3e60e0b9e1fb0910f86c6d992baf4e12d3172c25a3c8c11f6c81cee08
+    image: amazon/aws-cli:2.42.1@sha256:b0102d2269f87d8531d931c1a59e248101ace586886e6c077058d94c1c37b846
     depends_on: [rustfs]
     restart: "no"
     environment:
@@ -312,7 +312,7 @@ services:
   # WEBSEARCH_SEARXNG_SECRET, in its environment only: without one, SearXNG's own placeholder, which it refuses to start
   # with.
   searxng:
-    image: searxng/searxng:2026.11.11-626105eec@sha256:606fc8852a53f0be4ac05116950ff480f6f56b8ef7d77b366868cc76478036e5
+    image: searxng/searxng:2026.11.21-c6ee3e9fd@sha256:fc1d81d7e9d04d3c8b3e23c7162feddf5c3d6aecd32e67a56eaabcb8d8747f79
     profiles: ["searxng"]
     restart: unless-stopped
     user: "977:977"   # the image's searxng user (its entrypoint would otherwise run as root)
@@ -517,7 +517,7 @@ services:
 
   # The only way in for browsers: http://${PORTAL_HOST} and its chat./admin./files. subdomains (caddy/Caddyfile).
   caddy:
-    image: caddy:2.11.7-alpine@sha256:d8542f48d34a9cf4e4c11a478865229840e87e4c96ea3f439101f31a5d35f75f
+    image: caddy:2.11.9-alpine@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0
     restart: unless-stopped
     user: "65534:65534"          # unprivileged: listens on 8080 inside the container
     read_only: true
@@ -581,7 +581,7 @@ services:
   # 127.0.0.1:11434. Its models are the ollama-models volume. compose.ollama-gpu.yaml adds the NVIDIA GPUs. Cloud
   # features off; nothing is pulled but what ./stack local-models pull asks for (from Hugging Face).
   ollama:
-    image: ollama/ollama:0.40.15@sha256:0e59999e0e8f9fd4e704bd788a89b7e4cad399367fb1365f8c102ac662288761
+    image: ollama/ollama:0.40.17@sha256:ccc42bcd3d5fcf7ab0d532b300382154e1a4da56fc666bdb313b78ebdd912754
     profiles: ["ollama"]
     restart: unless-stopped
     cap_drop: [ALL]
@@ -610,7 +610,7 @@ services:
   # loopback (127.0.0.1, localhost) goes on to Ollama; any other name — a web page that pointed a name of its own at
   # 127.0.0.1 (DNS rebinding) — is 403, the check Ollama itself makes only when it listens on loopback.
   ollama-gate:
-    image: caddy:2.11.7-alpine@sha256:d8542f48d34a9cf4e4c11a478865229840e87e4c96ea3f439101f31a5d35f75f
+    image: caddy:2.11.9-alpine@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0
     profiles: ["ollama"]
     restart: unless-stopped
     command: ["caddy", "run", "--config", "/etc/caddy/ollama-gate.caddy", "--adapter", "caddyfile"]

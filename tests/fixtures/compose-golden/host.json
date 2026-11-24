@@ -304,7 +304,7 @@
   },
   "rustfs-init": {
    "container_name": null,
-   "image": "amazon/aws-cli:2.40.1@sha256:4ade0fe3e60e0b9e1fb0910f86c6d992baf4e12d3172c25a3c8c11f6c81cee08",
+   "image": "amazon/aws-cli:2.42.1@sha256:b0102d2269f87d8531d931c1a59e248101ace586886e6c077058d94c1c37b846",
    "labels": {},
    "networks": [
     "default"
@@ -314,7 +314,7 @@
   },
   "searxng": {
    "container_name": null,
-   "image": "searxng/searxng:2026.11.11-626105eec@sha256:606fc8852a53f0be4ac05116950ff480f6f56b8ef7d77b366868cc76478036e5",
+   "image": "searxng/searxng:2026.11.21-c6ee3e9fd@sha256:fc1d81d7e9d04d3c8b3e23c7162feddf5c3d6aecd32e67a56eaabcb8d8747f79",
    "labels": {},
    "networks": [
     "websearch",
@@ -473,7 +473,7 @@
   },
   "terminal-gateway": {
    "container_name": null,
-   "image": "caddy:2.11.7-alpine@sha256:d8542f48d34a9cf4e4c11a478865229840e87e4c96ea3f439101f31a5d35f75f",
+   "image": "caddy:2.11.9-alpine@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0",
    "labels": {},
    "networks": [
     "localgit",

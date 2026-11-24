@@ -57,9 +57,9 @@ RUN set -eu; \
 # gh, the GitHub CLI: its release tarball checked against its SHA-256. It is never logged in here: the gh on PATH is
 # bin/bn-gh, which gives this one (/usr/local/lib/gh/gh) your login for one command at a time, and only for a GitHub
 # host you let Claude use (Git panel › Hosts) — through the same broker as git's, each use in Activity.
-ARG GH_VERSION=2.103.3
-ARG GH_SHA256_AMD64=4c806978ffce1cec70853302a56d70ac6da4f19bae7adca4e1a8ab00633dd91d
-ARG GH_SHA256_ARM64=ee32df2323c8847f5fac6cb6b4b69ca75828e9329a8f22f677021f7b3306ce63
+ARG GH_VERSION=2.105.0
+ARG GH_SHA256_AMD64=79e7ab5db738c48777b696e374f8b428f0647debfb424f44d2f426370407fe2f
+ARG GH_SHA256_ARM64=b1278c75107423d818f1937fd92cafc9e5e9b606631568f68d7fb816f5885a02
 RUN set -eu; \
     case "$(dpkg --print-architecture)" in \
       amd64) a=amd64; sum="$GH_SHA256_AMD64" ;; \

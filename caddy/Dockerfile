@@ -4,13 +4,13 @@
 #
 # Cloudflare is built in. Another provider (https://github.com/caddy-dns): change DNS_PLUGIN to its module at a
 # pinned version, the `dns` line in caddy/remote-domain.caddy, and the token variable in compose.domain.yaml.
-ARG CADDY_VERSION=2.11.7
-FROM caddy:2.11.7-builder-alpine@sha256:d6161a2c82fd58b3205048958fb6246d0c5d892beee8a47e90944610c4efd100 AS build
+ARG CADDY_VERSION=2.11.9
+FROM caddy:2.11.9-builder-alpine@sha256:86e132d1d6db8850352b2dbc15f82a4cb25363ac305ee41e11405873e5931f37 AS build
 ARG CADDY_VERSION
 ARG DNS_PLUGIN=github.com/caddy-dns/cloudflare@v0.2.4
 RUN xcaddy build "v${CADDY_VERSION}" --with "${DNS_PLUGIN}"
 
-FROM caddy:2.11.7-alpine@sha256:d8542f48d34a9cf4e4c11a478865229840e87e4c96ea3f439101f31a5d35f75f
+FROM caddy:2.11.9-alpine@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0
 COPY --from=build /usr/bin/caddy /usr/bin/caddy
 # compose runs Caddy as 65534 with cap_add NET_BIND_SERVICE, like the stock image (whose binary carries this
 # file capability). A new caddy-data volume copies /data's owner, so certificates are writable for 65534.

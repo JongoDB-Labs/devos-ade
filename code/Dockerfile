@@ -31,7 +31,7 @@ RUN if [ -f package.json ]; then npm test; else echo "no code/web: no frontend t
 # -rN builds, so an exact pin would stop building at the next one. Only code/test.sh (--target test) builds this stage
 # and `test`: setup and update build the runtime stage at the end (compose.code.yaml: no target), which needs neither —
 # an Alpine change here can never break an install or an update.
-FROM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS gitnew
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS gitnew
 RUN apk add --no-cache "git~2.54" "git-daemon~2.54" "nodejs~24" openssh-client openssh-server openssl
 WORKDIR /opt/code
 COPY server/frames.mjs server/sshagent.mjs ./server/
