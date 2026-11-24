@@ -19,6 +19,11 @@ const $ = (sel, root = document) => root.querySelector(sel);
 const APP_URLS = (() => {
   try { return JSON.parse(document.querySelector('meta[name="bn-apps"]').content); } catch (e) { return {}; }
 })();
+// The page's own build (the server's fingerprint of these scripts, styles and markup): stalebar.js compares it with the
+// one /api/admin/status answers, so a page left open across an update says so (JON-1127).
+const BUILD = (() => {
+  try { return document.querySelector('meta[name="bn-build"]').content; } catch (e) { return ""; }
+})();
 const appUrl = (app) => APP_URLS[app] || `${location.protocol}//${app}.${location.host}${APPS[app]}`;
 
 function el(tag, props = {}, ...children) {
@@ -961,7 +966,7 @@ function renderJob(job, inProgress) {
   else if (inProgress && term) note = "It runs in a terminal on your computer; Home follows it (the portal may restart during it).";
   else if (inProgress && !term && BACKGROUND[job.action]) note = BACKGROUND[job.action];
   else if (inProgress) note = "You can leave this page; it is carried out on your computer.";
-  else if (job.phase === "done" && (job.action === "update" || job.action === "rollback") && !nothingNew) note = "Reload this page to use the new version of Home.";
+  else if (job.phase === "done" && (job.action === "update" || job.action === "rollback") && !nothingNew) note = "Reload this page to use the new version of DevOS ADE (the bar at the top has a Reload button).";
   else if (job.phase === "failed" && auto) note = "This release is not retried automatically: Update now tries again, and a newer release is tried as usual.";
   else if (job.phase === "skipped") note = "Nothing was changed. It tries again in the next window, or Update now runs it.";
   $("#job-note").textContent = note;
@@ -989,6 +994,7 @@ async function pollAdmin() {
     }
     if (awaiting && !awaiting.toggle && adminState) { a.in_progress = true; a.job = adminState.job; }
     renderAdmin(a);
+    if (window.bnStale) window.bnStale.check(a.build, BUILD);
     nextAdmin(a.in_progress || awaiting ? 2500 : a.late ? ADMIN_LATE_MS : REFRESH_MS);
   } catch (e) {
     if (e.message === "signed out") return;

@@ -554,3 +554,50 @@ def item_menus(ctx):
     expect(page.locator(".ctx-menu").count() == 0, "a Settings field lost the browser's own menu")
     rec.save()
     return f"nav tab, Settings row and {shown} Continue row(s) open the item menu by right-click and Shift+F10, inside the window; fields keep the browser's menu"
+
+
+@check("browser", "stale-page-reload-bar")
+def stale_page_reload_bar(ctx):
+    """A page left open across an update (JON-1127): Home has no bar; once this page's own build differs from the one
+    /api/admin/status answers, the next admin poll shows a bar with Reload (once, never a reload by itself); Reload
+    reloads the page and the bar is gone. Screenshots: 390 and 1440 px wide, light and dark."""
+    page, rec = ctx.page("stale-bar")
+    login(page)
+    page.wait_for_function("() => window.bnStale && typeof pollAdmin === 'function'", timeout=20000)
+    meta = page.get_attribute('meta[name="bn-build"]', "content")
+    expect(bool(re.fullmatch(r"[0-9a-f]{16}", meta or "")), f"bn-build meta: {meta!r}")
+    served = page.evaluate("() => fetch('/api/admin/status', {headers: {'X-Requested-With': 'devos-ade'}}).then(r => r.json()).then(j => j.build)")
+    expect(served == meta, f"status build {served!r} != page build {meta!r}")
+    page.evaluate("pollAdmin()")
+    page.wait_for_timeout(1500)
+    expect(page.locator("#stale-bar").is_hidden(), "the bar shows while the page is current")
+    # this page's own build replaced: it is now a page from before an update
+    page.evaluate("window.bnStale._setBuild('stale')")
+    page.evaluate("pollAdmin()")
+    page.wait_for_selector("#stale-bar:not([hidden])", timeout=15000)
+    expect("DevOS ADE was updated. Reload this page to use the new version." in page.inner_text("#stale-bar"), "the bar's words")
+    expect(page.get_attribute("#stale-bar", "role") == "status", "the bar is not a status region")
+    page.focus("#stale-reload")
+    expect(page.evaluate("document.activeElement.id") == "stale-reload", "Reload is not keyboard reachable")
+    page.evaluate("pollAdmin()")   # a second poll: one bar, not two
+    page.wait_for_timeout(800)
+    expect(page.locator("#stale-bar").count() == 1 and page.locator("#stale-bar:not([hidden])").count() == 1, "the bar stacked")
+    for width, height in ((390, 844), (1440, 900)):
+        page.set_viewport_size({"width": width, "height": height})
+        for scheme in ("light", "dark"):
+            page.emulate_media(color_scheme=scheme)
+            page.wait_for_timeout(250)
+            expect(page.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1"), f"horizontal scroll at {width} px ({scheme})")
+            box = page.locator("#stale-reload").bounding_box()
+            expect(box is not None and box["x"] >= 0 and box["x"] + box["width"] <= width, f"Reload outside the {width} px screen: {box}")
+            shot(page, f"64-stale-bar-{width}-{scheme}")
+    page.emulate_media(color_scheme="light")
+    page.set_viewport_size({"width": 1440, "height": 900})
+    with page.expect_navigation():
+        page.click("#stale-reload")
+    page.wait_for_selector(".shell")
+    page.wait_for_function("() => window.bnStale", timeout=20000)
+    expect(page.locator("#stale-bar").is_hidden(), "the bar is still there after Reload")
+    expect(page.get_attribute('meta[name="bn-build"]', "content") == meta, "the build changed across a reload")
+    rec.save()
+    return f"no bar while current; build replaced → bar after the next poll (once, status region, Reload focusable, no overflow at 390/1440 light/dark); Reload → page reloaded, bar gone (build {meta})"

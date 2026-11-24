@@ -733,3 +733,32 @@ def test_a_failed_step_and_a_long_failure_message_pass_through(make_client, dirs
     j = c.get("/api/admin/status", headers=API).json()["job"]
     assert j["steps"] == [{"label": "Git server account", "took": "2m40s"}, {"label": "Smoke test", "took": "2m45s", "failed": True}, {"label": "Other", "took": "1s"}]
     assert j["message"] == msg and j["message"].endswith("goes back)")
+
+
+# --- a page left open across an update learns it is out of date (JON-1127) -----------------------------------------------
+
+def test_the_page_carries_the_build_the_status_answers(make_client):
+    c = make_client()
+    page = c.get("/", headers=ORIGIN).text
+    m = re.search(r'<meta name="bn-build" content="([0-9a-f]{16})">', page)
+    assert m, "no bn-build meta in the page"
+    assert c.get("/api/admin/status", headers=API).json()["build"] == m.group(1)
+
+
+def test_the_build_fingerprint_follows_the_static_files(tmp_path):
+    from portal.app import build_fingerprint
+    (tmp_path / "a.js").write_text("one")
+    (tmp_path / "b.css").write_text("two")
+    (tmp_path / "c.html").write_text("three")
+    (tmp_path / "logo.svg").write_text("not part of it")
+    first = build_fingerprint(tmp_path)
+    assert re.fullmatch(r"[0-9a-f]{16}", first)
+    assert build_fingerprint(tmp_path) == first                    # stable while nothing changes
+    (tmp_path / "logo.svg").write_text("still not part of it")
+    assert build_fingerprint(tmp_path) == first
+    (tmp_path / "a.js").write_text("one, changed")
+    changed = build_fingerprint(tmp_path)
+    assert changed != first                                       # a script changed
+    (tmp_path / "a.js").write_text("one")
+    (tmp_path / "a.js").rename(tmp_path / "z.js")
+    assert build_fingerprint(tmp_path) not in (first, changed)    # a file renamed: its path counts

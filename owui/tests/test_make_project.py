@@ -147,3 +147,9 @@ def test_it_holds_no_url_key_or_network_call_of_its_own():
     code = re.sub(r"(?s)^\"\"\".*?\"\"\"", "", src)
     for banned in ("import requests", "import httpx", "import urllib", "import socket", "aiohttp", "http://", "https://", "api_key", "Authorization"):
         assert banned not in code, banned
+
+
+def test_the_timeout_text_points_at_a_reload_after_an_update():   # JON-1127
+    code = mp.js_for("T", "hello")
+    assert ("DevOS ADE did not answer. If it was just updated, reload DevOS ADE; and make sure Chat is open in its "
+            "Chat tab and the Code page is on.") in code

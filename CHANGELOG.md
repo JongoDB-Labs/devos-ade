@@ -4,6 +4,15 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **A DevOS ADE page left open across an update now says it is out of date.** A bar at the top reads "DevOS ADE was
+  updated. Reload this page to use the new version." with a Reload button; it never reloads the page by itself. Before,
+  such a tab kept running the old scripts, and Chat's *Make it a project* waited 20 seconds and failed with "DevOS ADE
+  did not answer". That message now also tells you to reload after an update. (JON-1127)
+
 ## [0.66.0] - 2026-11-24
 
 ### Changed

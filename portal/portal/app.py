@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import http.cookiejar
 import html
 import json
@@ -36,6 +37,16 @@ from .security import (
 
 log = logging.getLogger("portal")
 STATIC = Path(__file__).parent / "static"
+
+
+def build_fingerprint(directory: Path = STATIC) -> str:
+    """A short fingerprint of the page's scripts, styles and markup (sha256 over the sorted relative paths and contents of
+    the .js, .css and .html files, first 16 hex characters). Every open page carries it (<meta name="bn-build">) and
+    compares it with the one /api/admin/status answers: a page left open across an update learns it is out of date (JON-1127)."""
+    h = hashlib.sha256()
+    for f in sorted(p for p in directory.rglob("*") if p.is_file() and p.suffix in (".js", ".css", ".html")):
+        h.update(f.relative_to(directory).as_posix().encode() + b"\0" + f.read_bytes() + b"\0")
+    return h.hexdigest()[:16]
 MAX_FORM = 8192
 MAX_UNLOCK_FORM = 32768   # the Code page's unlock form: the password and a deep link (portal/code.py DEEP_LINK_MAX)
 SU_MARK = "bn_su"   # JON-1140: a short-lived marker session-unlock sets, so locked_verify breaks the redirect loop if the unlock cookie does not stick
@@ -315,6 +326,7 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
     throttle = LoginThrottle()  # shared by the login form and the password re-entry of admin actions
     admin_rate = admin.RateLimit()
 
+    build = build_fingerprint()   # (the scripts this process serves; a newer release restarts it with its own)
     handoff = Handoff(settings.secret, sessions.fingerprint)
     # The Code page's terminal panel: its unlock carried over to the terminal host (one password for both; below)
     unlock_handoff = Handoff(settings.secret, sessions.fingerprint, salt="devos-ade.portal.code-terminal")
@@ -1400,7 +1412,8 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
         # The same for this site's installed-app link scheme (install.js: "Open in the app").
         page = (STATIC / "index.html").read_text(encoding="utf-8")
         rem = remote(request)
-        meta = (f'<meta name="bn-apps" content="{html.escape(json.dumps(settings.app_urls(rem)), quote=True)}">\n'
+        meta = (f'<meta name="bn-build" content="{build}">\n'
+                f'<meta name="bn-apps" content="{html.escape(json.dumps(settings.app_urls(rem)), quote=True)}">\n'
                 f'<meta name="bn-app-scheme" content="{html.escape(webapp.protocol(settings, rem), quote=True)}">')
         # The browser terminal: enabled at all, and usable on this site (remote access needs REMOTE_TERMINAL).
         term = {"enabled": settings.terminal, "here": settings.terminal_on(rem)}
@@ -1566,7 +1579,7 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
         st = admin.helper_state(settings.status_dir)
         st.update({"allowed": admin_allowed(request), "remote": admin.is_remote(request),
                    "in_progress": admin.job_in_progress(st), "actions": list(admin.ACTIONS),
-                   "now": int(time.time())})   # (the clock the step times are on: Home's progress bar measures a running step against it)
+                   "build": build, "now": int(time.time())})   # (the clock the step times are on: Home's progress bar measures a running step against it)
         return _no_store(JSONResponse(st))
 
     async def api_admin_request(request: Request) -> Response:

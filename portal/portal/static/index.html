@@ -32,6 +32,7 @@
 <script src="/static/app.js" defer></script>
 <script src="/static/ctxmenu.js" defer></script>
 <script src="/static/updatecheck.js" defer></script>
+<script src="/static/stalebar.js" defer></script>
 <script src="/static/mobile.js" defer></script>
 <script src="/static/install.js" defer></script>
 <script src="/static/terminal.js" defer></script>
@@ -51,6 +52,11 @@
 <script src="/static/search.js" defer></script>
 </head>
 <body class="shell">
+<!-- A page left open across an update: stalebar.js shows this when /api/admin/status names a newer build (JON-1127) -->
+<div id="stale-bar" class="stale-bar" role="status" aria-live="polite" hidden>
+  <span class="stale-text">DevOS ADE was updated. Reload this page to use the new version.</span>
+  <button type="button" class="action primary" id="stale-reload">Reload</button>
+</div>
 <nav class="sidebar" id="sidebar" aria-label="Apps">
   <div class="brand"><img src="/static/logo.svg" alt="" width="28" height="28"><span>DevOS ADE</span></div>
   <a class="version-label" id="version" target="_blank" rel="noopener noreferrer" hidden></a>

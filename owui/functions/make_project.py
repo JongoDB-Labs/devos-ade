@@ -50,7 +50,7 @@ const id = 'h' + Math.random().toString(36).slice(2, 12);
 return await new Promise((resolve) => {
   const done = (v) => { window.removeEventListener('message', on); clearTimeout(t); resolve(v); };
   const on = (e) => { if (e.source === window.parent && e.data && e.data.type === 'bn-portal-chat-handoff' && e.data.id === id) done({ ok: e.data.ok === true, tooBig: e.data.tooBig === true, error: String(e.data.error || '').slice(0, 300) }); };
-  const t = setTimeout(() => done({ ok: false, error: 'DevOS ADE did not answer. Make sure Chat is open in its Chat tab and the Code page is on.' }), %d);
+  const t = setTimeout(() => done({ ok: false, error: 'DevOS ADE did not answer. If it was just updated, reload DevOS ADE; and make sure Chat is open in its Chat tab and the Code page is on.' }), %d);
   window.addEventListener('message', on);
   window.parent.postMessage(Object.assign({ type: 'bn-chat-handoff', id: id }, msg), to);
 });
