@@ -61,7 +61,9 @@ RUN apt-get -o Acquire::Retries=5 update && apt-get -o Acquire::Retries=5 instal
  && rm -rf /var/lib/apt/lists/*
 COPY server/ ./server/
 COPY test/ ./test/
-COPY --from=terminal bin/bn-coded.mjs bin/bn-preview.mjs bin/bn-git-credential bin/bn-gh /opt/terminal/bin/
+# (bin/project and gitconfig: the terminal's project command and its git config, read by termlink.test.mjs)
+COPY --from=terminal bin/bn-coded.mjs bin/bn-preview.mjs bin/bn-git-credential bin/bn-gh bin/project /opt/terminal/bin/
+COPY --from=terminal gitconfig /opt/terminal/gitconfig
 COPY --from=terminal ssh_known_hosts /opt/terminal/ssh_known_hosts
 COPY --from=terminal egress/bn-egress.mjs /opt/terminal/egress/
 COPY --from=terminal claude-code/package.json /opt/terminal/claude-code/package.json

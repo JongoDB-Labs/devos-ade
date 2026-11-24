@@ -1303,3 +1303,12 @@ def test_models_try_needs_a_served_model(make, dirs):
     # no code-models.tsv here: the model is not served, so Try refuses it (no spend)
     r = c.post("/api/models/try", content=json.dumps({"model": "claude-haiku-5-5", "estimate": True}), headers=H)
     assert r.status_code == 404
+
+
+def test_a_doc_link_may_name_a_dotted_file_but_never_leave_docs():
+    # JON-1376: docs/upgrade-to-0.45.md was refused for its dot, so the global search dropped that page without a word
+    for ok in ("README.md", "README.md#updating", "docs/security.md", "docs/upgrade-to-0.45.md", "docs/upgrade-to-0.45.md#stuck-on-0-45-0"):
+        assert st.DOC.fullmatch(ok), ok
+    for bad in ("docs/../README.md", "docs/a/b.md", "docs/.md", "docs/a..md", "docs/.hidden.md", "docs/a.md.", "../docs/a.md",
+                "docs/A.md", "docs/a.md#Frag", "/docs/a.md", "docs/a.txt", "docs/" + "a" * 41 + ".md"):
+        assert not st.DOC.fullmatch(bad), bad

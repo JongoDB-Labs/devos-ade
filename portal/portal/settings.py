@@ -56,7 +56,8 @@ SECTIONS = ("account", "providers", "aws", "spending", "chat", "code", "files", 
 PLACES = ("main", "more", "with")
 OWN_ROWS = ("+devices", "+models", "+backups", "+test", "+check-aws", "+report", "+restart", "+git-hosts", "+project-folders", "+sessions-consent", "+bring-setup",
             "+subscriptions", "+services", "+local-models")
-DOC = re.compile(r"(README\.md|docs/[a-z0-9-]{1,40}\.md)(#[a-z0-9-]{1,80})?")
+# (a dot between non-empty parts is allowed, as in docs/upgrade-to-0.45.md; never a "/" or an empty part)
+DOC = re.compile(r"(README\.md|docs/[a-z0-9-]{1,40}(?:\.[a-z0-9-]{1,40}){0,3}\.md)(#[a-z0-9-]{1,80})?")
 EDITABLE = ("edit", "local", "on-only", "widen-local")
 REGEN = ("RUSTFS_ACCESS_KEY", "SHARED_MCP_TOKEN")   # what "Regenerate" asks for (the RustFS pair is one action)
 SECRET_CODES = ("-", "s", "k", "u", "h", "S")

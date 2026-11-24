@@ -135,8 +135,10 @@ def test_the_switch_is_announced_once_and_for_two_weeks(settings, tmp_path):
 
 
 def test_the_settings_row_and_its_apply_step_exist():
+    import os
     from pathlib import Path
-    repo = Path(__file__).resolve().parents[2]
+    # the checkout, or the repository's files the test image copies to BN_REPO_DIR (parents[2] is / there)
+    repo = Path(os.environ.get("BN_REPO_DIR") or Path(__file__).resolve().parents[2])
     rows = {l.split("\t")[0]: l.split("\t") for l in (repo / "catalog" / "settings.tsv").read_text().splitlines() if l and not l.startswith("#")}
     k = rows["PORTAL_HTTPS"]
     assert k[1] == "account" and k[3] == "edit" and k[4] == "bool" and k[5] == "https" and k[6] == "Serve the portal over HTTPS"
