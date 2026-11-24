@@ -885,7 +885,10 @@ _restore_litellm_config() {
 
 # --- the model probe, kept while nothing it depends on changed (an update, a setup again) ---
 # PROBE_REUSE_MAX_S: how long its answers stand at most (a week: a model your AWS admin enables meanwhile shows by then;
-# ./stack models --recheck checks again at once). The mark: .state/models/probe.mark (fingerprint=, at=).
+# ./stack models --recheck checks again at once). An update (setup's update mode, UPD_MODE=1) keeps a probe whose
+# fingerprint holds at any age, and says so when it is older than that (JON-972: a probe of nine days made an update
+# restart LiteLLM twice and probe for four minutes; nothing else rechecks on a schedule). The mark: .state/models/probe.mark
+# (fingerprint=, at=).
 PROBE_REUSE_MAX_S="${DEVOS_ADE_PROBE_MAX_AGE_S:-604800}"
 probe_mark_file() { printf '%s\n' "$STATE_DIR/models/probe.mark"; }
 # probe_fingerprint -> a hash of what the probe's answers depend on: .env's AWS_* lines (the key, its region, how it
@@ -894,8 +897,8 @@ probe_fingerprint() {
   { grep -E '^AWS_' "$ENV_FILE" 2>/dev/null; catalog_rows 2>/dev/null; grep -E 'berriai/litellm' "$STACK_DIR/compose.yaml" 2>/dev/null
     cat "$STACK_DIR/lib/models.sh" 2>/dev/null; } | openssl dgst -sha256 | awk '{ print $NF }'
 }
-# probe_reusable -> 0 when the last probe's answers still stand: the same fingerprint, younger than PROBE_REUSE_MAX_S,
-# and its results still there (litellm/enabled-models.txt, litellm/probe-results.tsv); prints how old they are
+# probe_reusable -> 0 when the last probe's answers still stand: the same fingerprint, younger than PROBE_REUSE_MAX_S
+# (an update: any age), and its results still there (litellm/enabled-models.txt, litellm/probe-results.tsv); prints how old they are
 probe_reusable() {
   local f fp at age
   f="$(probe_mark_file)"; [ -r "$f" ] || return 1
@@ -903,8 +906,15 @@ probe_reusable() {
   fp="$(sed -n 's/^fingerprint=//p' "$f")"; at="$(sed -n 's/^at=//p' "$f")"
   case "$at" in '' | *[!0-9]*) return 1 ;; esac
   age=$(( $(date +%s) - at ))
-  [ -n "$fp" ] && [ "$fp" = "$(probe_fingerprint)" ] && [ "$age" -ge 0 ] && [ "$age" -lt "$PROBE_REUSE_MAX_S" ] || return 1
+  [ -n "$fp" ] && [ "$fp" = "$(probe_fingerprint)" ] && [ "$age" -ge 0 ] && { [ "${UPD_MODE:-0}" = 1 ] || [ "$age" -lt "$PROBE_REUSE_MAX_S" ]; } || return 1
   if [ "$age" -lt 7200 ]; then printf '%s min\n' $((age / 60)); else printf '%s h\n' $((age / 3600)); fi
+}
+# probe_old_since -> the date (YYYY-MM-DD) of the last probe when it is older than PROBE_REUSE_MAX_S, else nothing
+probe_old_since() {
+  local at; at="$(sed -n 's/^at=//p' "$(probe_mark_file)" 2>/dev/null)"
+  case "$at" in '' | *[!0-9]*) return 0 ;; esac
+  [ $(( $(date +%s) - at )) -ge "$PROBE_REUSE_MAX_S" ] || return 0
+  date -r "$at" +%Y-%m-%d 2>/dev/null || date -d "@$at" +%Y-%m-%d 2>/dev/null || true
 }
 # probe_mark — the probe just answered: its fingerprint and the time (a failure to write it only means a probe next time)
 probe_mark() {
@@ -919,7 +929,7 @@ probe_mark() {
 # too), today's prices, LiteLLM's config, Postgres + RustFS and LiteLLM, around a model probe unless its last answers
 # still stand. LiteLLM is recreated only when its configuration changed (up_services; config_sums).
 setup_bringup_and_probe() {
-  local en="$STACK_DIR/litellm/enabled-models.txt" age
+  local en="$STACK_DIR/litellm/enabled-models.txt" age old
   # Every image setup builds, first and side by side; then today's prices before LiteLLM's config is rendered
   # (lib/prices.sh; never fatal): the portal image runs the updater, and one from before an update would not have it.
   ensure_prices_dir
@@ -934,6 +944,8 @@ setup_bringup_and_probe() {
   # again): LiteLLM starts once, with the models it found, instead of twice around a new probe
   if [ "${SETUP_REPROBE:-0}" != 1 ] && age="$(probe_reusable)"; then
     log "model check: not run again — nothing it depends on changed (the same AWS key, region, model catalog and LiteLLM; the last check $age ago). ./stack models --recheck checks again"
+    old="$(probe_old_since)"
+    [ -z "$old" ] || log "Model check kept from $old (older than a week: Settings › Models your key can use › Re-check models, or ./stack models --recheck, finds models enabled since)."
     # Safe to skip: render_config is a function of the inputs hashed in upd_in_litellm_config (it also checks that the files it
     # wrote are as it left them); the same inputs give the same files.
     upd_gate litellm_config "LiteLLM config (model check kept)" "nothing it is made from changed (.env, catalog, models found, prices, templates)" render_config "$en"

@@ -194,7 +194,9 @@ _um_bringup() { # _um_bringup [update] -> the calls setup_bringup_and_probe made
   local en="$STACK_DIR/litellm/enabled-models.txt"
   ensure_prices_dir() { :; }; setup_build_images() { :; }; _setup_prices() { :; }; render_config() { echo RENDER >> "$TMP/calls"; }
   _setup_downloads() { :; }; _setup_owui_image() { :; }; _setup_websearch_render() { :; }; ensure_portal_reachable() { :; }
-  probe_reusable() { echo "1 min"; }; ensure_virtual_key() { echo "KEY $2" >> "$TMP/calls"; }
+  [ -n "${UM_PROBE_AGE:-}" ] || probe_reusable() { echo "1 min"; }
+  _setup_model_check() { echo PROBE >> "$TMP/calls"; }; on_exit() { :; }; timed_step() { shift; "$@"; }
+  ensure_virtual_key() { echo "KEY $2" >> "$TMP/calls"; }
   run_phase() { echo "PHASE $1" >> "$TMP/calls"; "${@:3}" > /dev/null 2>&1 || true; }
   up_front() { echo "UP $*" >> "$TMP/calls"; }; up_services() { echo "UPSVC $*" >> "$TMP/calls"; }; _up_data_services() { echo DATA >> "$TMP/calls"; }
   websearch_builtin_on() { return 1; }; localgit_on() { return 1; }
@@ -202,6 +204,11 @@ _um_bringup() { # _um_bringup [update] -> the calls setup_bringup_and_probe made
   [ -z "${2:-}" ] || printf '%s\n' "$2" >> "$ENV_FILE"
   : > "$TMP/calls"; : > "$TMP/ran"
   upd_begin; UPD_MODE=0; [ "${1:-}" != update ] || { UPD_MODE=1; UPD_SETTINGS_SKIPPED=1; }
+  # (UM_PROBE_AGE: the real probe_reusable, over a mark written that many seconds ago with today's fingerprint)
+  if [ -n "${UM_PROBE_AGE:-}" ]; then
+    probe_mark; printf 'fingerprint=%s\nat=%s\n' "$(sed -n 's/^fingerprint=//p' "$(probe_mark_file)")" "$(( $(date +%s) - UM_PROBE_AGE ))" > "$(probe_mark_file)"
+    [ -z "${UM_PROBE_CHANGE:-}" ] || printf 'AWS_REGION_NAME=eu-west-1\n' >> "$ENV_FILE"
+  fi
   setup_bringup_and_probe 2> "$TMP/err"; : "$en"
   tr '\n' ';' < "$TMP/calls"
 }
@@ -221,4 +228,32 @@ test_setup_by_itself_and_an_update_with_a_changed_key_start_the_services_in_phas
   # a changed budget (the keys' inputs): the phases, so the key is made before Open WebUI starts with it
   out="$(_um_bringup update BUDGET_SETUP=9)"
   assert_not_contains "$out" "UP postgres"
+}
+
+# JON-972: an update keeps a model check whose fingerprint holds at any age; setup and --recheck still ask the age limit / probe
+test_an_update_keeps_a_model_check_older_than_a_week_and_says_so() {
+  out="$(UM_PROBE_AGE=$((9 * 86400)) _um_bringup update)"
+  assert_not_contains "$out" "PROBE"
+  assert_not_contains "$out" "PHASE LiteLLM (full catalog"
+  assert_not_contains "$out" "UPSVC"
+  assert_contains "$(cat "$TMP/err")" "Model check kept from"
+  assert_contains "$(cat "$TMP/err")" "Settings › Models your key can use › Re-check models, or ./stack models --recheck"
+}
+test_an_update_keeping_a_young_model_check_prints_no_old_check_line() {
+  out="$(UM_PROBE_AGE=3600 _um_bringup update)"
+  assert_not_contains "$out" "PROBE"
+  assert_not_contains "$(cat "$TMP/err")" "Model check kept from"
+}
+test_setup_outside_update_mode_does_not_keep_a_model_check_older_than_a_week() {
+  out="$(UM_PROBE_AGE=$((9 * 86400)) _um_bringup)"
+  assert_contains "$out" "PROBE"
+  assert_not_contains "$(cat "$TMP/err")" "Model check kept from"
+}
+test_an_update_with_a_changed_fingerprint_still_runs_the_model_check() {
+  out="$(UM_PROBE_AGE=$((9 * 86400)) UM_PROBE_CHANGE=1 _um_bringup update)"
+  assert_contains "$out" "PROBE"
+}
+test_models_recheck_runs_the_model_check_in_update_mode() {
+  out="$(UM_PROBE_AGE=3600 SETUP_REPROBE=1 _um_bringup update)"
+  assert_contains "$out" "PROBE"
 }
