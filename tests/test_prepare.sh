@@ -41,8 +41,14 @@ _pw() {
             local dir a prev='' svc=''   # as Compose prints them
             dir="$(_stub_dir "$@")"
             for a in "$@"; do [ "$prev" != --images ] || svc="$a"; prev="$a"; done
-            if [ -n "$svc" ]; then _stub_image_of "$dir" "$svc"
+            if [ -n "$svc" ]; then
+              # (as Compose prints them: a service's dependencies' images too, and first when it has any; Open WebUI waits for LiteLLM)
+              [ "$svc" != open-webui ] || _stub_image_of "$dir" litellm
+              _stub_image_of "$dir" "$svc"
             else sed -n 's/^[[:space:]]*image:[[:space:]]*//p' "$dir/compose.yaml" | sed "s|\${COMPOSE_PROJECT_NAME:-devos-ade}|${COMPOSE_PROJECT_NAME:-devos-ade}|"; fi ;;
+          *" config --format json "*)   # {"services": {SERVICE: {"image": …}}} of the service named last
+            local dir svc="${*: -1}"; dir="$(_stub_dir "$@")"
+            printf '{"name": "x", "services": {"%s": {"image": "%s"}}}\n' "$svc" "$(_stub_image_of "$dir" "$svc")" ;;
           *" build "*)   # makes the image compose.yaml names for the service (as Compose does), else <project>/<service>:local
             local svc="${*: -1}" img
             [ ! -f "$TMP/build-sleeps" ] || { echo "1 update" > "$HOLDER"; sleep 10; }
@@ -61,6 +67,8 @@ _pw() {
               case "$fmt" in '{{.Size}}') echo 1000000 ;; *) echo "$id" ;; esac
             done
             return "$miss" ;;
+          ls)   # the refs of one repository pattern (docker image ls --format '{{.Repository}}:{{.Tag}}' 'bn-t-prep/*'), not <none> ones
+            awk -v pat="${*: -1}" '{ pre = pat; sub(/\*$/, "", pre); if (index($1, pre) == 1) print $1 }' "$IMGS" ;;
           rm) grep -vxF -- "$(awk -v r="$3" '$1 == r' "$IMGS")" "$IMGS" > "$IMGS.n" || true; mv "$IMGS.n" "$IMGS" ;;
         esac ;;
       pull) printf '%s PULLED%s\n' "$2" "$(printf '%s' "$2" | cksum | cut -d' ' -f1)" >> "$IMGS" ;;
@@ -312,6 +320,94 @@ test_chats_egress_proxy_is_found_under_the_image_it_builds() {
   ! grep -q 'chat-egress:local' "$STATE_DIR/update/prepare/images.tsv" || return 1
   # ready means ready: its builds are all still here
   prepare_is_ready "$(git -C "$STACK_DIR" rev-parse v0.5.0)"
+}
+
+# --- JON-972: what the prepare records, what it prepares, in what order, and what it leaves behind ---
+
+test_an_images_own_name_is_found_when_compose_lists_a_dependencys_image_first() {
+  _pw
+  PREP_SRC="$TMP/origin"; PREP_ENV="$ENV_FILE"
+  # (the stub lists LiteLLM's pinned image before Open WebUI's own, as Compose does for a service that waits for it)
+  assert_eq "$(_prep_ctx dc config --images open-webui | head -n 1 | cut -d: -f1)" "ghcr.io/berriai/litellm"
+  assert_eq "$(_prep_ctx _prep_image open-webui)" "bn-t/open-webui:local"
+  assert_eq "$(_prep_ctx _prep_image portal)" "bn-t/portal:local"
+  # without python3 the fallback still finds the built image among the lines
+  assert_eq "$(PATH=/nonexistent:$(dirname "$(command -v awk)") _prep_ctx _prep_image open-webui)" "bn-t/open-webui:local"
+}
+
+test_the_recorded_builds_are_each_services_own_image_and_ready_checks_them() {
+  _pw
+  prepare_run v0.4.0 > /dev/null 2>&1
+  t="$(cat "$STATE_DIR/update/prepare/images.tsv")"
+  assert_contains "$t" "bn-t-prep/open-webui:local"
+  ! printf '%s' "$t" | grep -q litellm || { echo "a dependency's image was recorded: $t" >&2; return 1; }
+  c="$(git -C "$STACK_DIR" rev-parse v0.4.0)"
+  prepare_is_ready "$c"
+  # it checks the right one: Open WebUI's prep image gone = not ready
+  grep -v 'bn-t-prep/open-webui' "$IMGS" > "$IMGS.n"; mv "$IMGS.n" "$IMGS"
+  prepare_is_ready "$c" && return 1
+  true
+}
+
+test_the_size_budget_counts_each_services_own_image() {
+  _pw
+  # each stubbed image is 1 MB: three own images are 3 MB; a dependency's wrongly counted would not change that, but a
+  # missing own image (wrong ref) would end the run: "left no image"
+  out="$(PREPARE_MAX_MB=3 prepare_run v0.4.0 2>&1)" || { echo "$out" >&2; return 1; }
+  _prep_read; assert_eq "$PS_state" "ready"
+}
+
+test_speech_to_text_is_prepared_when_it_is_on_and_not_when_it_is_off() {
+  _pw
+  PREP_SRC="$TMP/stack"; PREP_ENV="$ENV_FILE"
+  terminal_on() { return 1; }
+  assert_eq "$(_prep_ctx _prep_services | tr '\n' ' ')" "portal shared-mcp open-webui "
+  printf 'STT_PROVIDER=bedrock\n' >> "$ENV_FILE"
+  assert_eq "$(_prep_ctx _prep_services | tr '\n' ' ')" "portal shared-mcp open-webui stt "
+  # built with setup's arguments (the ISO week as the apk cache key), so the click hits BuildKit's cache
+  stt_apk_week() { echo 2026-48; }
+  printf '  stt:\n    build: { context: ./stt }\n    image: ${COMPOSE_PROJECT_NAME:-devos-ade}/stt:local\n' >> "$TMP/origin/compose.yaml"
+  git -C "$TMP/origin" commit -qam stt; git -C "$TMP/origin" tag v0.4.1; _seen v0.4.1
+  prepare_run v0.4.1 > /dev/null 2>&1
+  _prep_read; assert_eq "$PS_state" "ready"
+  grep -q 'docker compose.* build -q --build-arg APK_REFRESH=2026-48 stt$' "$DLOG" || { cat "$DLOG" >&2; return 1; }
+  assert_contains "$(cat "$STATE_DIR/update/prepare/images.tsv")" "bn-t-prep/stt:local"
+}
+
+test_downloads_start_before_the_builds_and_the_processor_check_does_not_hold_them_back() {
+  _pw
+  # the processors are 95% in use for the whole run: the builds yield, the downloads still happen
+  prepare_cpu_busy() { echo 95; }
+  rc=0; out="$(prepare_run v0.4.0 2>&1)" || rc=$?
+  assert_eq "$rc" "2"
+  assert_contains "$(cat "$STATE_DIR/update/prepare/pulled.tsv")" "ghcr.io/berriai/litellm:1.0@$DIG_NEW"
+  grep -q "docker pull ghcr.io/berriai/litellm:1.0@$DIG_NEW" "$DLOG" || return 1
+  ! grep -q ' build ' "$DLOG" || return 1
+}
+
+test_the_first_download_comes_before_the_first_build() {
+  _pw; : > "$DLOG"
+  prepare_run v0.4.0 > /dev/null 2>&1
+  p="$(grep -n 'docker pull' "$DLOG" | head -n 1 | cut -d: -f1)"; b="$(grep -n ' build ' "$DLOG" | head -n 1 | cut -d: -f1)"
+  [ -n "$p" ] && [ -n "$b" ] && [ "$p" -lt "$b" ] || { cat "$DLOG" >&2; return 1; }
+}
+
+test_cleanup_also_removes_unrecorded_prep_images_and_nothing_else() {
+  _pw
+  printf 'bn-t-prep/code:local LEAK1\nbn-t-prep/open-webui:local LEAK2\nbn-t/code:local STACKCODE\nbn-t-prepx/y:local OTHER\nother/z:1 OTHER2\n' >> "$IMGS"
+  mkdir -p "$STATE_DIR/update/prepare"      # (a record that names none of them)
+  : > "$DLOG"
+  prepare_cleanup abandoned
+  grep -q 'image rm bn-t-prep/code:local' "$DLOG" || { cat "$DLOG" >&2; return 1; }
+  grep -q 'image rm bn-t-prep/open-webui:local' "$DLOG" || return 1
+  ! grep -q 'image rm bn-t/' "$DLOG" || return 1
+  ! grep -q 'image rm bn-t-prepx' "$DLOG" || return 1
+  ! grep -q 'image rm other' "$DLOG" || return 1
+  grep -q 'bn-t/code:local STACKCODE' "$IMGS" && grep -q 'bn-t-prepx/y:local' "$IMGS" || return 1
+  ! grep -q 'bn-t-prep/' "$IMGS" || return 1
+  # a Docker that cannot list is no failure
+  docker() { case "$1 $2" in "image ls") return 1 ;; esac; return 0; }
+  mkdir -p "$STATE_DIR/update/prepare"; prepare_cleanup abandoned
 }
 
 # --- the helper's tick ---

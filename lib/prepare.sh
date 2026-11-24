@@ -9,13 +9,13 @@
 #               a signed tag when UPDATE_REQUIRE_SIGNED_TAGS=true
 #   2. unpack   git archive of that commit into .state/update/prepare/src (nothing in the checkout moves: no HEAD, no
 #               working tree, no .env, no update record). Removed when the run ends.
-#   3. build    each image of the release (the portal, shared-mcp, Open WebUI; the Terminal's and the Code page's while
-#               they are on), one at a time, as <project>-prep/<image>:local (the name Compose gives the service's image:
-#               chat-egress builds terminal-egress) from that copy and a private copy of .env
-#               whose project is <project>-prep. BuildKit's layer cache is shared, so ./stack update's own build of
+#   3. download the images the release's compose files pin by digest and this computer does not have (a tag is never
+#               pulled: only a digest never moves a name something uses). First, and not held back by a busy computer.
+#   4. build    each image of the release (the portal, shared-mcp, Open WebUI; speech-to-text while Bedrock's is on; the
+#               Terminal's and the Code page's while they are on), one at a time, as <project>-prep/<image>:local (the name
+#               Compose gives the service's image: chat-egress builds terminal-egress) from that copy and a private copy of
+#               .env whose project is <project>-prep. BuildKit's layer cache is shared, so ./stack update's own build of
 #               <project>/<service>:local is a cache hit.
-#   4. download the images the release's compose files pin by digest and this computer does not have (a tag is never
-#               pulled: only a digest never moves a name something uses)
 # It runs the CHECKOUT'S OWN scripts over the new release's files as data: no script of the new release runs; building its
 # Dockerfiles is what ./stack update does anyway.
 #
@@ -158,6 +158,16 @@ prepare_cleanup() {
       case "$ref" in "$pp"/*:local) docker image rm "$ref" >/dev/null 2>&1 || true ;; esac
     done < "$d/images.tsv"
   fi
+  # ... and any other <project>-prep image here (earlier runs recorded a dependency's image in place of their own, so those
+  # builds were never removed). Only refs of that project, only named ones; never fatal.
+  if [ -n "$pp" ]; then
+    while IFS= read -r ref; do
+      case "$ref" in "$pp"/*:local | "$pp"/*:previous) ;; *) continue ;; esac
+      docker image rm "$ref" >/dev/null 2>&1 || true
+    done <<EOF
+$(docker image ls --format '{{.Repository}}:{{.Tag}}' "$pp/*" 2>/dev/null || true)
+EOF
+  fi
   if [ "$1" != applied ] && [ -s "$d/pulled.tsv" ]; then
     # (never forced, and not an image a container, another checkout or this one's snapshots and compose files use)
     if used="$(images_used_by_containers 2>/dev/null)" && others="$(images_of_other_checkouts 2>/dev/null)"; then
@@ -249,6 +259,7 @@ _prepare_unpack() {
 _prep_services() {
   local e
   printf '%s\n' portal shared-mcp open-webui
+  [ -z "$(stt_services)" ] || echo stt   # Bedrock speech-to-text on (lib/stt.sh: STT_PROVIDER=bedrock), as setup decides
   if terminal_on && [ -z "$(terminal_why_out)" ]; then
     echo terminal
     e="$(terminal_egress_build_service)"; [ -z "$e" ] || echo "$e"
@@ -258,10 +269,33 @@ _prep_services() {
 # _prep_build_one SERVICE — in the context: its build with the arguments setup gives it (so the cache is the same)
 # _prep_image SERVICE -> the image the build of SERVICE makes, as Compose names it (Chat's egress proxy, chat-egress, builds the
 # terminal's egress image: compose.code-egress.yaml); nothing when Compose does not say
-_prep_image() { dc config --images "$1" 2>/dev/null | head -n 1; }
+# (Compose lists the images of a service's dependencies too, and theirs first: Open WebUI's list starts with LiteLLM's, the Code
+# page's with Caddy's. So the service's own entry is read from Compose's JSON; without python3 or a JSON answer, the line of
+# the list that is this project's own <service>:local, or the only :local one, else the first.)
+_prep_image() {
+  local svc="$1" img='' p l n=0 only='' lines
+  if command -v python3 >/dev/null 2>&1; then
+    img="$(dc config --format json "$svc" 2>/dev/null | python3 -I -c 'import json, sys
+try:
+    print(json.load(sys.stdin)["services"][sys.argv[1]].get("image") or "")
+except Exception:
+    pass' "$svc" 2>/dev/null)" || img=''
+  fi
+  if [ -z "$img" ]; then
+    p="$(project_name)"; lines="$(dc config --images "$svc" 2>/dev/null)"
+    while IFS= read -r l; do
+      case "$l" in "$p/$svc:local") img="$l"; break ;; "$p"/*:local) n=$((n + 1)); only="$l" ;; esac
+    done <<EOF
+$lines
+EOF
+    [ -n "$img" ] || { [ "$n" = 1 ] && img="$only"; } || img="$(printf '%s\n' "$lines" | head -n 1)"
+  fi
+  printf '%s\n' "$img"
+}
 _prep_build_one() {
   case "$1" in
     open-webui) dc build -q --build-arg "BN_VENDOR_TRY=$(owui_vendor_try)" open-webui ;;
+    stt) dc build -q --build-arg "APK_REFRESH=$(stt_apk_week)" stt ;;   # lib/stt.sh _stt_build's first try: the same cache key
     terminal) terminal_build_args; dc build -q "${TERMINAL_BUILD_ARGS[@]}" terminal ;;
     *) dc build -q "$1" ;;
   esac
@@ -320,6 +354,16 @@ _prepare_run_inner() {
   _prep_step "Prepare: unpack $newest" _prepare_unpack || return $?
   ( umask 077; { grep -v '^COMPOSE_PROJECT_NAME=' "$ENV_FILE" 2>/dev/null || true; printf 'COMPOSE_PROJECT_NAME=%s\n' "$pp"; } > "$PREP_ENV" ) || { PREP_WHY="cannot write the private copy of .env"; return 1; }
   chmod 600 "$PREP_ENV" 2>/dev/null || true
+  # --- the downloads first: digest-pinned images that are not here. They wait on the network, not the processors, so the
+  # processor check does not hold them back (the builds, after them, still yield to a busy computer) ---
+  for ref in $(_prep_ctx update_pull_refs 2>/dev/null); do
+    case "$ref" in *@sha256:*) ;; *) printf 'prepare: %s is not pinned by a digest: left for the update\n' "$ref"; continue ;; esac
+    pull_needed "$ref" || continue
+    _prep_step "Prepare: download $(image_short "$ref")" _prep_pull "$ref" || return $?
+    id="$(_image_id "$ref")"
+    [ -z "$id" ] || { printf '%s\t%s\n' "$id" "$ref" >> "$d/pulled.tsv"; LC_ALL=C sort -u "$d/pulled.tsv" > "$d/pulled.tsv.n" && mv "$d/pulled.tsv.n" "$d/pulled.tsv"; }
+    pulled=$((pulled + 1))
+  done
   # --- the builds, one at a time ---
   for svc in $(_prep_ctx _prep_services 2>/dev/null); do
     if [ "${PREP_FOREGROUND:-0}" != 1 ] && _prep_cpu_high "${PREPARE_STOP_CPU_PCT:-90}"; then PREP_WHY="$(_prep_cpu_why)"; return 2; fi
@@ -331,16 +375,6 @@ _prepare_run_inner() {
     size="$(docker image inspect --format '{{.Size}}' "$img" 2>/dev/null || echo 0)"; case "$size" in '' | *[!0-9]*) size=0 ;; esac
     total=$((total + size / 1000000))
     [ "$total" -le "$max" ] || { PREP_WHY="the images would use more than $max MB (PREPARE_MAX_MB)"; return 1; }
-  done
-  # --- the downloads: digest-pinned images that are not here ---
-  for ref in $(_prep_ctx update_pull_refs 2>/dev/null); do
-    case "$ref" in *@sha256:*) ;; *) printf 'prepare: %s is not pinned by a digest: left for the update\n' "$ref"; continue ;; esac
-    pull_needed "$ref" || continue
-    if [ "${PREP_FOREGROUND:-0}" != 1 ] && _prep_cpu_high "${PREPARE_STOP_CPU_PCT:-90}"; then PREP_WHY="$(_prep_cpu_why)"; return 2; fi
-    _prep_step "Prepare: download $(image_short "$ref")" _prep_pull "$ref" || return $?
-    id="$(_image_id "$ref")"
-    [ -z "$id" ] || { printf '%s\t%s\n' "$id" "$ref" >> "$d/pulled.tsv"; LC_ALL=C sort -u "$d/pulled.tsv" > "$d/pulled.tsv.n" && mv "$d/pulled.tsv.n" "$d/pulled.tsv"; }
-    pulled=$((pulled + 1))
   done
   PREP_STEP=''
   _prep_state ready "" ""

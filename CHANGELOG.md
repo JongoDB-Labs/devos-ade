@@ -4,6 +4,12 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **Update now no longer downloads images or rebuilds speech-to-text at the click when the release was prepared ahead, and prepare no longer leaves its Chat and Code images behind.** Preparing now records each image it builds under its own name (it had recorded a neighbouring service's), also prepares speech-to-text while it is on, starts the downloads first and no longer holds them back while the computer is busy, and removes leftover `-prep` images from earlier runs. (JON-972)
+
 ## [0.67.0] - 2026-11-24
 
 ### Fixed
