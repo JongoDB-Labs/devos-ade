@@ -29,7 +29,7 @@ done
 case "$PREFIX" in bnrmp-* | bnrh-*) ;; *) echo "--prefix must start with bnrmp- or bnrh- (everything named so is removed)" >&2; exit 2 ;; esac
 command -v docker >/dev/null && docker info >/dev/null 2>&1 || { echo "needs a running Docker" >&2; exit 2; }
 PW_IMAGE="$(sed -n 's/^PW_IMAGE="\(.*\)"$/\1/p' "$root/tests/e2e/run.sh")"
-CADDY_IMAGE="caddy:2.11.7-alpine@sha256:d8542f48d34a9cf4e4c11a478865229840e87e4c96ea3f439101f31a5d35f75f"
+CADDY_IMAGE="caddy:2.11.9-alpine@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0"
 NET="$PREFIX-net"; RUNNER="$PREFIX-runner:local"; PORTAL_IMAGE="$PREFIX-portal:local"
 mkdir -p "$OUT/shots"; OUT="$(cd "$OUT" && pwd -P)"
 work="$(mktemp -d "${TMPDIR:-/tmp}/$PREFIX.XXXXXX")"
