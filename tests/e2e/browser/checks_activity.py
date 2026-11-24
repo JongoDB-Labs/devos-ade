@@ -556,6 +556,30 @@ def item_menus(ctx):
     return f"nav tab, Settings row and {shown} Continue row(s) open the item menu by right-click and Shift+F10, inside the window; fields keep the browser's menu"
 
 
+STALE_GEOMETRY_JS = """() => {
+  const r = (e) => { const b = e.getBoundingClientRect(); return {top: b.top, bottom: b.bottom, h: b.height}; };
+  const bar = r(document.getElementById('stale-bar'));
+  const desktop = window.innerWidth >= 1100;
+  const first = desktop ? document.querySelector('.sidebar .brand')
+    : Array.from(document.querySelector('.stage').children).find((e) => e.getBoundingClientRect().height > 0);
+  return {bar, first: first ? r(first) : null, desktop, nav: r(document.querySelector('.sidebar')),
+          vh: window.innerHeight, scroll: document.documentElement.scrollWidth, vw: window.innerWidth,
+          stageBottom: r(document.querySelector('.stage')).bottom};
+}"""
+
+
+def _stale_bar_covers_nothing(page, width, scheme):
+    """While the bar shows, the page sits under it: the sidebar's logo (desktop) or the Home stage's first child (phone)
+    starts at or below the bar's bottom edge; the phone's bottom nav and the stage are fully inside the viewport."""
+    g = page.evaluate(STALE_GEOMETRY_JS)
+    where = f"at {width} px ({scheme}): {g}"
+    expect(g["first"] is not None and g["first"]["top"] >= g["bar"]["bottom"] - 0.5, f"the bar covers the page's top {where}")
+    expect(g["stageBottom"] <= g["vh"] + 0.5, f"the stage runs past the screen {where}")
+    if width < 768:
+        expect(g["nav"]["top"] >= 0 and g["nav"]["bottom"] <= g["vh"] + 0.5, f"the bottom nav is not fully on screen {where}")
+    expect(g["scroll"] <= g["vw"] + 1, f"horizontal scroll {where}")
+
+
 @check("browser", "stale-page-reload-bar")
 def stale_page_reload_bar(ctx):
     """A page left open across an update (JON-1127): Home has no bar; once this page's own build differs from the one
@@ -568,20 +592,28 @@ def stale_page_reload_bar(ctx):
     expect(bool(re.fullmatch(r"[0-9a-f]{16}", meta or "")), f"bn-build meta: {meta!r}")
     served = page.evaluate("() => fetch('/api/admin/status', {headers: {'X-Requested-With': 'devos-ade'}}).then(r => r.json()).then(j => j.build)")
     expect(served == meta, f"status build {served!r} != page build {meta!r}")
+    own = page.evaluate("PAGE_BUILD")   # (app.js's constant: a broken meta read gives "")
+    expect(own == meta == served, f"page build {own!r}, meta {meta!r}, status {served!r}")
+    expect(page.get_attribute("#stale-bar", "role") == "status" and page.get_attribute("#stale-bar", "aria-live") == "polite",
+           "#stale-bar is not an always-present live region")
+    expect(page.inner_text("#stale-bar").strip() == "" and page.locator("#stale-bar.on").count() == 0
+           and page.evaluate("document.getElementById('stale-bar').getBoundingClientRect().height") == 0
+           and page.evaluate("document.documentElement.classList.contains('stale-open')") is False,
+           "the live region is not empty and boxless while the page is current")
     page.evaluate("pollAdmin()")
     page.wait_for_timeout(1500)
-    expect(page.locator("#stale-bar").is_hidden(), "the bar shows while the page is current")
+    expect(page.locator("#stale-bar.on").count() == 0 and page.inner_text("#stale-bar").strip() == "", "the bar shows while the page is current")
     # this page's own build replaced: it is now a page from before an update
     page.evaluate("window.bnStale._setBuild('stale')")
     page.evaluate("pollAdmin()")
-    page.wait_for_selector("#stale-bar:not([hidden])", timeout=15000)
+    page.wait_for_selector("#stale-bar.on", timeout=15000)
     expect("DevOS ADE was updated. Reload this page to use the new version." in page.inner_text("#stale-bar"), "the bar's words")
     expect(page.get_attribute("#stale-bar", "role") == "status", "the bar is not a status region")
     page.focus("#stale-reload")
     expect(page.evaluate("document.activeElement.id") == "stale-reload", "Reload is not keyboard reachable")
     page.evaluate("pollAdmin()")   # a second poll: one bar, not two
     page.wait_for_timeout(800)
-    expect(page.locator("#stale-bar").count() == 1 and page.locator("#stale-bar:not([hidden])").count() == 1, "the bar stacked")
+    expect(page.locator("#stale-bar").count() == 1 and page.locator("#stale-bar.on").count() == 1, "the bar stacked")
     for width, height in ((390, 844), (1440, 900)):
         page.set_viewport_size({"width": width, "height": height})
         for scheme in ("light", "dark"):
@@ -590,6 +622,7 @@ def stale_page_reload_bar(ctx):
             expect(page.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1"), f"horizontal scroll at {width} px ({scheme})")
             box = page.locator("#stale-reload").bounding_box()
             expect(box is not None and box["x"] >= 0 and box["x"] + box["width"] <= width, f"Reload outside the {width} px screen: {box}")
+            _stale_bar_covers_nothing(page, width, scheme)
             shot(page, f"64-stale-bar-{width}-{scheme}")
     page.emulate_media(color_scheme="light")
     page.set_viewport_size({"width": 1440, "height": 900})
@@ -597,7 +630,7 @@ def stale_page_reload_bar(ctx):
         page.click("#stale-reload")
     page.wait_for_selector(".shell")
     page.wait_for_function("() => window.bnStale", timeout=20000)
-    expect(page.locator("#stale-bar").is_hidden(), "the bar is still there after Reload")
+    expect(page.locator("#stale-bar.on").count() == 0 and page.inner_text("#stale-bar").strip() == "", "the bar is still there after Reload")
     expect(page.get_attribute('meta[name="bn-build"]', "content") == meta, "the build changed across a reload")
     rec.save()
     return f"no bar while current; build replaced → bar after the next poll (once, status region, Reload focusable, no overflow at 390/1440 light/dark); Reload → page reloaded, bar gone (build {meta})"

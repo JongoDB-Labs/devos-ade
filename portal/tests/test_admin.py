@@ -762,3 +762,14 @@ def test_the_build_fingerprint_follows_the_static_files(tmp_path):
     (tmp_path / "a.js").write_text("one")
     (tmp_path / "a.js").rename(tmp_path / "z.js")
     assert build_fingerprint(tmp_path) not in (first, changed)    # a file renamed: its path counts
+
+
+def test_an_unreadable_static_file_gives_no_build_and_does_not_stop_the_portal(tmp_path, monkeypatch):
+    from pathlib import Path
+    from portal.app import build_fingerprint
+    (tmp_path / "a.js").write_text("one")
+
+    def boom(self):
+        raise PermissionError("unreadable")
+    monkeypatch.setattr(Path, "read_bytes", boom)
+    assert build_fingerprint(tmp_path) == ""

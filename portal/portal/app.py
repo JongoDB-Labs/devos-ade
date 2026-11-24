@@ -38,19 +38,25 @@ from .security import (
 log = logging.getLogger("portal")
 STATIC = Path(__file__).parent / "static"
 
-
-def build_fingerprint(directory: Path = STATIC) -> str:
-    """A short fingerprint of the page's scripts, styles and markup (sha256 over the sorted relative paths and contents of
-    the .js, .css and .html files, first 16 hex characters). Every open page carries it (<meta name="bn-build">) and
-    compares it with the one /api/admin/status answers: a page left open across an update learns it is out of date (JON-1127)."""
-    h = hashlib.sha256()
-    for f in sorted(p for p in directory.rglob("*") if p.is_file() and p.suffix in (".js", ".css", ".html")):
-        h.update(f.relative_to(directory).as_posix().encode() + b"\0" + f.read_bytes() + b"\0")
-    return h.hexdigest()[:16]
 MAX_FORM = 8192
 MAX_UNLOCK_FORM = 32768   # the Code page's unlock form: the password and a deep link (portal/code.py DEEP_LINK_MAX)
 SU_MARK = "bn_su"   # JON-1140: a short-lived marker session-unlock sets, so locked_verify breaks the redirect loop if the unlock cookie does not stick
 MAX_SESSIONS_BODY = 12 * 1024   # the Import sheet's request (Caddy caps /.bn/sessions at 16 KB)
+
+
+def build_fingerprint(directory: Path = STATIC) -> str:
+    """A short fingerprint of the page's scripts, styles and markup (sha256 over the sorted relative paths and contents of
+    the .js, .css and .html files, first 16 hex characters). Every open page carries it (<meta name="bn-build">) and
+    compares it with the one /api/admin/status answers: a page left open across an update learns it is out of date (JON-1127).
+    Unreadable files give "" (no page is then called stale): the portal always starts."""
+    h = hashlib.sha256()
+    try:
+        for f in sorted(p for p in directory.rglob("*") if p.is_file() and p.suffix in (".js", ".css", ".html")):
+            h.update(f.relative_to(directory).as_posix().encode() + b"\0" + f.read_bytes() + b"\0")
+    except OSError as e:
+        log.warning("page build fingerprint not made (%s): open pages will not be told they are out of date", e)
+        return ""
+    return h.hexdigest()[:16]
 
 
 def _security_headers(resp: Response, s: Settings) -> Response:

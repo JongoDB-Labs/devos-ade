@@ -262,8 +262,11 @@ a.form-link:not([href]) { display: none; }
 .reconnect { display: flex; align-items: center; gap: 8px; margin: 8px 0 0; font-size: 14px; }
 .reconnect .elapsed { color: var(--muted); font-variant-numeric: tabular-nums; }
 /* A page left open across an update (stalebar.js): a bar over the top edge, not a dialog; the page stays usable */
-.stale-bar { position: fixed; z-index: 30; top: 0; left: 0; right: 0; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 14px; padding: 10px 16px; background: var(--accent-soft); color: var(--ink); border-bottom: 1px solid var(--line-strong); font-size: 14px; box-shadow: var(--shadow-pop); }
-.stale-bar[hidden] { display: none; }
+.stale-bar { position: fixed; z-index: 30; top: var(--app-top, 0px); left: 0; right: 0; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 14px; font-size: 14px; color: var(--ink); }   /* (empty and boxless until it is on) */
+.stale-bar.on { padding: 10px 16px; background: var(--accent-soft); border-bottom: 1px solid var(--line-strong); box-shadow: var(--shadow-pop); }
+/* the page moves down under the bar (stalebar.js sets --stale-h to its height) instead of being covered by it */
+html.stale-open body.shell { box-sizing: border-box; padding-top: var(--stale-h, 0px); }
+@media (min-width: 1100px) { html.stale-open .stage { height: calc(100vh - var(--stale-h, 0px)); } }   /* (the other layouts size the stage by the grid) */
 .stale-bar .stale-text { flex: 1 1 220px; text-align: center; }
 .spinner { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--accent); animation: bn-spin 0.9s linear infinite; flex: none; }
 @keyframes bn-spin { to { transform: rotate(360deg); } }

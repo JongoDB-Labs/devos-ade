@@ -966,7 +966,7 @@ function renderJob(job, inProgress) {
   else if (inProgress && term) note = "It runs in a terminal on your computer; Home follows it (the portal may restart during it).";
   else if (inProgress && !term && BACKGROUND[job.action]) note = BACKGROUND[job.action];
   else if (inProgress) note = "You can leave this page; it is carried out on your computer.";
-  else if (job.phase === "done" && (job.action === "update" || job.action === "rollback") && !nothingNew) note = "Reload this page to use the new version of DevOS ADE (the bar at the top has a Reload button).";
+  else if (job.phase === "done" && (job.action === "update" || job.action === "rollback") && !nothingNew) note = "Reload this page to use the new version of DevOS ADE.";
   else if (job.phase === "failed" && auto) note = "This release is not retried automatically: Update now tries again, and a newer release is tried as usual.";
   else if (job.phase === "skipped") note = "Nothing was changed. It tries again in the next window, or Update now runs it.";
   $("#job-note").textContent = note;
