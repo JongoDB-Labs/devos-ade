@@ -4,7 +4,7 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.67.0] - 2026-11-24
 
 ### Fixed
 
@@ -13,6 +13,9 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   such a tab kept running the old scripts, and Chat's *Make it a project* waited 20 seconds and failed with "DevOS ADE
   did not answer". That message now also tells you to reload after an update. Tabs already open on an older
   release cannot show the bar during the update that brings it; from the next update on, they do. (JON-1127)
+
+### To get it
+Existing installs: Home › Update now.
 
 ## [0.66.0] - 2026-11-24
 
