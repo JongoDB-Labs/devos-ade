@@ -4,6 +4,29 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.66.0] - 2026-11-24
+
+### Changed
+
+- **Core services brought to their newest tested releases.** *Update now* (or `./stack update`) moves them, each pinned
+  by digest or checksum:
+  - Caddy (the web front door) 2.11.7 → 2.11.9. Its security fixes are for FastCGI, Windows and TLS client
+    certificates, which DevOS ADE does not use; it is a routine update here.
+  - SearXNG (web search) 2026.11.11 → 2026.11.21, and the AWS CLI that sets up the RustFS bucket 2.40.1 → 2.42.1.
+  - Ollama 0.40.15 → 0.40.17, in the stack and on the Mac. On Apple silicon it now serves several requests at once.
+  - The GitHub CLI in the terminal 2.103.3 → 2.105.0.
+  - The Python and Alpine base images, for their operating-system patches.
+  - The Python packages of the portal, the shared tools and speech-to-text (certifi, boto3, pydantic,
+    python-multipart).
+
+### Fixed
+
+- **Global search (Ctrl/⌘+K) now finds the guide for upgrading to 0.45.** The search left out any doc whose
+  file name has a dot in it, without saying so, and that guide was the only one. (JON-1376)
+
+### To get it
+Existing installs: Home › Update now.
+
 ## [0.65.1] - 2026-11-14
 
 ### Fixed
