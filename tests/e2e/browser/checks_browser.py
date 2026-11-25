@@ -4008,6 +4008,59 @@ def settings_page(ctx):
     return "12 sections, one at a time; Advanced and About list the rest; no secret in the page; desktop light/dark and phone (picker) render"
 
 
+@check("settings", "settings-models-checked")
+def settings_models_checked(ctx):
+    """JON-972: Settings > Models your key can use says when the models were last checked. Setup has just probed on the
+    throwaway: "Last checked <date>." and no note. With /api/summary's models.checked_at made old (a stub in the page), the
+    note "Over a week ago: Re-check models finds models your AWS admin enabled since." shows and the button is still there."""
+    _need_helper(ctx)
+    page, rec = ctx.page("settings-models-checked")
+    login(page)
+    open_settings(page)
+
+    def own_row():
+        page.evaluate("""() => new Promise((done) => {
+            addEventListener('hashchange', () => done(), {once: true}); setTimeout(done, 5000);
+            location.hash = '#settings'; location.hash = '#settings/+models'; })""")
+        settings_drawn(page)
+        line = page.locator("#settings [data-models-checked]")
+        line.wait_for(state="attached", timeout=20000)
+        page.wait_for_function("() => (document.querySelector('#settings [data-models-checked]') || {}).textContent", timeout=20000)
+        return line
+
+    line = own_row()
+    text = line.inner_text()
+    expect(re.match(r"Last checked \S+", text), f"no 'Last checked <date>': {text!r}")
+    expect("Over a week ago" not in text, f"a fresh check says it is old: {text!r}")
+    old = "2026-01-05T10:00:00Z"
+
+    def stub(route):
+        resp = route.fetch()
+        body = resp.json()
+        body.setdefault("models", {})["checked_at"] = old
+        route.fulfill(response=resp, json=body)
+
+    page.route("**/api/summary", stub)
+    line = own_row()
+    text = line.inner_text()
+    expect("Last checked " in text and "Over a week ago: Re-check models finds models your AWS admin enabled since." in text, f"no old-check note: {text!r}")
+    btn = page.locator('#settings button[data-act="models-recheck"]')
+    expect(btn.count() == 1 and btn.first.inner_text() == "Re-check models", "the Re-check models button is gone")
+    for w, h, tag in ((390, 844, "390"), (1440, 900, "1440")):
+        page.set_viewport_size({"width": w, "height": h})
+        for scheme in ("light", "dark"):
+            page.emulate_media(color_scheme=scheme)
+            page.wait_for_timeout(300)
+            line.scroll_into_view_if_needed()
+            shot(page, f"26-settings-models-checked-{tag}-{scheme}", mask=[".set-value", ".set-adv-value"])
+    page.emulate_media(color_scheme="light")
+    page.unroute("**/api/summary")
+    probs = rec.problems()
+    rec.save()
+    expect(not probs, f"errors: {probs}")
+    return f"fresh: Last checked <date>, no note; made old: the note shows and Re-check models stays; shots at 390 and 1440, light and dark"
+
+
 @check("settings", "settings-key-check")
 def settings_key_check(ctx):
     """UX-05 with the real portal and update helper (fake keys made here: what they reach costs nothing). OpenRouter's
