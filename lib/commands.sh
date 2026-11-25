@@ -1851,7 +1851,7 @@ _data_services_up() {
 
 # A failed backup must not leave a half-written directory behind (globals: the EXIT trap outlives locals).
 _BACKUP_PARTIAL=''
-_cleanup_partial_backup() { [ -z "$_BACKUP_PARTIAL" ] || rm -rf "$_BACKUP_PARTIAL"; }
+_cleanup_partial_backup() { _backup_git_join; [ -z "$_BACKUP_PARTIAL" ] || rm -rf "$_BACKUP_PARTIAL"; }
 
 # shellcheck disable=SC2120  # arguments come from the ./stack dispatcher
 cmd_backup() {
@@ -1963,6 +1963,11 @@ _backup_git_join() {
   [ -n "${_BACKUP_GIT_PID:-}" ] || return 0
   wait "$_BACKUP_GIT_PID" || _BACKUP_GIT_RC=$?
   _BACKUP_GIT_PID=''
+  # killed (SIGKILL cannot be trapped): the server may be left stopped; start it if it ran before the backup (harmless if up)
+  if [ "$_BACKUP_GIT_RC" -ge 128 ] && [ -n "${_BACKUP_GIT_RUNNING:-}" ]; then
+    dc start forgejo >/dev/null 2>&1 ||
+      warn "!! THE GIT SERVER MAY STILL BE STOPPED: the backup's copy of it was killed — run ./stack up now"
+  fi
 }
 
 # _backup_named SUFFIX — writes backups/<ts>[-SUFFIX]/ and sets LAST_BACKUP (backups/<ts>…) for callers
@@ -1979,8 +1984,13 @@ _backup_named() {
   # its own volume, its own container — so it runs beside them instead of after (JON-972). The join hook makes every
   # way out, die and ^C included, wait for it: the server must be started again before this script ends.
   _BACKUP_GIT_PID=''; _BACKUP_GIT_RC=0
-  ( localgit_backup_into "$tmp" ) & _BACKUP_GIT_PID=$!
-  on_exit _backup_git_join
+  # (was it running? only then may a killed copy leave it stopped — see _backup_git_join)
+  _BACKUP_GIT_RUNNING=''; ! localgit_on || _BACKUP_GIT_RUNNING="$(dc ps -q --status running forgejo 2>/dev/null | head -n 1 || true)"
+  # The subshell starts the server again on TERM, HUP and ^C too: its EXIT hook alone does not fire for a signal in bash 3.2
+  # once the parent has an EXIT trap. Joined first on exit: before the partial folder goes and before the lock is released.
+  ( trap '_lg_resume; exit 143' TERM; trap '_lg_resume; exit 129' HUP; trap '_lg_resume; exit 130' INT
+    localgit_backup_into "$tmp" ) & _BACKUP_GIT_PID=$!
+  on_exit_first _backup_git_join
   for db in litellm openwebui; do
     if ! dc exec -T postgres pg_dump -U postgres -Fc "$db" > "$tmp/$db.dump"; then
       _backup_git_join

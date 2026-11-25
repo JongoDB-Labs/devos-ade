@@ -94,6 +94,12 @@ on_exit() {
   case "$_EXIT_HOOKS" in *" $1 "*) ;; *) _EXIT_HOOKS="$_EXIT_HOOKS$1 " ;; esac
   trap _run_exit_hooks EXIT
 }
+# on_exit_first FUNC — as on_exit, but FUNC runs before the hooks already there (one that must finish before the lock goes)
+on_exit_first() {
+  _exit_hooks_here
+  case "$_EXIT_HOOKS" in *" $1 "*) ;; *) _EXIT_HOOKS=" $1${_EXIT_HOOKS}" ;; esac
+  trap _run_exit_hooks EXIT
+}
 # The trap itself goes once no hook is left: bash 3.2 can report status 0 from an EXIT trap after a fatal error.
 off_exit() {
   _exit_hooks_here

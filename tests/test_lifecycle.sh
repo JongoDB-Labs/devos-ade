@@ -180,6 +180,47 @@ test_a_failed_git_copy_fails_the_backup_and_starts_the_server_again() {
   assert_eq "$(ls -A "$STACK_DIR/backups" 2>/dev/null)" ""
 }
 
+# JON-972 review: the copy runs in a subshell; a signal to it between "stop" and "start" must not leave the server stopped.
+# (a parent EXIT hook exists before the fork, as in real use: stack_lock's)
+_git_signal_case() { # SIGNAL
+  STACK_DIR="$TMP/stack"; mkdir -p "$STACK_DIR"; _mk_gitsrc
+  printf 'LOCALGIT=on\n' > "$ENV_FILE"; _stub_dc; LG_VOL=1; LG_RUNNING=1
+  eval "_lc_$(declare -f docker)"
+  # shellcheck disable=SC2317
+  docker() { case "$1 $2" in "run --rm") echo "docker $*" >> "$TMP/calls"; sh -c 'echo $PPID' > "$TMP/subpid"; kill -"$SIG" "$(cat "$TMP/subpid")"; sleep 1; return 0 ;; esac; _lc_docker "$@"; }
+  SIG="$1"; _t_parent_hook() { :; }; on_exit _t_parent_hook
+  if out="$( (cmd_backup) 2>&1)"; then echo "should fail" >&2; return 1; fi
+  assert_contains "$(cat "$TMP/calls")" "dc start forgejo"
+  assert_eq "$(ls -A "$STACK_DIR/backups" 2>/dev/null)" ""
+}
+test_a_terminated_git_copy_starts_the_server_again() { _git_signal_case TERM; }
+test_a_killed_git_copy_is_made_up_for_by_the_parent() { _git_signal_case KILL; }
+
+test_a_bucket_copy_failure_during_the_git_copy_starts_the_server_again() {
+  STACK_DIR="$TMP/stack"; mkdir -p "$STACK_DIR"; _mk_gitsrc
+  printf 'LOCALGIT=on\n' > "$ENV_FILE"; _stub_dc; LG_VOL=1; LG_RUNNING=1
+  _backup_buckets_exec() { return 1; }; s3_job() { return 1; }
+  if out="$( (cmd_backup) 2>&1)"; then echo "should fail" >&2; return 1; fi
+  assert_contains "$out" "could not copy the object-store buckets"
+  assert_contains "$(cat "$TMP/calls")" "dc start forgejo"
+  assert_eq "$(ls -A "$STACK_DIR/backups" 2>/dev/null)" ""
+}
+
+test_an_abort_after_the_fork_waits_for_the_git_copy_before_cleanup_and_unlock() {
+  STACK_DIR="$TMP/stack"; mkdir -p "$STACK_DIR"; _mk_gitsrc
+  printf 'LOCALGIT=on\n' > "$ENV_FILE"; _stub_dc; LG_VOL=1; LG_RUNNING=1
+  : > "$TMP/order"
+  eval "_lc_$(declare -f docker)"
+  docker() { case "$1 $2" in "run --rm") sleep 1; echo git-done >> "$TMP/order" ;; esac; _lc_docker "$@"; }
+  eval "_lc_$(declare -f _cleanup_partial_backup)"
+  _cleanup_partial_backup() { echo cleanup >> "$TMP/order"; _lc__cleanup_partial_backup; }
+  _t_unlock() { echo unlock >> "$TMP/order"; }
+  cp() { exit 1; }   # an abort after the fork that is not a die
+  ( on_exit _t_unlock; cmd_backup ) >/dev/null 2>&1 || true
+  [[ "$(head -n 1 "$TMP/order")" == "git-done"* ]] || { echo "order: $(cat "$TMP/order")" >&2; return 1; }
+  assert_contains "$(cat "$TMP/order")" "cleanup"
+}
+
 test_the_volume_job_copies_the_right_volume_with_few_privileges() {
   STACK_DIR="$TMP/stack"; mkdir -p "$STACK_DIR"; _mk_gitsrc
   printf 'COMPOSE_PROJECT_NAME=pj1\nLOCALGIT=on\n' > "$ENV_FILE"; _stub_dc; LG_VOL=1; LG_RUNNING=1
