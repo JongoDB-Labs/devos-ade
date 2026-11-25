@@ -1986,9 +1986,10 @@ _backup_named() {
   _BACKUP_GIT_PID=''; _BACKUP_GIT_RC=0
   # (was it running? only then may a killed copy leave it stopped — see _backup_git_join)
   _BACKUP_GIT_RUNNING=''; ! localgit_on || _BACKUP_GIT_RUNNING="$(dc ps -q --status running forgejo 2>/dev/null | head -n 1 || true)"
-  # The subshell starts the server again on TERM, HUP and ^C too: its EXIT hook alone does not fire for a signal in bash 3.2
-  # once the parent has an EXIT trap. Joined first on exit: before the partial folder goes and before the lock is released.
-  ( trap '_lg_resume; exit 143' TERM; trap '_lg_resume; exit 129' HUP; trap '_lg_resume; exit 130' INT
+  # The subshell starts the server again on TERM and HUP too: its EXIT hook alone does not fire for a signal in bash 3.2
+  # once the parent has an EXIT trap. (^C never reaches it: a background job of a script ignores SIGINT, so the copy
+  # finishes and starts the server itself.) Joined first on exit: before the partial folder goes and the lock is released.
+  ( trap '_lg_resume; exit 143' TERM; trap '_lg_resume; exit 129' HUP
     localgit_backup_into "$tmp" ) & _BACKUP_GIT_PID=$!
   on_exit_first _backup_git_join
   for db in litellm openwebui; do
