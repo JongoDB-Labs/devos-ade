@@ -207,6 +207,31 @@ migrate_teardown() {
 check() { # check ID OK MESSAGE — records PASS when OK is 0
   if [ "$2" = 0 ]; then record upgrade "$1" PASS "$(( $(now) - START_TS ))" "$3"; else record upgrade "$1" FAIL "$(( $(now) - START_TS ))" "$3"; fi
 }
+# profile_summaries CALLS PREFIX — where a setup's time went, from the stack's profile (lib/steps.sh upd_prof_begin; JON-972):
+#   PREFIX-summary.tsv  its docker, curl and sleep calls summed by command and callers (ms, count, what, callers)
+#   PREFIX-steps.tsv    each step's time outside those calls (ms, step ms, step)
+#   PREFIX-digests.tsv  the digests of the steps' inputs, summed by step (ms, count, slowest ms, step<role); a digest's own
+#                       docker calls are in its time and in the summary's
+#   PREFIX-gaps.tsv     the time between steps, when none runs (ms, of it in digests, the step before, the step after)
+profile_summaries() {
+  local in="$1" pre="$2"
+  awk -F '\t' '$2 != "step" && $2 != "digest" { k = $2 "\t" $3; ms[k] += $1; n[k]++; all += $1; c++ }
+    END { for (k in ms) printf "%d\t%d\t%s\n", ms[k], n[k], k; printf "%d\t%d\tall\n", all, c }' "$in" | sort -rn > "$pre-summary.tsv"
+  # (each step's time outside docker, curl and sleep: its end less its start less its calls' — where to look next)
+  awk -F '\t' '$2 == "step" { split($3, w, " "); l = substr($3, length(w[1]) + 2); if (w[1] == "begin") { at[l] = $4; open[l] = 1; spent[l] = 0 } else if (open[l]) { printf "%d\t%d\t%s\n", $4 - at[l] - spent[l], $4 - at[l], l; open[l] = 0 }; next }
+    $2 == "digest" { next }
+    { for (l in open) if (open[l]) spent[l] += $1 }' "$in" | sort -rn > "$pre-steps.tsv"
+  awk -F '\t' '$2 == "digest" { ms[$3] += $1; n[$3]++; if ($1 > mx[$3]) mx[$3] = $1; all += $1; c++ }
+    END { for (k in ms) printf "%d\t%d\t%d\t%s\n", ms[k], n[k], mx[k], k; printf "%d\t%d\t-\tall\n", all, c }' "$in" | sort -rn > "$pre-digests.tsv"
+  # (a digest's line comes after its calls, with its start: placed by its start, as the steps are)
+  sort -t "$(printf '\t')" -k4,4n -s "$in" | awk -F '\t' 'BEGIN { last = "(the start)"; gat = 0 }
+    $2 == "step" { split($3, w, " "); l = substr($3, length(w[1]) + 2)
+      if (w[1] == "begin") { if (nopen == 0 && $4 > gat) { printf "%d\t%d\t%s\t%s\n", $4 - gat, gd, last, l; all += $4 - gat; alld += gd }; if (!open[l]) { open[l] = 1; nopen++ } }
+      else if (open[l]) { open[l] = 0; nopen--; if (nopen == 0) { gat = $4; last = l; gd = 0 } }
+      next }
+    $2 == "digest" && nopen == 0 { gd += $1 }
+    END { printf "%d\t%d\tall\t-\n", all, alld }' | sort -rn > "$pre-gaps.tsv"
+}
 finish() {
   local rc=$?
   trap - EXIT INT TERM HUP
@@ -649,6 +674,14 @@ cp "$STACK/.state/status/helper-status.json" "$LOGS/helper-status.json" 2>/dev/n
 s="$(cat "$LOGS/helper-status.json" 2>/dev/null)"
 case "$s" in *'"phase": "done"'*) check update-now 0 "the helper's update finished: $(printf '%s' "$s" | sed -n 's/.*"message": "\([^"]*\)".*/\1/p')" ;;
   *) check update-now 1 "the helper's update did not finish well: $s" ;; esac
+# (where the update's setup spent its time: its profile, as the fast apply's below — the steps, their digests, the time between)
+if [ -f "$STACK/.state/update/trace/calls.tsv" ]; then
+  cp "$STACK/.state/update/trace/calls.tsv" "$OUT/calls-update.tsv"
+  profile_summaries "$OUT/calls-update.tsv" "$OUT/calls-update"
+  say "update: between steps $(awk -F '\t' '$3 == "all" { printf "%d ms, of it %d ms in digests", $1, $2 }' "$OUT/calls-update-gaps.tsv"); digests in all $(awk -F '\t' '$4 == "all" { printf "%d ms (%d)", $1, $2 }' "$OUT/calls-update-digests.tsv")"
+  grep -v '	all	' "$OUT/calls-update-gaps.tsv" | head -n 6 | while IFS= read -r l; do say "update gap (ms, digests ms, before, after): $l"; done
+  head -n 8 "$OUT/calls-update-digests.tsv" | while IFS= read -r l; do say "update digests (ms, count, slowest, step<role): $l"; done
+fi
 # Home's progress card: every step the update's log says is done ("==> LABEL ready (T)", as lib/helper.sh _job_steps
 # reads them) is in the helper's status — what Home lists — in that order and each with its time, and none is left
 # running. A helper of this version or later (its log's lines carry their time, "20:02:40 ==> …") lists the whole job,
@@ -857,11 +890,7 @@ if [ "$MIGRATE" = 0 ] && [ "$FAST_CHECK" = 1 ]; then
   # (where the time went: the apply's docker, curl and sleep calls, summed by command and the functions they came from — calls.tsv)
   if [ -f "$tdir/trace/calls.tsv" ]; then
     cp "$tdir/trace/calls.tsv" "$OUT/calls.tsv"
-    awk -F '\t' '$2 != "step" { k = $2 "\t" $3; ms[k] += $1; n[k]++; all += $1; c++ } END { for (k in ms) printf "%d\t%d\t%s\n", ms[k], n[k], k; printf "%d\t%d\tall\n", all, c }' \
-      "$OUT/calls.tsv" | sort -rn > "$OUT/calls-summary.tsv"
-    # (each step's time outside docker, curl and sleep: its end less its start less its calls' — where to look next)
-    awk -F '\t' '$2 == "step" { split($3, w, " "); l = substr($3, length(w[1]) + 2); if (w[1] == "begin") { at[l] = $4; open[l] = 1; spent[l] = 0 } else if (open[l]) { printf "%d\t%d\t%s\n", $4 - at[l] - spent[l], $4 - at[l], l; open[l] = 0 }; next }
-      { for (l in open) if (open[l]) spent[l] += $1 }' "$OUT/calls.tsv" | sort -rn > "$OUT/calls-steps.tsv"
+    profile_summaries "$OUT/calls.tsv" "$OUT/calls"
     head -n 8 "$OUT/calls-steps.tsv" | while IFS= read -r l; do say "fast apply step time outside calls (ms, step ms, step): $l"; done
     head -n 15 "$OUT/calls-summary.tsv" | while IFS= read -r l; do say "fast apply calls (ms, count, what, callers): $l"; done
     # (each compose up the apply made although nothing changed: why, from lib/common.sh _up_why)

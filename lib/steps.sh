@@ -449,12 +449,14 @@ upd_in_codedefault() {
 # (through a file, so a grep that finds nothing is not a failure; called as $(upd_hash …), a subshell: what an input keeps — the
 # images' IDs, the containers — is gone with it, and the next digest asks Docker again)
 upd_hash() {
-  local t h
+  local t h t0=''
+  [ -z "$_UPD_PROF" ] || t0="$(_ms_now)"
   t="$(mktemp)" || return 1
   { printf 'v1 %s %s\n' "$(project_name)" "$STACK_DIR"; "upd_in_$1" || true; } > "$t" 2>/dev/null
   h="$(_upd_sum < "$t")"
   ! upd_trace_on || _upd_trace "${UPD_TRACE_ROLE:-note}" "$1" "$t"
   rm -f "$t"
+  [ -z "$t0" ] || _upd_prof_digest "$t0" "$1"
   printf '%s\n' "$h"
 }
 # DEVOS_ADE_UPD_TRACE=1, or a file .state/update/trace-on (the e2e upgrade test's stack): each digest's inputs are also kept
@@ -517,6 +519,13 @@ _upd_prof() {   # START_MS NAME ARGS... — the line of one call
   case "$t$now" in '' | *[!0-9]*) return 0 ;; esac
   printf '%s\t%s\t%s<%s<%s<%s\t%s\n' "$((now - t))" "$w" "${FUNCNAME[2]:-main}" "${FUNCNAME[3]:-main}" "${FUNCNAME[4]:-main}" "${FUNCNAME[5]:-main}" \
     "$((t - _UPD_PROF_T0))" >> "$_UPD_PROF" 2>/dev/null || true
+}
+# _upd_prof_digest START_MS NAME — one digest in the profile: "MS digest NAME<same|note START", its whole time (the docker
+# calls it made have lines of their own too); the time between the steps of an update is mostly these (JON-972)
+_upd_prof_digest() {
+  local now
+  now="$(_ms_now)"; case "$1$now" in '' | *[!0-9]*) return 0 ;; esac
+  printf '%s\tdigest\t%s<%s\t%s\n' "$((now - $1))" "$2" "${UPD_TRACE_ROLE:-note}" "$(($1 - _UPD_PROF_T0))" >> "$_UPD_PROF" 2>/dev/null || true
 }
 # upd_prof_mark begin|end LABEL — a step's start or end in the profile (phase_start, phase_line); nothing without one
 upd_prof_mark() {

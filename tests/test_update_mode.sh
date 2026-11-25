@@ -222,6 +222,22 @@ test_the_call_profile_times_each_docker_curl_and_sleep_by_its_callers_and_keeps_
   [ "$(stat -c %a "$STATE_DIR/update/trace/calls.tsv" 2>/dev/null || stat -f %Lp "$STATE_DIR/update/trace/calls.tsv")" = 600 ] || { echo "profile not private" >&2; return 1; }
 }
 
+test_the_call_profile_times_each_digest_by_its_step_and_role_and_keeps_no_input() {
+  _um_setup
+  upd_begin; UPD_MODE=1
+  upd_gate keys "step keys" "why" true   # (no profile: no file)
+  [ ! -e "$STATE_DIR/update/trace/calls.tsv" ] || { echo "a profile without the switch" >&2; return 1; }
+  mkdir -p "$STATE_DIR/update"; : > "$STATE_DIR/update/trace-on"
+  upd_begin; UPD_MODE=1; UPD_PREV="$(printf 'keys\tx\n')"
+  upd_gate keys "step keys" "why" true   # (compared before, noted after it ran: two digests)
+  p="$(cat "$STATE_DIR/update/trace/calls.tsv")"
+  assert_contains "$p" "	digest	keys<same	"; assert_contains "$p" "	digest	keys<note	"
+  assert_eq "$(printf '%s\n' "$p" | grep -c '	digest	')" "2"
+  for v in sk-a sk-b LITELLM_KEY 4000 us-east-1; do assert_not_contains "$p" "$v"; done
+  printf '%s\n' "$p" | awk -F '\t' 'NF != 4 || $1 !~ /^[0-9]+$/ || $4 !~ /^[0-9]+$/ { bad = 1 } END { exit bad }' ||
+    { echo "a digest line that is not MS digest NAME<ROLE START: $p" >&2; return 1; }
+}
+
 test_the_models_recheck_and_a_setup_without_begin_note_nothing() {
   _um_setup; UPD_RECORD=0; UPD_NOW=''
   upd_gate keys "keys" "w" true
