@@ -10,7 +10,12 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 - **An update no longer replaces the Open WebUI key when Open WebUI is slow to answer.** Any timeout or error while
   checking the saved key used to make a new one, which changed `.env` and made the next update redo its steps. Now the
-  check tries up to three times, and only a key that Open WebUI refuses is replaced. (JON-972)
+  check asks again, up to three times, only when Open WebUI gives no answer, and only a refused key is replaced.
+  (JON-972)
+- **The checks between an update's steps are quicker.** Before each step, an update checks whether anything the step
+  reads has changed. Each check now reads the step's files, folders and keys in one go instead of one by one, with
+  the same result, so no step runs again because of this change. An update's trace now also times each check.
+  (JON-972)
 
 ## [0.68.3] - 2026-11-25
 
