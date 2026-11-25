@@ -2172,3 +2172,49 @@ test_the_helper_tick_runs_the_model_recheck() {
   settings_helper_tick 2>/dev/null || true
   assert_eq "$(cat "$TMP/diag")" "diag models-recheck"
 }
+test_the_model_recheck_waits_for_an_unfinished_update_and_a_release_being_prepared() {
+  _rc_setup; _rc_mark $((9 * 86400))
+  ! AUTO_STATE=unfinished recheck_nightly_tick
+  [ ! -e "$TMP/diag" ]
+  mkdir -p "$(prepare_dir)"; printf 'version=v9.9.9\nstate=preparing\nat=1\n' > "$(prepare_state_file)"
+  ! recheck_nightly_tick
+  [ ! -e "$TMP/diag" ]
+  printf 'version=v9.9.9\nstate=ready\nat=1\n' > "$(prepare_state_file)"
+  recheck_nightly_tick
+  assert_eq "$(cat "$TMP/diag")" "diag models-recheck"
+}
+test_the_age_comes_from_the_results_file_when_there_is_no_mark() {
+  _rc_setup; rm -f "$STATE_DIR/models/probe.mark"
+  assert_eq "$(probe_mark_age_s)" ""
+  mkdir -p "$STACK_DIR/litellm"
+  printf 'big\tchat\tENABLED\tok\t-\t2026-01-05T10:00:00Z\n' > "$STACK_DIR/litellm/probe-results.tsv"   # the time Settings shows
+  age="$(probe_mark_age_s)"
+  [ "$age" -gt $((100 * 86400)) ] || { echo "age $age"; return 1; }
+  printf 'fingerprint=x\n' > "$STATE_DIR/models/probe.mark" 2>/dev/null || { mkdir -p "$STATE_DIR/models"; printf 'fingerprint=x\n' > "$STATE_DIR/models/probe.mark"; }
+  [ "$(probe_mark_age_s)" -gt $((100 * 86400)) ]                  # a mark without at= counts as none
+  recheck_nightly_tick                                           # old by the file: redone
+  assert_eq "$(cat "$TMP/diag")" "diag models-recheck"
+  _rc_mark 3600                                                   # the mark wins when it has a time
+  [ "$(probe_mark_age_s)" -lt 7200 ]
+}
+test_a_failed_model_recheck_is_not_tried_again_for_three_days() {
+  _rc_setup; _rc_mark $((9 * 86400))
+  helper_run_diag() { echo "diag $1" >> "$TMP/diag"; JOB_RESULT=failed; : > "$(helper_dir)/last-diag.log"; }
+  recheck_nightly_tick
+  assert_eq "$(cat "$(recheck_failed_file)")" 1000000
+  rm -f "$(recheck_last_file)"                                    # a later night's window
+  ! CLOCK=1000600 recheck_nightly_tick
+  ! CLOCK=$((1000000 + 2 * 86400)) recheck_nightly_tick
+  [ "$(wc -l < "$TMP/diag" | tr -d ' ')" = 1 ]
+  rm -f "$(recheck_last_file)"
+  CLOCK=$((1000000 + 3 * 86400 + 60)) recheck_nightly_tick
+  [ "$(wc -l < "$TMP/diag" | tr -d ' ')" = 2 ]
+}
+test_the_model_recheck_tick_outside_its_window_reads_nothing() {
+  _rc_setup; _rc_mark $((9 * 86400))
+  _backup_clock() { echo "1000000 12 $((12 * 3600))"; }
+  probe_mark_age_s() { echo "should not be read" >> "$TMP/read"; }
+  stack_lock_holder() { echo "should not be read" >> "$TMP/read"; }
+  ! recheck_nightly_tick
+  [ ! -e "$TMP/read" ] && [ ! -e "$TMP/diag" ]
+}

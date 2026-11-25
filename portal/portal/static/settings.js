@@ -245,6 +245,7 @@
     p.append(el("div", { class: "set-layout" }, sectionNav(), cards));
     if (!current || !sectionOf(current)) current = initialSection();
     renderSpend();
+    renderModelsChecked();   // (after the page is attached: modelsRow's row is not in the document before)
     renderJob();
     applyView();
     p.scrollTop = scrollY;
@@ -2244,7 +2245,6 @@
       el("details", { class: "set-details" }, el("summary", {}, "Details"),
         el("p", { class: "note", text: "Re-checking asks Bedrock which models your key can use (1-token requests, < $0.01; at most once an hour); the model gateway restarts twice and setup picks the defaults again; about 2 minutes. Hiding a model in Chat's own admin settings does not block it for the API or Claude Code." })));
     rw._main.append(el("p", { class: "note set-extra", "data-models-checked": "" }));
-    renderModelsChecked();
     rw._actions.append(actionButton("models-recheck", "Re-check models"));
     return rw;
   }

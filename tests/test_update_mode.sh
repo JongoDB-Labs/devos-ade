@@ -207,6 +207,7 @@ _um_bringup() { # _um_bringup [update] -> the calls setup_bringup_and_probe made
   # (UM_PROBE_AGE: the real probe_reusable, over a mark written that many seconds ago with today's fingerprint)
   if [ -n "${UM_PROBE_AGE:-}" ]; then
     probe_mark; printf 'fingerprint=%s\nat=%s\n' "$(sed -n 's/^fingerprint=//p' "$(probe_mark_file)")" "$(( $(date +%s) - UM_PROBE_AGE ))" > "$(probe_mark_file)"
+    [ -z "${UM_NO_RESULTS:-}" ] || rm -f "$STACK_DIR/litellm/probe-results.tsv"
     [ -z "${UM_PROBE_CHANGE:-}" ] || printf 'AWS_REGION_NAME=eu-west-1\n' >> "$ENV_FILE"
   fi
   setup_bringup_and_probe 2> "$TMP/err"; : "$en"
@@ -255,5 +256,15 @@ test_an_update_with_a_changed_fingerprint_still_runs_the_model_check() {
 }
 test_models_recheck_runs_the_model_check_in_update_mode() {
   out="$(UM_PROBE_AGE=3600 SETUP_REPROBE=1 _um_bringup update)"
+  assert_contains "$out" "PROBE"
+}
+test_an_update_with_a_model_check_older_than_thirty_days_runs_it_again() {
+  out="$(UM_PROBE_AGE=$((31 * 86400)) _um_bringup update)"
+  assert_contains "$out" "PROBE"
+  out="$(UM_PROBE_AGE=$((29 * 86400)) _um_bringup update)"
+  assert_not_contains "$out" "PROBE"
+}
+test_an_update_without_the_results_files_runs_the_model_check() {
+  out="$(UM_PROBE_AGE=3600 UM_NO_RESULTS=1 _um_bringup update)"
   assert_contains "$out" "PROBE"
 }

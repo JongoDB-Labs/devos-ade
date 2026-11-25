@@ -4046,6 +4046,15 @@ def settings_models_checked(ctx):
     expect("Last checked " in text and "Over a week ago: Re-check models finds models your AWS admin enabled since." in text, f"no old-check note: {text!r}")
     btn = page.locator('#settings button[data-act="models-recheck"]')
     expect(btn.count() == 1 and btn.first.inner_text() == "Re-check models", "the Re-check models button is gone")
+    # a render again (across the phone breakpoint: 1440 -> 390 -> 1440) keeps the line
+    for w in (390, 1440):
+        page.set_viewport_size({"width": w, "height": 900})
+        page.wait_for_timeout(800)
+        again = page.locator("#settings [data-models-checked]").first
+        again.wait_for(state="attached", timeout=10000)
+        kept = again.inner_text()
+        expect("Over a week ago" in kept, f"the note is gone after a render at {w} px: {kept!r}")
+    line = page.locator("#settings [data-models-checked]").first
     for w, h, tag in ((390, 844, "390"), (1440, 900, "1440")):
         page.set_viewport_size({"width": w, "height": h})
         for scheme in ("light", "dark"):

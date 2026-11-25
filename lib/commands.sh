@@ -886,11 +886,13 @@ _restore_litellm_config() {
 # --- the model probe, kept while nothing it depends on changed (an update, a setup again) ---
 # PROBE_REUSE_MAX_S: how long its answers stand at most (a week: a model your AWS admin enables meanwhile shows by then;
 # ./stack models --recheck checks again at once). An update (setup's update mode, UPD_MODE=1) keeps a probe whose
-# fingerprint holds at any age, and says so when it is older than that (JON-972: a probe of nine days made an update
+# fingerprint holds up to PROBE_UPDATE_MAX_S (30 days), and says so when it is older than that (JON-972: a probe of nine days made an update
 # restart LiteLLM twice and probe for four minutes). A probe over that age is redone instead in the helper's automatic-update
 # window, with automatic updates on (lib/settings_helper.sh recheck_nightly_tick), or by hand. The mark: .state/models/probe.mark
 # (fingerprint=, at=).
 PROBE_REUSE_MAX_S="${DEVOS_ADE_PROBE_MAX_AGE_S:-604800}"
+# PROBE_UPDATE_MAX_S: how old a probe an update still keeps (30 days); past it the update probes as setup does
+PROBE_UPDATE_MAX_S="${DEVOS_ADE_PROBE_UPDATE_MAX_AGE_S:-2592000}"
 probe_mark_file() { printf '%s\n' "$STATE_DIR/models/probe.mark"; }
 # probe_fingerprint -> a hash of what the probe's answers depend on: .env's AWS_* lines (the key, its region, how it
 # signs in — hashed, never kept as they are), the model catalog, LiteLLM's image and the probe's own code
@@ -899,7 +901,7 @@ probe_fingerprint() {
     cat "$STACK_DIR/lib/models.sh" 2>/dev/null; } | openssl dgst -sha256 | awk '{ print $NF }'
 }
 # probe_reusable -> 0 when the last probe's answers still stand: the same fingerprint, younger than PROBE_REUSE_MAX_S
-# (an update: any age), and its results still there (litellm/enabled-models.txt, litellm/probe-results.tsv); prints how old they are
+# (an update: PROBE_UPDATE_MAX_S), and its results still there (litellm/enabled-models.txt, litellm/probe-results.tsv); prints how old they are
 probe_reusable() {
   local f fp at age
   f="$(probe_mark_file)"; [ -r "$f" ] || return 1
@@ -907,7 +909,7 @@ probe_reusable() {
   fp="$(sed -n 's/^fingerprint=//p' "$f")"; at="$(sed -n 's/^at=//p' "$f")"
   case "$at" in '' | *[!0-9]*) return 1 ;; esac
   age=$(( $(date +%s) - at ))
-  [ -n "$fp" ] && [ "$fp" = "$(probe_fingerprint)" ] && [ "$age" -ge 0 ] && { [ "${UPD_MODE:-0}" = 1 ] || [ "$age" -lt "$PROBE_REUSE_MAX_S" ]; } || return 1
+  [ -n "$fp" ] && [ "$fp" = "$(probe_fingerprint)" ] && [ "$age" -ge 0 ] && { { [ "${UPD_MODE:-0}" = 1 ] && [ "$age" -lt "$PROBE_UPDATE_MAX_S" ]; } || [ "$age" -lt "$PROBE_REUSE_MAX_S" ]; } || return 1
   if [ "$age" -lt 7200 ]; then printf '%s min\n' $((age / 60)); else printf '%s h\n' $((age / 3600)); fi
 }
 # probe_old_since -> the date (YYYY-MM-DD) of the last probe when it is older than PROBE_REUSE_MAX_S, else nothing

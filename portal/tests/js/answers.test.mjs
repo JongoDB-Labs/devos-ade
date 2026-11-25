@@ -363,3 +363,11 @@ test("the model check's age: the date it was made; over a week old, one plain no
   assert.equal(old.length, 2);
   assert.equal(old[1], "Over a week ago: Re-check models finds models your AWS admin enabled since.");
 });
+
+test("the model check's line is drawn after Settings is attached, on every render, not while the row is still detached", () => {
+  const js = source("settings.js");
+  const render = js.split("renderSpend();\n    renderModelsChecked();")[1];
+  assert.ok(render, "render() calls renderModelsChecked() right after renderSpend()");
+  const row = js.split("function modelsRow(r) {")[1].split("\n  }\n")[0];
+  assert.doesNotMatch(row, /renderModelsChecked\(\)/, "modelsRow runs before the row is in the document: nothing to draw into");
+});

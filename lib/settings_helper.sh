@@ -872,10 +872,20 @@ backup_nightly_tick() {
 
 recheck_last_file() { printf '%s/recheck-last\n' "$(helper_dir)"; }   # the start of the last window that was handled
 
-# probe_mark_age_s -> how old the last model check is, in seconds (nothing: no mark, or not a time)
+# probe_mark_age_s -> how old the last model check is, in seconds (nothing: no check). From the mark's at=; with no mark (or
+# no at=), the time of litellm/probe-results.tsv's first row (column 6, as Settings shows it: portal/portal/summary.py
+# read_models), else that file's own time
 probe_mark_age_s() {
-  local at; at="$(sed -n 's/^at=//p' "$STATE_DIR/models/probe.mark" 2>/dev/null | head -n 1)"
-  case "$at" in '' | *[!0-9]*) return 0 ;; esac
+  local at ts f="$STACK_DIR/litellm/probe-results.tsv"
+  at="$(sed -n 's/^at=//p' "$STATE_DIR/models/probe.mark" 2>/dev/null | head -n 1)"
+  case "$at" in
+    '' | *[!0-9]*)
+      [ -s "$f" ] || return 0
+      ts="$(awk -F'\t' '!/^#/ && NF >= 6 { print $6; exit }' "$f" 2>/dev/null)"
+      at="$(date -u -j -f '%Y-%m-%dT%H:%M:%SZ' "$ts" +%s 2>/dev/null || date -u -d "$ts" +%s 2>/dev/null || true)"
+      case "$at" in '' | *[!0-9]*) at="$(stat -f %m "$f" 2>/dev/null || stat -c %Y "$f" 2>/dev/null || true)" ;; esac
+      case "$at" in '' | *[!0-9]*) return 0 ;; esac ;;
+  esac
   echo $(( $(date +%s) - at ))
 }
 
@@ -893,25 +903,36 @@ recheck_decision() {
 }
 
 # recheck_nightly_tick — runs the models-recheck action when due (Home shows it as "Model check"). 0 when it ran.
+# Runs every loop: what is cheap and says no comes first (the switch, the window; no process but one date).
+RECHECK_BACKOFF_S=259200   # after a failed check (an expired key): not again for 3 days
+recheck_failed_file() { printf '%s/recheck-failed\n' "$(helper_dir)"; }   # the time (epoch) of the last failed check
 recheck_nightly_tick() {
-  local clock now since nowh hour start last busy='' d max
-  auto_on || return 1
+  local clock now since nowh hour start last busy='' d max failed
+  _auto_env; [ "$AE_AUTO_UPDATE" = on ] || return 1
+  hour="$(_auto_hour_of "$AE_AUTO_UPDATE_HOUR")"
   clock="$(_backup_clock)"; now="${clock%% *}"; since="${clock##* }"; nowh="${clock#* }"; nowh="${nowh%% *}"
-  hour="$(auto_hour)"
-  case "${AUTO_STATE:-}" in run | running) busy=update ;; wait) [ -z "${AUTO_TARGET:-}" ] || busy=update ;; esac
+  _in_window "$hour" "$nowh" || return 1
   start="$(_window_start "$now" "$since" "$nowh" "$hour")"
   last="$(head -c 20 "$(recheck_last_file)" 2>/dev/null | tr -cd '0-9' || true)"
+  [ "$last" != "$start" ] || return 1
   max="${DEVOS_ADE_PROBE_MAX_AGE_S:-604800}"
+  case "${AUTO_STATE:-}" in run | running) busy=update ;; unfinished) busy=unfinished ;; wait) [ -z "${AUTO_TARGET:-}" ] || busy=update ;; esac
   [ -z "$(stack_lock_holder)" ] || busy="${busy:-lock}"
   ! _status_in_progress || busy="${busy:-job}"
+  # a release being prepared: ./stack models takes the stack lock, which ends the preparing (lib/prepare.sh _prep_watch)
+  if [ -z "$busy" ] && declare -F _prep_read >/dev/null; then _prep_read; [ "$PS_state" != preparing ] || busy=prepare; fi
+  failed="$(head -c 20 "$(recheck_failed_file)" 2>/dev/null | tr -cd '0-9' || true)"
+  [ -n "$busy" ] || [ -z "$failed" ] || [ $((now - failed)) -ge "$RECHECK_BACKOFF_S" ] || busy=backoff
   [ -n "$busy" ] || _diag_limits models-recheck >/dev/null 2>&1 || busy=limits
   d="$(recheck_decision on "$hour" "$nowh" "$start" "$last" "$(probe_mark_age_s)" "$max" "$busy")"
   [ "$d" = run ] || return 1
   printf '%s\n' "$start" > "$(recheck_last_file)"
   helper_run_diag models-recheck "recheck-$now" || true   # (a failed check keeps the old one; the night's other work goes on)
-  # another ./stack command took the lock after all: again on a later loop of this window
   if [ "${JOB_RESULT:-}" = refused ] || { [ "${JOB_RESULT:-}" = failed ] && grep -q 'is running (pid' "$(helper_dir)/last-diag.log" 2>/dev/null; }; then
+    # another ./stack command took the lock after all: again on a later loop of this window
     printf '%s\n' "$last" > "$(recheck_last_file)"
+  elif [ "${JOB_RESULT:-}" = failed ]; then
+    printf '%s\n' "$now" > "$(recheck_failed_file)"   # a failed check keeps the old one, and is not tried again for 3 days
   fi
   return 0
 }
