@@ -4,11 +4,18 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.68.1] - 2026-11-25
 
 ### Changed
 
-- **Update now's Open WebUI step is faster: the model names, prices and hidden helper models are now checked in one pass instead of one container call per model.** The cost filter and the budget banner skip their extra calls when nothing changed, and nothing is sent to Open WebUI for a model that is already up to date. The result is the same; if the one pass fails, the old model-by-model sync runs instead. (JON-972)
+- **Update now's Open WebUI step is faster: the model names, prices and hidden helper models are now checked in one
+  pass instead of one container call per model.** The cost filter and the budget banner skip their extra calls when
+  nothing changed, and nothing is sent to Open WebUI for a model that is already up to date. The result is the same;
+  if the one pass fails, the old model-by-model sync runs instead. On a quiet test host the step went from 20 s to
+  4 s, and a prepared Update now took 76 s. (JON-972)
+
+### To get it
+Existing installs: Home › Update now.
 
 ## [0.68.0] - 2026-11-25
 
