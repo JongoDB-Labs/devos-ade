@@ -875,9 +875,10 @@ if [ "$MIGRATE" = 0 ] && [ "$FAST_CHECK" = 1 ]; then
   check fast-backup-time "$([ $((T1 - T0)) -le "$UPGRADE_BACKUP_MAX_S" ] && echo 0 || echo 1)" "the backup took $((T1 - T0))s (bound ${UPGRADE_BACKUP_MAX_S}s)"
   check fast-backup-files "$([ -f "$bdir/litellm.dump" ] && [ -f "$bdir/openwebui.dump" ] && [ -d "$bdir/s3/openwebui" ] && [ -d "$bdir/s3/shared" ] && [ -f "$bdir/s3/$CANARY" ] && echo 0 || echo 1)" "dumps, both bucket folders and the canary file in ${bdir#"$STACK"/}"
   # the git server's copy runs beside the dumps (JON-972): it is still there, readable, with the server's app.ini
-  # (a case, not grep -q: pipefail would read tar's broken pipe as a failure)
-  gl="$(tar -tzf "$bdir/gitdata.tar.gz" 2>/dev/null || true)"
-  check fast-backup-git "$(case "$gl" in *app.ini*) echo 0 ;; *) echo 1 ;; esac)" "the git server's repositories and app.ini (gitdata.tar.gz, $(printf '%s\n' "$gl" | grep -c .) entries) in ${bdir#"$STACK"/}"
+  # (a case, not grep -q: pipefail would read tar's broken pipe as a failure; outside $( ): bash 3.2 misreads a case there)
+  gl="$(tar -tzf "$bdir/gitdata.tar.gz" 2>/dev/null || true)"; gok=1
+  case "$gl" in *app.ini*) gok=0 ;; esac
+  check fast-backup-git "$gok" "the git server's repositories and app.ini (gitdata.tar.gz, $(printf '%s\n' "$gl" | grep -c .) entries) in ${bdir#"$STACK"/}"
   # a chat written after the update, then the rollback: code, data and images as they were before the update
   owui "print(api('POST', '/api/v1/chats/new', {'chat': {'title': 'e2e-after-fast', 'messages': []}}, TOKEN)['id'])" > /dev/null 2>&1
   st rollback --yes > "$LOGS/fast-rollback.log" 2>&1; n=$?; redact "$LOGS/fast-rollback.log"
