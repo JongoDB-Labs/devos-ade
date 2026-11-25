@@ -675,3 +675,181 @@ test_sync_sends_our_icon_hashes_to_the_merge() {
   owui_upsert_model id N D desc '[]' false 'data:image/png;base64,AA' || return 1
   assert_eq "$(cat "$TMP/hashes")" "$OWUI_OUR_ICONS"
 }
+
+# --- one-run model sync (JON-972) ---
+
+# Open WebUI with a store ($TMP/store.json, a list of models): /models/base lists it, /models/model?id= finds one
+# (404 when absent). `dc` counts its calls in $TMP/execs and runs the local python3.
+_stub_store() {
+  _fixtures; STACK_DIR="$TMP"; mkdir -p "$TMP/litellm"
+  printf 'big\nsmall\nemb\n' > "$TMP/litellm/enabled-models.txt"
+  _stub_owui
+  [ -e "$TMP/store.json" ] || printf '[]' > "$TMP/store.json"
+  get_reply() {
+    case "$1" in
+      /api/v1/models/base) printf '200 %s' "$(cat "$TMP/store.json")" ;;
+      /api/v1/models/model?id=*)
+        python3 -c 'import json,sys
+for m in json.load(open(sys.argv[1])):
+    if m["id"] == sys.argv[2]:
+        print("200 " + json.dumps(m)); break
+else:
+    print("404 {}")' "$TMP/store.json" "${1#*id=}" ;;
+      *) echo '404 {}' ;;
+    esac
+  }
+  dc() { echo x >> "$TMP/execs"; shift 3; "$@"; }
+  : > "$TMP/execs"
+}
+_execs() { wc -l < "$TMP/execs" | tr -d ' '; }
+# _seed_store: the store as a first sync leaves it (the create bodies)
+_seed_store() {
+  sync_openwebui_models >/dev/null 2>&1
+  sed 's/^[^ ]* //' "$TMP/posts" | python3 -c 'import json,sys; print(json.dumps([json.loads(l) for l in sys.stdin if l.strip()]))' > "$TMP/store.json"
+  : > "$TMP/posts"; : > "$TMP/execs"
+}
+# _store_edit PYTHON-STATEMENT-ON-m-BY-ID ID
+_store_edit() {
+  python3 -c 'import json,sys
+d = json.load(open(sys.argv[1]))
+for m in d:
+    if m["id"] == sys.argv[3] and sys.argv[2] != "DROP":
+        exec(sys.argv[2])
+if sys.argv[2] == "DROP":
+    d = [m for m in d if m["id"] != sys.argv[3]]
+json.dump(d, open(sys.argv[1], "w"))' "$TMP/store.json" "$1" "$2"
+}
+
+test_sync_models_nothing_changed_is_one_exec_and_no_post() {
+  _need_python || return 77
+  _stub_store; _seed_store
+  sync_openwebui_models > "$TMP/o" 2>&1
+  assert_eq "$(cat "$TMP/posts")" ""
+  [ "$(_execs)" -le 2 ] || { echo "dc exec calls: $(_execs)" >&2; return 1; }
+  assert_contains "$(cat "$TMP/o")" "5 models"   # big, old-big, legacy, small, emb
+}
+
+test_sync_models_exec_count_does_not_grow_with_models() {
+  _need_python || return 77
+  _stub_store
+  printf 'big\nsmall\nemb\nrr\nimg\n' > "$TMP/litellm/enabled-models.txt"
+  _seed_store
+  sync_openwebui_models >/dev/null 2>&1
+  [ "$(_execs)" -le 2 ] || { echo "dc exec calls: $(_execs)" >&2; return 1; }
+  assert_eq "$(cat "$TMP/posts")" ""
+}
+
+test_sync_models_one_changed_model_one_post_same_body_as_before() {
+  _need_python || return 77
+  _stub_store; _seed_store
+  _store_edit 'm["meta"]["description"] = "stale"; m["meta"]["tags"].append({"name": "mine"})' small
+  python3 -c 'import json; print(json.dumps([m for m in json.load(open("'"$TMP"'/store.json")) if m["id"] == "small"][0]))' > "$TMP/one.json"
+  want="$(owui_merge_model "$(owui_model_name small chat)" "$(display_name small)" "AWS Bedrock · $(price_label small)" "$(owui_tags_json small chat)" false "" "" < "$TMP/one.json")"
+  : > "$TMP/execs"
+  sync_openwebui_models >/dev/null 2>&1
+  assert_eq "$(cat "$TMP/posts")" "/api/v1/models/model/update $want"
+  [ "$(_execs)" -le 2 ] || return 1
+}
+
+test_sync_models_new_model_is_created_with_the_old_body() {
+  _need_python || return 77
+  _stub_store; _seed_store
+  _store_edit DROP small
+  sync_openwebui_models >/dev/null 2>&1
+  assert_eq "$(cat "$TMP/posts")" "/api/v1/models/create $(owui_model_json small "$(owui_model_name small chat)" "AWS Bedrock · $(price_label small)" "$(owui_tags_json small chat)" false "")"
+  [ "$(_execs)" -le 2 ] || return 1
+}
+
+test_sync_models_hides_aliases_and_helpers() {
+  _need_python || return 77
+  _stub_store; _seed_store
+  _store_edit 'm["meta"].pop("hidden", None)' old-big
+  _store_edit 'm["meta"].pop("hidden", None)' emb
+  sync_openwebui_models >/dev/null 2>&1
+  assert_eq "$(grep -c . "$TMP/posts")" 2
+  assert_contains "$(grep '"id": "old-big"' "$TMP/posts")" '"hidden": true'
+  assert_contains "$(grep '"id": "emb"' "$TMP/posts")" '"hidden": true'
+  [ "$(_execs)" -le 2 ] || return 1
+}
+
+test_sync_models_honours_models_hidden_and_shows_them_again() {
+  _need_python || return 77
+  _stub_store; _seed_store
+  set_env MODELS_HIDDEN small
+  sync_openwebui_models >/dev/null 2>&1
+  assert_eq "$(grep -c . "$TMP/posts")" 1
+  assert_contains "$(cat "$TMP/posts")" '"hidden": true, "bedrock_now_hidden": true'
+  # what Open WebUI now holds
+  p="$(sed 's/^[^ ]* //' "$TMP/posts")"
+  python3 -c 'import json,sys
+b = json.loads(sys.argv[1]); d = [m for m in json.load(open(sys.argv[2])) if m["id"] != "small"]
+json.dump(d + [b], open(sys.argv[2], "w"))' "$p" "$TMP/store.json"
+  : > "$TMP/posts"
+  sync_openwebui_models >/dev/null 2>&1
+  assert_eq "$(cat "$TMP/posts")" ""
+  set_env MODELS_HIDDEN ""
+  sync_openwebui_models >/dev/null 2>&1
+  assert_contains "$(cat "$TMP/posts")" '"hidden": false'
+  assert_not_contains "$(cat "$TMP/posts")" bedrock_now_hidden
+}
+
+test_sync_models_keeps_the_users_edits() {
+  _need_python || return 77
+  _stub_store; _seed_store
+  _store_edit 'm["name"] = "My Big"; m["params"] = {"system": "Be terse"}; m["meta"]["description"] = "mine"; m["meta"]["tags"] = [{"name": "keep"}]' big
+  sync_openwebui_models >/dev/null 2>&1
+  p="$(cat "$TMP/posts")"
+  assert_eq "$(grep -c . "$TMP/posts")" 1
+  assert_contains "$p" '"name": "My Big"'
+  assert_contains "$p" '"system": "Be terse"'
+  assert_contains "$p" '{"name": "keep"}'
+  assert_contains "$p" 'AWS Bedrock'   # the description is ours again, as before
+}
+
+test_sync_models_falls_back_to_per_model_when_the_one_run_fails() {
+  _need_python || return 77
+  _stub_store; _seed_store
+  _store_edit 'm["meta"]["description"] = "stale"' small
+  python3 -c 'import json; print(json.dumps([m for m in json.load(open("'"$TMP"'/store.json")) if m["id"] == "small"][0]))' > "$TMP/one.json"
+  want="$(owui_merge_model "$(owui_model_name small chat)" "$(display_name small)" "AWS Bedrock · $(price_label small)" "$(owui_tags_json small chat)" false "" "" < "$TMP/one.json")"
+  # the first exec (the one run) fails, the rest work
+  dc() { echo x >> "$TMP/execs"; [ "$(_execs)" != 1 ] || { cat > /dev/null; return 1; }; shift 3; "$@"; }
+  : > "$TMP/execs"
+  sync_openwebui_models > "$TMP/o" 2>&1
+  assert_eq "$(cat "$TMP/posts")" "/api/v1/models/model/update $want"
+  [ "$(_execs)" -gt 2 ] || return 1
+  assert_contains "$(cat "$TMP/o")" "5 models"
+}
+
+test_sync_models_failed_post_names_the_model() {
+  _need_python || return 77
+  _stub_store; _seed_store
+  _store_edit 'm["meta"]["description"] = "stale"' small
+  POST_CODE=403 sync_openwebui_models > "$TMP/o" 2>&1
+  assert_contains "$(cat "$TMP/o")" "could not update small (HTTP 403"
+  assert_contains "$(cat "$TMP/o")" "1 Open WebUI model update(s) failed"
+}
+
+test_cost_filter_unchanged_update_is_one_exec() {
+  _need_python || return 77
+  _stub_filter
+  printf 'OWUI_COST_FILTER_INSTALLED=true\n' >> "$ENV_FILE"
+  FUNC_REPLY='200 {"id":"bedrock_cost","content":"x = 1\n","is_active":true,"is_global":true}'
+  VALVES_REPLY="200 {\"prices_json\":\"$(cost_prices_json | sed 's/"/\\"/g')\"}"
+  dc() { echo x >> "$TMP/execs"; shift 3; "$@"; }
+  : > "$TMP/execs"
+  owui_install_cost_filter 2>/dev/null
+  assert_eq "$(cat "$TMP/posts")" ""
+  assert_eq "$(_execs)" 1
+}
+
+test_budget_banner_nothing_to_show_or_clear_is_no_exec() {
+  _stub_owui
+  budget_key_lines() { :; }
+  get_reply() { echo '200 [{"id":"someone-elses","type":"info","content":"hi"}]'; }
+  dc() { echo x >> "$TMP/execs"; shift 3; "$@"; }
+  : > "$TMP/execs"
+  sync_budget_banner 2>/dev/null
+  assert_eq "$(cat "$TMP/posts")" ""
+  assert_eq "$(_execs)" 0
+}

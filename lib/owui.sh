@@ -195,14 +195,162 @@ owui_upsert_model() {
   rm -f "$tmp"
 }
 
+# OWUI_MODELS_SYNC_PY — the merge of owui_merge_model and owui_hidden_merge for every Bedrock model in one run (JON-972:
+# one `docker compose exec` instead of two per model). stdin: one tab-separated line per wanted model (id, name, display,
+# description, tags JSON, hidden, icon, MODELS_HIDDEN wish: true/false, or "-" for a model it does not govern), then
+# "---existing---" and Open WebUI's models (GET /api/v1/models/base). argv[1]: our icon hashes. stdout: "CREATE<TAB>id"
+# (not there yet), "UPDATE<TAB>id<TAB>1|0 (the MODELS_HIDDEN part changed)<TAB>JSON" (the POST body) and "UNCHANGED<TAB>n".
+# Keep the merge rules in step with owui_merge_model and owui_hidden_merge above.
+# shellcheck disable=SC2016  # Python source, not shell
+OWUI_MODELS_SYNC_PY='import hashlib, json, sys
+raw = sys.stdin.read()
+want_txt, _, rest = raw.partition("---existing---\n")
+existing = json.loads(rest or "[]")
+if isinstance(existing, dict):
+    existing = existing.get("items") or existing.get("data") or []
+our_icons = set(sys.argv[1].split()) if len(sys.argv) > 1 else set()
+def our_icon(url):
+    return url.startswith("data:") and hashlib.sha256(url.encode()).hexdigest() in our_icons
+by_id = {m.get("id"): m for m in existing if isinstance(m, dict)}
+unchanged = 0
+for line in want_txt.splitlines():
+    f = line.split("\t")
+    if len(f) < 8:
+        continue
+    mid, name, display, desc, tags, hidden, icon, wish = f[:8]
+    tags, hidden = json.loads(tags), hidden == "true"
+    cur_d = by_id.get(mid)
+    if cur_d is None:
+        print("CREATE\t" + mid)
+        continue
+    d = json.loads(json.dumps(cur_d))
+    before = json.dumps(d, sort_keys=True)
+    meta = d.get("meta") if isinstance(d.get("meta"), dict) else {}
+    d["meta"] = meta
+    meta["description"] = desc
+    cur = d.get("name") or ""
+    if cur in ("", d.get("id"), display) or cur.startswith(display + " \u00b7 "):
+        d["name"] = name
+    ours = {"$", "$$", "$$$", "Bedrock"} | {t["name"] for t in tags}
+    kept = [t for t in (meta.get("tags") or []) if isinstance(t, dict) and t.get("name") not in ours]
+    meta["tags"] = tags + kept
+    if hidden and "hidden" not in meta:
+        meta["hidden"] = True
+    cur_icon = meta.get("profile_image_url")
+    if icon and (cur_icon in (None, "", "/static/favicon.png") or (isinstance(cur_icon, str) and our_icon(cur_icon))):
+        meta["profile_image_url"] = icon
+    mid_state = json.dumps(d, sort_keys=True)
+    if wish == "true":
+        meta["hidden"] = True
+        meta["bedrock_now_hidden"] = True
+    elif wish == "false" and meta.get("bedrock_now_hidden"):
+        meta["hidden"] = False
+        meta.pop("bedrock_now_hidden", None)
+    after = json.dumps(d, sort_keys=True)
+    if after == before:
+        unchanged += 1
+    else:
+        print("UPDATE\t%s\t%d\t%s" % (mid, 1 if after != mid_state else 0, json.dumps(d)))
+print("UNCHANGED\t%d" % unchanged)'
+
+# _owui_hide_one NAME WANT -> 0 changed, 1 nothing to change (or no answer), 2 the update failed. As owui_apply_hidden
+# does for each model; sync_openwebui_models uses it for a model it has just created.
+_owui_hide_one() {
+  local tmp code body rc=1
+  tmp="$(mktemp)"
+  code="$(_owui_get "/api/v1/models/model?id=$1" "$tmp")"
+  if [ "$code" = 200 ] && body="$(owui_hidden_merge "$2" < "$tmp" 2>/dev/null)" && [ -n "$body" ]; then
+    code="$(_owui_post /api/v1/models/model/update "$body" "$tmp")"
+    if [ "$code" = 200 ]; then rc=0; else warn "Open WebUI: could not change whether $1 is shown (HTTP $code)"; rc=2; fi
+  elif [ "$code" != 200 ]; then rc=2
+  fi
+  rm -f "$tmp"; return "$rc"
+}
+
+# _owui_create_wanted ID WANTFILE -> creates the model from its line in WANTFILE (the body owui_model_json makes, as
+# before); sets OWUI_WISH to its MODELS_HIDDEN wish. A create the list did not expect (the list was cut short, the
+# model exists) goes the per-model way, which merges instead.
+_owui_create_wanted() {
+  local row  # cut, not read: an empty icon must stay a field
+  row="$(awk -F'\t' -v id="$1" '$1 == id { print; exit }' "$2")"
+  OWUI_WISH="$(printf '%s' "$row" | cut -f8)"
+  owui_upsert_model "$1" "$(printf '%s' "$row" | cut -f2)" "$(printf '%s' "$row" | cut -f3)" "$(printf '%s' "$row" | cut -f4)" \
+    "$(printf '%s' "$row" | cut -f5)" "$(printf '%s' "$row" | cut -f6)" "$(printf '%s' "$row" | cut -f7)"
+}
+
+# _owui_models_wanted -> one tab-separated line per enabled model and alias (OWUI_MODELS_SYNC_PY's stdin), built in
+# one pass over the catalog. The MODELS_HIDDEN wish is for enabled chat models only.
+_owui_models_wanted() {
+  local en name mode aliases a hidden wish list price
+  local -a alias_list
+  en="$(_enabled_or_all)"
+  list=",$(get_env MODELS_HIDDEN),"
+  while IFS=$'\t' read -r name mode _ aliases _ <&3; do
+    is_enabled "$name" "$en" || continue
+    price="$(price_label "$name")"
+    if [ "$mode" = chat ]; then
+      hidden=false; wish=false; case "$list" in *",$name,"*) wish=true ;; esac
+    else hidden=true; wish=-; fi
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$name" "$(owui_model_name "$name" "$mode")" "$(display_name "$name")" \
+      "AWS Bedrock · $price" "$(owui_tags_json "$name" "$mode")" "$hidden" "$(icon_url "$name")" "$wish"
+    [ "$aliases" != - ] && [ -n "$aliases" ] || continue
+    IFS=, read -r -a alias_list <<< "$aliases"
+    for a in ${alias_list[@]+"${alias_list[@]}"}; do
+      [ -n "$a" ] || continue
+      printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$a" "$a" "$a" "AWS Bedrock · alias of $name · $price" '[{"name":"Bedrock"}]' true '' -
+    done
+  done 3< <(catalog_rows)
+}
+
 # sync_openwebui_models — friendly names ("Claude Sonnet 5.5 · $$"), exact prices in the description and
 # tier/vendor tags for every enabled chat model; embedding, rerank and image models (and aliases) are
-# hidden from the picker but stay callable (meta.hidden, never is_active:false). Never fatal.
+# hidden from the picker but stay callable (meta.hidden, never is_active:false). MODELS_HIDDEN is applied in
+# the same pass. One GET of Open WebUI's models, ONE Python run for every merge, and a POST only for a model that is
+# new or changed (JON-972: ~35 `docker compose exec` calls, 20 s, became one). If that run fails as a whole, the
+# per-model path below does the sync. Never fatal.
 sync_openwebui_models() {
+  local want tmp code plan kind a b c ok=0 bad=0 n_hid=0 failed=0 OWUI_ERR='' OWUI_OUR_ICONS OWUI_WISH='' rc
+  [ -n "$(get_env OPENWEBUI_API_KEY)" ] || { warn "no Open WebUI API key — skipping model names and prices"; return 0; }
+  OWUI_OUR_ICONS="$(owui_our_icon_hashes)"
+  want="$(mktemp)"; tmp="$(mktemp)"
+  _owui_models_wanted > "$want"
+  code="$(_owui_get /api/v1/models/base "$tmp")"
+  if [ "$code" = 200 ] && plan="$({ cat "$want"; printf '%s\n' '---existing---'; cat "$tmp"; } |
+      _owui_py "$OWUI_MODELS_SYNC_PY" "$OWUI_OUR_ICONS" 2>/dev/null)" && [ -n "$plan" ]; then
+    while IFS=$'\t' read -r kind a b c; do
+      case "$kind" in
+        UNCHANGED) ok=$((ok + a)) ;;
+        UPDATE)
+          code="$(_owui_post /api/v1/models/model/update "$c" "$tmp")"
+          if [ "$code" = 200 ]; then ok=$((ok + 1)); n_hid=$((n_hid + b))
+          else bad=$((bad + 1)); failed=1; warn "Open WebUI: could not update $a (HTTP $code: $(head -c 200 "$tmp" | tr '\n' ' '))"; fi ;;
+        CREATE)
+          if _owui_create_wanted "$a" "$want"; then
+            ok=$((ok + 1))
+            if [ "$OWUI_WISH" = true ]; then
+              rc=0; _owui_hide_one "$a" true || rc=$?
+              [ "$rc" != 0 ] || n_hid=$((n_hid + 1)); [ "$rc" != 2 ] || failed=1
+            fi
+          else bad=$((bad + 1)); failed=1; warn "Open WebUI: could not update $a ($OWUI_ERR)"; fi ;;
+      esac
+    done <<< "$plan"
+    rm -f "$want" "$tmp"
+    [ "$n_hid" = 0 ] || log "Chat's model picker: $n_hid model(s) shown or hidden as MODELS_HIDDEN says"
+    [ "$failed" = 1 ] || models_hidden_mark   # ./stack up skips the check while MODELS_HIDDEN stays the same
+    if [ "$bad" -eq 0 ]; then log "Open WebUI model picker: friendly names and Bedrock prices ($ok models; helper models hidden)"
+    else warn "$bad Open WebUI model update(s) failed — prices are still in ./stack costs and the LiteLLM UI; re-run ./stack setup to retry"; fi
+    return 0
+  fi
+  rm -f "$want" "$tmp"
+  _sync_openwebui_models_each
+}
+
+# _sync_openwebui_models_each — the same sync one model at a time (a GET, a Python run and a POST for each, then
+# owui_apply_hidden): the fallback when the one-run path cannot work. Never fatal.
+_sync_openwebui_models_each() {
   local en name mode aliases a desc hidden ok=0 bad=0 OWUI_ERR='' OWUI_OUR_ICONS
   local -a alias_list
   en="$(_enabled_or_all)"
-  [ -n "$(get_env OPENWEBUI_API_KEY)" ] || { warn "no Open WebUI API key — skipping model names and prices"; return 0; }
   OWUI_OUR_ICONS="$(owui_our_icon_hashes)"
   while IFS=$'\t' read -r name mode _ aliases _ <&3; do
     is_enabled "$name" "$en" || continue
@@ -317,6 +465,26 @@ d = json.load(sys.stdin) or {}
 print(hashlib.sha256((d.get("content") or "").encode("utf-8")).hexdigest())'
 }
 
+# owui_cost_check EXPECTED_HASH < "PRICES_JSON<newline>---func---<newline>function JSON<newline>---valves---<newline>valves JSON"
+# -> "same" or "diff" (does the installed source hash to EXPECTED_HASH), then, when "same", what owui_merge_valves would
+# print. One run for both: the update with nothing to do needs one `docker compose exec` here, not two (JON-972).
+owui_cost_check() {
+  # shellcheck disable=SC2016  # Python source, not shell
+  _owui_py 'import hashlib, json, sys
+raw = sys.stdin.read()
+prices, _, rest = raw.partition("\n---func---\n")
+func, _, valves = rest.partition("\n---valves---\n")
+f = json.loads(func) or {}
+if hashlib.sha256((f.get("content") or "").encode("utf-8")).hexdigest() != sys.argv[1]:
+    print("diff"); sys.exit(0)
+print("same")
+cur = json.loads(valves)
+v = dict(cur) if isinstance(cur, dict) else {}
+v["prices_json"] = prices
+if v != cur:
+    print(json.dumps(v))' "$1"
+}
+
 # owui_function_json DESCRIPTION [NAME [ID]] < function source -> FunctionForm JSON (Python does the escaping); the cost filter's by default
 owui_function_json() {
   # shellcheck disable=SC2016  # Python source, not shell
@@ -345,14 +513,23 @@ if v != cur:
 # changing its other valves in Admin Panel → Functions sticks. A deleted filter is installed again.
 # Idempotent; never fatal.
 owui_install_cost_filter() {
-  local tmp code body path first=0 merged
+  local tmp vtmp code body path first=0 merged chk pre=0
   [ -n "$(get_env OPENWEBUI_API_KEY)" ] || { warn "no Open WebUI API key — skipping the chat cost filter"; return 0; }
   [ -r "$COST_FILTER_FILE" ] || { warn "missing $COST_FILTER_FILE — skipping the chat cost filter"; return 0; }
   tmp="$(mktemp)"
   code="$(_owui_get "/api/v1/functions/id/$COST_FILTER_ID" "$tmp")"
   if [ "$code" = 200 ]; then
     path=''
-    [ "$(owui_function_hash < "$tmp" 2>/dev/null)" = "$(file_sha256 "$COST_FILTER_FILE")" ] || path="/api/v1/functions/id/$COST_FILTER_ID/update"
+    # The code unchanged (the usual update): its check and the prices merge are one run, from both replies read up front.
+    vtmp="$(mktemp)"
+    if [ "$(_owui_get "/api/v1/functions/id/$COST_FILTER_ID/valves" "$vtmp")" = 200 ] &&
+       chk="$({ cost_prices_json; printf '%s\n' '---func---'; cat "$tmp"; printf '\n%s\n' '---valves---'; cat "$vtmp"; } |
+         owui_cost_check "$(file_sha256 "$COST_FILTER_FILE")" 2>/dev/null)" && [ "${chk%%$'\n'*}" = same ]; then
+      merged="${chk#same}"; merged="${merged#$'\n'}"; pre=1
+    elif [ "$(owui_function_hash < "$tmp" 2>/dev/null)" != "$(file_sha256 "$COST_FILTER_FILE")" ]; then
+      path="/api/v1/functions/id/$COST_FILTER_ID/update"
+    fi
+    rm -f "$vtmp"
   else
     path=/api/v1/functions/create; first=1
   fi
@@ -376,9 +553,11 @@ owui_install_cost_filter() {
     fi
     set_env OWUI_COST_FILTER_INSTALLED true
   fi
-  code="$(_owui_get "/api/v1/functions/id/$COST_FILTER_ID/valves" "$tmp")"
-  if [ "$code" != 200 ] || ! merged="$({ cost_prices_json; cat "$tmp"; } | owui_merge_valves 2>/dev/null)"; then
-    rm -f "$tmp"; warn "Open WebUI: could not read the cost filter's settings (HTTP $code) — prices not updated; re-run ./stack setup to retry"; return 0
+  if [ "$pre" = 0 ]; then
+    code="$(_owui_get "/api/v1/functions/id/$COST_FILTER_ID/valves" "$tmp")"
+    if [ "$code" != 200 ] || ! merged="$({ cost_prices_json; cat "$tmp"; } | owui_merge_valves 2>/dev/null)"; then
+      rm -f "$tmp"; warn "Open WebUI: could not read the cost filter's settings (HTTP $code) — prices not updated; re-run ./stack setup to retry"; return 0
+    fi
   fi
   if [ -n "$merged" ]; then
     code="$(_owui_post "/api/v1/functions/id/$COST_FILTER_ID/valves/update" "$merged" "$tmp")"
@@ -490,6 +669,8 @@ sync_budget_banner() {
   tmp="$(mktemp)"
   code="$(_owui_get /api/v1/configs/banners "$tmp")"
   if [ "$code" != 200 ]; then rm -f "$tmp"; warn "Open WebUI: could not read banners (HTTP $code) — budget banner skipped"; return 0; fi
+  # No budget banner to show and none of ours shown: nothing to merge, so no exec (JON-972).
+  if [ "$new" = '[]' ] && ! grep -qF "$BUDGET_BANNER_PREFIX" "$tmp"; then rm -f "$tmp"; return 0; fi
   if ! body="$(owui_merge_banners "$new" < "$tmp" 2>/dev/null)"; then rm -f "$tmp"; warn "Open WebUI: could not merge banners — budget banner skipped"; return 0; fi
   if [ -n "$body" ]; then
     code="$(_owui_post /api/v1/configs/banners "$body" "$tmp")"
