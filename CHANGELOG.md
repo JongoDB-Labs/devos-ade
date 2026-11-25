@@ -4,7 +4,7 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.68.2] - 2026-11-25
 
 ### Changed
 
@@ -15,6 +15,9 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   again when the AWS region changes. (JON-972)
 - **The update helper notices the end of an update at once.** It looked at the job every 2 seconds, so Home's
   "Updated" came up to 2 seconds late. (JON-972)
+
+### To get it
+Existing installs: Home › Update now.
 
 ## [0.68.1] - 2026-11-25
 
