@@ -135,6 +135,51 @@ dc start forgejo"
   assert_contains "$(cat "$TMP/calls")" "dc start forgejo"
 }
 
+# JON-972: the git copy runs beside the dumps. The pg_dump stub waits (up to 5 s) for the git copy's tar container to have
+# started; run one after the other, it never does and the dump is marked "alone".
+test_backup_copies_the_git_volume_while_the_databases_are_dumped() {
+  STACK_DIR="$TMP/stack"; mkdir -p "$STACK_DIR"; _mk_gitsrc
+  printf 'LOCALGIT=on\n' > "$ENV_FILE"; _stub_dc; LG_VOL=1; LG_RUNNING=1
+  eval "_lc_$(declare -f dc)"; eval "_lc_$(declare -f docker)"
+  docker() { case "$1 $2" in "run --rm") : > "$TMP/git.started" ;; esac; _lc_docker "$@"; }
+  dc() {
+    case "$*" in *"pg_dump"*"litellm") local i=0; while [ ! -e "$TMP/git.started" ] && [ "$i" -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
+      [ -e "$TMP/git.started" ] && : > "$TMP/overlap" ;; esac
+    _lc_dc "$@"
+  }
+  cmd_backup 2> "$TMP/err"
+  assert_eq "$([ -e "$TMP/overlap" ] && echo yes || echo alone)" yes
+  # and the backup still holds everything a restore reads
+  d="$(ls -d "$STACK_DIR"/backups/*)"
+  assert_eq "$(cat "$d/litellm.dump")" "PGDMP-litellm"
+  assert_eq "$(cat "$d/openwebui.dump")" "PGDMP-openwebui"
+  assert_eq "$(tar -xzOf "$d/gitdata.tar.gz" ./app.ini)" "SECRET_KEY = k"
+  assert_eq "$(cat "$d/.env")" "LOCALGIT=on"
+  [ -d "$d/s3/shared" ]
+  localgit_validate_archive "$d/gitdata.tar.gz"
+  _is_backup "$d"
+  assert_contains "$(cat "$TMP/calls")" "dc start forgejo"
+  assert_eq "$(trap -p EXIT)" ""
+}
+
+test_a_failed_dump_still_starts_the_git_server_again_and_removes_the_backup() {
+  STACK_DIR="$TMP/stack"; mkdir -p "$STACK_DIR"; _mk_gitsrc
+  printf 'LOCALGIT=on\n' > "$ENV_FILE"; _stub_dc; LG_VOL=1; LG_RUNNING=1; PG_FAIL=1
+  if out="$( (cmd_backup) 2>&1)"; then echo "should fail" >&2; return 1; fi
+  assert_contains "$out" "could not dump database litellm"
+  assert_contains "$(cat "$TMP/calls")" "dc start forgejo"
+  assert_eq "$(ls -A "$STACK_DIR/backups" 2>/dev/null)" ""
+}
+
+test_a_failed_git_copy_fails_the_backup_and_starts_the_server_again() {
+  STACK_DIR="$TMP/stack"; mkdir -p "$STACK_DIR"; _mk_gitsrc
+  printf 'LOCALGIT=on\n' > "$ENV_FILE"; _stub_dc; LG_VOL=1; LG_RUNNING=1; TAR_FAIL=1
+  if out="$( (cmd_backup) 2>&1)"; then echo "should fail" >&2; return 1; fi
+  assert_contains "$out" "could not copy the git server's repositories"
+  assert_contains "$(cat "$TMP/calls")" "dc start forgejo"
+  assert_eq "$(ls -A "$STACK_DIR/backups" 2>/dev/null)" ""
+}
+
 test_the_volume_job_copies_the_right_volume_with_few_privileges() {
   STACK_DIR="$TMP/stack"; mkdir -p "$STACK_DIR"; _mk_gitsrc
   printf 'COMPOSE_PROJECT_NAME=pj1\nLOCALGIT=on\n' > "$ENV_FILE"; _stub_dc; LG_VOL=1; LG_RUNNING=1

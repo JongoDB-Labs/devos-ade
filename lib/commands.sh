@@ -1958,6 +1958,13 @@ _backup_buckets_exec() {
   return 1
 }
 
+# _backup_git_join — waits for the git server's copy (started in _backup_named) once; its status lands in _BACKUP_GIT_RC
+_backup_git_join() {
+  [ -n "${_BACKUP_GIT_PID:-}" ] || return 0
+  wait "$_BACKUP_GIT_PID" || _BACKUP_GIT_RC=$?
+  _BACKUP_GIT_PID=''
+}
+
 # _backup_named SUFFIX — writes backups/<ts>[-SUFFIX]/ and sets LAST_BACKUP (backups/<ts>…) for callers
 # that want to name it in messages. ./stack update uses SUFFIX=auto so it can prune its own backups.
 _backup_named() {
@@ -1968,8 +1975,15 @@ _backup_named() {
   mkdir -p "$tmp"; chmod 700 "$STACK_DIR/backups" "$tmp"
   _BACKUP_PARTIAL="$tmp"; on_exit _cleanup_partial_backup
   _data_services_up
+  # The git server's copy (stop, tar in a throwaway container, start) shares nothing with the dumps and buckets below —
+  # its own volume, its own container — so it runs beside them instead of after (JON-972). The join hook makes every
+  # way out, die and ^C included, wait for it: the server must be started again before this script ends.
+  _BACKUP_GIT_PID=''; _BACKUP_GIT_RC=0
+  ( localgit_backup_into "$tmp" ) & _BACKUP_GIT_PID=$!
+  on_exit _backup_git_join
   for db in litellm openwebui; do
     if ! dc exec -T postgres pg_dump -U postgres -Fc "$db" > "$tmp/$db.dump"; then
+      _backup_git_join
       die "could not dump database $db — the incomplete backup was removed; is postgres healthy? ./stack status"
     fi
   done
@@ -1979,13 +1993,14 @@ _backup_named() {
   if ! _backup_buckets_exec "$tmp/s3"; then
     rm -rf "$tmp/s3"; mkdir -p "$tmp/s3/openwebui" "$tmp/s3/shared"
     s3_job "$tmp" "" 'set -e; for b in openwebui shared; do aws --endpoint-url http://rustfs:9000 s3 sync --only-show-errors s3://$b /backup/s3/$b; done' ||
-      die "could not copy the object-store buckets — the incomplete backup was removed; see ./stack logs rustfs"
+      { _backup_git_join; die "could not copy the object-store buckets — the incomplete backup was removed; see ./stack logs rustfs"; }
   fi
   cp "$ENV_FILE" "$tmp/.env"   # encrypted DB fields need the same secrets
   # the project folders of this computer (lib/projects.sh: the list, not the folders themselves)
   [ ! -f "$(projects_file)" ] || cp "$(projects_file)" "$tmp/project-folders.tsv"
-  # the local git server's repositories, database and config (lib/localgit.sh): its volume copied while it is stopped
-  localgit_backup_into "$tmp" ||
+  # the local git server's repositories, database and config (lib/localgit.sh): started above, joined here
+  _backup_git_join; off_exit _backup_git_join
+  [ "$_BACKUP_GIT_RC" = 0 ] ||
     die "could not copy the git server's repositories — the incomplete backup was removed; the git server was started again (./stack logs forgejo)"
   [ ! -f "$tmp/gitdata.tar.gz" ] || gitnote=", the git server's repositories "
   chmod -R go-rwx "$tmp"       # dumps hold chats, hashed keys and encrypted credentials
