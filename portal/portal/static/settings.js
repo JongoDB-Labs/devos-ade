@@ -2230,9 +2230,8 @@
   }
   // modelsChecked:end
   function renderModelsChecked() {
-    const host = document.querySelector("[data-models-checked]");
-    if (!host) return;
-    host.replaceChildren(...modelsCheckedLines(modelsCheckedAt, Date.now()).map((t) => el("span", { text: `${t} ` })));
+    const hosts = document.querySelectorAll("[data-models-checked]");   // (every copy: the row may be drawn more than once)
+    for (const host of hosts) host.replaceChildren(...modelsCheckedLines(modelsCheckedAt, Date.now()).map((t) => el("span", { text: `${t} ` })));
   }
 
   function modelsRow(r) {

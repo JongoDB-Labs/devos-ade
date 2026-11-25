@@ -4012,27 +4012,41 @@ def settings_page(ctx):
 def settings_models_checked(ctx):
     """JON-972: Settings > Models your key can use says when the models were last checked. Setup has just probed on the
     throwaway: "Last checked <date>." and no note. With /api/summary's models.checked_at made old (a stub in the page), the
-    note "Over a week ago: Re-check models finds models your AWS admin enabled since." shows and the button is still there."""
+    note "Over a week ago: Re-check models finds models your AWS admin enabled since." shows and the button is still there.
+    Everything is asserted on the line the owner sees: exactly one copy visible, with height. On a phone the row folds its
+    words under Details (settings.js compactRow): the check opens that, as the owner would."""
     _need_helper(ctx)
     page, rec = ctx.page("settings-models-checked")
     login(page)
     open_settings(page)
+
+    def seen():
+        """The one visible line (Details opened when a phone folded it), its text; it must have a height."""
+        sel = "#settings [data-models-checked]"
+        page.locator(sel).first.wait_for(state="attached", timeout=20000)
+        if page.locator(sel + ":visible").count() == 0:
+            page.evaluate("""s => document.querySelectorAll(s).forEach((n) => {
+                for (let d = n.closest('details'); d; d = d.parentElement && d.parentElement.closest('details')) d.open = true; })""", sel)
+        vis = page.locator(sel + ":visible")
+        vis.first.wait_for(state="visible", timeout=10000)
+        expect(vis.count() == 1, f"{vis.count()} copies of the line visible, not one")
+        box = vis.first.bounding_box()
+        expect(box is not None and box["height"] > 0 and box["width"] > 0, f"the line has no size: {box}")
+        page.wait_for_function("s => (document.querySelector(s + ':not([hidden])') || {}).textContent", arg=sel, timeout=10000)
+        return vis.first, vis.first.inner_text()
 
     def own_row():
         page.evaluate("""() => new Promise((done) => {
             addEventListener('hashchange', () => done(), {once: true}); setTimeout(done, 5000);
             location.hash = '#settings'; location.hash = '#settings/+models'; })""")
         settings_drawn(page)
-        line = page.locator("#settings [data-models-checked]")
-        line.wait_for(state="attached", timeout=20000)
-        page.wait_for_function("() => (document.querySelector('#settings [data-models-checked]') || {}).textContent", timeout=20000)
-        return line
+        return seen()
 
-    line = own_row()
-    text = line.inner_text()
+    line, text = own_row()
     expect(re.match(r"Last checked \S+", text), f"no 'Last checked <date>': {text!r}")
     expect("Over a week ago" not in text, f"a fresh check says it is old: {text!r}")
     old = "2026-01-05T10:00:00Z"
+    note = "Over a week ago: Re-check models finds models your AWS admin enabled since."
 
     def stub(route):
         resp = route.fetch()
@@ -4041,25 +4055,26 @@ def settings_models_checked(ctx):
         route.fulfill(response=resp, json=body)
 
     page.route("**/api/summary", stub)
-    line = own_row()
-    text = line.inner_text()
-    expect("Last checked " in text and "Over a week ago: Re-check models finds models your AWS admin enabled since." in text, f"no old-check note: {text!r}")
-    btn = page.locator('#settings button[data-act="models-recheck"]')
-    expect(btn.count() == 1 and btn.first.inner_text() == "Re-check models", "the Re-check models button is gone")
-    # a render again (across the phone breakpoint: 1440 -> 390 -> 1440) keeps the line
-    for w in (390, 1440):
+    line, text = own_row()
+    expect("Last checked " in text and note in text, f"no old-check note: {text!r}")
+    btn = page.locator('#settings button[data-act="models-recheck"]:visible')
+    expect(btn.count() == 1 and btn.first.inner_text() == "Re-check models", "the Re-check models button is not visible, or not one")
+    # a render again (across the phone breakpoint: 1440 -> 390 -> 1440) keeps the line, visible
+    for w in (390, 1440, 390, 1440):
         page.set_viewport_size({"width": w, "height": 900})
         page.wait_for_timeout(800)
-        again = page.locator("#settings [data-models-checked]").first
-        again.wait_for(state="attached", timeout=10000)
-        kept = again.inner_text()
-        expect("Over a week ago" in kept, f"the note is gone after a render at {w} px: {kept!r}")
-    line = page.locator("#settings [data-models-checked]").first
+        settings_drawn(page)
+        line, kept = seen()
+        expect(note in kept, f"the note is gone after a render at {w} px: {kept!r}")
     for w, h, tag in ((390, 844, "390"), (1440, 900, "1440")):
         page.set_viewport_size({"width": w, "height": h})
+        page.wait_for_timeout(800)
+        settings_drawn(page)
         for scheme in ("light", "dark"):
             page.emulate_media(color_scheme=scheme)
             page.wait_for_timeout(300)
+            line, kept = seen()
+            expect(note in kept, f"{tag} {scheme}: the note is not on screen: {kept!r}")
             line.scroll_into_view_if_needed()
             shot(page, f"26-settings-models-checked-{tag}-{scheme}", mask=[".set-value", ".set-adv-value"])
     page.emulate_media(color_scheme="light")
@@ -4067,7 +4082,7 @@ def settings_models_checked(ctx):
     probs = rec.problems()
     rec.save()
     expect(not probs, f"errors: {probs}")
-    return f"fresh: Last checked <date>, no note; made old: the note shows and Re-check models stays; shots at 390 and 1440, light and dark"
+    return "fresh: Last checked <date>, no note; made old: the note is on screen (a phone: under Details) after every render and the Re-check models button stays; shots at 390 and 1440, light and dark"
 
 
 @check("settings", "settings-key-check")
