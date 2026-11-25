@@ -238,6 +238,22 @@ test_the_call_profile_times_each_digest_by_its_step_and_role_and_keeps_no_input(
     { echo "a digest line that is not MS digest NAME<ROLE START: $p" >&2; return 1; }
 }
 
+test_the_digest_helpers_read_files_folders_and_keys_in_one_go_with_the_lines_of_one_call_each() {
+  _um_setup
+  local d="$TMP/in"; mkdir -p "$d/sp ace" "$d/empty"; echo a > "$d/sp ace/f 1"; echo bb > "$d/sp ace/.h"; echo c > "$d/u"; chmod 000 "$d/u"
+  local a; a="$(cksum < "$d/sp ace/f 1" | awk '{ print $1 "-" $2 }')"
+  # (in the order given, again for a name given twice; "-" for one that is not there; nothing for one that cannot be read)
+  assert_eq "$(_upd_files "$d/sp ace/f 1" "$d/nope" "$d/u" "$d/sp ace/f 1")" "$(printf '%s %s\n%s -\n%s \n%s %s' "$d/sp ace/f 1" "$a" "$d/nope" "$d/u" "$d/sp ace/f 1" "$a")"
+  assert_eq "$(_upd_files)" ""
+  assert_eq "$(_upd_tree "$d/sp ace" "$d/empty" "$d/nope")" "$(printf './.h %s\n./f 1 %s\n%s -' "$(cksum < "$d/sp ace/.h" | awk '{ print $1 "-" $2 }')" "$a" "$d/nope")"
+  chmod 600 "$d/u"
+  # (the keys as get_env reads them: the last line of a name; none without a .env)
+  printf 'LITELLM_KEY_SETUP=a\nLITELLM_KEY_SETUP=b=c d\nXLITELLM_KEY_OPENWEBUI=no\n' > "$ENV_FILE"
+  assert_eq "$(_upd_keys)" "$(printf 'LITELLM_KEY_CLAUDE_CODE=\nLITELLM_KEY_OPENWEBUI=\nLITELLM_KEY_SETUP=b=c d\nOPENWEBUI_API_KEY=\nLITELLM_DB_ADMIN_READY=')"
+  rm -f "$ENV_FILE"
+  assert_eq "$(_upd_keys)" "$(printf 'LITELLM_KEY_CLAUDE_CODE=\nLITELLM_KEY_OPENWEBUI=\nLITELLM_KEY_SETUP=\nOPENWEBUI_API_KEY=\nLITELLM_DB_ADMIN_READY=')"
+}
+
 test_the_models_recheck_and_a_setup_without_begin_note_nothing() {
   _um_setup; UPD_RECORD=0; UPD_NOW=''
   upd_gate keys "keys" "w" true
