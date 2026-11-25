@@ -344,9 +344,12 @@ upd_in_aws() {
 # (fresh: written in the last 12 hours — the portal asks the sources itself every 24 h). Not the image's ID: the rest of the
 # portal (a page's script) is none of its business, and every release changes that (JON-972).
 upd_in_prices() {
-  _upd_local_ids | grep -q '/portal:local' && echo portal-image=here || echo portal-image=missing
+  # (a case, not grep -q: it ends the pipe early and pipefail then reads the pipeline as a failure)
+  case "$(_upd_local_ids)" in *'/portal:local'*) echo portal-image=here ;; *) echo portal-image=missing ;; esac
   printf 'updates=%s region=%s\n' "$(get_env PRICE_UPDATES)" "$(get_env AWS_REGION_NAME)"
-  _upd_files "$(prices_catalog)" "$STACK_DIR"/lib/prices.sh "$STACK_DIR"/catalog/models.tsv "$STACK_DIR"/catalog/aws-price-map.tsv \
+  # (the container always reads ./catalog/prices.tsv, whatever PRICES_CATALOG says; the portal's compose block is not hashed:
+  # all of compose would run this step again on nearly every release)
+  _upd_files "$(prices_catalog)" "$STACK_DIR"/catalog/prices.tsv "$STACK_DIR"/lib/prices.sh "$STACK_DIR"/catalog/models.tsv "$STACK_DIR"/catalog/aws-price-map.tsv \
     "$STACK_DIR"/portal/portal/prices.py "$STACK_DIR"/portal/portal/brand.py "$STACK_DIR"/portal/portal/__init__.py \
     "$STACK_DIR"/portal/requirements.txt "$STACK_DIR"/portal/Dockerfile
   _upd_fn refresh_prices _setup_prices use_best_prices
@@ -416,7 +419,11 @@ upd_in_gitserver() {
 upd_in_gitafter() {
   _upd_env; _upd_compose
   _upd_files "$STATE_DIR"/localgit/tls/* "$STACK_DIR"/lib/localgit.sh "$STACK_DIR"/lib/code.sh "$STACK_DIR"/code/server/import-host.mjs
+  # (the search token is .env's, left out of _upd_env: whether there is one, so a lost one is made again; and the git
+  # server's container: one made again may hold no owner account, as after a restored backup)
+  [ -n "$(get_env LOCALGIT_READ_TOKEN)" ] && echo token=set || echo token=none
   { dc ps -q code terminal 2>/dev/null | tr '\n' ' '; } | awk '{ print "ctr " $0 }'
+  { dc ps -q forgejo 2>/dev/null | tr '\n' ' '; } | awk '{ print "git " $0 }'
   _upd_fn localgit_after_up localgit_ensure_admin localgit_register_host
 }
 # The web search check (one search through LiteLLM) and the smoke test: LiteLLM's container, its config, models and keys

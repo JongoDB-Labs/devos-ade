@@ -12,7 +12,8 @@ _um_setup() {
   PRICES_DIR="$TMP/prices"; mkdir -p "$PRICES_DIR"; : > "$PRICES_DIR/prices.meta.json"
   cp "$T_ROOT/tests/fixtures/prices.tsv" "$STACK_DIR/catalog/prices.tsv"; PRICES_CATALOG="$STACK_DIR/catalog/prices.tsv"; use_best_prices   # (as the prices step leaves them)
   LITELLM_CTR="/p-litellm-1 L1 2026-11-01T10:00:00Z"; OWUI_CTR="/p-open-webui-1 O1 2026-11-01T10:00:00Z"; PORTAL_ID=P1
-  dc() { case "$*" in "ps -q litellm open-webui") printf 'c1\nc2\n' ;; esac; return 0; }
+  CODE_CTR=''; FORGEJO_CTR=f1
+  dc() { case "$*" in "ps -q litellm open-webui") printf 'c1\nc2\n' ;; "ps -q code terminal") [ -z "$CODE_CTR" ] || printf '%s\n' $CODE_CTR ;; "ps -q forgejo") printf '%s\n' "$FORGEJO_CTR" ;; esac; return 0; }
   PGDATA_AT=2026-10-01T09:00:00Z
   docker() { case "$1 $2" in "inspect --format") printf '%s\n%s\n' "$LITELLM_CTR" "$OWUI_CTR" ;; "volume inspect") echo "$PGDATA_AT" ;; *) echo "unexpected docker $*" >&2; return 1 ;; esac; }
   snapshot_refs() { [ -z "$PORTAL_ID" ] || printf '%s\t%s\n' "$PORTAL_ID" "$(project_name)/portal:local"; }
@@ -101,6 +102,18 @@ test_the_prices_and_git_account_steps_follow_only_what_they_read() {
   done
   # the region: the updater's catalog digest and the AWS prices it asks for depend on it
   sed -i.bak 's/us-east-1/eu-west-1/' "$ENV_FILE"; assert_contains "$(_um_run update)" "prices"; assert_eq "$(_um_run update)" ""
+  # PRICE_UPDATES on to off
+  printf 'PRICE_UPDATES=false\n' >> "$ENV_FILE"; assert_contains "$(_um_run update)" "prices"; assert_eq "$(_um_run update)" ""
+  # the git account's own safety net (a restored backup, a new git container, a lost search token, a new or switched-on Code page)
+  printf 'LOCALGIT_READ_TOKEN=tok-1\n' >> "$ENV_FILE"; assert_eq "$(_um_run update)" "gitafter"; assert_eq "$(_um_run update)" ""
+  sed -i.bak 's/^LOCALGIT_READ_TOKEN=.*/LOCALGIT_READ_TOKEN=/' "$ENV_FILE"; assert_eq "$(_um_run update)" "gitafter"; assert_eq "$(_um_run update)" ""
+  FORGEJO_CTR=f2; assert_eq "$(_um_run update)" "gitafter"; assert_eq "$(_um_run update)" ""
+  CODE_CTR="k1 t1"; assert_eq "$(_um_run update)" "gitafter"; assert_eq "$(_um_run update)" ""   # the Code page switched on
+  CODE_CTR="k2 t1"; assert_eq "$(_um_run update)" "gitafter"; assert_eq "$(_um_run update)" ""   # a new code container
+  CODE_CTR=''; assert_eq "$(_um_run update)" "gitafter"; assert_eq "$(_um_run update)" ""        # switched off
+  # the catalog's prices as the container reads them (catalog/prices.tsv), whatever PRICES_CATALOG says
+  PRICES_CATALOG="$TMP/other-prices.tsv"; cp "$STACK_DIR/catalog/prices.tsv" "$PRICES_CATALOG"; _um_run update >/dev/null
+  echo "# changed" >> "$STACK_DIR/catalog/prices.tsv"; assert_contains "$(_um_run update)" "prices"; assert_eq "$(_um_run update)" ""
   echo "changed" >> "$STACK_DIR/code/server/import-host.mjs"; assert_eq "$(_um_run update)" "gitafter"
   # the portal image gone (pruned): the updater has nothing to run in
   PORTAL_ID=''; assert_eq "$(_um_run update)" "prices signin"
@@ -113,7 +126,8 @@ test_the_prices_and_git_account_steps_follow_only_what_they_read() {
 # then started in phases). The account step makes it again when the server refuses it, and recreates the portal itself.
 test_the_git_search_token_setup_writes_late_runs_no_step_again() {
   _um_setup; _um_run > /dev/null
-  printf 'LOCALGIT_READ_TOKEN=tok-1\n' >> "$ENV_FILE"; assert_eq "$(_um_run update)" ""
+  # (only the git account step reads whether there is one, not which: a token made again is no input)
+  printf 'LOCALGIT_READ_TOKEN=tok-1\n' >> "$ENV_FILE"; assert_eq "$(_um_run update)" "gitafter"
   sed -i.bak 's/^LOCALGIT_READ_TOKEN=.*/LOCALGIT_READ_TOKEN=tok-2/' "$ENV_FILE"; assert_eq "$(_um_run update)" ""
 }
 
