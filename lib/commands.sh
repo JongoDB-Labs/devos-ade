@@ -1119,20 +1119,24 @@ ensure_openwebui_api_key() {
   local cur tmp token key code="" try
   cur="$(get_env OPENWEBUI_API_KEY)"
   # Validity check on an endpoint shared-mcp really uses (v0.12 refuses API keys on /api/v1/auths/:
-  # "A human session is required"). Only Open WebUI refusing the key (401/403) makes a new one: a timeout, a refused
-  # connection or a 5xx (Open WebUI just restarted) is no answer, so it is asked again (3 tries, 15 s each, 2 s apart:
-  # 49 s at most) and then the key is kept — a new key would change .env and make the next update redo its steps.
+  # "A human session is required"). Only a refused key (401/403) makes a new one: a timeout, a refused connection or a
+  # 5xx (Open WebUI just restarted) is no answer, so it is asked again (3 tries, 15 s each, 2 s apart: 49 s at most);
+  # another answer (a 404, a redirect) would come again. Either way the key is then kept — a new key would change .env
+  # and make the next update redo its steps. (A 401 can also be the portal refusing the session: Caddy's forward_auth
+  # on the chat host. The sign-in below goes through the same portal and stops the setup then, as before.)
   if [ -n "$cur" ]; then
     for try in 1 2 3; do
       code="$(portal_curl_auth "$cur" chat /api/v1/knowledge/ -sS -m 15 -o /dev/null -w '%{http_code}' 2>/dev/null)" || true
       case "$code" in
-        200) log "kept existing Open WebUI API key"; return 0 ;;
+        2??) log "kept existing Open WebUI API key"; return 0 ;;
         401 | 403) break ;;
+        '' | 000 | 408 | 429 | 5??) ;;
+        *) break ;;
       esac
       [ "$try" = 3 ] || sleep 2
     done
     case "$code" in
-      401 | 403) warn "the Open WebUI API key in .env was refused (HTTP $code) — creating a new one" ;;
+      401 | 403) warn "the Open WebUI API key in .env was refused (HTTP $code, by Open WebUI or the portal session) — creating a new one" ;;
       *) warn "the Open WebUI API key was not checked: Open WebUI answered HTTP ${code:-000}; the key is kept"; return 0 ;;
     esac
   fi

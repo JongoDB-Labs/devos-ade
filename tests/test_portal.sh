@@ -853,9 +853,26 @@ test_owui_key_401_and_403_make_a_new_key() {
   done
 }
 
+test_owui_key_another_answer_keeps_the_key_at_once_and_warns() {
+  local c out
+  for c in 404 302 400; do   # (asking again would give the same answer)
+    printf 'OPENWEBUI_API_KEY=sk-old\n' > "$ENV_FILE"; _stub_owui_key "$c"
+    out="$(ensure_openwebui_api_key 2>&1)" || { echo "returned non-zero for $c" >&2; return 1; }
+    assert_eq "$(get_env OPENWEBUI_API_KEY)" sk-old
+    assert_eq "$(_owui_calls signin)" 0
+    assert_eq "$(_owui_calls check)" 1
+    assert_eq "$(_owui_calls sleep)" 0
+    assert_contains "$out" "HTTP $c"
+  done
+  printf 'OPENWEBUI_API_KEY=sk-old\n' > "$ENV_FILE"; _stub_owui_key 204   # (any 2xx: valid)
+  out="$(ensure_openwebui_api_key 2>&1)"
+  assert_contains "$out" "kept existing Open WebUI API key"
+  assert_eq "$(_owui_calls check)" 1
+}
+
 test_owui_key_no_answer_keeps_the_key_after_three_tries_and_warns() {
   local c out
-  for c in 000 503 404; do
+  for c in 000 503 429; do
     printf 'OPENWEBUI_API_KEY=sk-old\n' > "$ENV_FILE"; _stub_owui_key "$c"
     out="$(ensure_openwebui_api_key 2>&1)" || { echo "returned non-zero for $c" >&2; return 1; }
     assert_eq "$(get_env OPENWEBUI_API_KEY)" sk-old
