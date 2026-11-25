@@ -4,13 +4,16 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.68.3] - 2026-11-25
 
 ### Changed
 
 - **Update now's backup copies the git server's repositories while the databases and buckets are copied, not after.**
   The git server is still stopped only for its own copy and started again afterwards, also when the backup fails;
   the backup holds the same files, so a restore or rollback reads it as before. (JON-972)
+
+### To get it
+Existing installs: Home › Update now.
 
 ## [0.68.2] - 2026-11-25
 
