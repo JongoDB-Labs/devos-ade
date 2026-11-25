@@ -765,3 +765,18 @@ test_a_failed_jobs_message_leads_with_its_failed_checks() {
   printf '%s\n' '20:02:52 xx  image download failed (network/registry?): litellm' > "$TMP/log"
   assert_eq "$(_job_failure_message "Terminal" "$TMP/log")" "image download failed (network/registry?): litellm"
 }
+
+# JON-972: the job monitor's pause ends when the job does (a plain `sleep 2` noticed the end up to 2 s late: 1 s on average)
+test_the_job_monitors_pause_ends_with_the_job() {
+  local pid t0 d
+  sleep 1 & pid=$!
+  t0="$(date +%s)"; HELPER_JOB_POLL_S=4 _job_pause "$pid"; d=$(( $(date +%s) - t0 ))
+  wait "$pid" 2>/dev/null || true
+  [ "$d" -le 2 ] || { echo "the pause lasted ${d}s with the job over after 1 s" >&2; return 1; }
+  sleep 30 & pid=$!   # a job that goes on: the whole pause (1 s here), not less
+  t0="$(date +%s)"; HELPER_JOB_POLL_S=1 _job_pause "$pid"; d=$(( $(date +%s) - t0 ))
+  kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null || true
+  [ "$d" -ge 1 ] || { echo "the pause was ${d}s: a running job is looked at once a poll, not at once" >&2; return 1; }
+  HELPER_JOB_POLL_S=0 _job_pause 1   # (the tests' 0, and a fractional value: a plain sleep)
+  HELPER_JOB_POLL_S=0.2 _job_pause 1
+}

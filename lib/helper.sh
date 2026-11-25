@@ -935,6 +935,18 @@ _job_run() {
   return "${PIPESTATUS[0]}"
 }
 
+# _job_pause PID — HELPER_JOB_POLL_S (2 s) between two looks at a job, ended at once when the job is: a plain sleep noticed
+# the end up to 2 s late (JON-972). A value that is not whole seconds (the tests') is a plain sleep.
+_job_pause() {
+  local poll="${HELPER_JOB_POLL_S:-2}" i=0
+  case "$poll" in '' | *[!0-9]*) sleep "$poll"; return 0 ;; esac
+  [ "$poll" -gt 0 ] || { sleep "$poll"; return 0; }
+  while [ "$i" -lt $((poll * 4)) ]; do
+    kill -0 "$1" 2>/dev/null || return 0
+    sleep 0.25; i=$((i + 1))
+  done
+}
+
 # helper_run_job ACTION ID [auto] — runs ./stack ACTION --yes in this checkout and reports progress. "auto": the
 # automatic update of JOB_TARGET (its own record and wording; one that cannot start is "skipped", not "failed")
 helper_run_job() {
@@ -979,7 +991,7 @@ helper_run_job() {
     [ "$action" = clean ] || _job_steps "$logf"
     if ph="$(_phase_of "$logf")"; then helper_write_status "${ph%%	*}" "${ph#*	}"; fi
     helper_heartbeat
-    sleep "${HELPER_JOB_POLL_S:-2}"
+    _job_pause "$pid"
   done
   wait "$pid" || rc=$?
   # (its steps as the log ended: the done or failed status keeps how long each took; nothing runs any more)

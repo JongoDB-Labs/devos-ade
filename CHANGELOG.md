@@ -11,7 +11,9 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 - **An update no longer redoes Prices and Git server account just because the portal changed.** Both looked at the whole
   portal image, so any release that touched the portal, even a Settings page script, ran them again (about 6 s). Prices
   now follows the price updater's own files, the catalog files it reads and the image's recipe; the git account follows
-  the code container, which it talks to. (JON-972)
+  the code container, which it talks to. Prices also runs again when the AWS region changes. (JON-972)
+- **The update helper notices the end of an update at once.** It looked at the job every 2 seconds, so Home's
+  "Updated" came up to 2 seconds late. (JON-972)
 
 ## [0.68.1] - 2026-11-25
 

@@ -345,7 +345,7 @@ upd_in_aws() {
 # portal (a page's script) is none of its business, and every release changes that (JON-972).
 upd_in_prices() {
   _upd_local_ids | grep -q '/portal:local' && echo portal-image=here || echo portal-image=missing
-  printf 'updates=%s\n' "$(get_env PRICE_UPDATES)"
+  printf 'updates=%s region=%s\n' "$(get_env PRICE_UPDATES)" "$(get_env AWS_REGION_NAME)"
   _upd_files "$(prices_catalog)" "$STACK_DIR"/lib/prices.sh "$STACK_DIR"/catalog/models.tsv "$STACK_DIR"/catalog/aws-price-map.tsv \
     "$STACK_DIR"/portal/portal/prices.py "$STACK_DIR"/portal/portal/brand.py "$STACK_DIR"/portal/portal/__init__.py \
     "$STACK_DIR"/portal/requirements.txt "$STACK_DIR"/portal/Dockerfile

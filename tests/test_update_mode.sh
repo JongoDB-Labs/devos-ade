@@ -79,8 +79,8 @@ test_each_input_changing_runs_exactly_its_steps() {
   # a key setup made: the keys, the sign-in, the syncs, the checks that use them
   sed -i.bak 's/^LITELLM_KEY_SETUP=.*/LITELLM_KEY_SETUP=sk-new/' "$ENV_FILE"
   assert_eq "$(_um_run update)" "keys websearch signin syncs smoke"
-  # a setting in .env: every step that reads .env, not the prices
-  sed -i.bak 's/us-east-1/eu-west-1/' "$ENV_FILE"
+  # a setting in .env: every step that reads .env, not the prices (which read only the region and PRICE_UPDATES)
+  sed -i.bak 's/^LITELLM_PORT=4000/LITELLM_PORT=4001/' "$ENV_FILE"
   assert_eq "$(_um_run update)" "settings litellm_config voice stt_service keys searxng websearch gitserver codedefault gitafter signin syncs smoke"
   # the step's own code (a release that changes it)
   upd_in_voice_before="$(declare -f stt_after_probe 2>/dev/null)"; stt_after_probe() { echo changed; }
@@ -99,6 +99,8 @@ test_the_prices_and_git_account_steps_follow_only_what_they_read() {
     catalog/models.tsv catalog/aws-price-map.tsv; do
     echo "changed" >> "$STACK_DIR/$f"; assert_eq "$(_um_run update)" "prices"; assert_eq "$(_um_run update)" ""
   done
+  # the region: the updater's catalog digest and the AWS prices it asks for depend on it
+  sed -i.bak 's/us-east-1/eu-west-1/' "$ENV_FILE"; assert_contains "$(_um_run update)" "prices"; assert_eq "$(_um_run update)" ""
   echo "changed" >> "$STACK_DIR/code/server/import-host.mjs"; assert_eq "$(_um_run update)" "gitafter"
   # the portal image gone (pruned): the updater has nothing to run in
   PORTAL_ID=''; assert_eq "$(_um_run update)" "prices signin"
