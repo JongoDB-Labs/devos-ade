@@ -68,7 +68,7 @@ check too, unless none of its files exist (the migration's, before they are merg
 | The installed app's old name | `named \x60bedrock-now\x60` | README.md | the browser keeps an installed app's name until you accept the new one |
 | The workspace folder | `bedrock-now[\w<>%${}:-]*?-workspace` | * | an install that has it keeps it |
 | LiteLLM's admin user and Open WebUI's budget banners | `bedrock-now-(?:admin\|budget)\b` | lib/owui.sh, tests/test_owui.sh | their ids are stored in LiteLLM's and Open WebUI's databases |
-| Open WebUI metadata keys | `(?<![\w])bedrock_now(?:_hidden)?(?![\w])` | lib/openrouter.sh, lib/owui.sh, tests/test_explabs.sh, tests/test_openrouter.sh, tests/test_settings.sh | stored with your models |
+| Open WebUI metadata keys | `(?<![\w])bedrock_now(?:_hidden)?(?![\w])` | lib/openrouter.sh, lib/owui.sh, tests/test_explabs.sh, tests/test_openrouter.sh, tests/test_owui.sh, tests/test_settings.sh | stored with your models |
 | The stored import source | `'bedrock-now'` | code/server/harness/claude.mjs, code/server/import-plan.mjs, code/server/import-sessions.mjs, code/test/harness-claude.test.mjs, code/web/dev/mock-server.mjs, code/web/src/api.ts, code/web/src/types.ts | stored with a copied session |
 | The old Tailscale names, as documented | `bedrock-now(?:-node\|-chat)?\b\|tag:bedrock-now` | docs/remote.md | installs from before v0.45.0 keep them: the page says how to switch |
 | The settings request's old header | `bedrock-now-settings 1` | lib/settings_helper.sh, tests/test_settings.sh | one release: a settings change queued by the portal just before the update to v0.45.0 still runs |
