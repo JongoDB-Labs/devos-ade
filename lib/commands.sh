@@ -887,7 +887,8 @@ _restore_litellm_config() {
 # PROBE_REUSE_MAX_S: how long its answers stand at most (a week: a model your AWS admin enables meanwhile shows by then;
 # ./stack models --recheck checks again at once). An update (setup's update mode, UPD_MODE=1) keeps a probe whose
 # fingerprint holds at any age, and says so when it is older than that (JON-972: a probe of nine days made an update
-# restart LiteLLM twice and probe for four minutes; nothing else rechecks on a schedule). The mark: .state/models/probe.mark
+# restart LiteLLM twice and probe for four minutes). A probe over that age is redone instead in the helper's automatic-update
+# window, with automatic updates on (lib/settings_helper.sh recheck_nightly_tick), or by hand. The mark: .state/models/probe.mark
 # (fingerprint=, at=).
 PROBE_REUSE_MAX_S="${DEVOS_ADE_PROBE_MAX_AGE_S:-604800}"
 probe_mark_file() { printf '%s\n' "$STATE_DIR/models/probe.mark"; }

@@ -8,7 +8,7 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ### Changed
 
-- **An update keeps the model check while the AWS key, the catalog and LiteLLM are unchanged, however old it is.** Before, a check older than a week ran again, restarting LiteLLM twice and adding about six minutes to the update. A model your AWS admin enabled since shows up after Settings › Models your key can use › Re-check models (or `./stack models --recheck`); the update says when it kept an old check. (JON-972)
+- **An update keeps the model check while the AWS key, the catalog and LiteLLM are unchanged, however old it is.** Before, a check older than a week ran again during the update, restarting LiteLLM twice and adding about six minutes. With automatic updates on, an old check is now redone in the nightly update window, after that night's update if one runs. Settings › Models your key can use shows when the models were last checked, and says so once that is over a week ago. A model your AWS admin enabled since shows up after the next check; Re-check models (or `./stack models --recheck`) does it at once. (JON-972)
 
 ## [0.67.1] - 2026-11-25
 

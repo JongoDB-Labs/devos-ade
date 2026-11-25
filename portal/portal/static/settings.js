@@ -106,6 +106,7 @@
 
   let data = null;          // GET /api/settings
   let spend = null;         // /api/summary's spend (budget rows)
+  let modelsCheckedAt = null; // /api/summary's models.checked_at: when the models were last checked (ISO), Models your key can use
   let keys = {};            // KEY -> snapshot row
   let sections = [];        // [{id, title, lede, doc}]
   let rowOf = {};           // KEY or +own -> layout row {key, section, place, parent, summary}
@@ -163,7 +164,7 @@
       watch({ id: j.id, kind: j.action, at: Date.now() - 60000 });
     }
     // this month's spend per key (next to the budgets): only while Settings is shown (the Home notice needs none)
-    if (page() && !page().hidden) try { spend = (await api("/api/summary")).spend; renderSpend(); } catch (_) { /* budgets still show */ }
+    if (page() && !page().hidden) try { const sm = await api("/api/summary"); spend = sm.spend; modelsCheckedAt = (sm.models && sm.models.checked_at) || null; renderSpend(); renderModelsChecked(); } catch (_) { /* budgets still show */ }
   }
 
   // Without catalog/settings-layout.tsv (a damaged checkout): one section of ordinary rows, every setting changeable as
@@ -2217,6 +2218,22 @@
     return rw;
   }
 
+  // modelsChecked:begin
+  // the lines under Models your key can use: the date of the last check, and once it is over a week old what a new check finds
+  function modelsCheckedLines(iso, now) {
+    const t = Date.parse(iso || "");
+    if (!(t > 0)) return [];
+    const lines = [`Last checked ${new Date(t).toLocaleDateString()}.`];
+    if (now - t > 7 * 86400000) lines.push("Over a week ago: Re-check models finds models your AWS admin enabled since.");
+    return lines;
+  }
+  // modelsChecked:end
+  function renderModelsChecked() {
+    const host = document.querySelector("[data-models-checked]");
+    if (!host) return;
+    host.replaceChildren(...modelsCheckedLines(modelsCheckedAt, Date.now()).map((t) => el("span", { text: `${t} ` })));
+  }
+
   function modelsRow(r) {
     const rw = ownFrame(r, "Models your key can use");
     const link = (place, text) => el("a", { href: `#settings/${place}`, text });
@@ -2226,6 +2243,8 @@
         el("a", { href: `${(data.apps && data.apps.chat) || appUrl("chat")}admin/settings/models`, target: "_blank", rel: "noopener", text: "Chat › Admin settings › Models" }), "."),
       el("details", { class: "set-details" }, el("summary", {}, "Details"),
         el("p", { class: "note", text: "Re-checking asks Bedrock which models your key can use (1-token requests, < $0.01; at most once an hour); the model gateway restarts twice and setup picks the defaults again; about 2 minutes. Hiding a model in Chat's own admin settings does not block it for the API or Claude Code." })));
+    rw._main.append(el("p", { class: "note set-extra", "data-models-checked": "" }));
+    renderModelsChecked();
     rw._actions.append(actionButton("models-recheck", "Re-check models"));
     return rw;
   }

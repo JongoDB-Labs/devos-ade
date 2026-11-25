@@ -270,3 +270,8 @@ def test_services_include_the_built_in_git_server_from_stacks_record(settings, t
             return await summary.services(c, st)
 
     assert [x["id"] for x in anyio.run(run, s)][-2:] == ["searxng", "forgejo"]
+
+
+def test_models_for_settings_carry_the_time_of_the_last_check(settings):
+    (settings.litellm_dir / "probe-results.tsv").write_text(PROBE)
+    assert summary.models_with_openrouter(settings)["checked_at"] == "2026-10-12T18:55:43Z"

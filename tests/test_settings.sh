@@ -2106,3 +2106,69 @@ test_voice_bedrock_is_refused_while_aws_refuses_its_audio() {
   assert_contains "$out" "AWS no longer accepts audio for the Voxtral models"
   assert_not_contains "$(cat "$TMP/audio")" "asked again"
 }
+
+# --- JON-972: the model check older than a week is redone in the automatic update's window ---
+_rc_mark() { mkdir -p "$STATE_DIR/models"; printf 'fingerprint=x\nat=%s\n' "$(( $(date +%s) - $1 ))" > "$STATE_DIR/models/probe.mark"; }
+_rc_setup() {
+  _checkout
+  set_env_batch AUTO_UPDATE "${1:-on}" AUTO_UPDATE_HOUR 3
+  _backup_clock() { echo "${CLOCK:-1000000} 3 $((3 * 3600 + ${CLOCK:-1000000} - 1000000))"; }
+  helper_run_diag() { echo "diag $1" >> "$TMP/diag"; JOB_RESULT=done; }
+  AUTO_STATE=none AUTO_TARGET=''
+}
+test_recheck_decision() {
+  w=1000000
+  assert_eq "$(recheck_decision off 3 3 $w '' 900000 604800 '')" off
+  assert_eq "$(recheck_decision on 3 8 $w '' 900000 604800 '')" wait
+  assert_eq "$(recheck_decision on 3 3 $w $w 900000 604800 '')" done
+  assert_eq "$(recheck_decision on 3 3 $w '' '' 604800 '')" fresh
+  assert_eq "$(recheck_decision on 3 3 $w '' 100 604800 '')" fresh
+  assert_eq "$(recheck_decision on 3 3 $w '' 900000 604800 job)" busy
+  assert_eq "$(recheck_decision on 3 3 $w '' 900000 604800 '')" run
+}
+test_an_old_model_check_is_redone_once_in_the_automatic_update_window() {
+  _rc_setup; _rc_mark $((9 * 86400))
+  recheck_nightly_tick
+  ! CLOCK=1000600 recheck_nightly_tick
+  assert_eq "$(cat "$TMP/diag")" "diag models-recheck"
+}
+test_a_young_model_check_is_not_redone() {
+  _rc_setup; _rc_mark 3600
+  ! recheck_nightly_tick
+  [ ! -e "$TMP/diag" ]
+}
+test_no_model_check_mark_means_no_recheck() {
+  _rc_setup; rm -f "$STATE_DIR/models/probe.mark"
+  ! recheck_nightly_tick
+  [ ! -e "$TMP/diag" ]
+}
+test_an_old_model_check_is_left_alone_with_automatic_updates_off() {
+  _rc_setup off; _rc_mark $((9 * 86400))
+  ! recheck_nightly_tick
+  [ ! -e "$TMP/diag" ]
+}
+test_the_model_recheck_waits_for_the_nights_update_and_for_a_busy_helper() {
+  _rc_setup; _rc_mark $((9 * 86400))
+  ! AUTO_STATE=run AUTO_TARGET=v9.9.9 recheck_nightly_tick
+  ! AUTO_STATE=wait AUTO_TARGET=v9.9.9 recheck_nightly_tick
+  _status_in_progress() { return 0; }
+  ! recheck_nightly_tick
+  [ ! -e "$TMP/diag" ]
+  _status_in_progress() { return 1; }
+  recheck_nightly_tick                                          # the update is not coming, nothing runs: it goes ahead
+  assert_eq "$(cat "$TMP/diag")" "diag models-recheck"
+}
+test_a_model_recheck_refused_for_the_lock_is_tried_again_in_its_window() {
+  _rc_setup; _rc_mark $((9 * 86400))
+  helper_run_diag() { echo "diag $1" >> "$TMP/diag"; JOB_RESULT=refused; }
+  recheck_nightly_tick
+  helper_run_diag() { echo "diag $1" >> "$TMP/diag"; JOB_RESULT=failed; }
+  recheck_nightly_tick                                          # a failed check keeps the old one and is not retried tonight
+  ! recheck_nightly_tick
+  assert_eq "$(wc -l < "$TMP/diag" | tr -d ' ')" 2
+}
+test_the_helper_tick_runs_the_model_recheck() {
+  _rc_setup; _rc_mark $((9 * 86400))
+  settings_helper_tick 2>/dev/null || true
+  assert_eq "$(cat "$TMP/diag")" "diag models-recheck"
+}

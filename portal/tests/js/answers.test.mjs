@@ -344,3 +344,22 @@ test("the Terminal picker goes back to the last real entry after Add an accountâ
   assert.match(src, /if \(!tLabel\(\) && !tSelect\.value\.startsWith\("add:"\)\) tLast = tSelect\.value;/);
   assert.match(src, /if \(add\) tSelect\.value = tLast, tLabel\(\), tPickSync\(\);/);
 });
+
+// Settings â€º Models your key can use: when the models were last checked, and a note once it is over a week old (JON-972)
+function modelsChecked() {
+  const body = source("settings.js").split("// modelsChecked:begin")[1].split("// modelsChecked:end")[0];
+  const ctx = vm.createContext({});
+  vm.runInContext(`${body}; this.f = modelsCheckedLines;`, ctx);
+  return ctx.f;
+}
+test("the model check's age: the date it was made; over a week old, one plain note; no check, nothing", () => {
+  const f = modelsChecked();
+  const now = Date.parse("2026-11-24T12:00:00Z");
+  assert.deepEqual(plain(f(null, now)), []);
+  assert.deepEqual(plain(f("junk", now)), []);
+  const young = plain(f("2026-11-20T10:00:00Z", now));
+  assert.equal(young.length, 1); assert.match(young[0], /^Last checked /);
+  const old = plain(f("2026-11-10T10:00:00Z", now));
+  assert.equal(old.length, 2);
+  assert.equal(old[1], "Over a week ago: Re-check models finds models your AWS admin enabled since.");
+});

@@ -865,6 +865,57 @@ backup_nightly_tick() {
   return 1
 }
 
+# --- the model check, redone in the automatic update's window when it is over a week old (JON-972) ---
+# An update keeps the model check at any age (lib/commands.sh probe_reusable), so an old one is redone here instead:
+# only with automatic updates on (the owner chose nightly changes; it restarts LiteLLM twice), once per window, after the
+# night's update when one is due, and never while a job or a ./stack command is running.
+
+recheck_last_file() { printf '%s/recheck-last\n' "$(helper_dir)"; }   # the start of the last window that was handled
+
+# probe_mark_age_s -> how old the last model check is, in seconds (nothing: no mark, or not a time)
+probe_mark_age_s() {
+  local at; at="$(sed -n 's/^at=//p' "$STATE_DIR/models/probe.mark" 2>/dev/null | head -n 1)"
+  case "$at" in '' | *[!0-9]*) return 0 ;; esac
+  echo $(( $(date +%s) - at ))
+}
+
+# recheck_decision ON HOUR NOW_HOUR WINDOW_START LAST_WINDOW AGE MAX BUSY -> what the nightly model check does now, with no
+# clock or file of its own (tests/test_settings.sh): off | wait (outside the window) | done (this window handled it) |
+# fresh (no mark, or younger than MAX seconds) | busy | run
+recheck_decision() {
+  [ "$1" = on ] || { echo off; return 0; }
+  _in_window "$2" "$3" || { echo wait; return 0; }
+  [ "$5" != "$4" ] || { echo done; return 0; }
+  case "$6" in '' | *[!0-9]*) echo fresh; return 0 ;; esac
+  [ "$6" -ge "$7" ] || { echo fresh; return 0; }
+  [ -z "$8" ] || { echo busy; return 0; }
+  echo run
+}
+
+# recheck_nightly_tick — runs the models-recheck action when due (Home shows it as "Model check"). 0 when it ran.
+recheck_nightly_tick() {
+  local clock now since nowh hour start last busy='' d max
+  auto_on || return 1
+  clock="$(_backup_clock)"; now="${clock%% *}"; since="${clock##* }"; nowh="${clock#* }"; nowh="${nowh%% *}"
+  hour="$(auto_hour)"
+  case "${AUTO_STATE:-}" in run | running) busy=update ;; wait) [ -z "${AUTO_TARGET:-}" ] || busy=update ;; esac
+  start="$(_window_start "$now" "$since" "$nowh" "$hour")"
+  last="$(head -c 20 "$(recheck_last_file)" 2>/dev/null | tr -cd '0-9' || true)"
+  max="${DEVOS_ADE_PROBE_MAX_AGE_S:-604800}"
+  [ -z "$(stack_lock_holder)" ] || busy="${busy:-lock}"
+  ! _status_in_progress || busy="${busy:-job}"
+  [ -n "$busy" ] || _diag_limits models-recheck >/dev/null 2>&1 || busy=limits
+  d="$(recheck_decision on "$hour" "$nowh" "$start" "$last" "$(probe_mark_age_s)" "$max" "$busy")"
+  [ "$d" = run ] || return 1
+  printf '%s\n' "$start" > "$(recheck_last_file)"
+  helper_run_diag models-recheck "recheck-$now" || true   # (a failed check keeps the old one; the night's other work goes on)
+  # another ./stack command took the lock after all: again on a later loop of this window
+  if [ "${JOB_RESULT:-}" = refused ] || { [ "${JOB_RESULT:-}" = failed ] && grep -q 'is running (pid' "$(helper_dir)/last-diag.log" 2>/dev/null; }; then
+    printf '%s\n' "$last" > "$(recheck_last_file)"
+  fi
+  return 0
+}
+
 # settings_helper_tick — every loop: the settings snapshot when .env changed, the helper's own password hash (once),
 # the backup list when backups/ changed, a nightly backup when due, the capability file. 0 when a backup ran.
 settings_helper_tick() {
@@ -880,6 +931,7 @@ settings_helper_tick() {
     write_backups_json 2>/dev/null && printf '%s' "$l" > "$seen" || true
   fi
   ! backup_nightly_tick || ran=0
+  ! recheck_nightly_tick || ran=0
   # (every 10 minutes, and at once when what it says changed: a helper restarted with new actions offers them straight away)
   l="$(printf '{"settings": 1, "diagnostics": [%s], "projects": [%s], "sessions": [%s], "subscriptions": [%s], "local": [%s], "screen": %s' \
       "$(for a in $DIAG_ACTIONS; do printf '"%s",' "$a"; done | sed 's/,$//')" \
