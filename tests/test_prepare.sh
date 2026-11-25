@@ -44,14 +44,17 @@ _pw() {
             if [ -n "$svc" ]; then
               # (as Compose prints them: a service's dependencies' images too, and first when it has any; Open WebUI waits for LiteLLM)
               [ "$svc" != open-webui ] || _stub_image_of "$dir" litellm
+              [ "$svc" != terminal ] || _stub_image_of "$dir" terminal-egress   # (the Terminal waits for its egress proxy)
               _stub_image_of "$dir" "$svc"
             else sed -n 's/^[[:space:]]*image:[[:space:]]*//p' "$dir/compose.yaml" | sed "s|\${COMPOSE_PROJECT_NAME:-devos-ade}|${COMPOSE_PROJECT_NAME:-devos-ade}|"; fi ;;
           *" config --format json "*)   # {"services": {SERVICE: {"image": …}}} of the service named last
             local dir svc="${*: -1}"; dir="$(_stub_dir "$@")"
+            [ ! -f "$TMP/no-json" ] || return 0
             printf '{"name": "x", "services": {"%s": {"image": "%s"}}}\n' "$svc" "$(_stub_image_of "$dir" "$svc")" ;;
           *" build "*)   # makes the image compose.yaml names for the service (as Compose does), else <project>/<service>:local
             local svc="${*: -1}" img
             [ ! -f "$TMP/build-sleeps" ] || { echo "1 update" > "$HOLDER"; sleep 10; }
+            [ ! -f "$TMP/stt-fails" ] || [ "$svc" != stt ] || { echo "ERROR: stt boom" >&2; return 1; }
             [ ! -f "$TMP/build-fails" ] || { echo "ERROR: failed to solve: boom" >&2; return 1; }
             img="$(_stub_image_of "$(_stub_dir "$@")" "$svc")"
             printf '%s NEW%s\n' "${img:-${COMPOSE_PROJECT_NAME:-devos-ade}/$svc:local}" "$svc" >> "$IMGS"; echo "sha256:NEW$svc" ;;
@@ -67,8 +70,9 @@ _pw() {
               case "$fmt" in '{{.Size}}') echo 1000000 ;; *) echo "$id" ;; esac
             done
             return "$miss" ;;
-          ls)   # the refs of one repository pattern (docker image ls --format '{{.Repository}}:{{.Tag}}' 'bn-t-prep/*'), not <none> ones
-            awk -v pat="${*: -1}" '{ pre = pat; sub(/\*$/, "", pre); if (index($1, pre) == 1) print $1 }' "$IMGS" ;;
+          ls)   # the refs of the one pattern the clean-up asks for: bn-t-prep/* exactly (any other glob lists nothing)
+            [ "${*: -1}" = 'bn-t-prep/*' ] || return 0
+            awk 'index($1, "bn-t-prep/") == 1 { print $1 }' "$IMGS" ;;
           rm) grep -vxF -- "$(awk -v r="$3" '$1 == r' "$IMGS")" "$IMGS" > "$IMGS.n" || true; mv "$IMGS.n" "$IMGS" ;;
         esac ;;
       pull) printf '%s PULLED%s\n' "$2" "$(printf '%s' "$2" | cksum | cut -d' ' -f1)" >> "$IMGS" ;;
@@ -331,8 +335,49 @@ test_an_images_own_name_is_found_when_compose_lists_a_dependencys_image_first() 
   assert_eq "$(_prep_ctx dc config --images open-webui | head -n 1 | cut -d: -f1)" "ghcr.io/berriai/litellm"
   assert_eq "$(_prep_ctx _prep_image open-webui)" "bn-t/open-webui:local"
   assert_eq "$(_prep_ctx _prep_image portal)" "bn-t/portal:local"
-  # without python3 the fallback still finds the built image among the lines
-  assert_eq "$(PATH=/nonexistent:$(dirname "$(command -v awk)") _prep_ctx _prep_image open-webui)" "bn-t/open-webui:local"
+  # without python3 (or with no JSON from Compose) the --images fallback still finds the service's own image, a dependency first
+  python3() { return 127; }
+  assert_eq "$(_prep_ctx _prep_image open-webui)" "bn-t/open-webui:local"
+  unset -f python3
+  : > "$TMP/no-json"
+  assert_eq "$(_prep_ctx _prep_image open-webui)" "bn-t/open-webui:local"
+  rm -f "$TMP/no-json"
+}
+
+test_the_terminals_image_is_its_own_when_compose_lists_its_egress_image_first() {
+  # (a baseline upgrade run: "the build of terminal left no image (…-prep/terminal-egress:local)")
+  _pw
+  { _compose "$DIG_NEW"
+    printf '  terminal-egress:\n    build: { context: ./portal }\n    image: ${COMPOSE_PROJECT_NAME:-devos-ade}/terminal-egress:local\n'
+    printf '  terminal:\n    build: { context: ./portal }\n    image: ${COMPOSE_PROJECT_NAME:-devos-ade}/terminal:local\n'; } > "$TMP/origin/compose.yaml"
+  git -C "$TMP/origin" commit -qam terminal; git -C "$TMP/origin" tag v0.4.1; _seen v0.4.1
+  PREP_SRC="$TMP/origin"; PREP_ENV="$ENV_FILE"
+  assert_eq "$(_prep_ctx dc config --images terminal | head -n 1)" "bn-t/terminal-egress:local"
+  assert_eq "$(_prep_ctx _prep_image terminal)" "bn-t/terminal:local"
+  terminal_on() { return 0; }; terminal_why_out() { :; }; terminal_egress_build_service() { :; }; code_ready() { return 1; }
+  terminal_build_args() { TERMINAL_BUILD_ARGS=(--build-arg APT_REFRESH=2026-46); }
+  out="$(prepare_run v0.4.1 2>&1)" || { echo "$out" >&2; return 1; }
+  _prep_read; assert_eq "$PS_state" "ready"
+  assert_contains "$(cat "$STATE_DIR/update/prepare/images.tsv")" "bn-t-prep/terminal:local"
+}
+
+test_a_failed_speech_to_text_build_is_skipped_and_the_prepare_still_gets_ready() {
+  _pw
+  printf 'STT_PROVIDER=bedrock\n' >> "$ENV_FILE"; terminal_on() { return 1; }
+  printf '  stt:\n    build: { context: ./portal }\n    image: ${COMPOSE_PROJECT_NAME:-devos-ade}/stt:local\n' >> "$TMP/origin/compose.yaml"
+  git -C "$TMP/origin" commit -qam stt; git -C "$TMP/origin" tag v0.4.1; _seen v0.4.1
+  stt_apk_week() { echo 2026-48; }
+  printf '2026-47\n' > "$STATE_DIR/stt-apk-week"
+  : > "$TMP/stt-fails"
+  out="$(prepare_run v0.4.1 2>&1)" || { echo "$out" >&2; return 1; }
+  _prep_read; assert_eq "$PS_state" "ready"
+  # this week's key, then the previous week's (read, never written), then skipped
+  grep -q 'build -q --build-arg APK_REFRESH=2026-48 stt$' "$DLOG" || return 1
+  grep -q 'build -q --build-arg APK_REFRESH=2026-47 stt$' "$DLOG" || return 1
+  assert_eq "$(cat "$STATE_DIR/stt-apk-week")" "2026-47"
+  ! grep -q 'prep/stt' "$STATE_DIR/update/prepare/images.tsv" || return 1
+  assert_contains "$out" "speech-to-text did not build"
+  assert_contains "$(cat "$STATE_DIR/update/prepare/images.tsv")" "bn-t-prep/open-webui:local"
 }
 
 test_the_recorded_builds_are_each_services_own_image_and_ready_checks_them() {

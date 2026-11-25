@@ -160,14 +160,12 @@ prepare_cleanup() {
   fi
   # ... and any other <project>-prep image here (earlier runs recorded a dependency's image in place of their own, so those
   # builds were never removed). Only refs of that project, only named ones; never fatal.
-  if [ -n "$pp" ]; then
-    while IFS= read -r ref; do
-      case "$ref" in "$pp"/*:local | "$pp"/*:previous) ;; *) continue ;; esac
-      docker image rm "$ref" >/dev/null 2>&1 || true
-    done <<EOF
+  # (prep creates only :local names, so only those go; $pp is never empty: it is "<project>-prep")
+  while IFS= read -r ref; do
+    case "$ref" in "$pp"/*:local) docker image rm "$ref" >/dev/null 2>&1 || true ;; esac
+  done <<EOF
 $(docker image ls --format '{{.Repository}}:{{.Tag}}' "$pp/*" 2>/dev/null || true)
 EOF
-  fi
   if [ "$1" != applied ] && [ -s "$d/pulled.tsv" ]; then
     # (never forced, and not an image a container, another checkout or this one's snapshots and compose files use)
     if used="$(images_used_by_containers 2>/dev/null)" && others="$(images_of_other_checkouts 2>/dev/null)"; then
@@ -292,10 +290,20 @@ EOF
   fi
   printf '%s\n' "$img"
 }
+# _prep_build_stt — as lib/stt.sh _stt_build: this week's APK_REFRESH, then the previous week's (.state/stt-apk-week: read here,
+# never written), the same cache keys as setup's. Fails when both do (the prepare skips stt then).
+_prep_build_stt() {
+  local week prev
+  week="$(stt_apk_week)"; prev="$(cat "$STATE_DIR/stt-apk-week" 2>/dev/null || true)"
+  case "$prev" in *[!0-9-]* | '') prev='' ;; esac
+  dc build -q --build-arg "APK_REFRESH=$week" stt && return 0
+  [ -n "$prev" ] && [ "$prev" != "$week" ] || return 1
+  dc build -q --build-arg "APK_REFRESH=$prev" stt
+}
 _prep_build_one() {
   case "$1" in
     open-webui) dc build -q --build-arg "BN_VENDOR_TRY=$(owui_vendor_try)" open-webui ;;
-    stt) dc build -q --build-arg "APK_REFRESH=$(stt_apk_week)" stt ;;   # lib/stt.sh _stt_build's first try: the same cache key
+    stt) _prep_build_stt ;;
     terminal) terminal_build_args; dc build -q "${TERMINAL_BUILD_ARGS[@]}" terminal ;;
     *) dc build -q "$1" ;;
   esac
@@ -367,7 +375,12 @@ _prepare_run_inner() {
   # --- the builds, one at a time ---
   for svc in $(_prep_ctx _prep_services 2>/dev/null); do
     if [ "${PREP_FOREGROUND:-0}" != 1 ] && _prep_cpu_high "${PREPARE_STOP_CPU_PCT:-90}"; then PREP_WHY="$(_prep_cpu_why)"; return 2; fi
-    _prep_step "Prepare: build $svc" _prep_ctx _prep_build_one "$svc" || return $?
+    _prep_step "Prepare: build $svc" _prep_ctx _prep_build_one "$svc" || {
+      rc=$?
+      # speech-to-text is optional, as in setup (stt_setup_service never stops it): left for the update, which falls back as it does
+      if [ "$svc" = stt ] && [ "$rc" = 1 ]; then printf 'prepare: speech-to-text did not build (%s): left for the update\n' "$PREP_WHY"; continue; fi
+      return "$rc"
+    }
     img="$(_prep_ctx _prep_image "$svc")"; img="${img:-$pp/$svc:local}"
     id="$(_image_id "$img")"
     [ -n "$id" ] || { PREP_WHY="the build of $svc left no image ($img)"; return 1; }
