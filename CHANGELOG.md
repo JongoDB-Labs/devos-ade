@@ -4,11 +4,18 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.67.1] - 2026-11-25
 
 ### Fixed
 
-- **Update now no longer downloads images or rebuilds speech-to-text at the click when the release was prepared ahead in the same week and nothing changed since.** Preparing ahead no longer fails on computers with the Terminal on, it also prepares speech-to-text (a build that fails is left for the update), and it starts the downloads first and no longer holds them back while the computer is busy. The Chat and Code images that earlier runs left behind are removed. (JON-972)
+- **Update now no longer downloads images or rebuilds speech-to-text at the click when the release was prepared ahead
+  in the same week and nothing changed since.** Preparing ahead no longer fails on computers with the Terminal on; it
+  also prepares speech-to-text (a build that fails is left for the update), and it starts the downloads first and no
+  longer holds them back while the computer is busy. The Chat and Code images that earlier runs left behind are
+  removed. On the test machine, a prepared Update now went from 99 s (preparing had failed) to 79 s. (JON-972)
+
+### To get it
+Existing installs: Home › Update now.
 
 ## [0.67.0] - 2026-11-24
 
