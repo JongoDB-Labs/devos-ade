@@ -812,3 +812,76 @@ test_every_caddy_up_checks_the_port_forward() {
   if caddy_up 2>/dev/null; then echo "a failed up reported success" >&2; return 1; fi
   assert_not_contains "$(cat "$TMP/calls")" "curl"
 }
+
+# --- ensure_openwebui_api_key: only a refused key is replaced (JON-972) ---
+
+# _stub_owui_key CODES... — the saved key's check answers each code in turn (the last one repeats); a sign-in and a new
+# key are recorded in $TMP/calls and answered like Open WebUI; sleep never waits
+_stub_owui_key() {
+  : > "$TMP/calls"; echo "$*" > "$TMP/codes"; echo 0 > "$TMP/n"
+  sleep() { echo "sleep $*" >> "$TMP/calls"; }
+  portal_curl() { echo "signin" >> "$TMP/calls"; _o_file "$@"; printf '{"token":"t1"}' > "$OFILE"; }
+  portal_curl_auth() {
+    local tok="$1" path="$3" n codes c
+    case "$path" in
+      /api/v1/knowledge/) n=$(( $(cat "$TMP/n") + 1 )); echo "$n" > "$TMP/n"; echo "check $tok" >> "$TMP/calls"
+        codes="$(cat "$TMP/codes")"; c="$(echo "$codes" | cut -d' ' -f"$n")"; [ -n "$c" ] || c="${codes##* }"
+        printf '%s' "$c" ;;
+      /api/v1/auths/api_key) echo "newkey" >> "$TMP/calls"; _o_file "$@"; printf '{"api_key":"sk-new"}' > "$OFILE" ;;
+    esac
+  }
+}
+_o_file() { OFILE=; while [ $# -gt 0 ]; do [ "$1" != -o ] || OFILE="$2"; shift; done; }
+_owui_calls() { grep -c "^$1" "$TMP/calls" || true; }
+
+test_owui_key_200_is_kept_without_signing_in() {
+  printf 'OPENWEBUI_API_KEY=sk-old\n' > "$ENV_FILE"; _stub_owui_key 200
+  ensure_openwebui_api_key >/dev/null 2>&1
+  assert_eq "$(get_env OPENWEBUI_API_KEY)" sk-old
+  assert_eq "$(_owui_calls signin)" 0
+  assert_eq "$(_owui_calls check)" 1
+}
+
+test_owui_key_401_and_403_make_a_new_key() {
+  local c
+  for c in 401 403; do
+    printf 'OPENWEBUI_API_KEY=sk-old\n' > "$ENV_FILE"; _stub_owui_key "$c"
+    ensure_openwebui_api_key >/dev/null 2>&1
+    assert_eq "$(get_env OPENWEBUI_API_KEY)" sk-new
+    assert_eq "$(_owui_calls signin)" 1
+    assert_eq "$(_owui_calls check)" 1   # a refusal is a definite answer: no retry
+  done
+}
+
+test_owui_key_no_answer_keeps_the_key_after_three_tries_and_warns() {
+  local c out
+  for c in 000 503 404; do
+    printf 'OPENWEBUI_API_KEY=sk-old\n' > "$ENV_FILE"; _stub_owui_key "$c"
+    out="$(ensure_openwebui_api_key 2>&1)" || { echo "returned non-zero for $c" >&2; return 1; }
+    assert_eq "$(get_env OPENWEBUI_API_KEY)" sk-old
+    assert_eq "$(_owui_calls signin)" 0
+    assert_eq "$(_owui_calls check)" 3
+    assert_eq "$(_owui_calls sleep)" 2
+    assert_contains "$out" "HTTP $c"
+    assert_contains "$out" "kept"
+  done
+  assert_eq "$(cat "$ENV_FILE")" "OPENWEBUI_API_KEY=sk-old"
+}
+
+test_owui_key_slow_answer_then_200_keeps_the_key_quietly() {
+  local out
+  printf 'OPENWEBUI_API_KEY=sk-old\n' > "$ENV_FILE"; _stub_owui_key 503 200
+  out="$(ensure_openwebui_api_key 2>&1)"
+  assert_eq "$(get_env OPENWEBUI_API_KEY)" sk-old
+  assert_eq "$(_owui_calls signin)" 0
+  assert_eq "$(_owui_calls check)" 2
+  assert_contains "$out" "kept existing Open WebUI API key"
+  assert_not_contains "$out" "not checked"
+}
+
+test_owui_key_empty_makes_a_new_key() {
+  printf 'OPENWEBUI_API_KEY=\n' > "$ENV_FILE"; _stub_owui_key 200
+  ensure_openwebui_api_key >/dev/null 2>&1
+  assert_eq "$(get_env OPENWEBUI_API_KEY)" sk-new
+  assert_eq "$(_owui_calls check)" 0
+}

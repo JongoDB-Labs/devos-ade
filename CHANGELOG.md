@@ -4,6 +4,14 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- **An update no longer replaces the Open WebUI key when Open WebUI is slow to answer.** Any timeout or error while
+  checking the saved key used to make a new one, which changed `.env` and made the next update redo its steps. Now the
+  check tries up to three times, and only a key that Open WebUI refuses is replaced. (JON-972)
+
 ## [0.68.3] - 2026-11-25
 
 ### Changed

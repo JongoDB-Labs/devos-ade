@@ -1116,12 +1116,25 @@ ensure_virtual_key() { # ensure_virtual_key ENV_KEY ALIAS BUDGET [ROUTES_JSON]
 # Open WebUI publishes no port: setup reaches it through Caddy with a portal session ($PORTAL_JAR), exactly
 # like the browser. Sign-in uses the trusted header Caddy adds for that session (the admin's email).
 ensure_openwebui_api_key() {
-  local cur tmp token key
+  local cur tmp token key code="" try
   cur="$(get_env OPENWEBUI_API_KEY)"
   # Validity check on an endpoint shared-mcp really uses (v0.12 refuses API keys on /api/v1/auths/:
-  # "A human session is required").
-  if [ -n "$cur" ] && portal_curl_auth "$cur" chat /api/v1/knowledge/ -fsS -m 30 -o /dev/null 2>/dev/null; then
-    log "kept existing Open WebUI API key"; return 0
+  # "A human session is required"). Only Open WebUI refusing the key (401/403) makes a new one: a timeout, a refused
+  # connection or a 5xx (Open WebUI just restarted) is no answer, so it is asked again (3 tries, 15 s each, 2 s apart:
+  # 49 s at most) and then the key is kept — a new key would change .env and make the next update redo its steps.
+  if [ -n "$cur" ]; then
+    for try in 1 2 3; do
+      code="$(portal_curl_auth "$cur" chat /api/v1/knowledge/ -sS -m 15 -o /dev/null -w '%{http_code}' 2>/dev/null)" || true
+      case "$code" in
+        200) log "kept existing Open WebUI API key"; return 0 ;;
+        401 | 403) break ;;
+      esac
+      [ "$try" = 3 ] || sleep 2
+    done
+    case "$code" in
+      401 | 403) warn "the Open WebUI API key in .env was refused (HTTP $code) — creating a new one" ;;
+      *) warn "the Open WebUI API key was not checked: Open WebUI answered HTTP ${code:-000}; the key is kept"; return 0 ;;
+    esac
   fi
   tmp="$(mktemp)"
   # In trusted-header mode Open WebUI ignores the password and signs in the header's user; the form still needs both fields.
