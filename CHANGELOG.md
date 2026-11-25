@@ -4,11 +4,23 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.68.0] - 2026-11-25
 
 ### Changed
 
-- **An update keeps the model check while the AWS key, the catalog and LiteLLM are unchanged, up to 30 days old.** Before, a check older than a week ran again during the update, restarting LiteLLM twice and adding about six minutes. With automatic updates on, a check over a week old is now redone in the nightly update window, after that night's update if one runs (a failed check is not tried again for 3 days). Settings › Models your key can use shows when the models were last checked, and says so once that is over a week ago. A model your AWS admin enabled since shows up after the next check; Re-check models (or `./stack models --recheck`) does it at once. (JON-972)
+- **An update keeps the model check while the AWS key, the catalog and LiteLLM are unchanged, up to 30 days old.**
+  Before, a check older than a week ran again during the update, restarting LiteLLM twice and adding about six
+  minutes. With automatic updates on, a check over a week old is now redone in the nightly update window, after that
+  night's update if one runs (a failed check is not tried again for 3 days). A model your AWS admin enabled since
+  shows up after the next check; Re-check models (or `./stack models --recheck`) does it at once. (JON-972)
+
+### Added
+
+- **Settings › Models your key can use shows when the models were last checked,** and says so once that is over a
+  week ago. On a phone it is under the row's Details. (JON-972)
+
+### To get it
+Existing installs: Home › Update now.
 
 ## [0.67.1] - 2026-11-25
 
