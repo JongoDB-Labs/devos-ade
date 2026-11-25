@@ -240,16 +240,30 @@ test_the_call_profile_times_each_digest_by_its_step_and_role_and_keeps_no_input(
 
 test_the_digest_helpers_read_files_folders_and_keys_in_one_go_with_the_lines_of_one_call_each() {
   _um_setup
-  local d="$TMP/in"; mkdir -p "$d/sp ace" "$d/empty"; echo a > "$d/sp ace/f 1"; echo bb > "$d/sp ace/.h"; echo c > "$d/u"; chmod 000 "$d/u"
-  local a; a="$(cksum < "$d/sp ace/f 1" | awk '{ print $1 "-" $2 }')"
+  local d="$TMP/in" a rc u=1; mkdir -p "$d/sp ace" "$d/empty"; echo a > "$d/sp ace/f 1"; echo bb > "$d/sp ace/.h"; echo c > "$d/u"; chmod 000 "$d/u"
+  [ "$(id -u)" != 0 ] || u=0   # (root reads a file of mode 000: no unreadable file then)
+  a="$(cksum < "$d/sp ace/f 1" | awk '{ print $1 "-" $2 }')"
   # (in the order given, again for a name given twice; "-" for one that is not there; nothing for one that cannot be read)
-  assert_eq "$(_upd_files "$d/sp ace/f 1" "$d/nope" "$d/u" "$d/sp ace/f 1")" "$(printf '%s %s\n%s -\n%s \n%s %s' "$d/sp ace/f 1" "$a" "$d/nope" "$d/u" "$d/sp ace/f 1" "$a")"
+  if [ "$u" = 1 ]; then
+    assert_eq "$(_upd_files "$d/sp ace/f 1" "$d/nope" "$d/u" "$d/sp ace/f 1")" "$(printf '%s %s\n%s -\n%s \n%s %s' "$d/sp ace/f 1" "$a" "$d/nope" "$d/u" "$d/sp ace/f 1" "$a")"
+    rc=0; _upd_files "$d/u" > /dev/null || rc=$?; assert_eq "$rc" 0   # (status 0, as before, also then)
+  fi
   assert_eq "$(_upd_files)" ""
+  # (a name that starts with "-" is a name; one with a newline in it, and fewer sums than files, take one cksum each)
+  mkdir -p "$d/dash"; ( cd "$d/dash" && cp "../sp ace/f 1" ./-f && assert_eq "$(_upd_files -f)" "-f $a" ) || return 1
+  printf 'a\n' > "$d/dash/n
+l"; assert_eq "$(_upd_files "$d/dash/n
+l" "$d/sp ace/f 1")" "$(printf '%s %s\n%s %s' "$d/dash/n
+l" "$a" "$d/sp ace/f 1" "$a")"
+  cksum() { if [ $# -gt 0 ]; then command cksum "$@" | sed 1d; else command cksum; fi; }   # (a file gone meanwhile)
+  assert_eq "$(_upd_files "$d/sp ace/f 1" "$d/sp ace/.h")" "$(printf '%s %s\n%s %s' "$d/sp ace/f 1" "$a" "$d/sp ace/.h" "$(command cksum < "$d/sp ace/.h" | awk '{ print $1 "-" $2 }')")"
+  unset -f cksum
   assert_eq "$(_upd_tree "$d/sp ace" "$d/empty" "$d/nope")" "$(printf './.h %s\n./f 1 %s\n%s -' "$(cksum < "$d/sp ace/.h" | awk '{ print $1 "-" $2 }')" "$a" "$d/nope")"
   chmod 600 "$d/u"
   # (the keys as get_env reads them: the last line of a name; none without a .env)
   printf 'LITELLM_KEY_SETUP=a\nLITELLM_KEY_SETUP=b=c d\nXLITELLM_KEY_OPENWEBUI=no\n' > "$ENV_FILE"
   assert_eq "$(_upd_keys)" "$(printf 'LITELLM_KEY_CLAUDE_CODE=\nLITELLM_KEY_OPENWEBUI=\nLITELLM_KEY_SETUP=b=c d\nOPENWEBUI_API_KEY=\nLITELLM_DB_ADMIN_READY=')"
+  if [ "$u" = 1 ]; then chmod 000 "$ENV_FILE"; assert_eq "$(_upd_keys)" "$(printf 'LITELLM_KEY_CLAUDE_CODE=\nLITELLM_KEY_OPENWEBUI=\nLITELLM_KEY_SETUP=\nOPENWEBUI_API_KEY=\nLITELLM_DB_ADMIN_READY=')"; chmod 600 "$ENV_FILE"; fi
   rm -f "$ENV_FILE"
   assert_eq "$(_upd_keys)" "$(printf 'LITELLM_KEY_CLAUDE_CODE=\nLITELLM_KEY_OPENWEBUI=\nLITELLM_KEY_SETUP=\nOPENWEBUI_API_KEY=\nLITELLM_DB_ADMIN_READY=')"
 }

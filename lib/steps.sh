@@ -274,28 +274,51 @@ upd_commit() {
 }
 _upd_sum() { openssl dgst -sha256 2>/dev/null | awk '{ print $NF }'; }
 # _upd_files FILE... -> each file's name and checksum ("-" for one that is not there, nothing after the name for one that
-# cannot be read), in their order: one cksum and one awk for them all (a pair of processes for each file made the digests
-# between an update's steps take seconds on a Mac; JON-972). The same lines as one cksum per file, so the same digests.
+# cannot be read), in their order; status 0. One cksum and one awk for the readable ones (a pair of processes for each
+# file made the digests between an update's steps take seconds on a Mac; JON-972), with the same lines as one cksum
+# each, so the same digests. Only cksum's numbers are used, in order, never the names it prints back (GNU cksum may
+# escape some); a name with a newline in it, or fewer sums than files (a file gone meanwhile), takes one cksum each.
 _upd_files() {
-  local f ex=()
+  local f rd=() s sums='' n
   [ $# -gt 0 ] || return 0
-  { for f in "$@"; do if [ -f "$f" ]; then ex+=("$f"); printf 'f %s\n' "$f"; else printf 'm %s\n' "$f"; fi; done
-    printf '\001\n'; [ ${#ex[@]} = 0 ] || cksum "${ex[@]}" 2>/dev/null; } |
-    awk 'sep { c = $1; z = $2; sub(/^[^ ]+ [^ ]+ /, ""); h[$0] = c "-" z; next }
-      $0 == "\001" { sep = 1; next }
-      { n++; t[n] = substr($0, 1, 1); a[n] = substr($0, 3) }
-      END { for (i = 1; i <= n; i++) print a[i], (t[i] == "m" ? "-" : (a[i] in h ? h[a[i]] : "")) }'
+  for f in "$@"; do
+    case "$f" in *$'\n'*) _upd_files_each "$@"; return 0 ;; esac
+    [ ! -f "$f" ] || [ ! -r "$f" ] || rd+=("$f")
+  done
+  if [ ${#rd[@]} -gt 0 ]; then
+    sums="$(cksum -- "${rd[@]}" 2>/dev/null | awk '{ sub(/^\\/, "", $1); print $1 "-" $2 } END { print NR }')" || true
+    n="${sums##*$'\n'}"   # (the last line: how many sums)
+    [ "$n" = "${#rd[@]}" ] || { _upd_files_each "$@"; return 0; }
+    case "$sums" in *$'\n'*) sums="${sums%$'\n'*}" ;; *) sums='' ;; esac
+  fi
+  for f in "$@"; do
+    if [ ! -f "$f" ]; then printf '%s -\n' "$f"
+    elif [ ! -r "$f" ]; then printf '%s \n' "$f"
+    else
+      s="${sums%%$'\n'*}"; case "$sums" in *$'\n'*) sums="${sums#*$'\n'}" ;; *) sums='' ;; esac
+      printf '%s %s\n' "$f" "$s"
+    fi
+  done
+  return 0
 }
-# _upd_tree DIR... -> the names (./…) and checksums of the files under them, sorted
+# _upd_files_each FILE... -> _upd_files' lines, one cksum for each file (as before JON-972's batching)
+_upd_files_each() {
+  local f
+  for f in "$@"; do if [ -f "$f" ]; then printf '%s %s\n' "$f" "$(cksum < "$f" 2>/dev/null | awk '{ print $1 "-" $2 }')"; else printf '%s -\n' "$f"; fi; done
+  return 0
+}
+# _upd_tree DIR... -> the names (./…) and checksums of the files under them, sorted; status 0 (a name with a newline in
+# it is not supported here: it reads as two names, as it did before)
 _upd_tree() {
   local d f l
   for d in "$@"; do
     [ -d "$d" ] || { printf '%s -\n' "$d"; continue; }
     ( cd "$d" || exit 0
-      l="$(find . -type f 2>/dev/null | LC_ALL=C sort)"; set --
+      l="$(find . -type f 2>/dev/null | LC_ALL=C sort)" || true; set --
       while IFS= read -r f; do [ -z "$f" ] || set -- "$@" "$f"; done <<< "$l"
-      [ $# = 0 ] || _upd_files "$@" )
+      [ $# = 0 ] || _upd_files "$@" ) || true
   done
+  return 0
 }
 # _upd_fn NAME... -> the step's own code: the definition of each function (a release that changes it re-runs the step)
 _upd_fn() { local n; for n in "$@"; do declare -f "$n" 2>/dev/null || printf 'no function %s\n' "$n"; done | cksum; }
@@ -312,11 +335,11 @@ _upd_env_settings() { _upd_env '^(LITELLM_KEY_[A-Z_]*|OPENWEBUI_API_KEY|LITELLM_
 # shellcheck disable=SC2086  # ($k: one key per word)
 _upd_keys() {
   local k='LITELLM_KEY_CLAUDE_CODE LITELLM_KEY_OPENWEBUI LITELLM_KEY_SETUP OPENWEBUI_API_KEY LITELLM_DB_ADMIN_READY'
-  if [ -f "$ENV_FILE" ]; then
-    K="$k" awk 'BEGIN { n = split(ENVIRON["K"], k, " ") }
+  if [ -f "$ENV_FILE" ] && [ -r "$ENV_FILE" ] && K="$k" awk 'BEGIN { n = split(ENVIRON["K"], k, " ") }
       { for (i = 1; i <= n; i++) if (index($0, k[i] "=") == 1) v[i] = substr($0, length(k[i]) + 2) }
-      END { for (i = 1; i <= n; i++) printf "%s=%s\n", k[i], v[i] }' "$ENV_FILE"
-  else printf '%s=\n' $k; fi
+      END { for (i = 1; i <= n; i++) printf "%s=%s\n", k[i], v[i] }' "$ENV_FILE" 2>/dev/null; then :
+  else printf '%s=\n' $k; fi   # (no .env, or one that cannot be read: each key empty, as get_env gives it)
+  return 0
 }
 _upd_compose() { { cat "$STACK_DIR"/compose*.yaml 2>/dev/null; compose_overlays 2>/dev/null; project_name; } | cksum; }
 # _upd_local_ids -> the IDs of the images this checkout builds (portal, shared-mcp, Open WebUI, stt), one docker call, kept for
