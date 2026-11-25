@@ -199,7 +199,8 @@ owui_upsert_model() {
 # one `docker compose exec` instead of two per model). stdin: one tab-separated line per wanted model (id, name, display,
 # description, tags JSON, hidden, icon, MODELS_HIDDEN wish: true/false, or "-" for a model it does not govern), then
 # "---existing---" and Open WebUI's models (GET /api/v1/models/base). argv[1]: our icon hashes. stdout: "CREATE<TAB>id"
-# (not there yet), "UPDATE<TAB>id<TAB>1|0 (the MODELS_HIDDEN part changed)<TAB>JSON" (the POST body) and "UNCHANGED<TAB>n".
+# (not there yet), "UPDATE<TAB>id<TAB>1|0 (the MODELS_HIDDEN part changed)<TAB>JSON" (the POST body), "BAD<TAB>id" (a
+# wanted line it could not read) and, always last, "UNCHANGED<TAB>n" (no such line: the output is incomplete).
 # Keep the merge rules in step with owui_merge_model and owui_hidden_merge above.
 # shellcheck disable=SC2016  # Python source, not shell
 OWUI_MODELS_SYNC_PY='import hashlib, json, sys
@@ -216,9 +217,14 @@ unchanged = 0
 for line in want_txt.splitlines():
     f = line.split("\t")
     if len(f) < 8:
+        print("BAD\t" + (f[0] if f and f[0] else "?"))
         continue
     mid, name, display, desc, tags, hidden, icon, wish = f[:8]
-    tags, hidden = json.loads(tags), hidden == "true"
+    try:
+        tags, hidden = json.loads(tags), hidden == "true"
+    except ValueError:
+        print("BAD\t" + mid)
+        continue
     cur_d = by_id.get(mid)
     if cur_d is None:
         print("CREATE\t" + mid)
@@ -309,17 +315,24 @@ _owui_models_wanted() {
 # new or changed (JON-972: ~35 `docker compose exec` calls, 20 s, became one). If that run fails as a whole, the
 # per-model path below does the sync. Never fatal.
 sync_openwebui_models() {
-  local want tmp code plan kind a b c ok=0 bad=0 n_hid=0 failed=0 OWUI_ERR='' OWUI_OUR_ICONS OWUI_WISH='' rc
+  local want tmp code plan kind a b c ok=0 bad=0 n_hid=0 failed=0 OWUI_ERR='' OWUI_OUR_ICONS OWUI_WISH='' rc why TAB=$'\t'
   [ -n "$(get_env OPENWEBUI_API_KEY)" ] || { warn "no Open WebUI API key — skipping model names and prices"; return 0; }
   OWUI_OUR_ICONS="$(owui_our_icon_hashes)"
   want="$(mktemp)"; tmp="$(mktemp)"
   _owui_models_wanted > "$want"
   code="$(_owui_get /api/v1/models/base "$tmp")"
-  if [ "$code" = 200 ] && plan="$({ cat "$want"; printf '%s\n' '---existing---'; cat "$tmp"; } |
-      _owui_py "$OWUI_MODELS_SYNC_PY" "$OWUI_OUR_ICONS" 2>/dev/null)" && [ -n "$plan" ]; then
+  plan=''; why="HTTP $code"
+  if [ "$code" = 200 ]; then
+    if plan="$({ cat "$want"; printf '%s\n' '---existing---'; cat "$tmp"; } | _owui_py "$OWUI_MODELS_SYNC_PY" "$OWUI_OUR_ICONS" 2>/dev/null)"; then
+      # a cut-off answer must not pass for the whole plan: it always ends with UNCHANGED
+      case "$(printf '%s\n' "$plan" | tail -n 1)" in UNCHANGED"$TAB"*) why='' ;; *) why='incomplete output' ;; esac
+    else why='exec failed'; fi
+  fi
+  if [ -z "$why" ]; then
     while IFS=$'\t' read -r kind a b c; do
       case "$kind" in
         UNCHANGED) ok=$((ok + a)) ;;
+        BAD) bad=$((bad + 1)); failed=1; warn "Open WebUI: could not update $a (its wanted entry could not be read)" ;;
         UPDATE)
           code="$(_owui_post /api/v1/models/model/update "$c" "$tmp")"
           if [ "$code" = 200 ]; then ok=$((ok + 1)); n_hid=$((n_hid + b))
@@ -342,6 +355,7 @@ sync_openwebui_models() {
     return 0
   fi
   rm -f "$want" "$tmp"
+  warn "Open WebUI: the one-run model sync did not work ($why); updating models one by one"
   _sync_openwebui_models_each
 }
 

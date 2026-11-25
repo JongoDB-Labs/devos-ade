@@ -853,3 +853,69 @@ test_budget_banner_nothing_to_show_or_clear_is_no_exec() {
   assert_eq "$(cat "$TMP/posts")" ""
   assert_eq "$(_execs)" 0
 }
+
+# --- one-run model sync: real list shape, partial output, malformed lines (JON-972 review) ---
+
+test_sync_models_update_keeps_everything_in_open_webuis_real_list_shape() {
+  _need_python || return 77
+  _stub_store; _seed_store
+  # GET /api/v1/models/base items are full ModelResponse objects (Open WebUI v0.12.4)
+  _store_edit 'm.update({"user_id": "u1", "version_id": "v9", "created_at": 1700000000, "updated_at": 1700000100, "is_active": False, "base_model_id": None})
+m["params"] = {"system": "Be terse", "temperature": 0.2}
+m["meta"]["custom_x"] = {"keep": [1, 2]}
+m["meta"]["description"] = "stale"
+m["access_grants"] = [{"id": "g1", "resource_type": "model", "resource_id": "big", "principal_type": "group", "principal_id": "grp", "permission": "read", "created_at": 1700000000}]' big
+  sync_openwebui_models >/dev/null 2>&1
+  assert_eq "$(grep -c . "$TMP/posts")" 1
+  sed 's/^[^ ]* //' "$TMP/posts" | python3 -c 'import json,sys
+b = json.load(sys.stdin)
+assert b["params"] == {"system": "Be terse", "temperature": 0.2}, b["params"]
+assert b["meta"]["custom_x"] == {"keep": [1, 2]}, b["meta"]
+assert b["is_active"] is False and b["user_id"] == "u1" and b["version_id"] == "v9", b
+assert b["access_grants"][0]["principal_id"] == "grp", b
+assert b["created_at"] == 1700000000 and b["updated_at"] == 1700000100, b
+assert b["meta"]["description"].startswith("AWS Bedrock"), b' || return 1
+}
+
+# The one-run sync builds its update bodies from GET /api/v1/models/base. That it returns the whole model (params, meta,
+# access grants) and that /models/model/update replaces params and meta from the form but leaves grants alone was read in
+# Open WebUI's v0.12.4 source.
+test_open_webui_pin_is_the_one_whose_models_base_was_checked() {
+  grep -q 'ghcr.io/open-webui/open-webui:v0.12.4-slim@' "$STACK_DIR/compose.yaml" || {
+    echo "Open WebUI was bumped: before changing this pin, re-check that GET /api/v1/models/base still returns the full model" >&2
+    echo "(params, meta, access_grants, is_active) and that /api/v1/models/model/update still replaces only params and meta;" >&2
+    echo "sync_openwebui_models (lib/owui.sh) posts updates built from that list. Then update this test." >&2
+    return 1
+  }
+}
+
+test_sync_models_incomplete_output_falls_back_and_says_why() {
+  _need_python || return 77
+  _stub_store; _seed_store
+  _store_edit 'm["meta"]["description"] = "stale"' small
+  dc() { echo x >> "$TMP/execs"; if [ "$(_execs)" = 1 ]; then cat > /dev/null; printf 'UPDATE\tbig\t0\t{}\n'; return 0; fi; shift 3; "$@"; }
+  sync_openwebui_models > "$TMP/o" 2>&1
+  assert_contains "$(cat "$TMP/o")" "the one-run model sync did not work (incomplete output); updating models one by one"
+  assert_eq "$(grep -c . "$TMP/posts")" 1
+  assert_contains "$(cat "$TMP/posts")" '"id": "small"'
+}
+
+test_sync_models_fallback_names_the_reason() {
+  _need_python || return 77
+  _stub_store; _seed_store
+  dc() { cat > /dev/null; return 1; }
+  sync_openwebui_models > "$TMP/o" 2>&1
+  assert_contains "$(cat "$TMP/o")" "the one-run model sync did not work (exec failed)"
+  get_reply() { echo '503 {}'; }
+  sync_openwebui_models > "$TMP/o" 2>&1
+  assert_contains "$(cat "$TMP/o")" "the one-run model sync did not work (HTTP 503)"
+}
+
+test_sync_models_counts_an_unreadable_wanted_line_as_failed() {
+  _need_python || return 77
+  _stub_store; _seed_store
+  _owui_models_wanted() { printf 'broken-model\tonly two\n'; }
+  sync_openwebui_models > "$TMP/o" 2>&1
+  assert_contains "$(cat "$TMP/o")" "could not update broken-model"
+  assert_contains "$(cat "$TMP/o")" "1 Open WebUI model update(s) failed"
+}
