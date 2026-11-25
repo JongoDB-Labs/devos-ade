@@ -718,10 +718,10 @@ test_helper_limits_ignore_non_numeric_settings() {
 test_job_steps_show_a_skipped_step_with_skipped_as_its_time() {
   JOB_ID=j3; JOB_STEPS_ID=''; JOB_STEPS_SIZE=''
   printf '%s\n' '==> update: 4/4 setup (non-interactive; keeps .env, keys and AWS creds; runs only the steps whose inputs changed)' \
-    '==> Prices: not run — the prices were checked in the last 12 hours and the portal image did not change' '==> Prices ready (skipped)' \
+    '==> Prices: not run — the prices were checked in the last 12 hours and the price updater did not change' '==> Prices ready (skipped)' \
     '==> Services (8): starting…' > "$TMP/log"
   _job_steps "$TMP/log"
-  assert_eq "$JOB_STEPS_JSON" '[{"label": "Prices", "took": "skipped", "why": "the prices were checked in the last 12 hours and the portal image did not change"}]'
+  assert_eq "$JOB_STEPS_JSON" '[{"label": "Prices", "took": "skipped", "why": "the prices were checked in the last 12 hours and the price updater did not change"}]'
   assert_eq "$JOB_STEP" "Services (8)"
   assert_eq "$(_phase_of "$TMP/log" | cut -f1)" "restarting"
 }

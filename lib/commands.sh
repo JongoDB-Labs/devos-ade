@@ -941,7 +941,7 @@ setup_bringup_and_probe() {
   # Safe to skip: it asks the price sources through the portal image and keeps the answer in litellm/prices/. With the portal
   # image unchanged, PRICE_UPDATES the same and the file written in the last 12 hours, the answer would be "fresh" (the
   # portal asks again every 24 h by itself). The prices in use are chosen from the files all the same.
-  upd_gate prices "Prices" "the prices were checked in the last 12 hours and the portal image did not change" _setup_prices
+  upd_gate prices "Prices" "the prices were checked in the last 12 hours and the price updater did not change" _setup_prices
   [ "$UPD_SKIPPED" = 0 ] || use_best_prices
   # Nothing the probe depends on changed since it last answered (SETUP_REPROBE=1: ./stack models --recheck asks
   # again): LiteLLM starts once, with the models it found, instead of twice around a new probe

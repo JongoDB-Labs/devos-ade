@@ -15,7 +15,12 @@ _um_setup() {
   dc() { case "$*" in "ps -q litellm open-webui") printf 'c1\nc2\n' ;; esac; return 0; }
   PGDATA_AT=2026-10-01T09:00:00Z
   docker() { case "$1 $2" in "inspect --format") printf '%s\n%s\n' "$LITELLM_CTR" "$OWUI_CTR" ;; "volume inspect") echo "$PGDATA_AT" ;; *) echo "unexpected docker $*" >&2; return 1 ;; esac; }
-  snapshot_refs() { printf '%s\t%s\n' "$PORTAL_ID" "$(project_name)/portal:local"; }
+  snapshot_refs() { [ -z "$PORTAL_ID" ] || printf '%s\t%s\n' "$PORTAL_ID" "$(project_name)/portal:local"; }
+  # the sources the Prices and Git server account steps read (JON-972): the updater and what it imports, the image's recipe,
+  # the catalog files the container reads, the code container's importer; and a file of the portal neither reads
+  mkdir -p "$STACK_DIR/portal/portal/static" "$STACK_DIR/code/server"
+  for f in portal/Dockerfile portal/requirements.txt portal/portal/__init__.py portal/portal/prices.py portal/portal/brand.py \
+    portal/portal/static/settings.js code/server/import-host.mjs catalog/models.tsv catalog/aws-price-map.tsv; do echo "v1 $f" > "$STACK_DIR/$f"; done
   remote_on() { return 1; }
   websearch_backend() { echo builtin; }
   _GATES="settings prices litellm_config voice stt_service keys searxng websearch gitserver codedefault gitafter signin syncs smoke"
@@ -55,8 +60,9 @@ test_each_input_changing_runs_exactly_its_steps() {
   assert_eq "$(_um_run update)" ""
   # Open WebUI recreated (its banner lives in its memory): the sign-in and the syncs
   OWUI_CTR="/p-open-webui-1 O2 2026-11-01T11:00:00Z"; assert_eq "$(_um_run update)" "signin syncs"
-  # the portal image rebuilt: prices (the updater runs in it), the sign-in, the git account
-  PORTAL_ID=P2; assert_eq "$(_um_run update)" "prices gitafter signin"
+  # the portal image rebuilt: the sign-in (it logs in to the portal). Not the prices or the git account: they read only
+  # the updater's sources and the code container (test_the_prices_and_git_account_steps_follow_only_what_they_read)
+  PORTAL_ID=P2; assert_eq "$(_um_run update)" "signin"
   # Postgres's volume made again (it held LiteLLM's keys): the keys
   PGDATA_AT=2026-11-01T12:00:00Z; assert_eq "$(_um_run update)" "keys"
   # a model in the catalog: the config and the syncs
@@ -79,6 +85,25 @@ test_each_input_changing_runs_exactly_its_steps() {
   # the step's own code (a release that changes it)
   upd_in_voice_before="$(declare -f stt_after_probe 2>/dev/null)"; stt_after_probe() { echo changed; }
   assert_contains "$(_um_run update)" "voice"
+}
+
+# JON-972: Prices runs the updater (portal/portal/prices.py, which imports brand.py) in a throwaway portal container and reads
+# the catalog's models.tsv, prices.tsv and aws-price-map.tsv from a mount; the Git server account runs the forgejo CLI and
+# the code container's server/import-host.mjs. Neither reads the rest of the portal image (a Settings page's script).
+test_the_prices_and_git_account_steps_follow_only_what_they_read() {
+  _um_setup; _um_run > /dev/null
+  echo "v2" >> "$STACK_DIR/portal/portal/static/settings.js"; PORTAL_ID=P2
+  assert_eq "$(_um_run update)" "signin"                            # an unrelated portal file, or the image's ID: neither step
+  local f
+  for f in portal/portal/prices.py portal/portal/brand.py portal/portal/__init__.py portal/requirements.txt portal/Dockerfile \
+    catalog/models.tsv catalog/aws-price-map.tsv; do
+    echo "changed" >> "$STACK_DIR/$f"; assert_eq "$(_um_run update)" "prices"; assert_eq "$(_um_run update)" ""
+  done
+  echo "changed" >> "$STACK_DIR/code/server/import-host.mjs"; assert_eq "$(_um_run update)" "gitafter"
+  # the portal image gone (pruned): the updater has nothing to run in
+  PORTAL_ID=''; assert_eq "$(_um_run update)" "prices signin"
+  PORTAL_ID=P3; assert_eq "$(_um_run update)" "prices signin"
+  assert_eq "$(_um_run update)" ""
 }
 
 # The git server's search token (JON-979) is written by the git account step, after the steps before it kept .env: as an

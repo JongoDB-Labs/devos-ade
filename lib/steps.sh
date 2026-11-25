@@ -338,12 +338,17 @@ upd_in_aws() {
     aws_cli aws_run aws_run_role
   if [ -n "$(find "$STATE_DIR/update/aws-checked" -mmin -1440 2>/dev/null)" ]; then echo fresh; else echo "stale $RANDOM$RANDOM"; fi
 }
-# Prices: the portal image that runs the updater, whether prices are updated at all, the catalog's prices, and the price
-# file's age (fresh: written in the last 12 hours — the portal asks the sources itself every 24 h)
+# Prices: what the updater reads. It is portal/portal/prices.py (which imports brand.py) run in a throwaway portal container
+# (lib/prices.sh refresh_prices): the image's recipe and pinned packages, the catalog files it reads from a mount, whether
+# there is a portal image to run it in, whether prices are updated at all, the catalog's prices, and the price file's age
+# (fresh: written in the last 12 hours — the portal asks the sources itself every 24 h). Not the image's ID: the rest of the
+# portal (a page's script) is none of its business, and every release changes that (JON-972).
 upd_in_prices() {
-  _upd_local_ids | grep '/portal:local'
+  _upd_local_ids | grep -q '/portal:local' && echo portal-image=here || echo portal-image=missing
   printf 'updates=%s\n' "$(get_env PRICE_UPDATES)"
-  _upd_files "$(prices_catalog)" "$STACK_DIR"/lib/prices.sh
+  _upd_files "$(prices_catalog)" "$STACK_DIR"/lib/prices.sh "$STACK_DIR"/catalog/models.tsv "$STACK_DIR"/catalog/aws-price-map.tsv \
+    "$STACK_DIR"/portal/portal/prices.py "$STACK_DIR"/portal/portal/brand.py "$STACK_DIR"/portal/portal/__init__.py \
+    "$STACK_DIR"/portal/requirements.txt "$STACK_DIR"/portal/Dockerfile
   _upd_fn refresh_prices _setup_prices use_best_prices
   if [ "$(get_env PRICE_UPDATES)" = false ] || [ -n "$(find "$(prices_meta)" -mmin -720 2>/dev/null)" ]; then echo fresh; else echo "stale $RANDOM$RANDOM"; fi
 }
@@ -405,10 +410,12 @@ upd_in_gitserver() {
   _upd_env; _upd_compose; _upd_files "$STACK_DIR"/lib/localgit.sh "$STATE_DIR"/localgit/tls/*
   _upd_fn localgit_start localgit_secrets localgit_tls_ensure
 }
-# The git server's account and the Code page's host (set in the Code page's container): both containers' images
+# The git server's account and the Code page's host (set in the Code page's container): the forgejo CLI (its image: the compose
+# files), the code container's importer (server/import-host.mjs; the container's identity: a new image is a new container), the
+# certificate and the code. Not the portal's or Open WebUI's image: the step reads nothing from them (JON-972).
 upd_in_gitafter() {
-  _upd_env; _upd_compose; _upd_local_ids | grep -E '/(portal|open-webui):local'
-  _upd_files "$STATE_DIR"/localgit/tls/* "$STACK_DIR"/lib/localgit.sh "$STACK_DIR"/lib/code.sh
+  _upd_env; _upd_compose
+  _upd_files "$STATE_DIR"/localgit/tls/* "$STACK_DIR"/lib/localgit.sh "$STACK_DIR"/lib/code.sh "$STACK_DIR"/code/server/import-host.mjs
   { dc ps -q code terminal 2>/dev/null | tr '\n' ' '; } | awk '{ print "ctr " $0 }'
   _upd_fn localgit_after_up localgit_ensure_admin localgit_register_host
 }
