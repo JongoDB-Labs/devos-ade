@@ -20,6 +20,12 @@
 #                    checks still run, with the profile's cost in them: for finding where an update's time goes, never a
 #                    release's run.
 #   --no-prepare-check  do not prepare TO ahead of the Update now request, and keep the cold bound only (JON-972 phase B; below)
+#   --settled        apply FROM once more after its first setup (./stack setup --update-mode), before the Update now: an
+#                    install that has been set up before, as an owner's is. The first setup turns the Code page on in its
+#                    late "Code page default" step, after the steps before it noted their inputs, so an update straight
+#                    after it runs every step that reads .env again; after the second apply those steps are skipped unless
+#                    something they read changed. For measuring an owner's kind of update (JON-972); never a release's run,
+#                    which keeps the update that runs every step.
 #   --setup-stopped TAG [--resume to | plain]
 #                    the way out of an update that stopped in its setup (2026-11-01: an owner's 0.45.1 -> 0.47.0 update,
 #                    whose smoke test timed out on a loaded Mac): from --from, ./stack update --to TAG in a terminal, killed
@@ -102,7 +108,7 @@ BUDGETS="BUDGET_CLAUDE_CODE=0.04 BUDGET_OPENWEBUI=0.04 BUDGET_SETUP=0.02"
 NOTTY="$HERE/notty"
 OLD_URL="https://github.com/JongoDB-Labs/bedrock-now.git"
 NEW_URL="https://github.com/JongoDB-Labs/devos-ade.git"
-PROJECT=bne2e-rebrand-up; FROM=v0.24.0; AWS_ENV_FILE=''; KEEP=0; REAL_GITHUB=0; TEARDOWN_ONLY=0; FAST_CHECK=1; PREPARE_CHECK=1
+PROJECT=bne2e-rebrand-up; FROM=v0.24.0; AWS_ENV_FILE=''; KEEP=0; REAL_GITHUB=0; TEARDOWN_ONLY=0; FAST_CHECK=1; PREPARE_CHECK=1; SETTLED=0
 UPGRADE_PREPARED_MAX_S="${UPGRADE_PREPARED_MAX_S:-90}"; UPGRADE_PREPARE_WAIT_S="${UPGRADE_PREPARE_WAIT_S:-1800}"
 UPGRADE_COLD_MAX_S="${UPGRADE_COLD_MAX_S:-1500}"; UPGRADE_APPLY_MAX_S="${UPGRADE_APPLY_MAX_S:-150}"; UPGRADE_BACKUP_MAX_S="${UPGRADE_BACKUP_MAX_S:-60}"
 MIGRATE=0; NEWP=''; THEN=''; FROM_SET=0; PROJECT_SET=0; INTERRUPT=0; ROLLED_BACK=0; STUCK_ON=''; RESUME=to; SETUP_STOPPED=''
@@ -121,6 +127,7 @@ while [ $# -gt 0 ]; do
     --no-fast-check) FAST_CHECK=0; shift ;;
     --profile-update) PROFILE_UPDATE=1; shift ;;
     --no-prepare-check) PREPARE_CHECK=0; shift ;;
+    --settled) SETTLED=1; shift ;;
     --keep) KEEP=1; shift ;;
     --real-github) REAL_GITHUB=1; shift ;;
     --teardown) TEARDOWN_ONLY=1; shift ;;
@@ -485,6 +492,12 @@ say "setup at $FROM (log: $LOGS/setup.log)"
 st --aws setup --yes > "$LOGS/setup.log" 2>&1; rc=$?; redact "$LOGS/setup.log"
 check setup-before "$rc" "./stack setup at $FROM: exit $rc"
 [ "$rc" = 0 ] || die "setup failed — see $LOGS/setup.log"
+if [ "$SETTLED" = 1 ]; then
+  say "settled: setup at $FROM once more, in update mode (log: $LOGS/settled-apply.log)"
+  T0="$(now)"; st setup --yes --update-mode > "$LOGS/settled-apply.log" 2>&1; rc=$?; T1="$(now)"; redact "$LOGS/settled-apply.log"
+  check settled-apply "$rc" "./stack setup --update-mode at $FROM once more: exit $rc, $((T1 - T0)) s"
+  [ "$rc" = 0 ] || die "the second apply failed — see $LOGS/settled-apply.log"
+fi
 if [ "$MIGRATE" = default ]; then   # the owner's kind of install: its .env names no project (JON-945)
   check env-names-no-project "$([ -z "$(get_env COMPOSE_PROJECT_NAME)" ] && echo 0 || echo 1)" ".env after setup: COMPOSE_PROJECT_NAME='$(get_env COMPOSE_PROJECT_NAME)'"
 fi
