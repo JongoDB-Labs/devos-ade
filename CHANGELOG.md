@@ -4,7 +4,7 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.68.4] - 2026-11-25
 
 ### Changed
 
@@ -16,6 +16,9 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   reads has changed. Each check now reads the step's files, folders and keys in one go instead of one by one, with
   the same result, so no step runs again because of this change. An update's trace now also times each check.
   (JON-972)
+
+### To get it
+Existing installs: Home › Update now.
 
 ## [0.68.3] - 2026-11-25
 
