@@ -402,11 +402,18 @@ test_the_caddy_snippets_on_and_off() {
 }
 
 test_the_addresses_in_the_apps_follow_the_scheme() {
-  _tls_env
   # the code container's origin and the sandbox's frame sources come from the same variable as Caddy's
   assert_contains "$(cat "$STACK_DIR/compose.code.yaml")" 'CODE_ORIGIN: ${BN_LOCAL_SCHEME:-http}://'
-  # ... which dc sets from PORTAL_HTTPS
-  assert_contains "$(cat "$STACK_DIR/lib/common.sh")" 'BN_LOCAL_SCHEME="$(flag_on "$(get_env PORTAL_HTTPS)" && echo https || echo http)"'
+  # ... which dc sets from PORTAL_HTTPS, as on/off settings read (before _tls_env, which stubs dc)
+  local out="$TMP/dc-env" v
+  docker() { [ "${1:-} ${2:-}" = "compose version" ] || env > "$out"; }
+  for v in true ' On' 1 yes false off '' x; do
+    printf 'LOCALGIT_SSO_HEADER=X\nPORTAL_HTTPS=%s\n' "$v" > "$ENV_FILE"; : > "$out"; dc exec -T portal true
+    case "$v" in true | ' On' | 1 | yes) grep -qx 'BN_LOCAL_SCHEME=https' "$out" ;; *) grep -qx 'BN_LOCAL_SCHEME=http' "$out" ;; esac ||
+      { echo "PORTAL_HTTPS=[$v]: [$(grep BN_LOCAL_SCHEME "$out")]" >&2; return 1; }
+  done
+  unset -f docker
+  _tls_env
   assert_contains "$(cat "$STACK_DIR/compose.yaml")" 'PORTAL_HTTPS: ${PORTAL_HTTPS:-}'
 }
 

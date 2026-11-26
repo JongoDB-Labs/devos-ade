@@ -100,7 +100,7 @@ rt_address() {
   else printf '127.0.0.1:%s\n' "$(rt_port "$1")"; fi
 }
 # rt_installed ID -> 0 when this stack installed it (and has not removed it)
-rt_installed() { [ -s "$(rt_dir "$1")/installed" ]; }
+rt_installed() { [ -s "$STATE_DIR/runtimes/$1/installed" ]; }   # (rt_dir's path, without its two subshells: dc asks 8 times a call)
 rt_installed_version() { [ -s "$(rt_dir "$1")/installed" ] || return 0; head -n 1 "$(rt_dir "$1")/installed" | LC_ALL=C tr -cd '0-9A-Za-z.+-' | cut -c1-40; }
 # _rt_bytes FILE -> its size (0: there is none)
 _rt_bytes() { if [ -f "$1" ]; then wc -c < "$1" | tr -d ' '; else echo 0; fi; }
@@ -361,10 +361,10 @@ rt_services() { case "$1" in ollama) echo "ollama ollama-gate" ;; llamacpp) echo
 runtime_services() { local id out=''; for id in $RUNTIME_IDS; do ! rt_compose_on "$id" || out="$out${out:+ }$(rt_services "$id")"; done; printf '%s\n' "$out"; }
 # runtime_profiles -> the compose profiles of the runtime containers (lib/common.sh dc): each installed one's, and the one
 # _RT_PROFILE names (its own pull, rm and logs, before it is installed or after it is not)
-runtime_profiles() { local id os; os="$(rt_os)"; for id in $RUNTIME_IDS; do ! { rt_compose_on "$id" "$os" || [ "${_RT_PROFILE:-}" = "$id" ]; } || echo "$id"; done; }
+runtime_profiles() { local id os="${_dc_os:-}"; [ -n "$os" ] || os="$(rt_os)"; for id in $RUNTIME_IDS; do ! { rt_compose_on "$id" "$os" || [ "${_RT_PROFILE:-}" = "$id" ]; } || echo "$id"; done; }
 # runtime_overlays -> the compose files of their GPUs (lib/common.sh compose_overlays)
 runtime_overlays() {
-  local id os; os="$(rt_os)"
+  local id os="${_dc_os:-}"; [ -n "$os" ] || os="$(rt_os)"
   for id in $RUNTIME_IDS; do
     # (also while it is being installed: its pull is of the GPU's image)
     { rt_compose_on "$id" "$os" || [ "${_RT_PROFILE:-}" = "$id" ]; } || continue

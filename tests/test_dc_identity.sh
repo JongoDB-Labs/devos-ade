@@ -133,9 +133,17 @@ test_a_dc_call_runs_fewer_programs() {
   tr() { echo tr >> "$calls"; command tr "$@"; }
   uname() { echo uname >> "$calls"; case "${1:-}" in -s) echo Linux ;; *) command uname "$@" ;; esac; }
   awk() { echo awk >> "$calls"; command awk "$@"; }
+  # (and since v0.68.9: uname once a call, not once each for the runtimes' profiles and GPUs; no cat for the runtimes'
+  # users, no mkdir while the projects' folder is there)
+  mkdir -p "$STATE_DIR/projects/public" "$STATE_DIR/runtimes/llamacpp"; echo 1000:1000 > "$STATE_DIR/runtimes/llamacpp/user"
+  cat() { echo cat >> "$calls"; command cat "$@"; }
+  mkdir() { echo mkdir >> "$calls"; command mkdir "$@"; }
   DC_OUT="$TMP/dc-new"; : > "$calls"; dc exec -T portal true
   assert_eq "$(grep -c '^tr$' "$calls")" 0
-  assert_eq "$(grep -c '^uname$' "$calls")" 2
+  assert_eq "$(grep -c '^uname$' "$calls")" 1
+  assert_eq "$(grep -c '^cat$' "$calls")" 0
+  assert_eq "$(grep -c '^mkdir$' "$calls")" 0
+  grep -q '^BN_LLAMACPP_USER=1000:1000$' "$DC_OUT" || { echo "the runtime's user not given" >&2; return 1; }
   # (get_env: an awk each for the three reads before dc's .env snapshot, project_name's and localgit_sso_ensure's;
   # none after)
   assert_eq "$(grep -c '^awk$' "$calls")" 3
@@ -165,6 +173,55 @@ test_the_snapshot_never_reaches_a_programs_environment() {
   ! grep -q '_ENVV_' "$DC_OUT"
   assert_eq "$(set -a; _env_snap; env | grep -c '^_ENVV_' || true)" 0
   case $- in *a*) echo "set -a left on" >&2; return 1 ;; esac
+}
+
+test_ev_reads_as_get_env() {
+  # (_ev VAR KEY is "$(get_env KEY)" without the subshell: in dc's snapshot and outside it, for the same keys as above)
+  printf '\357\273\277BOM=1\nA=1\nB=x=y z\r\n# C=no\nexport D=1\n  E=1\nF-G=1\nA=2\nH=\nI= sp \n9J=1\nL=a\\tb\\c\nM=100%%s\nN=\tt\nK=last' > "$ENV_FILE"
+  local k v snap
+  for snap in 0 1; do
+    for k in A B C D E F-G F G H I 9J K L M N BOM NOPE 'export D' '  E' '# C' '' 'A=' '=' v _ev_n; do
+      assert_eq "$(_dc_env_snap=$snap; [ "$snap" = 0 ] || _env_snap; _ev v "$k"; printf '%s' "$v")" "$(get_env "$k")" || { echo "_ev [$k], snapshot $snap" >&2; return 1; }
+    done
+  done
+  # (no .env: empty; one gone after the snapshot: empty, as get_env reads it)
+  assert_eq "$(_dc_env_snap=1; _env_snap; rm -f "$ENV_FILE"; v=x; _ev v A; printf '%s' "$v")" ""
+  rm -f "$ENV_FILE"; v=x; _ev v A; assert_eq "$v" ""
+}
+
+test_text_of_reads_as_cat() {
+  # (_text_of VAR FILE DEFAULT is "$(cat FILE 2>/dev/null || echo DEFAULT)": the runtimes' users in dc)
+  local d="$TMP/t" f want got
+  mkdir -p "$d/dir"
+  printf '1000:1000\n' > "$d/one"; printf '1000:1000' > "$d/nonl"; printf 'a\n\n\n' > "$d/nls"; printf 'a\nb\n' > "$d/two"
+  printf '1000:1000\r\n' > "$d/crlf"; printf '  x  \n' > "$d/sp"; : > "$d/empty"; printf '\n' > "$d/nl"; printf 'a\\b %%s\n' > "$d/bs"
+  ln -s "$d/one" "$d/link"; ln -s "$d/none" "$d/dangling"; printf 'x\n' > "$d/noread"; chmod 000 "$d/noread"
+  for f in one nonl nls two crlf sp empty nl bs link dangling none dir noread; do
+    [ "$f" != noread ] || [ "$(id -u)" != 0 ] || continue
+    want="$(cat "$d/$f" 2>/dev/null || echo 65534:65534)"
+    _text_of got "$d/$f" 65534:65534
+    assert_eq "[$got]" "[$want]" || { echo "_text_of $f" >&2; chmod 644 "$d/noread"; return 1; }
+  done
+  chmod 644 "$d/noread"
+}
+
+test_the_runtime_and_mirror_checks_answer_as_before() {
+  # (rt_installed without rt_dir's subshells; localgit_mirror_wanted with _ev: as the old forms, in dc's snapshot and not)
+  local id m e h s old new
+  STATE_DIR="$TMP/state with space"; mkdir -p "$STATE_DIR/runtimes/ollama" "$STATE_DIR/runtimes/vllm/installed" "$STATE_DIR/runtimes/lmstudio"
+  echo 1 > "$STATE_DIR/runtimes/ollama/installed"; : > "$STATE_DIR/runtimes/lmstudio/installed"
+  ln -s "$STATE_DIR/runtimes/ollama/installed" "$STATE_DIR/runtimes/x"
+  for id in ollama vllm lmstudio llamacpp '' x '../runtimes/ollama' 'a b'; do
+    old=0; [ -s "$(rt_dir "$id")/installed" ] || old=1
+    new=0; rt_installed "$id" || new=1
+    assert_eq "$new" "$old" || { echo "rt_installed [$id]" >&2; return 1; }
+  done
+  for m in '' on ' On' off x; do for e in '' true 'YES ' 0 off; do for h in '' github.com; do for s in 0 1; do
+    _env "LOCALGIT=$m" "LOCALGIT_MIRROR_EGRESS=$e" "LOCALGIT_MIRROR_HOSTS=$h"
+    old="$(old_localgit_on && flag_on "$(get_env LOCALGIT_MIRROR_EGRESS)" && [ -n "$(get_env LOCALGIT_MIRROR_HOSTS)" ]; echo $?)"
+    new="$(_dc_env_snap=$s; [ "$s" = 0 ] || _env_snap; localgit_mirror_wanted; echo $?)"
+    assert_eq "$new" "$old" || { echo "localgit_mirror_wanted [$m|$e|$h] snapshot $s" >&2; return 1; }
+  done; done; done; done
 }
 
 test_get_env_reads_the_snapshot_as_it_reads_the_file() {
