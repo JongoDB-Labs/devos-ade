@@ -594,7 +594,8 @@ upd_prof_mark() {
 # FUNCTION@FILE:LINE (the depth counted from the shell that began the setup); never a command's text or a value. The end of a setup that succeeded (upd_commit) sums it into
 # trace/profile.tsv: ms, count, depth, place, the 400 biggest. Depth 0 is the setup's own shell (its lines add up to the
 # setup's time); a line that starts a subshell — $( ), a pipe — includes that subshell's time, and the subshell's own
-# lines are there too at depth 1 and more. The switch is used once: removed when a setup starts with it. It slows the
+# lines are there too at depth 1 and more. A ( … ) subshell, and a for loop's word list, get no trap of their own: their
+# time goes to the line before them (dc's compose call shows as _text_of's last line). The switch is used once: removed when a setup starts with it. It slows the
 # shell's own work (about twice): the e2e upgrade test turns it on for an apply of its own, never a timed one. A setup
 # that fails keeps the trap until it exits, and leaves profile.raw (so may a background job that outlives the setup;
 # the next traced setup moves trace/ away). Errexit applies inside a trap: the write is guarded,
