@@ -34,6 +34,7 @@ class Recorder:
 
     def __init__(self, name: str):
         self.name, self.events = name, []
+        self._bodies = []   # (event, response) of each 5xx fetch: its body is read when the record is saved
 
     def attach(self, page):
         page.on("response", self._resp)
@@ -51,13 +52,24 @@ class Recorder:
         self.events.append({"t": "failed", "method": r.method, "url": r.url, "error": err})
 
     def _resp(self, r):
-        self.events.append({"t": "resp", "status": r.status, "method": r.request.method, "url": r.url,
-                            "type": r.request.resource_type})
+        e = {"t": "resp", "status": r.status, "method": r.request.method, "url": r.url, "type": r.request.resource_type}
+        # (a 5xx of a fetch: its body says which upstream failed and how — the portal's 502s name LiteLLM's answer —
+        # read when the record is saved, not here inside Playwright's event dispatch; the events themselves stay plain
+        # JSON, which some checks search)
+        if r.status >= 500 and r.request.resource_type in ("fetch", "xhr"):
+            self._bodies.append((e, r))
+        self.events.append(e)
 
     def mark(self, label: str):
         self.events.append({"t": "mark", "label": label})
 
     def save(self):
+        for e, r in self._bodies:
+            try:
+                e["body"] = r.text()[:300]
+            except Exception as x:   # (the page gone, the body no longer kept)
+                e["body"] = f"(unavailable: {type(x).__name__})"
+        self._bodies = []
         with (NET / f"{self.name}.jsonl").open("w", encoding="utf-8") as f:
             for e in self.events:
                 f.write(redact(json.dumps(e)) + "\n")
