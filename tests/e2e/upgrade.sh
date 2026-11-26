@@ -478,6 +478,9 @@ WS="$(terminal_workspace_dir)"; ( umask 077; mkdir -p "$WS" ) && : > "$WS/.devos
 # no GitHub call from the portal before the update (its check counts as done; --real-github asks for one at the end)
 printf '{"checked_at": "%s", "error": null}\n' "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)" > "$STACK/.state/update-check/latest.json"
 chmod 644 "$STACK/.state/update-check/latest.json"
+# (each setup keeps its steps' inputs, values as checksums, from this first one on: the update and the fast apply below then
+# say what made each of their steps run — lib/steps.sh upd_trace_on)
+[ "$FAST_CHECK" != 1 ] || { mkdir -p "$STACK/.state/update" && : > "$STACK/.state/update/trace-on"; }
 say "setup at $FROM (log: $LOGS/setup.log)"
 st --aws setup --yes > "$LOGS/setup.log" 2>&1; rc=$?; redact "$LOGS/setup.log"
 check setup-before "$rc" "./stack setup at $FROM: exit $rc"
@@ -635,7 +638,8 @@ elif [ -n "$SETUP_STOPPED" ]; then
 else
 # --- 3. Update now: a request for the throwaway's own update helper ---
 docker image inspect --format '{{.Id}}' "$PROJECT/portal:local" > "$OUT/portal-id-before" 2>/dev/null || : > "$OUT/portal-id-before"
-# (the update's setup keeps each step's inputs, values as checksums: the fast apply below says what made a step run)
+# (the update's setup keeps each step's inputs, values as checksums, as the setups before did: it and the fast apply below say
+# what made a step run)
 [ "$FAST_CHECK" != 1 ] || { mkdir -p "$STACK/.state/update" && : > "$STACK/.state/update/trace-on"; }
 # (--profile-update: the update's setup profiles its shell too — it needs the trace, and uses the switch up)
 [ "${PROFILE_UPDATE:-0}" != 1 ] || [ "$FAST_CHECK" != 1 ] || : > "$STACK/.state/update/profile-on"
@@ -782,6 +786,20 @@ if [ "$MIGRATE" != 0 ]; then   # from here on it is the new project, in the new 
 fi
 snapshot "$OUT/after"
 check version "$(grep -qx "$TO" "$OUT/after/version" && echo 0 || echo 1)" "installed $(cat "$OUT/after/version"), want $TO"
+# (each step the update ran, and what in its inputs changed since the setup before — key names and checksums only, from the
+# trace: trace.prev/ is the setup before's, trace/ the update's. Said, never checked: a release may change what a step reads.)
+if [ "$MIGRATE" = 0 ] && [ "$FAST_CHECK" = 1 ] && [ -d "$STACK/.state/update/trace.prev" ]; then
+  for f in "$STACK/.state/update/trace"/*.same; do
+    [ -f "$f" ] || continue
+    name="${f##*/}"; name="${name%.same}"
+    p="$STACK/.state/update/trace.prev/$name.note"; [ -f "$p" ] || p="$STACK/.state/update/trace.prev/$name.same"
+    [ -f "$p" ] || { say "update step $name: no trace from the setup before"; continue; }
+    if ! diff "$p" "$f" > "$OUT/update-why-$name.diff" 2>&1; then
+      redact "$OUT/update-why-$name.diff"
+      say "update ran $name: what changed: $(grep '^[<>]' "$OUT/update-why-$name.diff" | head -n 8 | tr '\n' ' ' | cut -c1-600)"
+    else rm -f "$OUT/update-why-$name.diff"; fi
+  done
+fi
 if [ "$MIGRATE" = 0 ]; then
   check same-folder "$([ "$(real_dir "$STACK")" = "$(cd "$WORK" && pwd -P)" ] && [ -f "$STACK/.env" ] && echo 0 || echo 1)" "still in $STACK"
 else
