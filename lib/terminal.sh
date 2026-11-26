@@ -96,8 +96,22 @@ terminal_default_workspace() {
 # _phys DIR -> DIR with every symlink resolved, in its on-disk spelling (the external pwd: on macOS the shell's own
 # keeps the case you typed, and the file system ignores case); empty when it cannot be opened
 _phys() { (cd "$1" 2>/dev/null && /bin/pwd -P) || true; }
-# _fold PATH -> PATH as compared: lower case on macOS (its file systems ignore case), unchanged elsewhere
-_fold() { if [ "$(uname -s)" = Darwin ]; then printf '%s\n' "$1" | tr '[:upper:]' '[:lower:]'; else printf '%s\n' "$1"; fi; }
+# _fold PATH -> PATH as compared: lower case on macOS (its file systems ignore case), unchanged elsewhere. The system's
+# name is asked once a shell (_FOLD_OS): a folder check folded some 35 paths, each with its own uname (JON-972).
+_FOLD_OS=''
+_fold() {
+  [ -n "$_FOLD_OS" ] || _FOLD_OS="$(uname -s)"
+  if [ "$_FOLD_OS" = Darwin ]; then printf '%s\n' "$1" | tr '[:upper:]' '[:lower:]'; else printf '%s\n' "$1"; fi
+}
+# _fold_into VAR PATH — VAR = "$(_fold PATH)" (its trailing newlines gone too), without a subshell where folding changes
+# nothing (every system but macOS)
+_fold_into() {
+  [ -n "$_FOLD_OS" ] || _FOLD_OS="$(uname -s)"
+  if [ "$_FOLD_OS" = Darwin ]; then printf -v "$1" '%s' "$(_fold "$2")"; return 0; fi
+  local _fi_t="$2"
+  while [ "${_fi_t%$'\n'}" != "$_fi_t" ]; do _fi_t="${_fi_t%$'\n'}"; done
+  printf -v "$1" '%s' "$_fi_t"
+}
 
 # socket_dir_component PATH -> the first part of PATH that is a folder programs keep their sockets in (tmux-<uid>,
 # ssh-<random> of ssh-agent, .X11-unix and the other X folders, emacs<uid>, systemd-private-…, launchd's
@@ -177,20 +191,22 @@ host_socket_in() {
 # path through a folder of sockets (socket_dir_component). A folder of your own inside a temporary folder is fine. On
 # macOS every comparison ignores case, as the disk does.
 terminal_workspace_check() {
-  local real r h s p t
+  local real r h s p t lmd lib
+  [ -n "$_FOLD_OS" ] || _FOLD_OS="$(uname -s)"   # (once here: a check run in $( ) would ask again at each fold)
   case "$1" in *:* | *,*) echo "its path contains ':' or ',' (Docker cannot mount that)"; return 1 ;; esac
   real="$(_phys "$1")"
   [ -n "$real" ] || { echo "cannot open it"; return 1; }
   if p="$(env_value_problem "$real")"; then echo "its path $p"; return 1; fi
-  r="$(_fold "$real")"; h="$(_fold "$(_phys "$HOME")")"; s="$(_fold "$(_phys "$STACK_DIR")")"
+  _fold_into r "$real"; _fold_into h "$(_phys "$HOME")"; _fold_into s "$(_phys "$STACK_DIR")"
   case "$r/" in "$s/"*) echo "it is this $PRODUCT_NAME folder or inside it"; return 1 ;; esac
   case "$s/" in "$r/"*) echo "it contains this $PRODUCT_NAME folder (and its .env)"; return 1 ;; esac
   if [ -n "$h" ]; then
     case "$h/" in "$r/"*) echo "it is your home folder or a folder around it — pick a folder inside it"; return 1 ;; esac
     case "$r" in "$h"/.*) echo "it is a hidden folder of your home folder (keys and settings live there)"; return 1 ;; esac
+    _fold_into lmd "$h/Library/Mobile Documents"; _fold_into lib "$h/Library"
     case "$r" in
-      "$(_fold "$h/Library/Mobile Documents")" | "$(_fold "$h/Library/Mobile Documents")"/*) ;;
-      "$(_fold "$h/Library")" | "$(_fold "$h/Library")"/*) echo "it is in ~/Library (keychains, app data and settings live there)"; return 1 ;;
+      "$lmd" | "$lmd"/*) ;;
+      "$lib" | "$lib"/*) echo "it is in ~/Library (keychains, app data and settings live there)"; return 1 ;;
     esac
   fi
   # a temporary folder itself (macOS's per-user ones are /private/var/folders/<xx>/<id>/T and …/C: those and every
@@ -202,7 +218,7 @@ terminal_workspace_check() {
   esac
   # (and each as it resolves: a Linux /tmp may be a link to a folder elsewhere)
   for t in /tmp /var/tmp /dev/shm ${XDG_RUNTIME_DIR:+"$XDG_RUNTIME_DIR"}; do
-    t="$(_phys "$t")"; [ -z "$t" ] || [ "$r" != "$(_fold "$t")" ] || p=x
+    t="$(_phys "$t")"; [ -z "$t" ] || { _fold_into t "$t"; [ "$r" != "$t" ]; } || p=x
   done
   if [ "$p" = x ]; then
     echo "it is a temporary folder itself: programs of this computer keep their sockets there — pick a folder of your own in it, or elsewhere"; return 1
@@ -213,11 +229,11 @@ terminal_workspace_check() {
   case "$r" in /tmp/* | /var/tmp/* | /private/tmp/* | /private/var/tmp/* | /private/var/folders/*) printf '%s\n' "$real"; return 0 ;; esac
   # where other disks are mounted: the folder itself shows them all (a folder on one of them is fine)
   for p in /Volumes /mnt /media; do
-    [ "$r" != "$(_fold "$p")" ] || { echo "it holds every mounted disk ($p) — pick a folder on one of them"; return 1; }
+    _fold_into t "$p"; [ "$r" != "$t" ] || { echo "it holds every mounted disk ($p) — pick a folder on one of them"; return 1; }
   done
   for p in /bin /boot /dev /etc /lib /lib32 /lib64 /libx32 /proc /root /run /sbin /snap /srv/docker /sys /usr /var \
            /private /System /Library /Applications /cores /opt/homebrew; do
-    p="$(_fold "$p")"
+    _fold_into p "$p"
     case "$r" in "$p" | "$p"/*) echo "it is a system folder ($p)"; return 1 ;; esac
   done
   [ "$r" != / ] || { echo "it is the root of the disk"; return 1; }

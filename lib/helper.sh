@@ -514,8 +514,13 @@ cmd_helper_auto() {
 
 # _json_str TEXT -> safe inside a JSON string: no quotes, backslashes or control characters, at most 300 bytes
 # without cutting a UTF-8 character in half (iconv -c drops an incomplete one)
+# Plain text — these characters only (each named: a range or [:print:] would follow the locale), at most 300 — is what
+# the pipeline gives back unchanged, so it is given back without one (six programs a string: Settings' versions file
+# alone made 42; JON-972).
+_JSON_PLAIN='abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ._:/@+=,~%#&()?;*-'
 _json_str() {
   local t
+  case "$1" in *[!$_JSON_PLAIN]*) ;; *) [ "${#1}" -gt 300 ] || { printf '%s' "$1"; return 0; } ;; esac
   t="$(printf '%s' "$1" | tr -d '"\\' | tr -d '\000-\037' | head -c 300 || true)"
   printf '%s' "$t" | iconv -c -f UTF-8 -t UTF-8 2>/dev/null || printf '%s' "$t" | LC_ALL=C tr -cd '\040-\176'
 }
