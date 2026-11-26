@@ -707,6 +707,11 @@ cp "$STACK/.state/status/helper-status.json" "$LOGS/helper-status.json" 2>/dev/n
 s="$(cat "$LOGS/helper-status.json" 2>/dev/null)"
 case "$s" in *'"phase": "done"'*) check update-now 0 "the helper's update finished: $(printf '%s' "$s" | sed -n 's/.*"message": "\([^"]*\)".*/\1/p')" ;;
   *) check update-now 1 "the helper's update did not finish well: $s" ;; esac
+# (the buckets' one-shot, rustfs-init, runs once in an update: the data phase's. Setup's front names what it depends on
+# rather than having compose start it again, 2-3 s, JON-972; an update that starts no service at all starts it none.)
+n="$(awk -F '\t' '$2 == "rustfs-init" && $3 == "start"' "$OUT/events-update.tsv" | wc -l | tr -d ' ')"
+if [ "$n" -le 1 ]; then check update-buckets-once 0 "rustfs-init started $n time(s) in the update"
+else check update-buckets-once 1 "rustfs-init started $n times in the update (once is the data phase's: the front started it again)"; fi
 # (where the update's setup spent its time: its profile, as the fast apply's below — the steps, their digests, the time between)
 if [ -f "$STACK/.state/update/trace/calls.tsv" ]; then
   cp "$STACK/.state/update/trace/calls.tsv" "$OUT/calls-update.tsv"

@@ -280,20 +280,22 @@ test_setup_starts_open_webui_the_portal_and_shared_mcp_together() {
   openrouter_sync_owui() { :; }; explabs_sync_owui() { :; }; stt_sync_owui() { :; }; owui_install_cost_filter() { :; }
   sync_budget_banner() { :; }; portal_session_end() { :; }; ensure_portal_password_hash() { :; }; compose_reads_contexts() { :; }
   run_phase() { echo "PHASE $1" >> "$TMP/calls"; shift 2; "$@"; }
-  dc() { case "$*" in "ps --format"*) ;; *) echo "dc $*" >> "$TMP/calls" ;; esac; return 0; }
+  # (the data phase's rustfs-init ended well: the front names what its services depend on — test_setups_front_waits_for_the_buckets…)
+  dc() { case "$*" in "ps --format"*) ;; "ps -a -q rustfs-init") echo c-init ;; *) echo "dc $*" >> "$TMP/calls" ;; esac; return 0; }
+  docker() { case "$1" in inspect) echo "exited 0" ;; *) echo "docker $*" >> "$TMP/calls" ;; esac; }
   ensure_openwebui_api_key() { :; }
   printf 'OPENWEBUI_API_KEY=sk-owui\nPORTAL_PORT=80\nPORTAL_HOST=x.localhost\n' > "$ENV_FILE"
   SETUP_BUILT=" portal shared-mcp open-webui "
   setup_keys_and_ui 2>/dev/null || return 1
   assert_eq "$(cat "$TMP/calls")" "PHASE Open WebUI + portal + shared-mcp (http://x.localhost)
-dc up -d --wait open-webui portal caddy shared-mcp"
+dc up -d --wait --no-deps postgres rustfs litellm open-webui portal caddy shared-mcp"
   # a first setup: no key yet — shared-mcp on its own once it is made (its image built then, unless setup built it)
   printf 'PORTAL_PORT=80\nPORTAL_HOST=x.localhost\n' > "$ENV_FILE"; : > "$TMP/calls"; SETUP_BUILT=''
   ensure_openwebui_api_key() { set_env OPENWEBUI_API_KEY sk-new; }
   setup_keys_and_ui 2>/dev/null || return 1
   assert_eq "$(cat "$TMP/calls")" "PHASE Open WebUI + portal (http://x.localhost)
 dc build -q portal
-dc up -d --wait open-webui portal caddy
+dc up -d --wait --no-deps postgres rustfs litellm open-webui portal caddy
 PHASE shared-mcp
 dc build -q shared-mcp
 dc up -d --wait --no-deps shared-mcp"
@@ -302,6 +304,72 @@ dc up -d --wait --no-deps shared-mcp"
   setup_keys_and_ui 2>/dev/null || return 1
   assert_eq "$(grep -c '^PHASE shared-mcp$' "$TMP/calls")" 1
   assert_eq "$(tail -n 1 "$TMP/calls")" "dc up -d --wait --no-deps shared-mcp"
+}
+
+# Setup's front (UP_FRONT_AFTER_DATA: after the data phase started rustfs-init, and LiteLLM's phase) waits for that rustfs-init
+# and names what its services depend on, without compose's dependencies: compose would start the one-shot once more and wait
+# the 2-3 s it takes (JON-972). A rustfs-init that failed stops it, as compose would; none that ran, or every other caller
+# (the update's one compose up, the remote settings), compose's dependencies as before.
+test_setups_front_waits_for_the_buckets_rather_than_running_them_again() {
+  ensure_portal_password_hash() { :; }; compose_reads_contexts() { :; }
+  SETUP_BUILT=" portal shared-mcp "
+  dc() { case "$*" in "ps -a -q rustfs-init") [ -z "${INIT_ID:-}" ] || echo "$INIT_ID" ;; "ps --format"*) ;; *) echo "dc $*" >> "$TMP/calls" ;; esac; return 0; }
+  docker() { echo "docker $*" >> "$TMP/calls"; case "$1" in inspect) [ -z "${INIT_ST:-}" ] || echo "$INIT_ST" ;; wait) echo "${INIT_RC:-0}" ;; esac; }
+  local named='dc up -d --wait --no-deps postgres rustfs litellm open-webui portal caddy shared-mcp' plain='dc up -d --wait open-webui portal caddy shared-mcp'
+  _front() { : > "$TMP/calls"; UP_FRONT_AFTER_DATA="$1" _build_and_up_front open-webui portal caddy shared-mcp > "$TMP/out" 2>&1; }
+  # it ended well: no wait, the named call
+  INIT_ID=c-init INIT_ST="exited 0"; _front 1 || return 1
+  assert_eq "$(grep -v '^docker inspect' "$TMP/calls")" "$named"
+  # still running: waited for (docker wait), then the named call
+  INIT_ST="running 0" INIT_RC=0; _front 1 || return 1
+  assert_eq "$(grep -v '^docker inspect' "$TMP/calls")" "docker wait c-init
+$named"
+  # it failed, or fails while waited for: no up, its end said
+  INIT_ST="exited 1"; if _front 1; then echo "a failed rustfs-init let the front up" >&2; return 1; fi
+  assert_not_contains "$(cat "$TMP/calls")" "dc up"; assert_contains "$(cat "$TMP/out")" "the buckets (rustfs-init) ended with 1"
+  INIT_ST="running 0" INIT_RC=3; if _front 1; then echo "a rustfs-init that failed while waited for let the front up" >&2; return 1; fi
+  assert_not_contains "$(cat "$TMP/calls")" "dc up"; assert_contains "$(cat "$TMP/out")" "ended with 3"
+  # none that ran (none at all, one created and never started): compose's own dependencies
+  INIT_ID='' INIT_ST=''; _front 1 || return 1; assert_eq "$(cat "$TMP/calls")" "$plain"
+  INIT_ID=c-init INIT_ST="created 0"; _front 1 || return 1; assert_eq "$(grep -v '^docker inspect' "$TMP/calls")" "$plain"
+  # every other caller: as before, rustfs-init not even asked about
+  INIT_ST="exited 0"; _front 0 || return 1; assert_eq "$(cat "$TMP/calls")" "$plain"
+  : > "$TMP/calls"; _build_and_up_front postgres rustfs litellm open-webui portal caddy > /dev/null 2>&1 || return 1
+  assert_eq "$(cat "$TMP/calls")" "dc up -d --wait postgres rustfs litellm open-webui portal caddy"
+  # (and the port 80 fallback's second call is the same named one)
+  printf 'PORTAL_PORT=80\n' > "$ENV_FILE"; save_portal_origin() { :; }; resolve_port() { :; }; caddy_up() { echo "caddy_up" >> "$TMP/calls"; }
+  dc() { case "$*" in "ps -a -q rustfs-init") echo c-init ;; "ps --format"* | "ps -q --status running caddy") ;; *) echo "dc $*" >> "$TMP/calls"
+    case "$*" in "up -d --wait --no-deps"*) [ "$(get_env PORTAL_PORT)" != 80 ] || { echo "Error: ports are not available: listen tcp 127.0.0.1:80: bind: permission denied"; return 1; } ;; esac ;; esac; return 0; }
+  INIT_ST="exited 0"; _front 1 || return 1
+  assert_eq "$(grep -v '^docker inspect' "$TMP/calls")" "$named
+$named
+caddy_up"
+}
+
+# The names in that call are what Open WebUI, the portal, Caddy and shared-mcp depend on, all the way down, as every compose
+# file says (each overlay merged): rustfs-init left out (waited for instead) and the services themselves
+test_setups_front_names_what_its_services_depend_on() {
+  [ -n "${BN_REAL_DOCKER:-}" ] && "$BN_REAL_DOCKER" compose version >/dev/null 2>&1 || { echo "no docker compose" >&2; return 77; }
+  local f args=() deps named
+  for f in "$STACK_DIR"/compose.yaml "$STACK_DIR"/compose.*.yaml; do args+=(-f "$f"); done
+  deps="$("$BN_REAL_DOCKER" compose -p bn-deps "${args[@]}" config --no-interpolate --format json 2>"$TMP/err" | python3 -c '
+import json, sys
+s = json.load(sys.stdin)["services"]
+def d(n):
+    x = s[n].get("depends_on") or {}
+    return list(x) if isinstance(x, list) else list(x.keys())
+front = ["open-webui", "portal", "caddy", "shared-mcp"]; seen = set(); todo = list(front)
+while todo:
+    for n in d(todo.pop()):
+        if n not in seen:
+            seen.add(n); todo.append(n)
+print(" ".join(sorted(seen - set(front) - {"rustfs-init"})))')" || { cat "$TMP/err" >&2; return 1; }
+  [ -n "$deps" ] || { echo "the compose files gave no dependencies" >&2; return 1; }
+  _buckets_made() { return 0; }; up_services() { echo "$*" > "$TMP/up"; }; ensure_portal_password_hash() { :; }; compose_reads_contexts() { :; }
+  SETUP_BUILT=" portal shared-mcp "
+  UP_FRONT_AFTER_DATA=1 _build_and_up_front open-webui portal caddy shared-mcp > /dev/null || return 1
+  named="$(tr ' ' '\n' < "$TMP/up" | grep -vxE -- '--no-deps|open-webui|portal|caddy|shared-mcp' | sort | tr '\n' ' ' | sed 's/ $//')"
+  assert_eq "$named" "$deps"
 }
 
 # Port 80 refused (a rootless engine): only when Caddy is what did not start with it does the portal move to 8800

@@ -1034,6 +1034,23 @@ _setup_model_check() {
 }
 
 _up_data_services() { dc up -d --wait postgres rustfs && dc up -d rustfs-init; }
+# _buckets_made — RustFS's buckets: rustfs-init (a one-shot; _up_data_services starts it) ended, and with 0, which is what Open
+# WebUI and shared-mcp wait for (their depends_on: service_completed_successfully). 0 when it did (waited for while it runs,
+# as compose would); 1, said, when it failed; 2 when Docker has no such container that ran (compose's own up decides then).
+_buckets_made() {
+  local id st
+  id="$(dc ps -a -q rustfs-init 2>/dev/null | head -n 1)"
+  [ -n "$id" ] || return 2
+  st="$(docker inspect --format '{{.State.Status}} {{.State.ExitCode}}' "$id" 2>/dev/null)" || return 2
+  case "$st" in
+    running\ *) st="$(docker wait "$id" 2>/dev/null)" || return 2; st="exited $st" ;;
+    exited\ *) ;;
+    *) return 2 ;;
+  esac
+  [ "$st" != "exited 0" ] || return 0
+  warn "the buckets (rustfs-init) ended with ${st#exited }: ./stack logs rustfs-init"
+  return 1
+}
 _build_and_up_mcp() {
   built_now shared-mcp || building "the shared-mcp image" dc build -q shared-mcp || return 1
   up_services --no-deps shared-mcp
@@ -1046,13 +1063,22 @@ _build_and_up_mcp() {
 # admin API is off): config_sums recreates it when that changed. If Docker refuses to publish port 80 after all, falls
 # back to 8800 once.
 _build_and_up_front() {
-  local out rc=0 b=() s
+  local out rc=0 b=() s up=("$@") bm=0
   ensure_portal_password_hash   # lib/settings.sh: the portal starts only with a hash that matches PORTAL_PASSWORD
   # (every Compose this version runs with, 2.24.4 or newer, reads it: only one ./stack setup and update stop for does not)
   compose_reads_contexts || warn "Docker Compose ${_BN_COMPOSE_VERSION:-(this one)} is older than 2.24.4, which $PRODUCT_NAME needs (./stack setup and ./stack update stop for it): the portal is built without its search's docs index (README and docs/ sections) — update Docker Compose"
   for s in portal shared-mcp; do case " $* " in *" $s "*) built_now "$s" || b+=("$s") ;; esac; done
   [ ${#b[@]} -eq 0 ] || building "the ${b[*]} image(s)" dc build -q "${b[@]}" || return 1
-  out="$(up_services "$@" 2>&1)" || rc=$?
+  # (setup's own front, UP_FRONT_AFTER_DATA=1: the phases before it brought up what these depend on: Postgres, RustFS and
+  # its buckets, LiteLLM. The call names them, without compose's dependencies, so compose still recreates one whose settings
+  # changed since (LiteLLM's, from the keys and voice steps) and starts each in its order, but does not run rustfs-init, a
+  # one-shot, once more and wait the 2-3 s it takes (JON-972): its run of the data phase is what is waited for, as Open
+  # WebUI's depends_on asks. tests/test_recreate.sh keeps the names to what the services' depends_on say.)
+  if [ "${UP_FRONT_AFTER_DATA:-0}" = 1 ]; then
+    _buckets_made || bm=$?
+    case "$bm" in 0) up=(--no-deps postgres rustfs litellm "$@") ;; 1) return 1 ;; esac
+  fi
+  out="$(up_services "${up[@]}" 2>&1)" || rc=$?
   printf '%s\n' "$out"
   [ "$rc" -ne 0 ] || return 0
   # Only a refused port 80 (rootless/unprivileged engines) moves the portal — Caddy not running then, its port refused;
@@ -1063,7 +1089,7 @@ _build_and_up_front() {
   set_env PORTAL_PORT "$PORTAL_FALLBACK_PORT"
   resolve_port PORTAL_PORT "$PORTAL_FALLBACK_PORT" caddy 8080
   save_portal_origin
-  up_services "$@" && caddy_up   # the portal: its PORTAL_PORT changed too
+  up_services "${up[@]}" && caddy_up   # the portal: its PORTAL_PORT changed too
 }
 
 # up_front SERVICE... — the portal phase of setup: Open WebUI, the portal and Caddy (and shared-mcp, when listed) with
@@ -1170,7 +1196,7 @@ setup_keys_and_ui() {
   # (Already started by the update's one compose up: _setup_start_all.)
   mcp_key="$(get_env OPENWEBUI_API_KEY)"
   if [ "$UPD_STARTED_ALL" = 1 ]; then :
-  elif [ -n "$mcp_key" ]; then up_front open-webui portal caddy shared-mcp; else up_front open-webui portal caddy; fi
+  elif [ -n "$mcp_key" ]; then UP_FRONT_AFTER_DATA=1 up_front open-webui portal caddy shared-mcp; else UP_FRONT_AFTER_DATA=1 up_front open-webui portal caddy; fi
   upd_forget_containers
   # Safe to skip (sign-in, Open WebUI syncs): they write into Open WebUI (its API key, model names and prices, the cost filter,
   # the budget banner — the banner lives in its memory). The same Open WebUI container (id and start time), keys, catalog,
