@@ -242,10 +242,13 @@ def locked_then_unlocked(ctx):
     page.wait_for_timeout(1500)   # Claude Code's first screen in window 1
     shot(page, "41-terminal-desktop", mask=["#password"])
     new_shell_window(page, f)
-    type_line(page, f, "echo ok-$((6*7)) && claude --version && pwd")
-    out = wait_text(f, r"\(Claude Code\)", 30)
+    # (waited for: the line after pwd's — pwd prints once Claude Code's process has ended, which can be after its version
+    # is on the screen: read then, the screen had no pwd yet, v0.60.0's and v0.68.16's matrices)
+    type_line(page, f, "echo ok-$((6*7)) && claude --version && pwd && echo end-$((7*8))")
+    out = wait_text(f, r"^end-56$", 30)
     expect(re.search(r"^ok-42$", out, re.M), f"no ok-42 in {out[-300:]!r}")
-    expect(re.search(r"^/workspace$", out, re.M), "pwd is not /workspace")
+    expect(re.search(r"\(Claude Code\)", out), f"no Claude Code version in {out[-300:]!r}")
+    expect(re.search(r"^/workspace$", out, re.M), f"pwd is not /workspace: {out[-300:]!r}")
     version = re.search(r"([0-9.]+) \(Claude Code\)", out).group(1)
     shot(page, "42-terminal-shell")
     probs = rec.problems(allow=LOCKED_OK)
