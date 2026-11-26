@@ -1803,11 +1803,12 @@ cmd_test() {
   log "all checks passed"
 }
 
-# _test_checks — one pass of every smoke check, on cmd_test's `fails`, `slow` and `slow_list`
-_test_checks() {
-  local tmp lp mp code haiku opus sk alias envk k
-  tmp="$(mktemp)"; lp="$(get_env LITELLM_PORT)"; mp="$(get_env SHARED_MCP_PORT)"
-  haiku="$(get_env CLAUDE_BEDROCK_HAIKU_MODEL)"; opus="$(get_env CLAUDE_BEDROCK_OPUS_MODEL)"
+# The smoke checks, in groups (cmd_test's `fails`, `slow` and `slow_list`, which _check counts on, as every group does):
+# _test_litellm — LiteLLM: alive, every virtual key; with the setup key a message, a streamed one and an embedding
+_test_litellm() {
+  local tmp lp code haiku sk alias envk k
+  tmp="$(mktemp)"; lp="$(get_env LITELLM_PORT)"
+  haiku="$(get_env CLAUDE_BEDROCK_HAIKU_MODEL)"
   sk="$(get_env LITELLM_KEY_SETUP)"
 
   code="$(curl -s -m 10 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$lp/health/liveliness" || true)"
@@ -1840,7 +1841,12 @@ _test_checks() {
   else
     _skip "embeddings" "no setup key — run ./stack setup"
   fi
-  _test_portal
+  rm -f "$tmp"
+}
+# _test_mcp — the shared MCP server: health, no token refused, its tools listed with the token
+_test_mcp() {
+  local mp code
+  mp="$(get_env SHARED_MCP_PORT)"
   code="$(curl -s -m 10 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$mp/healthz" || true)"
   _check "shared-mcp health" "$code" 200
   code="$(curl -s -m 10 -o /dev/null -w '%{http_code}' -X POST "http://127.0.0.1:$mp/mcp" || true)"
@@ -1848,11 +1854,54 @@ _test_checks() {
   code="$(curl_auth "$(get_env SHARED_MCP_TOKEN)" -s -m 30 -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
     -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' "http://127.0.0.1:$mp/mcp" 2>/dev/null | grep -o '"search_knowledge"' | head -n1 || true)"
   _check "shared-mcp lists tools" "$code" '"search_knowledge"'
-  stt_test_checks   # lib/stt.sh: Bedrock speech-to-text, when on (~$0.00005)
-  terminal_test_checks   # lib/terminal.sh: the browser terminal's checks, when on (no Bedrock calls)
-  projects_test_checks   # lib/projects.sh: the sandbox sees each project folder, read-only where chosen
-  code_test_checks       # lib/code.sh: the Code page's checks, when on (no Bedrock calls)
-  rm -f "$tmp"
+}
+
+# _test_group DIR NAME FUNC — FUNC, a group of checks, in a subshell in the background, on counts of its own: what it
+# prints goes to DIR/NAME.out and NAME.err, its counts to NAME.n and NAME.slow, a die's message to NAME.die ($! is its pid)
+_test_group() {
+  local d="$1" g="$2"; shift 2
+  (
+    _TG_DIE="$d/$g.die"; on_exit _test_group_die
+    fails=0; slow=0; slow_list=''
+    "$@"
+    printf '%s %s\n' "$fails" "$slow" > "$d/$g.n"; printf '%s' "$slow_list" > "$d/$g.slow"
+  ) > "$d/$g.out" 2> "$d/$g.err" &
+}
+_test_group_die() { [ -z "${_BN_DIE_MSG:-}" ] || printf '%s' "$_BN_DIE_MSG" > "$_TG_DIE"; }
+
+# _test_checks — one pass of every smoke check, on cmd_test's `fails`, `slow` and `slow_list`. JON-972: the groups run
+# side by side (each mostly waits, on a container or on Bedrock; one after the other they took some 15 s of an update),
+# each in a subshell of its own; what each printed is said afterwards, in the order they ran in before, and their counts
+# added up. Speech-to-text's run last, alone: when its check fails on a voice that was on by default, it restarts Open
+# WebUI and the portal, which the portal's and the Code page's checks call. A group that ends without its counts (a die,
+# set -e) counts as a failure; a die's message is this one's, as when they ran one after the other. Waits for the
+# groups' own pids only (setup has other work in the background).
+_test_checks() {
+  local d g p pids='' n s x msg=''
+  d="$(mktemp -d "${TMPDIR:-/tmp}/devos-ade-test.XXXXXX")" || die "cannot make a temporary folder for the checks"
+  for g in litellm:_test_litellm portal:_test_portal mcp:_test_mcp terminal:terminal_test_checks projects:projects_test_checks code:code_test_checks; do
+    _test_group "$d" "${g%%:*}" "${g#*:}"; pids="$pids $!"
+  done
+  for p in $pids; do wait "$p" 2>/dev/null || true; done
+  # lib/stt.sh: Bedrock speech-to-text, when on (~$0.00005); terminal, projects, code: lib/terminal.sh (the browser
+  # terminal's, when on; no Bedrock calls), lib/projects.sh (the sandbox sees each project folder, read-only where chosen),
+  # lib/code.sh (the Code page's, when on; no Bedrock calls)
+  _test_group "$d" stt stt_test_checks; wait "$!" 2>/dev/null || true
+  for g in litellm portal mcp stt terminal projects code; do
+    cat "$d/$g.out" 2>/dev/null || true; cat "$d/$g.err" >&2 2>/dev/null || true
+    if [ -s "$d/$g.n" ]; then
+      read -r n s < "$d/$g.n"; fails=$((fails + n)); slow=$((slow + s))
+      x="$(cat "$d/$g.slow" 2>/dev/null; printf .)"; slow_list="$slow_list${x%.}"
+    else
+      fails=$((fails + 1))
+      if [ -s "$d/$g.die" ]; then [ -n "$msg" ] || msg="$(cat "$d/$g.die")"
+      else printf '  FAIL  the %s checks ended before they were done\n' "$g"; fi
+    fi
+  done
+  rm -rf -- "$d"
+  # (a group's die: its own words were said above; this ends as it would have, with them for Home)
+  [ -z "$msg" ] || { _BN_DIE_MSG="$msg"; exit 1; }
+  return 0
 }
 
 # --- backup / restore / update / rotate-aws / uninstall ---
