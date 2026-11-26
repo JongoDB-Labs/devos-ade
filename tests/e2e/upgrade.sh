@@ -657,7 +657,15 @@ if [ "$MIGRATE" = 0 ] && [ "$PREPARE_CHECK" = 1 ] && [ -f "$STACK/lib/prepare.sh
     sleep 1
   done
   cp "$STACK/.state/helper/prepare.log" "$LOGS/prepare.log" 2>/dev/null; redact "$LOGS/prepare.log"
-  check prepared-ahead "$([ "$PST" = ready ] && echo 0 || echo 1)" "prepared $TO in $(( $(now) - PREP_T0 ))s: state ${PST:-none} $(sed -n 's/^reason=//p' "$STACK/.state/update/prepare/state" 2>/dev/null)"
+  # (before v0.67.1 the release updated FROM took the first image `config --images` lists for each service, which can be a
+  # dependency's: its prepare fails, and the update does every step itself, as without a prepare. A known issue of FROM,
+  # fixed in v0.67.1: XFAIL when FROM has that code and the prepare failed for that reason)
+  if [ "$PST" != ready ] && grep -qF '_prep_image() { dc config --images "$1" 2>/dev/null | head -n 1; }' "$STACK/lib/prepare.sh" &&
+    grep -q '^reason=the build of .* left no image' "$STACK/.state/update/prepare/state" 2>/dev/null; then
+    record upgrade prepared-ahead XFAIL "$(( $(now) - START_TS ))" "known issue of $FROM (fixed in v0.67.1: its prepare takes a dependency's image): prepared $TO in $(( $(now) - PREP_T0 ))s: state ${PST:-none} $(sed -n 's/^reason=//p' "$STACK/.state/update/prepare/state" 2>/dev/null)"
+  else
+    check prepared-ahead "$([ "$PST" = ready ] && echo 0 || echo 1)" "prepared $TO in $(( $(now) - PREP_T0 ))s: state ${PST:-none} $(sed -n 's/^reason=//p' "$STACK/.state/update/prepare/state" 2>/dev/null)"
+  fi
   grep -E '^==> .* ready \(' "$LOGS/prepare.log" | sed 's/^==> //' | while IFS= read -r l; do say "prepare step: $l"; done
   check prepare-left-stack-alone "$([ -n "$(cat "$OUT/portal-id-before")" ] && [ "$(docker image inspect --format '{{.Id}}' "$PROJECT/portal:local" 2>/dev/null)" = "$(cat "$OUT/portal-id-before")" ] && [ "$(git -C "$STACK" describe --tags --always 2>/dev/null)" = "$FROM" ] && echo 0 || echo 1)" "the portal image and the code are still $FROM's; ${PROJECT}-prep names: $(docker image ls --format '{{.Repository}}' "${PROJECT}-prep/*" 2>/dev/null | tr '\n' ' ')"
   check prepare-built-under-its-own-name "$(docker image inspect "${PROJECT}-prep/portal:local" >/dev/null 2>&1 && echo 0 || echo 1)" "${PROJECT}-prep/portal:local exists"
