@@ -183,22 +183,25 @@ get_env() {
 # one for each call (after localgit_sso_ensure, the one thing in it that may write .env): its own and its helpers' some
 # 20 get_env then run no awk each (JON-972). Only while _dc_env_snap is 1 (dc's local) and for this ENV_FILE does
 # get_env read it; set_env, set_env_batch and unset_env drop it. Keys of an identifier's characters only (spelled out:
-# a range such as A-Z may take in other letters in some locales); get_env reads any other key from the file. Status 1,
-# and no snapshot, without a readable .env.
+# a range such as A-Z may take in other letters in some locales); get_env reads any other key from the file. Every
+# _ENVV_ variable from before goes first (the last snapshot's, and any this shell was given), and none is exported,
+# under set -a too: .env's values never reach a program's environment this way. Status 1, and no snapshot, without a
+# readable .env.
 _ENV_KEY_CHARS=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_
 _env_snap() {
-  local line k
-  # shellcheck disable=SC2086  # (the last snapshot's names, identifiers, a word each)
-  [ -z "${_ENV_SNAP_KEYS:-}" ] || unset $_ENV_SNAP_KEYS
-  _ENV_SNAP_KEYS=''; _ENV_SNAP_OF=''
+  local line k ae=0
+  # shellcheck disable=SC2046,SC2086  # (variable names, identifiers, a word each)
+  unset ${!_ENVV_@} 2>/dev/null || true
+  _ENV_SNAP_OF=''
   [ -f "$ENV_FILE" ] && [ -r "$ENV_FILE" ] || return 1
+  case $- in *a*) ae=1; set +a ;; esac
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in *=*) ;; *) continue ;; esac
     k="${line%%=*}"
     case "$k" in '' | [0123456789]* | *[!$_ENV_KEY_CHARS]*) continue ;; esac
     printf -v "_ENVV_$k" '%s' "${line#*=}"
-    _ENV_SNAP_KEYS="$_ENV_SNAP_KEYS _ENVV_$k"
   done < "$ENV_FILE"
+  [ "$ae" = 0 ] || set -a
   _ENV_SNAP_OF="$ENV_FILE"
 }
 
@@ -901,11 +904,17 @@ compose_overlays() {
 # flag_on VALUE / flag_off VALUE -> 0 for true|1|yes|on / false|0|no|off, in any case (the portal reads its
 # switches the same way: portal/portal/config.py _on)
 _flag() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]'; }
-# flag_on, flag_off and egress_mode read a value as _flag does, without its pipe of two programs: they only ask whether it
-# is one of a few ASCII words, in any case, once the space tr's [:space:] means is out (_FLAG_WS: ASCII's six; tr makes no
-# other character into one of their letters). dc reads a dozen switches a call (JON-972).
+# flag_on, flag_off and egress_mode read a value as _flag does, without its pipe of two programs (dc reads a dozen
+# switches a call; JON-972), when the value is made of ASCII letters, digits, _ and ASCII's six spaces only (_FLAG_PLAIN):
+# they then ask whether it is one of a few ASCII words, in any case, once those spaces are out, as tr does in any locale
+# (no word has an i, which a Turkish locale lowercases otherwise). Any other value goes through _flag as before: in a UTF-8
+# locale tr's [:space:] also takes in a no-break or an ideographic space, so "on" with one after it was on.
 _FLAG_WS=$' \t\n\v\f\r'
-flag_on() { case "${1//[$_FLAG_WS]/}" in [Tt][Rr][Uu][Ee] | 1 | [Yy][Ee][Ss] | [Oo][Nn]) return 0 ;; esac; return 1; }
+_FLAG_PLAIN="$_ENV_KEY_CHARS$_FLAG_WS"
+flag_on() {
+  case "$1" in *[!$_FLAG_PLAIN]*) case "$(_flag "$1")" in true | 1 | yes | on) return 0 ;; esac; return 1 ;; esac
+  case "${1//[$_FLAG_WS]/}" in [Tt][Rr][Uu][Ee] | 1 | [Yy][Ee][Ss] | [Oo][Nn]) return 0 ;; esac; return 1
+}
 # auto_reviewer_text -> what Claude Code's auto mode reviewer runs on here and about what it costs: the stack's Haiku
 # while it is a Claude Haiku (CLAUDE_CODE_AUTO_MODE_MODEL: terminal/bin/bn-coded.mjs reviewerModel, both devos-claude
 # wrappers), else Sonnet 5.5 (Claude Code's claude-sonnet-5, the catalog's alias)
@@ -916,7 +925,10 @@ auto_reviewer_text() {
     *) printf 'Sonnet 5.5; ~$0.13 per 5 minutes in use\n' ;;
   esac
 }
-flag_off() { case "${1//[$_FLAG_WS]/}" in [Ff][Aa][Ll][Ss][Ee] | 0 | [Nn][Oo] | [Oo][Ff][Ff]) return 0 ;; esac; return 1; }
+flag_off() {
+  case "$1" in *[!$_FLAG_PLAIN]*) case "$(_flag "$1")" in false | 0 | no | off) return 0 ;; esac; return 1 ;; esac
+  case "${1//[$_FLAG_WS]/}" in [Ff][Aa][Ll][Ss][Ee] | 0 | [Nn][Oo] | [Oo][Ff][Ff]) return 0 ;; esac; return 1
+}
 
 # egress_mode VALUE -> internet | host | off: TERMINAL_EGRESS as the stack reads it (portal/portal/settings.py
 # egress_mode and code/server/main.mjs read it the same way). internet, the default (blank, and the old on values:
@@ -924,6 +936,9 @@ flag_off() { case "${1//[$_FLAG_WS]/}" in [Ff][Aa][Ll][Ss][Ee] | 0 | [Nn][Oo] | 
 # internet itself, this computer's services and your network included (how v0.10.0 and earlier always did it); off
 # (false/0/no/off): neither. Anything else reads as the default (lib/terminal.sh terminal_flag_warnings says so).
 egress_mode() {
+  case "$1" in
+    *[!$_FLAG_PLAIN]*) case "$(_flag "$1")" in host) echo host ;; false | 0 | no | off) echo off ;; *) echo internet ;; esac; return 0 ;;
+  esac
   case "${1//[$_FLAG_WS]/}" in
     [Hh][Oo][Ss][Tt]) echo host ;;
     [Ff][Aa][Ll][Ss][Ee] | 0 | [Nn][Oo] | [Oo][Ff][Ff]) echo off ;;

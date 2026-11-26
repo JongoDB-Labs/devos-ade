@@ -11,13 +11,15 @@ localgit_tls_ensure() { [ "${FAKE_TLS:-1}" = 1 ]; }
 uname() { case "${1:-}" in -s) echo "${FAKE_OS:-Linux}" ;; *) command uname "$@" ;; esac; }
 rt_vllm_serving() { [ "${FAKE_VLLM:-0}" = 1 ] && echo some/model; }
 
-# _dc_same LABEL ARG... — old_dc and dc with ARG...: docker given the same arguments and environment, the same status
+# _dc_same LABEL ARG... — old_dc and dc with ARG...: docker given the same arguments and environment, the same status,
+# and dc's own output (its warnings) the same
 _dc_same() {
   local label="$1" ro=0 rn=0; shift
-  DC_OUT="$TMP/dc-old"; : > "$DC_OUT"; old_dc "$@" || ro=$?
-  DC_OUT="$TMP/dc-new"; : > "$DC_OUT"; dc "$@" || rn=$?
+  DC_OUT="$TMP/dc-old"; : > "$DC_OUT"; unset _DC_PROJECT_WARNED; old_dc "$@" > "$TMP/dc-old.out" 2>&1 || ro=$?
+  DC_OUT="$TMP/dc-new"; : > "$DC_OUT"; unset _DC_PROJECT_WARNED; dc "$@" > "$TMP/dc-new.out" 2>&1 || rn=$?
   [ "$ro" = "$rn" ] || { printf '%s: status %s, was %s\n' "$label" "$rn" "$ro" >&2; return 1; }
   [ -s "$TMP/dc-old" ] || { printf '%s: docker not called\n' "$label" >&2; return 1; }
+  cmp -s "$TMP/dc-old.out" "$TMP/dc-new.out" || { printf '%s: dc says something else\n' "$label" >&2; diff "$TMP/dc-old.out" "$TMP/dc-new.out" | head -10 >&2; return 1; }
   cmp -s "$TMP/dc-old" "$TMP/dc-new" && return 0
   printf '%s: docker is given something else\n' "$label" >&2; diff "$TMP/dc-old" "$TMP/dc-new" | head -20 >&2
   return 1
@@ -39,7 +41,8 @@ test_dc_gives_docker_the_same_for_many_settings() {
     tam="$(_pick $((i * 23)) '' on Yes)"; cam="$(_pick $((i * 29)) '' 1 off)"
     ph="$(_pick $((i * 31)) '' bedrock-now.localhost x.bedrock-now.localhost devos.localhost)"
     pd="$(_pick $((i * 37)) '' bedrock-now-preview.localhost p.example.test)"; prj="$(_pick $((i * 41)) '' myproj)"
-    _env "TERMINAL_ENABLED=$te" "TERMINAL_WORKSPACE=$tw" "TERMINAL_EGRESS=$eg" "CODE_ENABLED=$ce" "LOCALGIT=$lg" \
+    # (some keys twice: the last line counts)
+    _env "TERMINAL_ENABLED=false" "CODE_ENABLED=true" "LOCALGIT=off" "TERMINAL_ENABLED=$te" "TERMINAL_WORKSPACE=$tw" "TERMINAL_EGRESS=$eg" "CODE_ENABLED=$ce" "LOCALGIT=$lg" \
       "REMOTE_MODE=$rm" "STT_PROVIDER=$stt" "WEBSEARCH_SEARXNG_BUILTIN=$ws" "PORTAL_HTTPS=$https" "TERMINAL_AUTO_MODE=$tam" \
       "CODE_AUTO_MODE=$cam" "PORTAL_HOST=$ph" "PREVIEW_DOMAIN=$pd" "COMPOSE_PROJECT_NAME=$prj" "LOCALGIT_SSO_HEADER=X-H-$i"
     FAKE_OS="$(_pick "$i" Linux Darwin Linux)"; FAKE_TLS="$(_pick $((i / 3)) 1 0)"; FAKE_VLLM="$(_pick $((i / 2)) 0 1)"
@@ -52,8 +55,25 @@ test_dc_gives_docker_the_same_for_many_settings() {
     if [ $((i % 2)) = 0 ]; then mkdir -p "$STATE_DIR/projects"; : > "$STATE_DIR/projects/compose.yaml"; else rm -f "$STATE_DIR/projects/compose.yaml"; fi
     if [ $((i % 6)) = 3 ]; then mkdir -p "$STATE_DIR/tls/serve"; echo "pem $i" > "$STATE_DIR/tls/serve/site.pem"; else rm -f "$STATE_DIR/tls/serve/site.pem"; fi
     DEVOS_ADE_COMPOSE_CONTEXTS="$(_pick $((i / 10)) 0 1)"
+    # (a COMPOSE_PROJECT_NAME of the shell's own: dc warns that it is ignored)
+    if [ $((i % 7)) = 3 ]; then export COMPOSE_PROJECT_NAME=shellproj; else unset COMPOSE_PROJECT_NAME; fi
     _dc_same "case $i" exec -T portal true || return 1
     [ $((i % 8)) != 0 ] || _dc_same "case $i, up" up -d --wait portal open-webui || return 1
+  done
+  unset COMPOSE_PROJECT_NAME
+}
+
+test_dc_gives_docker_the_same_in_a_utf8_locale() {
+  # (non-ASCII letters and spaces in values: the old tr and awk read them by the locale's characters)
+  local l
+  l="$(locale -a 2>/dev/null | grep -ixE 'en_US\.utf-?8|c\.utf-?8' | head -1)"
+  [ -n "$l" ] || { echo "no UTF-8 locale here: skipped" >&2; return 0; }
+  mkdir -p "$STATE_DIR"
+  local v
+  for v in $'on\xc2\xa0' $'\xc3\xa9' $'O\xcc\x81n' $'h\xc3\xb4st' $'\xe3\x80\x80true' $'\xffon' $'\xc2\xa0off' $'Host\xe2\x80\x83'; do
+    _env "TERMINAL_ENABLED=true" "TERMINAL_WORKSPACE=/w" "TERMINAL_EGRESS=$v" "CODE_ENABLED=$v" "PORTAL_HTTPS=$v" \
+      "PORTAL_HOST=$v.localhost" "LOCALGIT_SSO_HEADER=X" "TERMINAL_AUTO_MODE=$v"
+    LC_ALL="$l" _dc_same "locale $l, value [$v]" exec -T portal true || return 1
   done
 }
 
@@ -90,13 +110,19 @@ test_dc_gives_docker_the_same_for_other_config_files() {
 }
 
 test_the_flag_readers_read_as_before() {
-  local v
+  local v l utf8
+  utf8="$(locale -a 2>/dev/null | grep -ixE 'en_US\.utf-?8|c\.utf-?8' | head -1)"
+  for l in C ${utf8:+"$utf8"}; do
+  export LC_ALL="$l"
   for v in '' true TRUE ' True ' 't r u e' $'yes\n' 1 01 on ON On oN off OFF Off no NO No 0 false FaLsE ' f a l s e ' \
-      host HOST ' h o s t ' Host internet x truex $'\ttrue\r' y nope 'tru e' $'o\vn' $'o\fn' '1 ' ' 0'; do
+      host HOST ' h o s t ' Host internet x truex $'\ttrue\r' y nope 'tru e' $'o\vn' $'o\fn' '1 ' ' 0' 'on!' 'o-n' \
+      $'on\xc2\xa0' $'\xe3\x80\x80true' $'\xffon' 'TRUE_' '_on' 'I' 'ON.'; do
     assert_eq "$(flag_on "$v" && echo y || echo n)" "$(old_flag_on "$v" && echo y || echo n)" || { echo "flag_on [$v]" >&2; return 1; }
     assert_eq "$(flag_off "$v" && echo y || echo n)" "$(old_flag_off "$v" && echo y || echo n)" || { echo "flag_off [$v]" >&2; return 1; }
-    assert_eq "$(egress_mode "$v")" "$(old_egress_mode "$v")" || { echo "egress_mode [$v]" >&2; return 1; }
+    assert_eq "$(egress_mode "$v")" "$(old_egress_mode "$v")" || { echo "egress_mode [$v] ($l)" >&2; return 1; }
   done
+  done
+  unset LC_ALL
 }
 
 test_a_dc_call_runs_fewer_programs() {
@@ -109,9 +135,36 @@ test_a_dc_call_runs_fewer_programs() {
   awk() { echo awk >> "$calls"; command awk "$@"; }
   DC_OUT="$TMP/dc-new"; : > "$calls"; dc exec -T portal true
   assert_eq "$(grep -c '^tr$' "$calls")" 0
-  [ "$(grep -c '^uname$' "$calls")" -le 2 ]
-  # (get_env: an awk each for the few reads before dc's .env snapshot, none after)
-  [ "$(grep -c '^awk$' "$calls")" -le 5 ] || { grep -c '^awk$' "$calls" >&2; return 1; }
+  assert_eq "$(grep -c '^uname$' "$calls")" 2
+  # (get_env: an awk each for the three reads before dc's .env snapshot, project_name's and localgit_sso_ensure's;
+  # none after)
+  assert_eq "$(grep -c '^awk$' "$calls")" 3
+}
+
+test_nothing_dc_calls_after_its_snapshot_writes_env() {
+  # (a write there in a subshell would leave dc reading the old value: tests/dc_env_writers.py follows the calls)
+  local out
+  out="$(python3 "$T_ROOT/tests/dc_env_writers.py" --root "$T_ROOT" 2>&1)" || { printf '%s\n' "$out" >&2; return 1; }
+  # (and it does find one: a copy of lib/ whose localgit_ca_publish appends to .env)
+  local r="$TMP/root"; mkdir -p "$r/lib"; cp "$T_ROOT"/lib/*.sh "$r/lib/"
+  awk '{ print } /^localgit_ca_publish\(\) \{$/ { print "  printf %s X >> \"$ENV_FILE\"" }' "$T_ROOT/lib/common.sh" > "$r/lib/common.sh"
+  ! out="$(python3 "$T_ROOT/tests/dc_env_writers.py" --root "$r" 2>&1)" || { echo "missed a write" >&2; return 1; }
+  assert_contains "$out" "localgit_ca_publish"
+}
+
+test_the_snapshot_never_reaches_a_programs_environment() {
+  _env "TERMINAL_ENABLED=true" "TERMINAL_WORKSPACE=/w" "LOCALGIT_SSO_HEADER=X" "A=1"
+  # (an _ENVV_ variable this shell was given is not read as .env's, and goes)
+  export _ENVV_NOPE=given _ENVV_A=given
+  assert_eq "$(_dc_env_snap=1; _env_snap; get_env NOPE; get_env A)" 1
+  assert_eq "$(_env_snap; env | grep -c '^_ENVV_' || true)" 0
+  # (under set -a, nothing of the snapshot is exported: docker is given no _ENVV_ variable)
+  DC_OUT="$TMP/dc-new"; : > "$DC_OUT"
+  set -a; dc exec -T portal true; set +a
+  [ -s "$DC_OUT" ]
+  ! grep -q '_ENVV_' "$DC_OUT"
+  assert_eq "$(set -a; _env_snap; env | grep -c '^_ENVV_' || true)" 0
+  case $- in *a*) echo "set -a left on" >&2; return 1 ;; esac
 }
 
 test_get_env_reads_the_snapshot_as_it_reads_the_file() {
@@ -197,7 +250,18 @@ test_config_sums_give_the_same_sums_in_one_pass() {
   cksum() { if [ $# -gt 1 ] && [ ! -e "$TMP/dropped" ]; then : > "$TMP/dropped"; command cksum "$@" | sed '$d'; else command cksum "$@"; fi; }
   assert_eq "$(STACK_DIR="$s" config_sums off)" "$want"
   [ -e "$TMP/dropped" ]
+  # (a line too many, and a failing cksum whose lines are all there: one at a time too)
+  cksum() { if [ $# -gt 1 ] && [ ! -e "$TMP/extra" ]; then : > "$TMP/extra"; command cksum "$@"; echo "1 1 x"; else command cksum "$@"; fi; }
+  assert_eq "$(STACK_DIR="$s" config_sums off)" "$want"
+  [ -e "$TMP/extra" ]
+  cksum() { if [ $# -gt 1 ] && [ ! -e "$TMP/failed" ]; then : > "$TMP/failed"; command cksum "$@"; return 1; else command cksum "$@"; fi; }
+  assert_eq "$(STACK_DIR="$s" config_sums off)" "$want"
+  [ -e "$TMP/failed" ]
   unset -f cksum
+  # (a newline in the checkout's path)
+  s="$TMP/n"$'\n'"l"; mkdir -p "$s/caddy" "$s/terminal/managed"; printf 'c\n' > "$s/caddy/Caddyfile"; printf '{}\n' > "$s/terminal/managed/off.json"
+  STACK_DIR="$s" _sums_same "a newline in the path" off || return 1
+  ! STACK_DIR="$s" _config_sums_one_pass off > /dev/null
 }
 
 test_config_sums_run_two_cksums_not_two_a_file() {
