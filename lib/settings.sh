@@ -87,13 +87,14 @@ helper_password_file() { printf '%s/helper/portal-password\n' "$STATE_DIR"; }
 
 # helper_password_sync — the helper's own hash of PORTAL_PASSWORD (.state/helper/portal-password, 600 in a 700
 # folder the portal cannot see): what it checks the password of a settings request against. Rewritten by ./stack
-# (setup, up, config apply, restore) whenever it no longer matches .env.
+# (setup, up, config apply, restore) whenever it no longer matches .env. _HELPER_PW_OK=0: the caller has just checked
+# the copy there against this password (ensure_portal_password_hash, side by side with .env's hash).
 helper_password_sync() {
   local f pw
   pw="$(get_env PORTAL_PASSWORD)"; [ -n "$pw" ] || return 0
   f="$(helper_password_file)"
   mkdir -p "${f%/*}" && chmod 700 "${f%/*}"
-  if [ -f "$f" ] && pw_verify "$pw" "$(head -c 200 "$f")"; then return 0; fi
+  if [ -f "$f" ] && { [ "${_HELPER_PW_OK:-}" = 0 ] || pw_verify "$pw" "$(head -c 200 "$f")"; }; then return 0; fi
   ( umask 077; pw_hash "$pw" > "$f.tmp" ) && mv "$f.tmp" "$f"
 }
 
@@ -106,7 +107,8 @@ helper_password_ok() {
 # ensure_portal_password_hash — PORTAL_PASSWORD_HASH in .env matches PORTAL_PASSWORD (a password edited by hand
 # gets a new hash), and so does the helper's copy. Before every start of the portal. Once per run for the same password
 # and hashes (_PW_HASH_MEMO, this process only: each check is a PBKDF2 of PW_HASH_ITER rounds, about 0.4 s on Linux, and
-# a setup checked both twice; JON-972); any change to the three is checked again.
+# a setup checked both twice; JON-972); any change to the three is checked again. The helper's copy is checked side by
+# side with .env's hash (two processes: the two take the time of one).
 _PW_HASH_MEMO=''
 _pw_hash_memo_key() { printf '%s\n%s\n%s' "$1" "$(get_env PORTAL_PASSWORD_HASH)" "$(head -c 200 "$(helper_password_file)" 2>/dev/null)"; }
 ensure_portal_password_hash() {
@@ -114,8 +116,13 @@ ensure_portal_password_hash() {
   pw="$(get_env PORTAL_PASSWORD)"; [ -n "$pw" ] || return 0
   [ -z "$_PW_HASH_MEMO" ] || [ "$(_pw_hash_memo_key "$pw")" != "$_PW_HASH_MEMO" ] || return 0
   h="$(get_env PORTAL_PASSWORD_HASH)"
+  local f a='' hok=1
+  f="$(helper_password_file)"
+  # (its own stderr kept quiet: a check that cannot run fails again, and says why, in helper_password_sync)
+  if [ -f "$f" ]; then { pw_verify "$pw" "$(head -c 200 "$f")"; } 2>/dev/null & a=$!; fi
   if [ -z "$h" ] || ! pw_verify "$pw" "$h"; then set_env PORTAL_PASSWORD_HASH "$(pw_hash "$pw")"; fi
-  helper_password_sync || return
+  [ -z "$a" ] || ! wait "$a" || hok=0
+  _HELPER_PW_OK="$hok" helper_password_sync || return
   _PW_HASH_MEMO="$(_pw_hash_memo_key "$pw")"
 }
 

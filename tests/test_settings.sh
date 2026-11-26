@@ -271,6 +271,43 @@ test_the_password_and_its_hashes_are_checked_once_in_a_run_and_again_when_one_of
   [ "$hf" != '' ]
 }
 
+test_the_two_password_checks_run_side_by_side_and_decide_as_before() {
+  # (JON-972: .env's hash and the helper's copy, each a PBKDF2 of 600 000 rounds, checked at the same time)
+  _env
+  set_env_batch -PORTAL_PASSWORD_HASH ''; rm -f "$(helper_password_file)"
+  ensure_portal_password_hash
+  local n="$TMP/pbkdf2-log" h hf i z
+  z="$(printf '%064d' 0)"
+  eval "$(declare -f _pbkdf2 | sed '1s/_pbkdf2/_pbkdf2_real/')"
+  # (each check says it started, then waits up to 5 s for the other to start: one after the other, the first would end
+  # before the second started)
+  _pbkdf2() {
+    echo start >> "$n"; i=0
+    while [ "$(grep -c start "$n")" -lt 2 ] && [ "$i" -lt 100 ]; do sleep 0.05; i=$((i + 1)); done
+    _pbkdf2_real "$@"; echo end >> "$n"
+  }
+  _PW_HASH_MEMO=''; : > "$n"; ensure_portal_password_hash
+  assert_eq "$(tr '\n' ' ' < "$n")" "start start end end "
+  unset -f _pbkdf2; eval "$(declare -f _pbkdf2_real | sed '1s/_pbkdf2_real/_pbkdf2/')"
+  # what each case leaves, as before: a hash or copy that matches is kept, byte for byte; one that does not is written again
+  h="$(get_env PORTAL_PASSWORD_HASH)"; hf="$(cat "$(helper_password_file)")"
+  _PW_HASH_MEMO=''; ensure_portal_password_hash
+  assert_eq "$(get_env PORTAL_PASSWORD_HASH)" "$h"; assert_eq "$(cat "$(helper_password_file)")" "$hf"
+  printf 'pbkdf2-sha256:600000:0000000000000000:%s\n' "$z" > "$(helper_password_file)"; _PW_HASH_MEMO=''; ensure_portal_password_hash
+  assert_eq "$(get_env PORTAL_PASSWORD_HASH)" "$h"; helper_password_ok 'correct horse battery'
+  hf="$(cat "$(helper_password_file)")"
+  set_env PORTAL_PASSWORD_HASH "pbkdf2-sha256:600000:0000000000000000:$z"; _PW_HASH_MEMO=''; ensure_portal_password_hash
+  pw_verify 'correct horse battery' "$(get_env PORTAL_PASSWORD_HASH)"; assert_eq "$(cat "$(helper_password_file)")" "$hf"
+  set_env PORTAL_PASSWORD 'both stale now'; _PW_HASH_MEMO=''; ensure_portal_password_hash
+  pw_verify 'both stale now' "$(get_env PORTAL_PASSWORD_HASH)"; helper_password_ok 'both stale now'
+  # (a copy that is not a hash at all: the check fails quietly, and the copy is written again)
+  printf 'junk\n' > "$(helper_password_file)"; _PW_HASH_MEMO=''
+  assert_eq "$(ensure_portal_password_hash 2>&1)" ""
+  helper_password_ok 'both stale now'
+  # (no copy: none checked, one written)
+  rm -f "$(helper_password_file)"; _PW_HASH_MEMO=''; ensure_portal_password_hash; helper_password_ok 'both stale now'
+}
+
 test_setup_makes_a_secret_only_for_a_key_that_has_none() {
   printf 'OPENWEBUI_ADMIN_EMAIL=a@b.c\n' > "$ENV_FILE"
   setup_secrets 2>/dev/null
