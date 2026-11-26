@@ -906,8 +906,9 @@ if [ "$MIGRATE" = 0 ] && [ "$FAST_CHECK" = 1 ]; then
     check profiled-apply-ran "$n" "a second apply with nothing changed and the shell profiled: exit $n, $((T1 - T0))s"
     if [ -s "$tdir/trace/profile.tsv" ]; then
       cp "$tdir/trace/profile.tsv" "$OUT/profile-apply.tsv"
-      awk -F '\t' '{ s += $1 } END { printf "%d ms in %d lines\n", s, NR }' "$OUT/profile-apply.tsv" | while IFS= read -r l; do say "profiled apply, the shell's own time: $l"; done
-      head -n 20 "$OUT/profile-apply.tsv" | while IFS= read -r l; do say "profiled apply (ms, count, function@file:line): $l"; done
+      # (depth 0: the setup's own shell, its lines add up to its time; deeper: inside the subshells those lines started)
+      awk -F '\t' '$3 == 0 { s += $1; n++ } END { printf "%d ms in %d lines of its own shell\n", s, n }' "$OUT/profile-apply.tsv" | while IFS= read -r l; do say "profiled apply: $l"; done
+      head -n 25 "$OUT/profile-apply.tsv" | while IFS= read -r l; do say "profiled apply (ms, count, depth, function@file:line): $l"; done
     else
       say "profiled apply: no profile written (a bash without EPOCHREALTIME?)"
     fi

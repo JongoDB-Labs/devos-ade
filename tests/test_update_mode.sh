@@ -262,20 +262,53 @@ test_the_shell_profile_times_each_line_and_keeps_no_text() {
   um_sub() { local v; v="$(command sleep 0.2; echo x)"; [ "$v" = x ]; }
   upd_begin
   [ -n "$(trap -p DEBUG)" ] || { echo "no DEBUG trap" >&2; return 1; }
+  [ ! -e "$STATE_DIR/update/profile-on" ] || { echo "the switch was not used up" >&2; return 1; }
   um_slow; um_sub
-  # ($? of the command before is kept; errexit and || work as without it)
+  # ($? of the command before is kept; || works as without it)
   local rc=0; false || rc=$?; assert_eq "$rc" 1
   rc=0; (exit 3) || rc=$?; assert_eq "$rc" 3
   upd_commit
   assert_eq "$(trap -p DEBUG)" ""; case $- in *T*) echo "set -T left on" >&2; return 1 ;; esac
+  [ ! -e "$STATE_DIR/update/trace/profile.raw" ] || { echo "the raw records were kept after a success" >&2; return 1; }
   local p; p="$(cat "$STATE_DIR/update/trace/profile.tsv")"
-  # (MS COUNT FUNCTION@FILE:LINE, biggest first; the sleep in um_slow, the subshell in um_sub charged to its line)
-  printf '%s\n' "$p" | awk -F '\t' 'NF != 3 || $1 !~ /^[0-9]+$/ || $2 !~ /^[0-9]+$/ || $3 !~ /^[A-Za-z_][A-Za-z0-9_]*@[^:]*:[0-9]+$/ { bad = 1 }
-    NR > 1 && $1 > last { bad = 1 } { last = $1 } END { exit bad }' || { echo "not MS COUNT FUNCTION@FILE:LINE, biggest first: $p" >&2; return 1; }
-  [ "$(printf '%s\n' "$p" | awk -F '\t' '$3 ~ /^um_slow@/ { s += $1 } END { print (s >= 250) }')" = 1 ] || { echo "um_slow's sleep not there: $p" >&2; return 1; }
-  [ "$(printf '%s\n' "$p" | awk -F '\t' '$3 ~ /^um_sub@/ { s += $1 } END { print (s >= 150) }')" = 1 ] || { echo "um_sub's subshell not there: $p" >&2; return 1; }
+  # (MS COUNT DEPTH FUNCTION@FILE:LINE, biggest first; the sleep in um_slow on its line; um_sub's subshell on the line
+  # that started it, and the sleep inside it at depth 1)
+  printf '%s\n' "$p" | awk -F '\t' 'NF != 4 || $1 !~ /^-?[0-9]+$/ || $2 !~ /^[0-9]+$/ || $3 !~ /^[0-9]+$/ || $4 !~ /^[A-Za-z_][A-Za-z0-9_]*@[^:]*:[0-9]+$/ { bad = 1 }
+    NR > 1 && $1 > last { bad = 1 } { last = $1 } END { exit bad }' || { echo "not MS COUNT DEPTH FUNCTION@FILE:LINE, biggest first: $p" >&2; return 1; }
+  [ "$(printf '%s\n' "$p" | awk -F '\t' '$3 == 0 && $4 ~ /^um_slow@/ { s += $1 } END { print (s >= 250) }')" = 1 ] || { echo "um_slow's sleep not there: $p" >&2; return 1; }
+  [ "$(printf '%s\n' "$p" | awk -F '\t' '$3 == 0 && $4 ~ /^um_sub@/ { s += $1 } END { print (s >= 150) }')" = 1 ] || { echo "um_sub's subshell not on its line: $p" >&2; return 1; }
+  [ "$(printf '%s\n' "$p" | awk -F '\t' '$3 >= 1 && $4 ~ /^um_sub@/ { s += $1 } END { print (s >= 150) }')" = 1 ] || { echo "the sleep inside um_sub's subshell not there: $p" >&2; return 1; }
   for v in sk-profile-secret sleep secret '$('; do assert_not_contains "$p" "$v"; done
   [ "$(stat -c %a "$STATE_DIR/update/trace/profile.tsv" 2>/dev/null || stat -f %Lp "$STATE_DIR/update/trace/profile.tsv")" = 600 ] || { echo "profile not private" >&2; return 1; }
+}
+
+test_the_shell_profile_ends_with_a_second_begin_and_leaves_errexit_and_nounset_as_they_were() {
+  [ -n "${EPOCHREALTIME:-}" ] || { echo "bash ${BASH_VERSION%%(*}: no EPOCHREALTIME" >&2; return 77; }
+  _um_setup
+  mkdir -p "$STATE_DIR/update"; : > "$STATE_DIR/update/trace-on"; : > "$STATE_DIR/update/profile-on"
+  # (a second begin without the switch — used up by the first: no trap left, and its commit writes no profile)
+  upd_begin; [ -n "$(trap -p DEBUG)" ] || { echo "no DEBUG trap" >&2; return 1; }
+  upd_begin; assert_eq "$(trap -p DEBUG)" ""; case $- in *T*) echo "set -T left on" >&2; return 1 ;; esac
+  upd_commit; [ ! -e "$STATE_DIR/update/trace/profile.tsv" ] || { echo "a profile from a begin without the switch" >&2; return 1; }
+  # (the stack's own options: set -euo pipefail, at the top level and in functions, through $( ), a pipe, || and if; and
+  # the trace folder gone halfway, so each write fails)
+  # (set +e here, set -e inside: the left of a || would turn errexit off inside too, and test nothing)
+  : > "$STATE_DIR/update/profile-on"
+  local out rc
+  set +e
+  out="$(set -euo pipefail
+    um_f() { local v; v="$(false || echo z)"; [ "$v" = z ]; printf 'a\nb\n' | grep -c b > /dev/null; if false; then :; fi; }
+    upd_begin; um_f; false || true; x="$(exit 0)"; um_f
+    rm -rf "$STATE_DIR/update/trace"; um_f
+    upd_commit; echo "survived $x"; trap -p DEBUG)"; rc=$?
+  set -e
+  assert_eq "$rc" 0; assert_eq "$out" "survived "
+  # (and errexit still ends it at a failure of its own, in a function too)
+  set +e
+  ( set -euo pipefail; : > "$STATE_DIR/update/profile-on"; mkdir -p "$STATE_DIR/update/trace"; upd_begin
+    um_g() { false; echo "not here"; }; um_g; echo "nor here" ) > "$TMP/o" 2>&1; rc=$?
+  set -e
+  assert_eq "$rc" 1; assert_not_contains "$(cat "$TMP/o")" "here"
 }
 
 test_the_digest_helpers_read_files_folders_and_keys_in_one_go_with_the_lines_of_one_call_each() {

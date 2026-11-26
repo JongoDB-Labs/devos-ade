@@ -589,27 +589,37 @@ upd_prof_mark() {
   printf '0\tstep\t%s %s\t%s\n' "$1" "$(printf '%s' "$2" | LC_ALL=C tr -c ' -~' ' ' | cut -c1-80)" "$((now - _UPD_PROF_T0))" >> "$_UPD_PROF" 2>/dev/null || true
 }
 # The shell's own time, line by line (JON-972: an update in 30 s, measured rather than guessed): with the trace on, a file
-# .state/update/profile-on and bash 5 (its EPOCHREALTIME: never macOS's bash 3.2), a DEBUG trap adds each command's time
-# until the next to its function, file and line — in this shell: a subshell's whole time goes to the line that started
-# it — and the end of a setup that succeeded (upd_commit) writes trace/profile.tsv: milliseconds, count,
-# FUNCTION@FILE:LINE, the 300 biggest. Never a command's text or a value. It slows the shell's own work (about twice):
-# the e2e upgrade test turns it on for an apply of its own, never a timed one. The trap's variables are _UPD_SP_*, a
-# name nothing else uses (it runs inside every function); it keeps $? for the command it comes before.
-_UPD_SP=0
+# .state/update/profile-on and bash 5 (its EPOCHREALTIME: never macOS's bash 3.2), a DEBUG trap (set -T: in functions and
+# subshells too) appends each command's time until the next to trace/profile.raw — microseconds, the subshell depth,
+# FUNCTION@FILE:LINE (the depth counted from the shell that began the setup); never a command's text or a value. The end of a setup that succeeded (upd_commit) sums it into
+# trace/profile.tsv: ms, count, depth, place, the 400 biggest. Depth 0 is the setup's own shell (its lines add up to the
+# setup's time); a line that starts a subshell — $( ), a pipe — includes that subshell's time, and the subshell's own
+# lines are there too at depth 1 and more. The switch is used once: removed when a setup starts with it. It slows the
+# shell's own work (about twice): the e2e upgrade test turns it on for an apply of its own, never a timed one. A setup
+# that fails keeps the trap until it exits, and leaves profile.raw. Errexit applies inside a trap: the write is guarded,
+# and nothing in it prints (inside $( ) that would be captured). The trap's variables are _UPD_SP_*, a name nothing else
+# uses (it runs inside every function); it keeps $? for the command it comes before, and sets $_ (nothing here reads it).
+_UPD_SP=0; _UPD_SP_RAW=''
+upd_shprof_stop() { [ "$_UPD_SP" = 1 ] || return 0; trap - DEBUG; set +T; _UPD_SP=0; }
 upd_shprof_begin() {
+  upd_shprof_stop   # (a second begin starts again, or not at all: never a trap left from the first)
   [ -n "$_UPD_PROF" ] && [ -f "$STATE_DIR/update/profile-on" ] && [ -n "${EPOCHREALTIME:-}" ] || return 0
-  declare -gA _UPD_SP_MS=() _UPD_SP_N=()
-  _UPD_SP_L='main@:0'; _UPD_SP_F=''; _UPD_SP_X=0; _UPD_SP_T="${EPOCHREALTIME//[!0-9]/}"; _UPD_SP=1
+  rm -f "$STATE_DIR/update/profile-on" 2>/dev/null || true
+  _UPD_SP_RAW="$STATE_DIR/update/trace/profile.raw"
+  { : > "$_UPD_SP_RAW" && chmod 600 "$_UPD_SP_RAW"; } 2>/dev/null || return 0
+  _UPD_SP_L='main@:0'; _UPD_SP_F=''; _UPD_SP_X=0; _UPD_SP_D0="$BASH_SUBSHELL"; _UPD_SP_T="${EPOCHREALTIME//[!0-9]/}"; _UPD_SP=1
   set -T
-  trap '_UPD_SP_X="${EPOCHREALTIME//[!0-9]/}"; _UPD_SP_MS[$_UPD_SP_L]=$(( ${_UPD_SP_MS[$_UPD_SP_L]:-0} + _UPD_SP_X - _UPD_SP_T )); _UPD_SP_N[$_UPD_SP_L]=$(( ${_UPD_SP_N[$_UPD_SP_L]:-0} + 1 )); _UPD_SP_F="${BASH_SOURCE[0]:-}"; _UPD_SP_L="${FUNCNAME[0]:-main}@${_UPD_SP_F##*/}:$LINENO"; _UPD_SP_T="${EPOCHREALTIME//[!0-9]/}"' DEBUG
+  trap '_UPD_SP_X="${EPOCHREALTIME//[!0-9]/}"; { printf "%s\t%s\t%s\n" "$(( _UPD_SP_X - _UPD_SP_T ))" "$(( BASH_SUBSHELL - _UPD_SP_D0 ))" "$_UPD_SP_L" >> "$_UPD_SP_RAW"; } 2>/dev/null || :; _UPD_SP_F="${BASH_SOURCE[0]:-}"; _UPD_SP_L="${FUNCNAME[0]:-main}@${_UPD_SP_F##*/}:$LINENO"; _UPD_SP_T="${EPOCHREALTIME//[!0-9]/}"' DEBUG
 }
 upd_shprof_end() {
   [ "$_UPD_SP" = 1 ] || return 0
-  trap - DEBUG; set +T; _UPD_SP=0
-  local k f="$STATE_DIR/update/trace/profile.tsv"
-  { for k in "${!_UPD_SP_MS[@]}"; do printf '%s\t%s\t%s\n' "$(( _UPD_SP_MS[$k] / 1000 ))" "${_UPD_SP_N[$k]}" "$k"; done; } |
-    LC_ALL=C sort -t "$(printf '\t')" -k1,1nr | head -n 300 > "$f" 2>/dev/null || true
+  upd_shprof_stop
+  local f="${_UPD_SP_RAW%/*}/profile.tsv"
+  { LC_ALL=C awk -F '\t' 'NF == 3 && $1 ~ /^-?[0-9]+$/ && $2 ~ /^[0-9]+$/ { k = $2 "\t" $3; t[k] += $1; n[k]++ }
+      END { for (k in t) printf "%d\t%d\t%s\n", t[k] / 1000, n[k], k }' "$_UPD_SP_RAW" |
+      LC_ALL=C sort -t "$(printf '\t')" -k1,1nr | head -n 400; } 2>/dev/null > "$f" || true
   chmod 600 "$f" 2>/dev/null || true
+  rm -f "$_UPD_SP_RAW" 2>/dev/null || true
 }
 upd_in_defaults() { upd_in_litellm_config; }
 upd_in_setupkey() { upd_in_keys; }
