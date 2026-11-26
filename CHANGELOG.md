@@ -6,6 +6,19 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Changed
+- **The smoke test that ends an update runs its checks side by side.** It runs whenever an update changes the compose
+  files (most releases), and was its slowest step: some 15 s upgrading from 0.63.0, its groups of checks (LiteLLM, the
+  portal, shared-mcp, the terminal, the Code page, speech-to-text) one after the other, each mostly waiting. They now
+  run at the same time, each in a process group of its own: 15 s → 5 s, and Update now from 0.63.0 took 82 s
+  instead of 97 s. The projects' checks still run first and
+  speech-to-text's last, each alone (one may update the sandbox, the other restarts Open WebUI when the voice check
+  fails). The lines it prints, in their order, and what counts as a failure are as before; a Ctrl-C, or the update
+  helper stopping the job, ends every group with what it started. (JON-972)
+- e2e: the UI sweep keeps no reference list whose Activity page showed a notice, which could fail every later
+  comparison (JON-1411); upgrading from 0.63.0–0.67.0, the old release's own prepare failing on a dependency's image
+  (fixed in 0.67.1) is a known issue of that release.
+
 ## [0.68.12] - 2026-11-26
 
 ### Changed
