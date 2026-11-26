@@ -300,7 +300,9 @@ _owui_create_wanted() {
 # each, with the icon column as display.tsv has it; each of those is then made into its URL once (_icon_url_of). The
 # per-model helpers took about 80 ms a model (JON-972). tests/test_owui_wanted_identity.sh holds it to them, byte for
 # byte: a catalog row splits as bash's read with IFS=TAB does (a run of tabs is one break; leading and trailing ones
-# go), each file's first row for a name counts, CRs are dropped, and prices compare as numbers.
+# go), each file's first row for a name counts, CRs are dropped, and prices compare as numbers. Two cases read
+# differently, on purpose: a name matches a row of the same name only (the helpers' awk took "1.0" for "1", as
+# numbers), and an enabled name that starts with "-" counts (the helpers' grep took it for an option).
 _owui_models_wanted() {
   local rows map v
   rows="$(mktemp)" || return 0

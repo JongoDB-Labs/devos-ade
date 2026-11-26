@@ -352,22 +352,22 @@ _rt_agent_down() {
 }
 
 # --- Linux: the compose service ---
-# rt_compose_on ID -> 0 while its container is part of the stack (installed here, on Linux): dc() adds its profile
-# (vLLM: also a model to serve — with none it is "waiting", and no container)
-rt_compose_on() { [ "$(rt_os)" = linux ] && rt_installed "$1" && { [ "$1" != vllm ] || rt_vllm_serving >/dev/null; }; }
+# rt_compose_on ID [OS] -> 0 while its container is part of the stack (installed here, on Linux): dc() adds its profile
+# (vLLM: also a model to serve — with none it is "waiting", and no container). OS: rt_os's answer, when the caller has it
+rt_compose_on() { [ "${2:-$(rt_os)}" = linux ] && rt_installed "$1" && { [ "$1" != vllm ] || rt_vllm_serving >/dev/null; }; }
 # rt_services ID -> its compose services (Linux): Ollama and its gate; llama.cpp; vLLM
 rt_services() { case "$1" in ollama) echo "ollama ollama-gate" ;; llamacpp) echo llamacpp ;; vllm) echo vllm ;; esac; }   # (LM Studio: none)
 # runtime_services -> the runtime containers ./stack up starts (lib/commands.sh optional_services)
 runtime_services() { local id out=''; for id in $RUNTIME_IDS; do ! rt_compose_on "$id" || out="$out${out:+ }$(rt_services "$id")"; done; printf '%s\n' "$out"; }
 # runtime_profiles -> the compose profiles of the runtime containers (lib/common.sh dc): each installed one's, and the one
 # _RT_PROFILE names (its own pull, rm and logs, before it is installed or after it is not)
-runtime_profiles() { local id; for id in $RUNTIME_IDS; do ! { rt_compose_on "$id" || [ "${_RT_PROFILE:-}" = "$id" ]; } || echo "$id"; done; }
+runtime_profiles() { local id os; os="$(rt_os)"; for id in $RUNTIME_IDS; do ! { rt_compose_on "$id" "$os" || [ "${_RT_PROFILE:-}" = "$id" ]; } || echo "$id"; done; }
 # runtime_overlays -> the compose files of their GPUs (lib/common.sh compose_overlays)
 runtime_overlays() {
-  local id
+  local id os; os="$(rt_os)"
   for id in $RUNTIME_IDS; do
     # (also while it is being installed: its pull is of the GPU's image)
-    { rt_compose_on "$id" || [ "${_RT_PROFILE:-}" = "$id" ]; } || continue
+    { rt_compose_on "$id" "$os" || [ "${_RT_PROFILE:-}" = "$id" ]; } || continue
     [ "$(cat "$(rt_dir "$id")/gpu" 2>/dev/null)" != nvidia ] || echo "compose.$id-gpu.yaml"
   done
 }

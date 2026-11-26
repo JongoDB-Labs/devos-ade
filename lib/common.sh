@@ -377,12 +377,13 @@ dc() {
   # The built-in SearXNG (lib/websearch.sh): in the "searxng" profile, on unless WEBSEARCH_SEARXNG_BUILTIN=off
   if [ "${_WS_SEARXNG_PROFILE:-}" = 1 ] || ! flag_off "$(get_env WEBSEARCH_SEARXNG_BUILTIN)"; then f+=(--profile searxng); fi
   # The built-in git server, Forgejo (lib/localgit.sh): in the "forgejo" profile, on unless LOCALGIT=off
-  if [ "${_LG_PROFILE:-}" = 1 ] || ! flag_off "$(get_env LOCALGIT)"; then f+=(--profile forgejo); fi
+  local lg_off=0 sso; ! flag_off "$(get_env LOCALGIT)" || lg_off=1
+  if [ "${_LG_PROFILE:-}" = 1 ] || [ "$lg_off" = 0 ]; then f+=(--profile forgejo); fi
   # The runtimes as containers (lib/runtimes.sh, Linux): each in its own profile while this stack installed it
   if declare -F runtime_profiles >/dev/null; then local rp; for rp in $(runtime_profiles); do f+=(--profile "$rp"); done; fi
   # the checksums of the configuration files the services read only at their start (config_sums, below): every compose
   # call passes the same ones, so none recreates a service whose files did not change, and each recreates one whose did
-  local policy sums; policy="$(claude_policy)"; sums="$(config_sums "$policy")"
+  local policy sums; policy="$(claude_policy)"; sums="$(config_sums "$policy")"; sso="$(get_env LOCALGIT_SSO_HEADER)"
   # The browser terminal too: an exported TERMINAL_WORKSPACE must never decide what the container sees.
   ( unset OPENROUTER_API_KEY OPENROUTER_MODELS OPENROUTER_MAX_MODELS EXPLABS_API_KEY EXPLABS_MODELS STT_PROVIDER STT_API_KEY STT_MODEL OWUI_STT_ENGINE \
       WEBSEARCH_TAVILY_API_KEY WEBSEARCH_BRAVE_API_KEY WEBSEARCH_PERPLEXITY_API_KEY WEBSEARCH_SEARXNG_SECRET WEBSEARCH_SEARXNG_BUILTIN \
@@ -401,9 +402,9 @@ SUMS
     # service, and every step that reads the images ran again, on every update. Images built here are never pushed.
     # which of terminal/managed/*.json the sandbox gets as Claude Code's managed settings (read-only): from .env alone
     TERMINAL_CLAUDE_POLICY="$policy" BN_PROJECTS_PUBLIC="$STATE_DIR/projects/public" \
-    LOCALGIT_SSO_HEADER="$(get_env LOCALGIT_SSO_HEADER)" LOCALGIT_SSO_ON="$([ -n "$(get_env LOCALGIT_SSO_HEADER)" ] && echo true || echo false)" \
+    LOCALGIT_SSO_HEADER="$sso" LOCALGIT_SSO_ON="$([ -n "$sso" ] && echo true || echo false)" \
     BN_TLS_SERVE="$STATE_DIR/tls/serve" BN_LOCAL_SCHEME="$(flag_on "$(get_env PORTAL_HTTPS)" && echo https || echo http)" \
-    BN_LOCALGIT_TLS="$STATE_DIR/localgit/tls" BN_LOCALGIT_MODE="$(flag_off "$(get_env LOCALGIT)" && echo off || echo on)" BN_LEGACY_HOSTS="$(legacy_hosts_mode)" \
+    BN_LOCALGIT_TLS="$STATE_DIR/localgit/tls" BN_LOCALGIT_MODE="$([ "$lg_off" = 1 ] && echo off || echo on)" BN_LEGACY_HOSTS="$(legacy_hosts_mode)" \
     BN_LLAMACPP_DIR="$STATE_DIR/runtimes/llamacpp" BN_LLAMACPP_USER="$(cat "$STATE_DIR/runtimes/llamacpp/user" 2>/dev/null || echo 65534:65534)" \
     BN_VLLM_DIR="$STATE_DIR/runtimes/vllm" BN_VLLM_USER="$(cat "$STATE_DIR/runtimes/vllm/user" 2>/dev/null || echo 65534:65534)" \
     BUILDX_NO_DEFAULT_ATTESTATIONS="${BUILDX_NO_DEFAULT_ATTESTATIONS:-1}" \
@@ -498,6 +499,7 @@ config_sums() {
   local policy="${1:-}" c=() g
   [ -n "$policy" ] || policy="$(claude_policy)"
   for g in "$STACK_DIR"/caddy/*.caddy; do case "${g##*/}" in terminal-gateway.caddy | localgit-gateway-*.caddy | ollama-gate.caddy) ;; *) c+=("${g##*/}") ;; esac; done
+  ! _config_sums_one_pass "$policy" ${c[@]+"${c[@]}"} || return 0
   printf 'BN_LITELLM_CONFIG_SUM=%s\n' "$(litellm_compose_sum)"
   printf 'BN_TLS_SUM=%s\n' "$(files_sum "$STATE_DIR/tls/serve" site.pem)"
   printf 'BN_CADDY_CONFIG_SUM=%s\n' "$(files_sum "$STACK_DIR/caddy" Caddyfile ${c[@]+"${c[@]}"})"
@@ -509,6 +511,61 @@ config_sums() {
   printf 'BN_TERMINAL_POLICY_SUM=%s\n' "$(files_sum "$STACK_DIR/terminal/managed" "$policy.json")"
   printf 'BN_CHAT_POLICY_SUM=%s\n' "$(files_sum "$STACK_DIR/terminal/managed" chat.json)"
 }
+# _config_sums_one_pass POLICY CADDY_IMPORT... -> config_sums' lines, the very same sums, from two cksum runs: one over
+# every file of every line, then one over each line's "CRC BYTES NAME" lines (what each files_sum's two cksums are
+# given; seven files_sum made some 35 processes a dc call, and an update makes some 35 dc calls: JON-972). Only cksum's
+# numbers are used, in order. Status 1, with nothing printed, where it could not be sure of the same sums: a file there
+# but not readable (files_sum leaves its line out), a backslash, newline or carriage return in a path (a cksum may
+# escape it), a name that starts with "-" (GNU's cksum reads it as options there, wherever it is), a sum missing (a file
+# gone meanwhile). config_sums then takes them one at a time, as before.
+_config_sums_one_pass() {
+  local policy="$1" f=() g=() nm=() out a b i=0 t=('' '' '' '' '' '' '' '') sum=() sx=''
+  shift
+  # (the lines, in config_sums' order: 0 LiteLLM, 1 TLS, 2 Caddy, 3 the gateway, 4 Ollama's gate, 5 SearXNG (the file's
+  # CRC alone), 6 the terminal's policy, 7 Chat's)
+  _cs_files 0 "$STACK_DIR/litellm" config.yaml bn_hooks.py || return 1
+  _cs_files 1 "$STATE_DIR/tls/serve" site.pem || return 1
+  _cs_files 2 "$STACK_DIR/caddy" Caddyfile "$@" || return 1
+  _cs_files 3 "$STACK_DIR/caddy" terminal-gateway.caddy localgit-gateway-on.caddy localgit-gateway-off.caddy || return 1
+  _cs_files 4 "$STACK_DIR/caddy" ollama-gate.caddy || return 1
+  _cs_files 5 "$STACK_DIR/searxng" settings.yml || return 1
+  _cs_files 6 "$STACK_DIR/terminal/managed" "$policy.json" || return 1
+  _cs_files 7 "$STACK_DIR/terminal/managed" chat.json || return 1
+  if [ ${#f[@]} -gt 0 ]; then
+    out="$(cksum -- "${f[@]}" 2>/dev/null)" || return 1
+    while IFS=' ' read -r a b _; do
+      [ "$i" -lt ${#f[@]} ] || return 1
+      if [ "${g[$i]}" = 5 ]; then sx="$a"; else t[${g[$i]}]="${t[${g[$i]}]}$a $b ${nm[$i]}"$'\n'; fi
+      i=$((i + 1))
+    done <<< "$out"
+    [ "$i" = ${#f[@]} ] || return 1
+  fi
+  out="$(cksum <(printf '%s' "${t[0]}") <(printf '%s' "${t[1]}") <(printf '%s' "${t[2]}") <(printf '%s' "${t[3]}") \
+    <(printf '%s' "${t[4]}") <(printf '%s' "${t[6]}") <(printf '%s' "${t[7]}") 2>/dev/null)" || return 1
+  while IFS=' ' read -r a b _; do sum+=("$a-$b"); done <<< "$out"
+  [ ${#sum[@]} = 7 ] || return 1
+  # (a line none of whose files is there: nothing, as files_sum gives)
+  for i in 0 1 2 3 4; do [ -n "${t[$i]}" ] || sum[i]=''; done
+  [ -n "${t[6]}" ] || sum[5]=''
+  [ -n "${t[7]}" ] || sum[6]=''
+  printf 'BN_LITELLM_CONFIG_SUM=%s\n' "$(_litellm_as_composed "${sum[0]}")"
+  printf 'BN_TLS_SUM=%s\nBN_CADDY_CONFIG_SUM=%s\nBN_GATEWAY_CONFIG_SUM=%s\nBN_OLLAMA_GATE_CONFIG_SUM=%s\n' "${sum[1]}" "${sum[2]}" "${sum[3]}" "${sum[4]}"
+  printf 'BN_SEARXNG_SETTINGS_SUM=%s\nBN_TERMINAL_POLICY_SUM=%s\nBN_CHAT_POLICY_SUM=%s\n' "$sx" "${sum[5]}" "${sum[6]}"
+}
+# _cs_files LINE DIR NAME... — DIR's files NAME… that are there, onto _config_sums_one_pass's f, g and nm; status 1 for
+# one it cannot vouch for (above)
+_cs_files() {
+  local k="$1" d="$2" x
+  shift 2
+  for x in "$@"; do
+    [ -f "$d/$x" ] || continue
+    [ -r "$d/$x" ] || return 1
+    case "$d/$x" in *\\* | *$'\n'* | *$'\r'*) return 1 ;; esac
+    case "$x" in -*) return 1 ;; esac
+    f+=("$d/$x"); g+=("$k"); nm+=("$x")
+  done
+  return 0
+}
 # LiteLLM's model list changes without a restart (lib/litellm_live.sh): once it has taken a config.yaml live, that
 # file is what it serves although it did not start with it. litellm_live_sum_file then holds "SUM BASE": the checksum of
 # that config.yaml (with its hook) and the BN_CONFIG_SUM of the container that took it. While config.yaml is still
@@ -516,9 +573,10 @@ config_sums() {
 # it was given live. Any other config.yaml (rendered and not given to it live) has its own checksum again.
 litellm_live_sum_file() { printf '%s\n' "$STATE_DIR/litellm-live.sum"; }
 litellm_config_sum_now() { files_sum "$STACK_DIR/litellm" config.yaml bn_hooks.py; }
-litellm_compose_sum() {
-  local s live='' base=''
-  s="$(litellm_config_sum_now)"
+litellm_compose_sum() { _litellm_as_composed "$(litellm_config_sum_now)"; }
+# _litellm_as_composed SUM -> SUM, or the BASE litellm_live_sum_file gives it while SUM is the config it took live
+_litellm_as_composed() {
+  local s="$1" live='' base=''
   [ ! -r "$(litellm_live_sum_file)" ] || read -r live base < "$(litellm_live_sum_file)" 2>/dev/null || true
   if [ -n "$s" ] && [ "$live" = "$s" ] && [ -n "$base" ]; then s="$base"; fi
   printf '%s\n' "$s"
@@ -811,7 +869,11 @@ compose_overlays() {
 # flag_on VALUE / flag_off VALUE -> 0 for true|1|yes|on / false|0|no|off, in any case (the portal reads its
 # switches the same way: portal/portal/config.py _on)
 _flag() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]'; }
-flag_on() { case "$(_flag "$1")" in true | 1 | yes | on) return 0 ;; esac; return 1; }
+# flag_on, flag_off and egress_mode read a value as _flag does, without its pipe of two programs: they only ask whether it
+# is one of a few ASCII words, in any case, once the space tr's [:space:] means is out (_FLAG_WS: ASCII's six; tr makes no
+# other character into one of their letters). dc reads a dozen switches a call (JON-972).
+_FLAG_WS=$' \t\n\v\f\r'
+flag_on() { case "${1//[$_FLAG_WS]/}" in [Tt][Rr][Uu][Ee] | 1 | [Yy][Ee][Ss] | [Oo][Nn]) return 0 ;; esac; return 1; }
 # auto_reviewer_text -> what Claude Code's auto mode reviewer runs on here and about what it costs: the stack's Haiku
 # while it is a Claude Haiku (CLAUDE_CODE_AUTO_MODE_MODEL: terminal/bin/bn-coded.mjs reviewerModel, both devos-claude
 # wrappers), else Sonnet 5.5 (Claude Code's claude-sonnet-5, the catalog's alias)
@@ -822,7 +884,7 @@ auto_reviewer_text() {
     *) printf 'Sonnet 5.5; ~$0.13 per 5 minutes in use\n' ;;
   esac
 }
-flag_off() { case "$(_flag "$1")" in false | 0 | no | off) return 0 ;; esac; return 1; }
+flag_off() { case "${1//[$_FLAG_WS]/}" in [Ff][Aa][Ll][Ss][Ee] | 0 | [Nn][Oo] | [Oo][Ff][Ff]) return 0 ;; esac; return 1; }
 
 # egress_mode VALUE -> internet | host | off: TERMINAL_EGRESS as the stack reads it (portal/portal/settings.py
 # egress_mode and code/server/main.mjs read it the same way). internet, the default (blank, and the old on values:
@@ -830,9 +892,9 @@ flag_off() { case "$(_flag "$1")" in false | 0 | no | off) return 0 ;; esac; ret
 # internet itself, this computer's services and your network included (how v0.10.0 and earlier always did it); off
 # (false/0/no/off): neither. Anything else reads as the default (lib/terminal.sh terminal_flag_warnings says so).
 egress_mode() {
-  case "$(_flag "$1")" in
-    host) echo host ;;
-    false | 0 | no | off) echo off ;;
+  case "${1//[$_FLAG_WS]/}" in
+    [Hh][Oo][Ss][Tt]) echo host ;;
+    [Ff][Aa][Ll][Ss][Ee] | 0 | [Nn][Oo] | [Oo][Ff][Ff]) echo off ;;
     *) echo internet ;;
   esac
 }
