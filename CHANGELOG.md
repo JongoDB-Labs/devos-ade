@@ -6,14 +6,21 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.68.17] - 2026-11-26
+
 ### Changed
-- **A backup takes about a second less.** It no longer asks Docker Compose to start Postgres and RustFS when both run
-  already: one look at Docker's list of containers says so, where Compose took 0.8 s before anything else could begin. The git
-  server's container is stopped and started again by Docker itself for its copy (Compose added some 0.2 s to each). What is
-  left of that stop is the git server's own clean shutdown, which waits a fixed second. An update backs up in the version it
-  updates from, so updates gain this from the next one on. (JON-972)
+- **A backup takes about a second less** (3.5 s to 2.3 s in the e2e upgrade test). It no longer asks Docker Compose to start
+  Postgres and RustFS when both run already: one look at Docker's list of containers says so, where Compose took 0.8 s before
+  anything else could begin. The git server's container is stopped and started again by Docker itself for its copy (Compose
+  added some 0.2 s to each). What is left of that stop is the git server's own clean shutdown, which waits a fixed second. An
+  update backs up in the version it updates from, so updates gain this from the next one on. (JON-972)
 - e2e: `./stack backup` times its own calls when the update's trace is on; the upgrade test checks that the backup started
   nothing already running and that the git server runs again in the same container. (JON-972)
+- e2e: the browser checks' network record keeps the start of each failed (5xx) request's answer, so an occasional 502 from
+  the Code page's cost lookup says what went wrong next time. (JON-1400)
+
+### To get it
+Existing installs: Home › Update now.
 
 ## [0.68.16] - 2026-11-26
 
