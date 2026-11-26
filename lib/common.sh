@@ -558,14 +558,14 @@ ROWS
 # _dc_port_fast PROJECT SERVICE PORT — `dc port SERVICE PORT` from one docker call: through Compose (dc's preparation of
 # its files and Compose's own start) it took a third of a second, and setup asks for three ports (resolve_port: is the
 # port in use our own?), JON-972. Compose
-# answers with the address and host port its container publishes PORT/tcp on ("127.0.0.1:4000"), status 0; nothing,
-# status 1, without one (no running container, the port not published). Docker's own list says the same:
+# answers with the address and host port its container publishes PORT/tcp on ("127.0.0.1:4000"), status 0; ":0" for a
+# port the container only exposes; nothing, status 1, without either (no running container, a port it does not have). Docker's own list says the same:
 # "127.0.0.1:4000->4000/tcp, …" (from the same API: with a v4 and a v6 address for the port, the one Compose takes first
 # has no fixed order; both are the same host port). Status 2, nothing printed, for what that list may not say as Compose would — a
 # service name or port of other characters, more than one container, a range of ports, PORT published on two host
 # ports, docker failing — and dc asks Compose. (Checked against Compose on a live stack: tests/e2e/upgrade.sh.)
 _dc_port_fast() {
-  local rows e hit=''
+  local rows e hit='' exposed=''
   case "$2" in '' | -* | *[!a-z0-9_-]*) return 2 ;; esac
   case "$3" in '' | 0* | *[!0-9]*) return 2 ;; esac
   rows="$(docker ps --no-trunc --filter "label=com.docker.compose.project=$1" --filter "label=com.docker.compose.service=$2" \
@@ -574,12 +574,20 @@ _dc_port_fast() {
   rows="$rows, "
   while [ -n "$rows" ]; do
     e="${rows%%, *}"; rows="${rows#*, }"
-    case "$e" in *"->$3/tcp") ;; *"->"*-*"/tcp") return 2 ;; *) continue ;; esac
+    case "$e" in
+      *"->$3/tcp") ;;
+      *"->"*-*"/tcp") return 2 ;;   # (a published range)
+      *"->"*) continue ;;
+      "$3/tcp") exposed=1; continue ;;
+      *-*"/tcp") return 2 ;;        # (a range only exposed)
+      *) continue ;;
+    esac
     e="${e%"->$3/tcp"}"
     case "${e##*:}" in '' | *[!0-9]*) return 2 ;; esac
     if [ -z "$hit" ]; then hit="$e"; elif [ "${hit##*:}" != "${e##*:}" ]; then return 2; fi
   done
-  [ -n "$hit" ] || return 1
+  # (a port the image exposes but nothing publishes: Compose answers ":0", status 0 — seen on a live stack)
+  if [ -z "$hit" ]; then [ -n "$exposed" ] || return 1; printf ':0\n'; return 0; fi
   # (Compose prints the address as Docker's API gives it, "::", where docker ps writes "[::]")
   case "$hit" in '['*']:'*) e="${hit%%]:*}"; hit="${e#[}:${hit##*]:}" ;; esac
   printf '%s\n' "$hit"

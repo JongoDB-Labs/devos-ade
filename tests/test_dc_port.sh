@@ -36,9 +36,13 @@ test_dc_port_answers_from_dockers_list_as_compose_prints_it() {
   assert_eq "$(PORTS_v6=':::4000->4000/tcp, 0.0.0.0:4000->4000/tcp' dc port v6 4000)" ":::4000"
   assert_eq "$(PORTS_v6='[::1]:4000->4000/tcp' dc port v6 4000)" "::1:4000"
   assert_eq "$(PORTS_udp='127.0.0.1:4000->4000/udp' dc port udp 4000; echo "rc=$?")" "rc=1"   # (a udp port only: none)
-  # nothing, status 1: a port it does not publish, one it only exposes, a service with no running container
+  # a port it only exposes: ":0", status 0, as Compose answers (seen on a live stack: postgres 5432, open-webui 8080)
+  assert_eq "$(dc port postgres 5432; echo "rc=$?")" "$(printf ':0\nrc=0')"
+  assert_eq "$(PORTS_both='127.0.0.1:4000->4000/tcp, 5432/tcp' dc port both 5432)" ":0"
+  assert_eq "$(PORTS_both='127.0.0.1:4000->4000/tcp, 5432/tcp' dc port both 4000)" "127.0.0.1:4000"
+  # nothing, status 1: a port it does not have, a service with no running container
   assert_eq "$(dc port litellm 4001; echo "rc=$?")" "rc=1"
-  assert_eq "$(dc port postgres 5432; echo "rc=$?")" "rc=1"
+  assert_eq "$(dc port postgres 5433; echo "rc=$?")" "rc=1"
   assert_eq "$(dc port forgejo 3000; echo "rc=$?")" "rc=1"
   assert_not_contains "$(cat "$TMP/calls")" "docker compose"
   # resolve_port's and the portal's questions, the way they ask them
@@ -49,10 +53,10 @@ test_dc_port_answers_from_dockers_list_as_compose_prints_it() {
 
 test_dc_port_asks_compose_for_what_dockers_list_may_not_say_as_compose_would() {
   _port_docker
-  local PORTS_range='127.0.0.1:4000-4002->4000-4002/tcp' PORTS_twice='127.0.0.1:4000->4000/tcp, 127.0.0.1:4100->4000/tcp' \
+  local PORTS_xrange='8000-8010/tcp' PORTS_range='127.0.0.1:4000-4002->4000-4002/tcp' PORTS_twice='127.0.0.1:4000->4000/tcp, 127.0.0.1:4100->4000/tcp' \
     PORTS_scaled="$(printf '127.0.0.1:4000->4000/tcp\n127.0.0.1:4001->4000/tcp')" PORTS_odd='127.0.0.1:x->4000/tcp' PORTS_litellm='127.0.0.1:4000->4000/tcp'
   local f
-  for f in "port range 4001" "port twice 4000" "port scaled 4000" "port odd 4000" "port Bad/name 4000" "port -h 4000" \
+  for f in "port xrange 8005" "port range 4001" "port twice 4000" "port scaled 4000" "port odd 4000" "port Bad/name 4000" "port -h 4000" \
     "port litellm 04000" "port litellm 4000/udp" "port --index 2 litellm 4000" "port --protocol udp litellm 4000" "port litellm"; do
     # shellcheck disable=SC2086  # the form, a word an argument
     assert_eq "$(dc $f)" "COMPOSE"
