@@ -7,6 +7,15 @@
 # addresses (the model gateway reaches it on the internal "ollama" network), and then it checks no Host at all. This
 # gate makes the same check in front of it. (Cross-origin requests are Ollama's own CORS check, which it still makes:
 # the Origin header goes through unchanged.)
+# Caddy lets an idle connection to a service go after 2 s, before the service does: the portal and Open WebUI (uvicorn)
+# and the Code page's servers (Node) close theirs after 5 s, and Caddy kept them 2 minutes, so a request it sent on one
+# that the service was closing that moment got 502 — a POST, which Caddy cannot send again (JON-1414). Every
+# reverse_proxy and forward_auth imports it; the same in each Caddy's own configuration (tests/test_caddy_keepalive.sh).
+(upstream_keepalive) {
+	transport http {
+		keepalive 2s
+	}
+}
 {
 	admin off
 	auto_https off
@@ -17,6 +26,7 @@ http://:11434 {
 	@loopback host 127.0.0.1 localhost
 	handle @loopback {
 		reverse_proxy ollama:11434 {
+			import upstream_keepalive
 			# a pull streams its progress, a chat its tokens: each line as Ollama sends it
 			flush_interval -1
 		}

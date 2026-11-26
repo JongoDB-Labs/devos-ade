@@ -751,7 +751,7 @@ test_caddy_terminal_site_gateway_and_remote_gating() {
   f="$(cat "$STACK_DIR/caddy/Caddyfile")"
   assert_contains "$f" 'import terminal-{$TERMINAL_MODE:off}.caddy'
   assert_eq "$(grep -cv '^#' "$STACK_DIR/caddy/terminal-off.caddy")" 0   # off: no site
-  site="$(awk '/^\{\$LOCAL_SCHEME:http\}:\/\/\{\$TERMINAL_HOST\}/,/^}/' "$STACK_DIR/caddy/terminal-on.caddy")"
+  site="$(awk '/^\{\$LOCAL_SCHEME:http\}:\/\/\{\$TERMINAL_HOST\}/,/^}/' "$STACK_DIR/caddy/terminal-on.caddy" | grep -v '^[[:space:]]*import upstream_keepalive$')"
   # first the local rules and the same-site guard, then the Code page's unlock hand-off and the unlock form, then the
   # check — only then ttyd, through the gateway
   assert_eq "$(printf '%s\n' "$site" | grep -o 'import [a-z_]*' | tr '\n' ' ')" \
@@ -795,14 +795,15 @@ respond @unclean 404"
   # its log has no request headers (the secret header is in one)
   assert_contains "$gw" "request>headers delete"
   # ttyd: its socket, only with the secret header (removed on the way), no secret no ttyd; in that order
-  t7="$(awk '/^http:\/\/:7681/,/^}/' "$STACK_DIR/caddy/terminal-gateway.caddy" | grep -v '^[[:space:]]*#' | tr -d '\t')"
-  assert_eq "$(printf '%s\n' "$t7" | sed -n 3,12p)" "route {
+  t7="$(awk '/^http:\/\/:7681/,/^}/' "$STACK_DIR/caddy/terminal-gateway.caddy" | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*import upstream_keepalive$' | tr -d '\t')"
+  assert_eq "$(printf '%s\n' "$t7" | sed -n 3,13p)" "route {
 @weak expression \`!'{\$TERMINAL_PROXY_SECRET}'.matches('^[0-9a-f]+\$') || '{\$TERMINAL_PROXY_SECRET}'.size() < 32\`
 respond @weak \"no TERMINAL_PROXY_SECRET: ./stack terminal enable\" 503
 @proxied header X-Bn-Terminal-0{\$TERMINAL_PROXY_SECRET} 1
 handle @proxied {
 request_header -X-Bn-Terminal-*
-reverse_proxy unix//run/bn-ttyd/ttyd.sock
+reverse_proxy unix//run/bn-ttyd/ttyd.sock {
+}
 }
 respond 407
 }"
@@ -837,7 +838,7 @@ respond 407
     assert_contains "$r" "reverse_proxy terminal-upstream:7681"
     assert_not_contains "$r" " terminal:7681"
     # its own response policy there too (framed by the remote portal), not the apps' (which keeps Set-Cookie)
-    tb="$(printf '%s\n' "$r" | awk '/reverse_proxy terminal-upstream:7681/,/}/' | grep -o 'import .*' | tr '\n' '|')"
+    tb="$(printf '%s\n' "$r" | grep -v '^[[:space:]]*import upstream_keepalive$' | awk '/reverse_proxy terminal-upstream:7681/,/}/' | grep -o 'import .*' | tr '\n' '|')"
     assert_eq "$tb" 'import terminal_upstream|import terminal_page {$REMOTE_ORIGIN} https://{$REMOTE_CODE_HOST:code.remote.invalid}|' 
   done
   # the portal's cookie names and the unlock route agree with Caddy's

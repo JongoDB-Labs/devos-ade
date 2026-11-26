@@ -25,7 +25,9 @@ https://:8093 {
 		request_header -X-Bn-Git-*
 		request_header -Cookie
 		@git path_regexp ^/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+\.git/(info/refs|git-upload-pack|git-receive-pack)$
-		reverse_proxy @git forgejo:3000
+		reverse_proxy @git forgejo:3000 {
+			import upstream_keepalive
+		}
 		respond 404
 	}
 }

@@ -12,7 +12,7 @@ test_the_artifact_site_comes_with_the_previews() {
   assert_eq "$(grep -cv '^#' "$STACK_DIR/caddy/artifact-off.caddy")" 0
   on="$(_site)"
   assert_eq "$(printf '%s\n' "$on" | grep -c '^{\$LOCAL_SCHEME:http}://')" 1
-  site="$(printf '%s\n' "$on" | awk '/^\{\$LOCAL_SCHEME:http\}:\/\/\*\.artifact\.\{\$PREVIEW_DOMAIN\} \{/,/^}/' | tr -d '\t')"
+  site="$(printf '%s\n' "$on" | awk '/^\{\$LOCAL_SCHEME:http\}:\/\/\*\.artifact\.\{\$PREVIEW_DOMAIN\} \{/,/^}/' | tr -d '\t' | grep -v '^[[:space:]]*import upstream_keepalive$')"
   # the local rules, client copies of the headers only Caddy sets gone, the portal's check, then only GET/HEAD of /artifact/*
   assert_eq "$(printf '%s\n' "$site" | sed -n 4,13p | tr '\n' '|')" \
     "import local_request|request_header -X-Bn-Artifact|request_header -X-Bn-Code-Proxy|request_header -X-Bn-Csp-Nonce|request_header -X-Bn-Portal-Origin|request_header -X-Bn-Terminal-Host|request_header -X-Bn-Remote|forward_auth portal:8000 {|uri /auth/verify?app=artifact|}|"

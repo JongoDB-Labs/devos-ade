@@ -13,6 +13,7 @@
 		import terminal_unlock
 		import terminal_auth
 		reverse_proxy terminal-upstream:7681 {
+			import upstream_keepalive
 			import terminal_upstream
 			import terminal_page {$PORTAL_ORIGIN} {$CODE_ORIGIN:http://code.invalid}
 		}

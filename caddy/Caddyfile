@@ -23,6 +23,15 @@
 # The local sites are plain HTTP (tls-off.caddy) or, with PORTAL_HTTPS (./stack https), HTTPS with a certificate ./stack made on
 # the host (tls-on.caddy): their addresses start with {$LOCAL_SCHEME:http}://, and local_tls, local_listener and local_health are
 # the snippets of that file.
+# Caddy lets an idle connection to a service go after 2 s, before the service does: the portal and Open WebUI (uvicorn)
+# and the Code page's servers (Node) close theirs after 5 s, and Caddy kept them 2 minutes, so a request it sent on one
+# that the service was closing that moment got 502 — a POST, which Caddy cannot send again (JON-1414). Every
+# reverse_proxy and forward_auth imports it; the same in each Caddy's own configuration (tests/test_caddy_keepalive.sh).
+(upstream_keepalive) {
+	transport http {
+		keepalive 2s
+	}
+}
 import tls-{$LOCAL_TLS:off}.caddy
 {
 	admin off
@@ -67,6 +76,7 @@ import tls-{$LOCAL_TLS:off}.caddy
 
 (portal_auth) {
 	forward_auth portal:8000 {
+		import upstream_keepalive
 		uri /auth/verify
 		copy_headers X-Portal-User
 	}
@@ -135,6 +145,7 @@ import tls-{$LOCAL_TLS:off}.caddy
 (app_sso) {
 	@bn_sso path /.bn/sso
 	reverse_proxy @bn_sso portal:8000 {
+		import upstream_keepalive
 		rewrite /auth/app-sso?{query}
 	}
 	@bn_page header Sec-Fetch-Mode navigate
@@ -214,6 +225,7 @@ import tls-{$LOCAL_TLS:off}.caddy
 	request_header @chat_runtime -X-Portal-Remote
 	rewrite @chat_runtime /pyodide/{re.chat_runtime.1}
 	reverse_proxy @chat_runtime open-webui:8080 {
+		import upstream_keepalive
 		header_down -Set-Cookie
 		header_down -X-Frame-Options
 		header_down Access-Control-Allow-Origin *
@@ -262,11 +274,13 @@ import tls-{$LOCAL_TLS:off}.caddy
 		path /static/tokens.css /static/fonts.css /static/login.css /static/logo.svg /static/fonts/source-serif-4-latin-wght-normal.woff2 /static/fonts/inter-latin-wght-normal.woff2 /static/fonts/jetbrains-mono-latin-wght-normal.woff2
 	}
 	reverse_proxy @bn_unknown_asset portal:8000 {
+		import upstream_keepalive
 		header_down -Set-Cookie
 	}
 	@bn_unknown_page method GET HEAD
 	rewrite @bn_unknown_page /auth/unknown-host?site={args[0]}
 	reverse_proxy @bn_unknown_page portal:8000 {
+		import upstream_keepalive
 		header_down -Set-Cookie
 	}
 	respond 405
@@ -309,9 +323,13 @@ import tls-{$LOCAL_TLS:off}.caddy
 	}
 	# The public paths (snippet above) need no session; everything else does.
 	import public_paths
-	reverse_proxy @public portal:8000
+	reverse_proxy @public portal:8000 {
+		import upstream_keepalive
+	}
 	import portal_auth
-	reverse_proxy portal:8000
+	reverse_proxy portal:8000 {
+		import upstream_keepalive
+	}
 }
 
 {$LOCAL_SCHEME:http}://{$PORTAL_HOST} {
@@ -331,6 +349,7 @@ import tls-{$LOCAL_TLS:off}.caddy
 		import not_from_preview
 		import portal_auth
 		reverse_proxy open-webui:8080 {
+			import upstream_keepalive
 			import drop_session_cookie
 			import frame_by_portal_only
 			# (and what an answer can make the browser fetch: chat_csp)
@@ -348,6 +367,7 @@ import tls-{$LOCAL_TLS:off}.caddy
 		import app_sso
 		import litellm_no_banner
 		reverse_proxy litellm:4000 {
+			import upstream_keepalive
 			import drop_session_cookie
 			import litellm_upstream
 			# LiteLLM's CSP holds nothing but frame-ancestors 'none', so replacing it loses nothing else.
@@ -365,6 +385,7 @@ import tls-{$LOCAL_TLS:off}.caddy
 		import app_sso
 		import files_inert {$PORTAL_ORIGIN}
 		reverse_proxy rustfs:9001 {
+			import upstream_keepalive
 			import drop_session_cookie
 			import frame_by_portal_only
 		}
@@ -382,12 +403,14 @@ import tls-{$LOCAL_TLS:off}.caddy
 	}
 	@bn_unlock path /.bn/unlock
 	reverse_proxy @bn_unlock portal:8000 {
+		import upstream_keepalive
 		rewrite /auth/terminal-unlock
 	}
 	# JON-1140: local single sign-on — a valid local session mints the unlock here without the password (the portal
 	# refuses it for remote access). locked_verify redirects a local navigation here; the portal sets the cookie.
 	@bn_session_unlock path /.bn/session-unlock
 	reverse_proxy @bn_session_unlock portal:8000 {
+		import upstream_keepalive
 		rewrite /auth/terminal-session-unlock?{query}
 	}
 	# (the "Open … here?" page's Open: the portal makes a launch token for the words it names — the only way an address
@@ -397,6 +420,7 @@ import tls-{$LOCAL_TLS:off}.caddy
 	}
 	@bn_launch path /.bn/launch
 	reverse_proxy @bn_launch portal:8000 {
+		import upstream_keepalive
 		rewrite /auth/terminal-launch
 	}
 }
@@ -407,6 +431,7 @@ import tls-{$LOCAL_TLS:off}.caddy
 (terminal_callback) {
 	@bn_unlock_callback path /.bn/unlock-callback
 	reverse_proxy @bn_unlock_callback portal:8000 {
+		import upstream_keepalive
 		rewrite /auth/terminal-unlock-callback?{query}
 	}
 }
@@ -416,6 +441,7 @@ import tls-{$LOCAL_TLS:off}.caddy
 (terminal_auth) {
 	request_header -X-Bn-Terminal-*
 	forward_auth portal:8000 {
+		import upstream_keepalive
 		uri /auth/verify?app=terminal
 	}
 }
@@ -466,12 +492,14 @@ import tls-{$LOCAL_TLS:off}.caddy
 	}
 	@bn_code_unlock path /.bn/unlock
 	reverse_proxy @bn_code_unlock portal:8000 {
+		import upstream_keepalive
 		rewrite /auth/code-unlock
 	}
 	# JON-1140: local single sign-on — a valid local session mints the Code unlock here without the password (the
 	# portal refuses it for remote access). locked_verify redirects a local navigation here; the portal sets the cookie.
 	@bn_code_session_unlock path /.bn/session-unlock
 	reverse_proxy @bn_code_session_unlock portal:8000 {
+		import upstream_keepalive
 		rewrite /auth/code-session-unlock?{query}
 	}
 }
@@ -484,6 +512,7 @@ import tls-{$LOCAL_TLS:off}.caddy
 	request_header -X-Bn-Remote
 	request_header -X-Bn-Artifact
 	forward_auth portal:8000 {
+		import upstream_keepalive
 		uri /auth/verify?app=code
 	}
 }
@@ -501,14 +530,17 @@ import tls-{$LOCAL_TLS:off}.caddy
 (code_portal) {
 	@bn_code_preview path /.bn/preview
 	reverse_proxy @bn_code_preview portal:8000 {
+		import upstream_keepalive
 		rewrite /auth/code-preview?{query}
 	}
 	@bn_code_artifact path /.bn/artifact
 	reverse_proxy @bn_code_artifact portal:8000 {
+		import upstream_keepalive
 		rewrite /auth/code-artifact?{query}
 	}
 	@bn_code_terminal path /.bn/terminal
 	reverse_proxy @bn_code_terminal portal:8000 {
+		import upstream_keepalive
 		rewrite /auth/code-terminal?{query}
 	}
 	# (the terminal panel's Open menu: a launch token, made only by the page's own POST — an address alone makes none)
@@ -517,19 +549,23 @@ import tls-{$LOCAL_TLS:off}.caddy
 	}
 	@bn_code_terminal_launch path /.bn/terminal-launch
 	reverse_proxy @bn_code_terminal_launch portal:8000 {
+		import upstream_keepalive
 		rewrite /auth/code-terminal-launch
 	}
 	@bn_code_models path /.bn/models
 	reverse_proxy @bn_code_models portal:8000 {
+		import upstream_keepalive
 		rewrite /auth/code-models
 	}
 	@bn_code_spend path /.bn/spend
 	reverse_proxy @bn_code_spend portal:8000 {
+		import upstream_keepalive
 		rewrite /auth/code-spend?{query}
 	}
 	# (who answers: your AI subscriptions' tools in the sandbox, for its terminal panel's Open menu)
 	@bn_code_answers path /.bn/answers
 	reverse_proxy @bn_code_answers portal:8000 {
+		import upstream_keepalive
 		rewrite /auth/code-answers
 	}
 	# (the Import sheet's requests to the computer: the portal checks the password and writes the helper's request)
@@ -538,6 +574,7 @@ import tls-{$LOCAL_TLS:off}.caddy
 	}
 	@bn_code_sessions path /.bn/sessions
 	reverse_proxy @bn_code_sessions portal:8000 {
+		import upstream_keepalive
 		rewrite /auth/code-sessions
 	}
 	# (Home's Continue row: the page's own sessions — ids, states, times, short titles — which the portal keeps in memory)
@@ -546,6 +583,7 @@ import tls-{$LOCAL_TLS:off}.caddy
 	}
 	@bn_code_recent path /.bn/recent
 	reverse_proxy @bn_code_recent portal:8000 {
+		import upstream_keepalive
 		rewrite /auth/code-recent
 	}
 	# (a chat handed over from Chat's "Make it a project": the page redeems the id its address carried, once — portal/chathandoff.py)
@@ -554,6 +592,7 @@ import tls-{$LOCAL_TLS:off}.caddy
 	}
 	@bn_code_handoff path /.bn/handoff
 	reverse_proxy @bn_code_handoff portal:8000 {
+		import upstream_keepalive
 		rewrite /auth/code-handoff
 	}
 	respond /.bn/* 404
@@ -659,6 +698,7 @@ import tls-{$LOCAL_TLS:off}.caddy
 (remote_preview) {
 	@bn_preview_callback path /.bn/preview-callback
 	reverse_proxy @bn_preview_callback portal:8000 {
+		import upstream_keepalive
 		rewrite /auth/preview-callback?{query}
 	}
 	# no service worker here: this one origin serves every port and every later unlock, so a worker the sandbox installed
@@ -671,10 +711,12 @@ import tls-{$LOCAL_TLS:off}.caddy
 	# (only the portal's answer below may name the port: client copies go first, in a step of their own)
 	request_header -X-Bn-Preview-*
 	forward_auth portal:8000 {
+		import upstream_keepalive
 		uri /auth/verify?app=preview
 		copy_headers X-Bn-Preview-Port
 	}
 	reverse_proxy terminal-upstream:7682 {
+		import upstream_keepalive
 		import preview_upstream "{args[0]}" "https://{$REMOTE_PREVIEW_HOST:preview.remote.invalid}"
 	}
 }
@@ -698,7 +740,9 @@ http://:8090 {
 			max_size 26MB
 		}
 		@stt path /v1/audio/transcriptions /healthz
-		reverse_proxy @stt stt:8000
+		reverse_proxy @stt stt:8000 {
+			import upstream_keepalive
+		}
 		respond 404
 	}
 }

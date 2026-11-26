@@ -22,10 +22,12 @@
 		# (only the portal's answer below may name the port: client copies go first, in a step of their own)
 		request_header -X-Bn-Preview-*
 		forward_auth portal:8000 {
+			import upstream_keepalive
 			uri /auth/verify?app=preview
 			copy_headers X-Bn-Preview-Port
 		}
 		reverse_proxy terminal-upstream:7682 {
+			import upstream_keepalive
 			import preview_upstream "{$CODE_ORIGIN} {$PORTAL_ORIGIN}" "{$LOCAL_SCHEME:http}://*.{$PREVIEW_DOMAIN}:*"
 		}
 	}

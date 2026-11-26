@@ -46,6 +46,7 @@
 (handoff_callback) {
 	@bn_callback path /.bn/callback
 	reverse_proxy @bn_callback portal:8000 {
+		import upstream_keepalive
 		rewrite /auth/callback?{query}
 	}
 }
@@ -66,6 +67,7 @@ http://{$REMOTE_CHAT_HOST}:8081 {
 		import handoff_callback
 		import portal_auth
 		reverse_proxy open-webui:8080 {
+			import upstream_keepalive
 			import remote_upstream
 			# (Chat: what an answer can make the browser fetch — Caddyfile chat_csp, as on the local site)
 			import chat_csp {$REMOTE_ORIGIN}
@@ -82,6 +84,7 @@ http://{$REMOTE_ADMIN_HOST}:8081 {
 		import app_sso
 		import litellm_no_banner
 		reverse_proxy litellm:4000 {
+			import upstream_keepalive
 			import remote_upstream
 			import litellm_upstream
 		}
@@ -97,6 +100,7 @@ http://{$REMOTE_FILES_HOST}:8081 {
 		import app_sso
 		import files_inert {$REMOTE_ORIGIN}
 		reverse_proxy rustfs:9001 {
+			import upstream_keepalive
 			import remote_upstream
 		}
 	}
@@ -111,6 +115,7 @@ http://{$REMOTE_TERMINAL_HOST:terminal.remote.invalid}:8081 {
 		import terminal_unlock
 		import terminal_auth
 		reverse_proxy terminal-upstream:7681 {
+			import upstream_keepalive
 			import terminal_upstream
 			import terminal_page {$REMOTE_ORIGIN} https://{$REMOTE_CODE_HOST:code.remote.invalid}
 		}
@@ -126,6 +131,7 @@ http://{$REMOTE_CODE_HOST:code.remote.invalid}:8081 {
 		import code_auth
 		import code_portal
 		reverse_proxy code-upstream:8095 {
+			import upstream_keepalive
 			import code_upstream {$REMOTE_ORIGIN} {$REMOTE_TERMINAL_HOST:terminal.remote.invalid} 1
 			import code_page {$REMOTE_ORIGIN} {$REMOTE_TERMINAL_HOST:terminal.remote.invalid} https://{$REMOTE_PREVIEW_HOST:preview.remote.invalid}
 		}

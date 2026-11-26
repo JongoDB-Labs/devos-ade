@@ -80,7 +80,7 @@ test_the_preview_site_checks_every_request_and_rewrites_for_the_dev_server() {
   assert_eq "$(grep -cv '^#' "$STACK_DIR/caddy/preview-off.caddy")" 0
   on="$(grep -v '^[[:space:]]*#' "$STACK_DIR/caddy/preview-on.caddy")"
   assert_eq "$(printf '%s\n' "$on" | grep -c '^{\$LOCAL_SCHEME:http}://')" 1
-  site="$(printf '%s\n' "$on" | awk '/^\{\$LOCAL_SCHEME:http\}:\/\/\*\.\{\$PREVIEW_DOMAIN\} \{/,/^}/' | tr -d '\t')"
+  site="$(printf '%s\n' "$on" | awk '/^\{\$LOCAL_SCHEME:http\}:\/\/\*\.\{\$PREVIEW_DOMAIN\} \{/,/^}/' | tr -d '\t' | grep -v '^[[:space:]]*import upstream_keepalive$')"
   # the local rules; client copies of the port header gone; the portal's check (it names the port); then the gateway,
   # framed by the Code page and the portal only, framing the previews' own hosts
   assert_eq "$(printf '%s\n' "$site" | sed -n 4,11p | tr '\n' '|')" \
@@ -118,23 +118,23 @@ test_previews_over_remote_access_have_one_host_routed_by_its_cookie() {
   # Tailscale: a site of its own on the remote listener; own domain: a route in the wildcard site, or a site with its
   # own certificate (REMOTE_PREVIEW_SITE=own); each with the remote rules and the preview route only — no session
   # check, no app-host guard (it is what the guard keeps out)
-  ts="$(awk '/^http:\/\/\{\$REMOTE_PREVIEW_HOST:preview.remote.invalid\}:8081 \{/,/^}/' "$STACK_DIR/caddy/remote-tailscale.caddy" | grep -o 'import .*')"
+  ts="$(awk '/^http:\/\/\{\$REMOTE_PREVIEW_HOST:preview.remote.invalid\}:8081 \{/,/^}/' "$STACK_DIR/caddy/remote-tailscale.caddy" | grep -v '^[[:space:]]*import upstream_keepalive$' | grep -o 'import .*')"
   want='import remote_request
 import remote_preview "https://{$REMOTE_CODE_HOST:code.remote.invalid} {$REMOTE_ORIGIN}"'
   assert_eq "$ts" "$want"
-  dm="$(awk '/^\t@preview host \{\$REMOTE_PREVIEW_HOST:preview.remote.invalid\}/,/^\t}/' "$STACK_DIR/caddy/remote-domain.caddy" | grep -o 'import .*')"
+  dm="$(awk '/^\t@preview host \{\$REMOTE_PREVIEW_HOST:preview.remote.invalid\}/,/^\t}/' "$STACK_DIR/caddy/remote-domain.caddy" | grep -v '^[[:space:]]*import upstream_keepalive$' | grep -o 'import .*')"
   assert_eq "$dm" "$want"
   own="$(cat "$STACK_DIR/caddy/remote-domain-preview-own.caddy")"
   assert_contains "$own" 'https://{$REMOTE_PREVIEW_HOST:preview.remote.invalid}:8443 {'
   assert_contains "$own" 'dns cloudflare {env.CLOUDFLARE_API_TOKEN}'
-  assert_eq "$(printf '%s\n' "$own" | grep -o 'import .*')" "$want"
+  assert_eq "$(printf '%s\n' "$own" | grep -v '^[[:space:]]*import upstream_keepalive$' | grep -o 'import .*')" "$want"
   assert_eq "$(grep -cv '^#' "$STACK_DIR/caddy/remote-domain-preview-off.caddy")" 0
   assert_contains "$(cat "$STACK_DIR/caddy/remote-domain.caddy")" 'import remote-domain-preview-{$REMOTE_PREVIEW_SITE:off}.caddy'
   assert_not_contains "$(cat "$STACK_DIR/caddy/preview-on.caddy")" "Service-Worker"   # local previews keep their workers
   assert_contains "$(cat "$STACK_DIR/compose.domain.yaml")" 'REMOTE_PREVIEW_SITE: ${REMOTE_PREVIEW_SITE:-off}'
   # the route: the hand-off's callback (before the check: no cookie yet), client copies of the port header gone, the
   # portal's check naming the port (the cookie), then bn-preview through the gateway with the previews' rules
-  rp="$(awk '/^\(remote_preview\)/,/^}/' "$STACK_DIR/caddy/Caddyfile" | grep -v '^[[:space:]]*#' | tr -d '\t')"
+  rp="$(awk '/^\(remote_preview\)/,/^}/' "$STACK_DIR/caddy/Caddyfile" | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*import upstream_keepalive$' | tr -d '\t')"
   assert_eq "$(printf '%s\n' "$rp" | sed -n 2,17p | tr '\n' '|')" \
     '@bn_preview_callback path /.bn/preview-callback|reverse_proxy @bn_preview_callback portal:8000 {|rewrite /auth/preview-callback?{query}|}|@bn_preview_sw header Service-Worker script|header @bn_preview_sw X-Bn-Refused "remote preview: no service workers"|respond @bn_preview_sw "no service workers on the remote preview host: develop a PWA'"'"'s worker on this computer'"'"'s preview (docs/remote.md)" 403|request_header -X-Bn-Preview-*|forward_auth portal:8000 {|uri /auth/verify?app=preview|copy_headers X-Bn-Preview-Port|}|reverse_proxy terminal-upstream:7682 {|import preview_upstream "{args[0]}" "https://{$REMOTE_PREVIEW_HOST:preview.remote.invalid}"|}|}|'
   a="$(cat "$STACK_DIR/portal/portal/app.py")"
@@ -301,15 +301,16 @@ test_an_over_long_service_base_is_said_out_loud() {
 }
 
 test_the_gateways_preview_listener_needs_its_secret() {
-  g="$(awk '/^http:\/\/:7682/,/^}/' "$STACK_DIR/caddy/terminal-gateway.caddy" | grep -v '^[[:space:]]*#' | tr -d '\t')"
-  assert_eq "$(printf '%s\n' "$g" | sed -n 2,13p)" "bind terminal-upstream
+  g="$(awk '/^http:\/\/:7682/,/^}/' "$STACK_DIR/caddy/terminal-gateway.caddy" | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*import upstream_keepalive$' | tr -d '\t')"
+  assert_eq "$(printf '%s\n' "$g" | sed -n 2,14p)" "bind terminal-upstream
 route {
 @weak expression \`!'{\$PREVIEW_PROXY_SECRET}'.matches('^[0-9a-f]+\$') || '{\$PREVIEW_PROXY_SECRET}'.size() < 32\`
 respond @weak \"no PREVIEW_PROXY_SECRET: ./stack code enable\" 503
 @proxied header X-Bn-Preview-0{\$PREVIEW_PROXY_SECRET} 1
 handle @proxied {
 request_header -X-Bn-Preview-0*
-reverse_proxy unix//run/bn-preview/preview.sock
+reverse_proxy unix//run/bn-preview/preview.sock {
+}
 }
 respond 407
 }

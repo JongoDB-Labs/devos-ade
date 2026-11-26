@@ -751,14 +751,14 @@ test_caddy_code_site_snippets_and_remote_blocks() {
   f="$(cat "$STACK_DIR/caddy/Caddyfile")"
   assert_contains "$f" 'import code-{$CODE_MODE:off}.caddy'
   assert_eq "$(grep -cv '^#' "$STACK_DIR/caddy/code-off.caddy")" 0
-  site="$(awk '/^\{\$LOCAL_SCHEME:http\}:\/\/\{\$CODE_HOST\}/,/^}/' "$STACK_DIR/caddy/code-on.caddy")"
+  site="$(awk '/^\{\$LOCAL_SCHEME:http\}:\/\/\{\$CODE_HOST\}/,/^}/' "$STACK_DIR/caddy/code-on.caddy" | grep -v '^[[:space:]]*import upstream_keepalive$')"
   # the local rules, the unlock form, the check, the portal's /.bn/ answers — only then the code container
   assert_eq "$(printf '%s\n' "$site" | grep -o 'import [a-z_]*' | tr '\n' ' ')" \
     "import local_tls import local_request import not_from_preview import code_unlock import code_auth import code_portal import code_upstream import code_page "
   assert_contains "$site" 'import code_upstream {$PORTAL_ORIGIN} {$TERMINAL_HOST} 0'
   assert_contains "$site" 'import code_page {$PORTAL_ORIGIN} {$TERMINAL_HOST} {$LOCAL_SCHEME:http}://*.{$PREVIEW_DOMAIN:preview.invalid}:{$PORTAL_PORT:80}'
   assert_contains "$site" "reverse_proxy code-upstream:8095"
-  auth="$(awk '/^\(code_auth\)/,/^}/' "$STACK_DIR/caddy/Caddyfile")"
+  auth="$(awk '/^\(code_auth\)/,/^}/' "$STACK_DIR/caddy/Caddyfile" | grep -v '^[[:space:]]*import upstream_keepalive$')"
   assert_eq "$(printf '%s\n' "$auth" | sed -n 2,6p | tr -d '\t' | tr '\n' '|')" "request_header -X-Bn-Code-Proxy|request_header -X-Bn-Csp-Nonce|request_header -X-Bn-Portal-Origin|request_header -X-Bn-Terminal-Host|request_header -X-Bn-Remote|"
   assert_contains "$auth" "uri /auth/verify?app=code"
   up="$(awk '/^\(code_upstream\)/,/^}/' "$STACK_DIR/caddy/Caddyfile")"
@@ -806,7 +806,7 @@ test_caddy_code_site_snippets_and_remote_blocks() {
   for m in tailscale domain; do
     r="$(cat "$STACK_DIR/caddy/remote-$m.caddy")"
     assert_eq "$(printf '%s\n' "$r" | grep -c 'import code_auth')" 1
-    cb="$(printf '%s\n' "$r" | awk '/reverse_proxy code-upstream:8095/,/^[[:space:]]*}$/' | grep -o 'import .*' | tr '\n' '|')"
+    cb="$(printf '%s\n' "$r" | grep -v '^[[:space:]]*import upstream_keepalive$' | awk '/reverse_proxy code-upstream:8095/,/^[[:space:]]*}$/' | grep -o 'import .*' | tr '\n' '|')"
     assert_eq "$cb" 'import code_upstream {$REMOTE_ORIGIN} {$REMOTE_TERMINAL_HOST:terminal.remote.invalid} 1|import code_page {$REMOTE_ORIGIN} {$REMOTE_TERMINAL_HOST:terminal.remote.invalid} https://{$REMOTE_PREVIEW_HOST:preview.remote.invalid}|'
   done
   # the portal's routes and cookie names agree with Caddy's

@@ -12,6 +12,7 @@
 		request_header -X-Bn-Git-*
 		import portal_auth
 		reverse_proxy forgejo:3000 {
+			import upstream_keepalive
 			import drop_session_cookie
 			import frame_by_portal_only
 			# Signed in by the portal: Forgejo's reverse-proxy authentication takes the owner's account from this header. It
@@ -84,12 +85,24 @@ http://:8099 {
 			path_regexp ^/api/v1/repos/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+/branch_protections$
 		}
 		@mirrors path_regexp ^/api/v1/repos/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+/(push_mirrors(/[A-Za-z0-9._-]+)?|push_mirrors-sync|mirror-sync)$
-		reverse_proxy @read forgejo:3000
-		reverse_proxy @search forgejo:3000
-		reverse_proxy @migrate forgejo:3000
-		reverse_proxy @create forgejo:3000
-		reverse_proxy @protect forgejo:3000
-		reverse_proxy @mirrors forgejo:3000
+		reverse_proxy @read forgejo:3000 {
+			import upstream_keepalive
+		}
+		reverse_proxy @search forgejo:3000 {
+			import upstream_keepalive
+		}
+		reverse_proxy @migrate forgejo:3000 {
+			import upstream_keepalive
+		}
+		reverse_proxy @create forgejo:3000 {
+			import upstream_keepalive
+		}
+		reverse_proxy @protect forgejo:3000 {
+			import upstream_keepalive
+		}
+		reverse_proxy @mirrors forgejo:3000 {
+			import upstream_keepalive
+		}
 		respond 404
 	}
 }
