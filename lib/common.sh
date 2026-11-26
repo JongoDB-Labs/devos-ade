@@ -415,6 +415,11 @@ dc() {
   if [ "${1:-}" = ps ] && [ "${DEVOS_ADE_PS_VIA_COMPOSE:-0}" != 1 ] && _dc_ps_form "$@"; then
     _dc_ps_fast "$p" "$@"; local _dc_rc=$?; [ "$_dc_ae" = 0 ] || set -a; return "$_dc_rc"
   fi
+  # (dc port SERVICE PORT the same way: one docker call; 2 when Compose has to answer it after all)
+  if [ "${1:-}" = port ] && [ "${DEVOS_ADE_PS_VIA_COMPOSE:-0}" != 1 ] && [ $# = 3 ]; then
+    local _dc_rc=0; _dc_port_fast "$p" "$2" "$3" || _dc_rc=$?
+    if [ "$_dc_rc" != 2 ]; then [ "$_dc_ae" = 0 ] || set -a; return "$_dc_rc"; fi
+  fi
   # .env as it is now, for this call's get_env (_env_snap: nothing below writes .env; dc ps above reads none)
   local _dc_env_snap=0; ! _env_snap || _dc_env_snap=1
   # (the OS for runtime_profiles and runtime_overlays: one uname a call, not one each)
@@ -550,6 +555,32 @@ _dc_ps_fast() {   # PROJECT ps ARGS... (a form _dc_ps_form took)
 $(printf '%s\n' "$rows" | LC_ALL=C sort)
 ROWS
 }
+# _dc_port_fast PROJECT SERVICE PORT — `dc port SERVICE PORT` from one docker call: through Compose (dc's preparation of
+# its files and Compose's own start) it took a third of a second, and setup asks for three ports (resolve_port: is the
+# port in use our own?), JON-972. Compose
+# answers with the address and host port its container publishes PORT/tcp on ("127.0.0.1:4000"), status 0; nothing,
+# status 1, without one (no running container, the port not published). Docker's own list says the same:
+# "127.0.0.1:4000->4000/tcp, …". Status 2, nothing printed, for what that list may not say as Compose would — a
+# service name or port of other characters, more than one container, a range of ports, PORT published on two host
+# ports, docker failing — and dc asks Compose. (Checked against Compose on a live stack: tests/e2e/upgrade.sh.)
+_dc_port_fast() {
+  local rows e hit=''
+  case "$2" in '' | -* | *[!a-z0-9_-]*) return 2 ;; esac
+  case "$3" in '' | 0* | *[!0-9]*) return 2 ;; esac
+  rows="$(docker ps --no-trunc --filter "label=com.docker.compose.project=$1" --filter "label=com.docker.compose.service=$2" \
+    --filter label=com.docker.compose.oneoff=False --format '{{.Ports}}' 2>/dev/null)" || return 2
+  case "$rows" in *$'\n'*) return 2 ;; esac
+  rows="$rows, "
+  while [ -n "$rows" ]; do
+    e="${rows%%, *}"; rows="${rows#*, }"
+    case "$e" in *"->$3/tcp") ;; *"->"*-*"/tcp") return 2 ;; *) continue ;; esac
+    e="${e%"->$3/tcp"}"
+    case "${e##*:}" in '' | *[!0-9]*) return 2 ;; esac
+    if [ -z "$hit" ]; then hit="$e"; elif [ "${hit##*:}" != "${e##*:}" ]; then return 2; fi
+  done
+  [ -n "$hit" ] || return 1
+  printf '%s\n' "$hit"
+}
 
 # --- configuration files read at a service's start: their checksums, for compose's own change detection ---
 # Compose recreates a service's container only when the service's configuration (compose files, .env's values) or its
@@ -616,8 +647,10 @@ _config_sums_one_pass() {
     done <<< "$out"
     [ "$i" = ${#f[@]} ] || return 1
   fi
-  out="$(cksum <(printf '%s' "${t[0]}") <(printf '%s' "${t[1]}") <(printf '%s' "${t[2]}") <(printf '%s' "${t[3]}") \
-    <(printf '%s' "${t[4]}") <(printf '%s' "${t[6]}") <(printf '%s' "${t[7]}") 2>/dev/null)" || return 1
+  # (each line's text from a here-string, which the shell writes itself, not a process each: seven fewer a dc call. A
+  # line's text ends in its one newline, which the here-string gives back; an empty one's sum is not used, below.)
+  out="$(cksum /dev/fd/3 /dev/fd/4 /dev/fd/5 /dev/fd/6 /dev/fd/7 /dev/fd/8 /dev/fd/9 3<<< "${t[0]%$'\n'}" 4<<< "${t[1]%$'\n'}" \
+    5<<< "${t[2]%$'\n'}" 6<<< "${t[3]%$'\n'}" 7<<< "${t[4]%$'\n'}" 8<<< "${t[6]%$'\n'}" 9<<< "${t[7]%$'\n'}" 2>/dev/null)" || return 1
   while IFS=' ' read -r a b _; do sum+=("$a-$b"); done <<< "$out"
   [ ${#sum[@]} = 7 ] || return 1
   # (a line none of whose files is there: nothing, as files_sum gives)
