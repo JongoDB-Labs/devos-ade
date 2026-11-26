@@ -6,6 +6,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.68.16] - 2026-11-26
+
 ### Changed
 - **An update spends some 2 s less starting Open WebUI, the portal and Caddy.** Their start also started the buckets'
   one-time job (rustfs-init) a second time — the step before had already run it — and waited the 2–3 s it takes.
@@ -14,6 +16,9 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   from 4.3 s to 2.5 s, the job ran once instead of twice. (JON-972)
 - The e2e upgrade test now records Docker's container events during Update now, and the update's own steps (the
   backup, the old images' cleanup) are timed with its trace on. (JON-972)
+
+### To get it
+Existing installs: Home › Update now.
 
 ## [0.68.15] - 2026-11-26
 
