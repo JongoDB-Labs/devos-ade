@@ -16,6 +16,12 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   takes the configuration files' checksums in two runs of `cksum`, not up to fifteen. A call now takes about 0.1 s on
   the Mac and 0.15 s on the busy Linux host. Compose gets the very same settings and checksums, so it recreates
   nothing it did not before. (JON-972)
+- **Each Docker Compose call is ready sooner still: some 1.5 to 3.5 seconds less an update.** The stack's work before
+  each call still started some 75 subshells, and checked the git server's certificate with `openssl` each time. It now
+  reads `.env`'s settings without a subshell, asks the operating system once a call, reads the runtimes' small files
+  itself, and checks the certificate once an hour: some 30 subshells, and no `openssl` most calls. A call now takes
+  about 0.06 s on a Mac (was 0.1 s) and 0.075 s on a busy Linux host (was 0.175 s). Compose gets the very same
+  settings. (JON-972)
 
 ### To get it
 Existing installs: Home › Update now.
