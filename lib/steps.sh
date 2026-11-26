@@ -501,7 +501,9 @@ upd_in_websearch() {
 upd_in_smoke() {
   _upd_env; _upd_keys; _upd_container_of litellm; printf 'cfg=%s\n' "$(litellm_compose_sum)"
   _upd_files "$STACK_DIR/litellm/enabled-models.txt"; _upd_compose
-  _upd_fn _setup_smoke_test cmd_test _check _test_portal ensure_portal_reachable
+  # (the checks themselves: a release that changes any of them runs them once)
+  _upd_fn _setup_smoke_test cmd_test _check _test_portal ensure_portal_reachable _test_checks _test_group _test_group_die \
+    _test_wait _test_checks_stop _test_litellm _test_mcp stt_test_checks terminal_test_checks projects_test_checks code_test_checks
 }
 # The Code page on by default: the Code and terminal settings, their failure marks and the workspace folder
 upd_in_codedefault() {

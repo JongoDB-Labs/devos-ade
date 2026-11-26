@@ -72,6 +72,21 @@ test_a_dc_in_a_digest_that_writes_env_changes_no_digest() {
   return "$bad"
 }
 
+test_the_smoke_step_runs_again_when_any_of_its_checks_changes() {
+  # (a release that changes a check runs the smoke test once: each check's code is an input of its step)
+  _dg_setup
+  _dg_envs | { IFS= read -r -d '' e; printf '%s' "$e"; } > "$ENV_FILE"
+  local f before after bad=0
+  before="$(RANDOM=7; upd_hash smoke)"
+  for f in _setup_smoke_test cmd_test _check _test_checks _test_group _test_group_die _test_wait _test_checks_stop _test_litellm \
+    _test_mcp _test_portal stt_test_checks terminal_test_checks projects_test_checks code_test_checks ensure_portal_reachable; do
+    declare -F "$f" > /dev/null || { echo "no function $f" >&2; bad=1; continue; }
+    after="$( eval "$(declare -f "$f" | awk 'NR == 3 { print "    : changed" } { print }')"; RANDOM=7; upd_hash smoke )"
+    [ "$after" != "$before" ] || { echo "a change to $f does not run the smoke test again" >&2; bad=1; }
+  done
+  return "$bad"
+}
+
 test_a_digest_reads_env_once() {
   _dg_setup
   local n="$TMP/reads"

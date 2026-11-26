@@ -1875,8 +1875,12 @@ _test_group() {
 }
 _test_group_die() { [ -z "${_BN_DIE_MSG:-}" ] || printf '%s' "$_BN_DIE_MSG" > "$_TG_DIE"; }
 # _test_wait — the groups started since the last wait have ended (their own pids only: setup has other work in the
-# background)
-_test_wait() { local p; for p in ${_TC_PIDS:-}; do wait "$p" 2>/dev/null || true; done; _TC_PIDS=''; }
+# background). Each leaves _TC_PIDS once it is waited for: _test_checks_stop never signals a process group that ended
+# (its number may be another's by then).
+_test_wait() {
+  set -- ${_TC_PIDS:-}
+  while [ "$#" -gt 0 ]; do wait "$1" 2>/dev/null || true; shift; _TC_PIDS="$*"; done
+}
 # _test_checks_stop — on the way out of a Ctrl-C, a TERM (the helper's, to the job's process group) or a die while the
 # checks run: the groups still running end, with what they started, and the folder goes
 _test_checks_stop() {

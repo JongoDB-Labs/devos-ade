@@ -168,6 +168,20 @@ test_the_checks_wait_for_their_own_groups_only_and_leave_nothing() {
   assert_eq "$(find "$TMP/t" -mindepth 1 | wc -l | tr -d ' ')" 0
 }
 
+test_a_group_leaves_the_list_once_it_was_waited_for() {
+  _sg_setup
+  # (_test_checks_stop signals only groups not waited for yet: while the second is waited for, the first is not listed)
+  local log="$TMP/waits" a b
+  ( wait() { echo "${_TC_PIDS:-}" >> "$log"; builtin wait "$@"; }
+    _TC_PIDS=''; fails=0; slow=0; slow_list=''; d="$TMP/g"; mkdir -p "$d"
+    _test_group "$d" one true; a=$!; _test_group "$d" two true; b=$!
+    printf '%s %s\n' "$a" "$b" > "$TMP/pids"; _test_wait; echo "after [${_TC_PIDS:-}]" >> "$log" )
+  read -r a b < "$TMP/pids"
+  assert_eq "$(sed -n 1p "$log" | tr -s ' ' | sed 's/^ //')" "$a $b"
+  assert_eq "$(sed -n 2p "$log")" "$b"
+  assert_eq "$(sed -n 3p "$log")" "after []"
+}
+
 test_a_groups_exit_hooks_are_its_own() {
   _sg_setup
   # (setup's hooks, the stack lock's among them, never run when a group ends; a group's own do)
