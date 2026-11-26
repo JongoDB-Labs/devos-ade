@@ -31,6 +31,11 @@ test_dc_port_answers_from_dockers_list_as_compose_prints_it() {
   assert_eq "$(dc port caddy 8080)" "127.0.0.1:80"
   assert_eq "$(dc port shared-mcp 8000)" "0.0.0.0:8765"            # (the first: v4, then v6, the same host port)
   assert_eq "$(dc port two 9001)" "127.0.0.1:9001"                 # (its tcp, not its udp)
+  # (v6 as Compose prints it: the address unbracketed, as Docker's API has it; older Dockers list it so already)
+  assert_eq "$(PORTS_v6='[::]:4000->4000/tcp' dc port v6 4000)" ":::4000"
+  assert_eq "$(PORTS_v6=':::4000->4000/tcp, 0.0.0.0:4000->4000/tcp' dc port v6 4000)" ":::4000"
+  assert_eq "$(PORTS_v6='[::1]:4000->4000/tcp' dc port v6 4000)" "::1:4000"
+  assert_eq "$(PORTS_udp='127.0.0.1:4000->4000/udp' dc port udp 4000; echo "rc=$?")" "rc=1"   # (a udp port only: none)
   # nothing, status 1: a port it does not publish, one it only exposes, a service with no running container
   assert_eq "$(dc port litellm 4001; echo "rc=$?")" "rc=1"
   assert_eq "$(dc port postgres 5432; echo "rc=$?")" "rc=1"

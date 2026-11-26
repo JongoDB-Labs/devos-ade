@@ -560,7 +560,8 @@ ROWS
 # port in use our own?), JON-972. Compose
 # answers with the address and host port its container publishes PORT/tcp on ("127.0.0.1:4000"), status 0; nothing,
 # status 1, without one (no running container, the port not published). Docker's own list says the same:
-# "127.0.0.1:4000->4000/tcp, …". Status 2, nothing printed, for what that list may not say as Compose would — a
+# "127.0.0.1:4000->4000/tcp, …" (from the same API: with a v4 and a v6 address for the port, the one Compose takes first
+# has no fixed order; both are the same host port). Status 2, nothing printed, for what that list may not say as Compose would — a
 # service name or port of other characters, more than one container, a range of ports, PORT published on two host
 # ports, docker failing — and dc asks Compose. (Checked against Compose on a live stack: tests/e2e/upgrade.sh.)
 _dc_port_fast() {
@@ -579,6 +580,8 @@ _dc_port_fast() {
     if [ -z "$hit" ]; then hit="$e"; elif [ "${hit##*:}" != "${e##*:}" ]; then return 2; fi
   done
   [ -n "$hit" ] || return 1
+  # (Compose prints the address as Docker's API gives it, "::", where docker ps writes "[::]")
+  case "$hit" in '['*']:'*) e="${hit%%]:*}"; hit="${e#[}:${hit##*]:}" ;; esac
   printf '%s\n' "$hit"
 }
 
@@ -649,8 +652,8 @@ _config_sums_one_pass() {
   fi
   # (each line's text from a here-string, which the shell writes itself, not a process each: seven fewer a dc call. A
   # line's text ends in its one newline, which the here-string gives back; an empty one's sum is not used, below.)
-  out="$(cksum /dev/fd/3 /dev/fd/4 /dev/fd/5 /dev/fd/6 /dev/fd/7 /dev/fd/8 /dev/fd/9 3<<< "${t[0]%$'\n'}" 4<<< "${t[1]%$'\n'}" \
-    5<<< "${t[2]%$'\n'}" 6<<< "${t[3]%$'\n'}" 7<<< "${t[4]%$'\n'}" 8<<< "${t[6]%$'\n'}" 9<<< "${t[7]%$'\n'}" 2>/dev/null)" || return 1
+  out="$(cksum /dev/fd/3 /dev/fd/4 /dev/fd/5 /dev/fd/6 /dev/fd/7 /dev/fd/8 /dev/fd/9 2>/dev/null 3<<< "${t[0]%$'\n'}" \
+    4<<< "${t[1]%$'\n'}" 5<<< "${t[2]%$'\n'}" 6<<< "${t[3]%$'\n'}" 7<<< "${t[4]%$'\n'}" 8<<< "${t[6]%$'\n'}" 9<<< "${t[7]%$'\n'}")" || return 1
   while IFS=' ' read -r a b _; do sum+=("$a-$b"); done <<< "$out"
   [ ${#sum[@]} = 7 ] || return 1
   # (a line none of whose files is there: nothing, as files_sum gives)

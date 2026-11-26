@@ -157,7 +157,7 @@ test_install_downloads_the_pinned_file_checks_it_and_runs_it_as_this_stacks_agen
   # the agent: this stack's label, 127.0.0.1 only, its own models folder and HOME, Ollama's cloud off, mode 600
   local p; p="$(rt_plist ollama)"
   assert_contains "$p" "$HOME/Library/LaunchAgents/dev.devos.ade.ollama."
-  assert_eq "$(stat -f %Lp "$p" 2>/dev/null || stat -c %a "$p")" 600
+  assert_eq "$(perm_of "$p")" 600   # (GNU's stat -f is the file system's status: tests/assert.sh asks GNU's way first)
   assert_contains "$(cat "$p")" "<string>$d/bin/ollama</string><string>serve</string>"
   assert_contains "$(cat "$p")" "<key>OLLAMA_HOST</key><string>127.0.0.1:11434</string>"
   assert_contains "$(cat "$p")" "<key>OLLAMA_MODELS</key><string>$d/models</string>"
