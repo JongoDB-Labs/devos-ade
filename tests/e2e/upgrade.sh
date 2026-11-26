@@ -878,6 +878,25 @@ PY
 [ "$MIGRATE" != 0 ] || check manifest "$mrc" "$(tail -n 1 "$OUT/manifest.check")"
 st test > "$LOGS/test-after.log" 2>&1; rc=$?; redact "$LOGS/test-after.log"
 check stack-test-after "$([ "$rc" = 0 ] && grep -q 'all checks passed' "$LOGS/test-after.log" && echo 0 || echo 1)" "./stack test: exit $rc"
+# dc port from Docker's own list (lib/common.sh _dc_port_fast, JON-972) answers as Compose itself does, on this live
+# stack: its published ports, one it does not publish, one only exposed, a service with no published port. Its libs
+# as ./stack loads them; port bindings only are printed.
+if [ "$MIGRATE" = 0 ]; then
+  ( clean_env; cd "$STACK" && STACK_DIR="$STACK" bash -c '
+      for f in $(sed -n "s/^\. \"\$STACK_DIR\/\(lib\/[a-z_]*\.sh\)\"\$/\1/p" stack); do . "$STACK_DIR/$f"; done
+      for a in "litellm 4000" "shared-mcp 8000" "caddy 8080" "litellm 4001" "postgres 5432" "open-webui 8080"; do
+        set -- $a
+        d="$(DEVOS_ADE_PS_VIA_COMPOSE=0 dc port "$1" "$2" 2>/dev/null; echo "rc=$?")"
+        c="$(DEVOS_ADE_PS_VIA_COMPOSE=1 dc port "$1" "$2" 2>/dev/null; echo "rc=$?")"
+        printf "%s %s\t%s\t%s\n" "$1" "$2" "$(printf %s "$d" | tr "\n" " ")" "$(printf %s "$c" | tr "\n" " ")"
+      done' ) > "$OUT/dc-port.tsv" 2> "$LOGS/dc-port.log"
+  redact "$LOGS/dc-port.log"
+  while IFS="$(printf '\t')" read -r q d c; do say "dc port $q: Docker's list [$d], Compose [$c]"; done < "$OUT/dc-port.tsv"
+  # (every answer has its status — the libs loaded — and the stack's own LiteLLM port is one Docker's list found)
+  check dc-port-as-compose "$(awk -F '\t' '$2 != $3 || $2 !~ /rc=[0-9]+ ?$/ { bad = 1 } $1 == "litellm 4000" && $2 !~ /:[0-9]+ rc=0 ?$/ { bad = 1 }
+    END { exit !(NR == 6 && !bad) }' "$OUT/dc-port.tsv" && echo 0 || echo 1)" \
+    "dc port from Docker's list answers as Compose does ($(awk -F '\t' '$2 == $3' "$OUT/dc-port.tsv" | wc -l | tr -d ' ') of 6 the same)"
+fi
 # --- 6. fast apply: nothing changed, the backup through exec, and a rollback after it (JON-972) ---
 if [ "$MIGRATE" = 0 ] && [ "$FAST_CHECK" = 1 ]; then
   # an unchanged update's setup: every gated step says it did not run, and the whole takes seconds
