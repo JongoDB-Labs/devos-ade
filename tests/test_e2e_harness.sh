@@ -304,6 +304,12 @@ test_e2e_ports_two_throwaways_set_up_at_once_never_choose_the_same_one() {
   touch -t 202001010000 "$PORT_HELD/18481"
   CHOSEN=' '; PROJECT=bne2e-hs1; d=""; pick_port d 18481
   assert_eq "$d $(cat "$PORT_HELD/18481/project")" "18481 bne2e-hs1"
+  # a project that takes its own old entry again (a lane whose name is the same in every run, such as
+  # bne2e-hostegress) holds it afresh: a lane set up minutes later never takes it over as an old one
+  touch -t 202001010000 "$PORT_HELD/18480"
+  CHOSEN=' '; PROJECT=bne2e-rel1; f=""; pick_port f 18480
+  CHOSEN=' '; PROJECT=bne2e-git1; g=""; pick_port g 18480
+  assert_eq "$f $g $(cat "$PORT_HELD/18480/project")" "18480 18482 bne2e-rel1"
   # nowhere to hold them (a file where the folder would be): the first free port, as before
   PORT_HELD="$(mktemp)"; CHOSEN=' '; PROJECT=bne2e-x; e=""; pick_port e 18480
   assert_eq "$e" 18480

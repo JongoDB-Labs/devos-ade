@@ -377,7 +377,9 @@ hold_port() { # hold_port P -> 0 when project PROJECT holds P now (a new entry, 
   local d="$PORT_HELD/$1"
   mkdir -p "$PORT_HELD" 2>/dev/null || return 0   # (nowhere to hold them: the first free port, as before)
   if mkdir "$d" 2>/dev/null; then printf '%s\n' "$PROJECT" > "$d/project"; return 0; fi
-  [ "$(cat "$d/project" 2>/dev/null)" = "$PROJECT" ] && return 0
+  # (its own: held afresh — a lane named the same in every run, bne2e-hostegress, would otherwise keep an entry of an
+  # earlier run, over an hour old, that a lane set up minutes later takes over: two stacks on one port)
+  [ "$(cat "$d/project" 2>/dev/null)" = "$PROJECT" ] && { touch "$d" 2>/dev/null || true; return 0; }
   [ -n "$(find "$d" -maxdepth 0 -mmin +60 2>/dev/null)" ] || return 1
   rm -f "$d/project"; rmdir "$d" 2>/dev/null; mkdir "$d" 2>/dev/null || return 1
   printf '%s\n' "$PROJECT" > "$d/project"

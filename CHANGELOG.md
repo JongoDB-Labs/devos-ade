@@ -4,6 +4,14 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Tests
+- **A release stage named the same in every run no longer loses its port to another.** The host-egress stage took its
+  own port hold from an earlier run back without renewing it, so a stage set up minutes later took that hour-old hold
+  over as abandoned, and both stacks wanted the same port ("port is already allocated"). Its own hold is now renewed.
+  (JON-1409)
+
 ## [0.68.4] - 2026-11-25
 
 ### Changed
