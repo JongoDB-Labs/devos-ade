@@ -1619,22 +1619,26 @@ SERVICES_STATUS_EVERY_S=60   # the update helper rewrites it at most this often 
 # Caddy has no route to it (compose.yaml), so the portal cannot ask SearXNG itself. PS: `dc ps -a --format` lines
 # (service<TAB>state<TAB>health…), else asked here; a Docker that does not answer writes nothing. Never fatal.
 services_status_write() {
-  local d f tmp ps s row state health out='' extra
+  local d f tmp ps out extra
   [ -f "$ENV_FILE" ] || return 0
   if [ $# -gt 0 ]; then ps="$1"
   else ps="$(dc ps -a --format '{{.Service}}	{{.State}}	{{.Health}}' 2>/dev/null)" || return 0; fi
   d="$(status_dir)"; mkdir -p "$d" 2>/dev/null || return 0
   f="$(services_status_file)"
   extra="$(optional_services 2>/dev/null || true)"
-  for s in $STACK_BASE_SERVICES $extra; do
-    row="$(printf '%s\n' "$ps" | awk -F'\t' -v s="$s" '!f && $1 == s { print $2 "\t" $3; f = 1 }')"
-    state="${row%%	*}"; health="${row#*	}"
-    [ -n "$row" ] || { state="not created"; health=''; }
-    # (Docker's own words — running, exited, healthy, starting …: lowercase letters, spaces and dashes only)
-    state="$(printf '%s' "$state" | LC_ALL=C tr -cd 'a-z -' | cut -c1-24)"
-    health="$(printf '%s' "$health" | LC_ALL=C tr -cd 'a-z -' | cut -c1-24)"
-    out="$out${out:+, }{\"service\": \"$s\", \"state\": \"$state\", \"health\": \"$health\"}"
-  done
+  # One awk for all the services: the first row of each in PS (a service with none: "not created"), state and health
+  # kept to Docker's own words (lowercase letters, spaces and dashes only, at most 24 bytes)
+  out="$(printf '%s\n' "$ps" | LC_ALL=C awk -F'\t' -v list="$STACK_BASE_SERVICES $extra" '
+    function clean(x) { gsub(/[^a-z -]/, "", x); return substr(x, 1, 24) }
+    !($1 in st) { st[$1] = $2; hl[$1] = $3 }
+    END {
+      n = split(list, names, " ")
+      for (i = 1; i <= n; i++) {
+        s = names[i]; state = "not created"; health = ""
+        if (s in st) { state = st[s]; health = hl[s] }
+        printf "%s{\"service\": \"%s\", \"state\": \"%s\", \"health\": \"%s\"}", (i > 1 ? ", " : ""), s, clean(state), clean(health)
+      }
+    }')" || out=''
   tmp="$(mktemp "$d/.services.XXXXXX" 2>/dev/null)" || return 0
   { printf '{"version": 1, "written_at": %s, "services": [%s]}\n' "$(date +%s)" "$out" > "$tmp" && chmod 644 "$tmp" && mv -f "$tmp" "$f"; } 2>/dev/null ||
     rm -f "$tmp"

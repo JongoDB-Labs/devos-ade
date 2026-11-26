@@ -6,6 +6,13 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Changed
+- **Writing Home's Services record is quicker.** After the web search step, after the git server step, at the end of
+  setup, and on every `./stack status`, the record of the containers (Services and Activity) took about 1.4 seconds to
+  write, mostly starting small programs one container at a time. It now reads all the containers at once, with the
+  same content: the same files, the same events, the same rows in the same order. An update is about 4 seconds
+  shorter. (JON-972)
+
 ### Tests
 - **A release stage named the same in every run no longer loses its port to another.** The host-egress stage took its
   own port hold from an earlier run back without renewing it, so a stage set up minutes later took that hour-old hold

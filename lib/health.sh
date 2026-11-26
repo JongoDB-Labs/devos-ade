@@ -51,52 +51,86 @@ health_inspect() {
 # health_record_write [LINES] — compares the containers now (LINES, else health_inspect) with the last snapshot,
 # appends the new events and rewrites container-health.json. Never fatal; writes nothing without an answer.
 health_record_write() {
-  local d now lines prev_f ev_f snap tmp line svc key rs st ex hl oom fin p_rs p_hl p_fin n new='' sj='' ej=''
+  local d now lines prev_f ev_f snap tmp out pf='' nl new='' sj='' ej='' last=''
   [ -f "$ENV_FILE" ] || return 0
   d="$(status_dir)"; mkdir -p "$d" 2>/dev/null || return 0
   if [ $# -gt 0 ]; then lines="$1"; else lines="$(health_inspect)" || return 0; fi
   prev_f="$d/container-health.tsv"; ev_f="$d/container-events.tsv"; now="$(date +%s)"
-  snap=''
-  while IFS='|' read -r svc rs st ex hl oom fin; do
-    svc="$(_health_word "$svc")"; [ -n "$svc" ] || continue
-    rs="$(_health_num "$rs")"; ex="$(_health_num "$ex")"; st="$(_health_word "$st")"; hl="$(_health_word "$hl")"
-    oom="$(_health_word "$oom")"; fin="$(printf '%s' "$fin" | LC_ALL=C tr -cd '0-9TZ:.-' | cut -c1-40)"
-    case "$oom" in true) ;; *) oom=false ;; esac
-    # what a record names: a known service, else "other" (never the name). The snapshot, which stays on this computer
-    # and is never sent, tells two such containers apart by a checksum of the name; svc is only ever the subject.
-    key="$svc"; svc="$(health_subject "$svc")"
-    [ "$svc" != other ] || key="other~$(printf '%s' "$key" | cksum | cut -d' ' -f1)"
-    p_rs=0; p_hl=''; p_fin=''
-    line="$(grep "^$key|" "$prev_f" 2>/dev/null | head -n 1 || true)"
-    [ -z "$line" ] || IFS='|' read -r _ p_rs _ _ p_hl _ p_fin <<EOFP
-$line
-EOFP
-    if [ "$rs" -gt "$p_rs" ]; then new="$new$now|$svc|restart|$((rs - p_rs))|$ex
-"; fi
-    if [ "$hl" = unhealthy ] && [ "$p_hl" != unhealthy ]; then new="$new$now|$svc|unhealthy|0|0
-"; fi
-    if [ "$st" = exited ] && [ -n "$fin" ] && [ "$fin" != "$p_fin" ] && [ "${fin#0001-}" = "$fin" ]; then
-      if [ "$oom" = true ]; then new="$new$now|$svc|oom|0|$ex
-"
-      elif [ "$ex" != 0 ] && [ "$ex" != 143 ] && [ "$ex" != 137 ]; then new="$new$now|$svc|exit|0|$ex
-"; fi
-    fi
-    snap="$snap$key|$rs|$st|$ex|$hl|$oom|$fin
-"
-    sj="$sj${sj:+, }{\"service\": \"$svc\", \"restarts\": $rs, \"state\": \"$st\", \"exit_code\": $ex, \"health\": \"$hl\"}"
-  done <<EOF2
-$lines
-EOF2
-  [ -n "$snap" ] || return 0   # no container of this project: nothing to say (the old record stays)
+  nl='
+'
+  [ ! -f "$prev_f" ] || pf="$prev_f"
+  # One awk reads every container: sanitises each field as _health_word/_health_num do (bytes, LC_ALL=C), looks up
+  # the first line of the last snapshot with the same key (`^key|`), decides the events, and prints three parts
+  # divided by @@NEW and @@SJ lines: the new snapshot, the new event rows, the services' JSON. The snapshot key of a
+  # container that is not one of HEALTH_SERVICES is other~<cksum of its name>: awk cannot sum, so cksum runs (once a
+  # name) as a command of its own. Nothing printed: no container.
+  out="$(printf '%s\n' "$lines" | LC_ALL=C awk -v now="$now" -v known="$HEALTH_SERVICES" -v pf="$pf" '
+    function word(x) { gsub(/[^a-z0-9_-]/, "", x); return substr(x, 1, 40) }
+    function num(x) { gsub(/[^0-9]/, "", x); x = substr(x, 1, 12); return x == "" ? "0" : x }
+    function after(s, k,   i, p) { for (i = 0; i < k; i++) { p = index(s, "|"); if (!p) return ""; s = substr(s, p + 1) } return s }
+    BEGIN {
+      n = split(known, kw, " "); for (i = 1; i <= n; i++) isknown[kw[i]] = 1
+      if (pf != "") {
+        while ((getline l < pf) > 0) { i = index(l, "|"); if (i > 0) { k = substr(l, 1, i - 1); if (!(k in pl)) pl[k] = l } }
+        close(pf)
+      }
+    }
+    {
+      n = split($0, f, "|")
+      svc = word(f[1]); if (svc == "") next
+      rs = num(f[2]); st = word(f[3]); ex = num(f[4]); hl = word(f[5]); oom = word(f[6])
+      fin = after($0, 6); gsub(/[^0-9TZ:.-]/, "", fin); fin = substr(fin, 1, 40)
+      if (oom != "true") oom = "false"
+      key = svc
+      if (!(svc in isknown)) {
+        svc = "other"
+        if (!(key in ck)) {
+          cmd = "printf %s \047" key "\047 | cksum"; r = ""; cmd | getline r; close(cmd)
+          split(r, a, " "); ck[key] = a[1]
+        }
+        key = "other~" ck[key]
+      }
+      p_rs = 0; p_hl = ""; p_fin = ""; found = 0
+      if (key in pl) {
+        found = 1; l = pl[key]; split(l, g, "|"); p_rs = g[2]; p_hl = g[5]; p_fin = after(l, 6)
+      }
+      if ((!found || p_rs ~ /^[0-9]+$/) && rs + 0 > p_rs + 0)
+        new = new now "|" svc "|restart|" sprintf("%.0f", rs - p_rs) "|" ex "\n"
+      if (hl == "unhealthy" && p_hl != "unhealthy") new = new now "|" svc "|unhealthy|0|0\n"
+      if (st == "exited" && fin != "" && fin != p_fin && substr(fin, 1, 5) != "0001-") {
+        if (oom == "true") new = new now "|" svc "|oom|0|" ex "\n"
+        else if (ex != "0" && ex != "143" && ex != "137") new = new now "|" svc "|exit|0|" ex "\n"
+      }
+      snap = snap key "|" rs "|" st "|" ex "|" hl "|" oom "|" fin "\n"
+      sj = sj (sj == "" ? "" : ", ") "{\"service\": \"" svc "\", \"restarts\": " rs ", \"state\": \"" st "\", \"exit_code\": " ex ", \"health\": \"" hl "\"}"
+      cnt++
+    }
+    END { if (cnt) printf "%s@@NEW\n%s@@SJ\n%s\n", snap, new, sj }
+  ' 2>/dev/null)" || out=''
+  [ -n "$out" ] || return 0   # no container of this project: nothing to say (the old record stays)
+  snap="${out%%@@NEW${nl}*}"; out="${out#*@@NEW${nl}}"
+  new="${out%%@@SJ${nl}*}"; sj="${out#*@@SJ${nl}}"
   tmp="$(mktemp "$d/.container-health.XXXXXX" 2>/dev/null)" || return 0
   { [ -z "$new" ] || printf '%s' "$new" >> "$ev_f"
     [ ! -f "$ev_f" ] || { tail -n "$HEALTH_EVENTS_MAX" "$ev_f" > "$tmp" && cat "$tmp" > "$ev_f"; }
     printf '%s' "$snap" > "$tmp" && mv -f "$tmp" "$prev_f"
     chmod 644 "$prev_f" "$ev_f" 2>/dev/null
-    while IFS='|' read -r at svc kind n ex; do
-      [ -n "$at" ] || continue
-      ej="$ej${ej:+, }{\"at\": $(_health_num "$at"), \"service\": \"$(_health_word "$svc")\", \"kind\": \"$(_health_word "$kind")\", \"count\": $(_health_num "$n"), \"exit_code\": $(_health_num "$ex")}"
-    done < "$ev_f"
+    if [ -f "$ev_f" ]; then
+      last="$(tail -c 1 "$ev_f")"   # (not empty: the last line has no newline, which `read` leaves out)
+      ej="$(LC_ALL=C awk -v drop="$last" '
+        function word(x) { gsub(/[^a-z0-9_-]/, "", x); return substr(x, 1, 40) }
+        function num(x) { gsub(/[^0-9]/, "", x); x = substr(x, 1, 12); return x == "" ? "0" : x }
+        function after(s, k,   i, p) { for (i = 0; i < k; i++) { p = index(s, "|"); if (!p) return ""; s = substr(s, p + 1) } return s }
+        function emit(l,   p, at, f) {
+          p = index(l, "|"); at = p ? substr(l, 1, p - 1) : l
+          if (at == "") return
+          split(l, f, "|")
+          ej = ej (ej == "" ? "" : ", ") "{\"at\": " num(at) ", \"service\": \"" word(f[2]) "\", \"kind\": \"" word(f[3]) "\", \"count\": " num(f[4]) ", \"exit_code\": " num(after(l, 4)) "}"
+        }
+        { if (have) emit(prev); prev = $0; have = 1 }
+        END { if (have && drop == "") emit(prev); printf "%s", ej }
+      ' "$ev_f")"
+    fi
     tmp="$(mktemp "$d/.container-health.XXXXXX")" &&
       printf '{"version": 1, "written_at": %s, "services": [%s], "events": [%s]}\n' "$now" "$sj" "$ej" > "$tmp" &&
       chmod 644 "$tmp" && mv -f "$tmp" "$(health_json_file)"
