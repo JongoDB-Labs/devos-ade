@@ -6,6 +6,15 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Changed
+- **An update is some 2 to 3 seconds quicker again.** The terminal's check of its workspace folder asked the system's
+  name some 30 times, each in a program of its own, and an update ran that check about 20 times (each time it listed
+  the services to start). It now asks once a check. Settings' list of core services is also written without six
+  programs for each of its 42 values. Measured on a quiet Linux host: Update now 57 s → 54 s, and an apply with nothing
+  to do 18 s → 17 s. The check answers every folder as before. (JON-972)
+- The e2e upgrade test can now profile an update's own shell time, line by line (off unless that test turns it on;
+  never on an install). (JON-972)
+
 ## [0.68.9] - 2026-11-26
 
 ### Changed
