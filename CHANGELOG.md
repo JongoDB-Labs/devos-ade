@@ -6,12 +6,17 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.68.14] - 2026-11-26
+
 ### Fixed
 - An update runs the smoke test again whenever a release changes any of its checks, or how they run. Before, only
   some of its code counted (never the list of checks itself), so a release that changed a check alone could skip it.
   The first update to this release runs it once (some 5 s). (JON-972)
 - When the smoke test is stopped (a Ctrl-C, the update helper ending the job), it signals only the groups of checks
   still running, never one that already ended. (JON-972)
+
+### To get it
+Existing installs: Home › Update now.
 
 ## [0.68.13] - 2026-11-26
 
