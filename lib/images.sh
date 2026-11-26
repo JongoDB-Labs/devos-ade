@@ -164,12 +164,24 @@ overlay_refs() {
 # leaves them out of `docker image ls` without -a. Only a lookup table: what is removed comes from the snapshots,
 # this project's named images and its labelled untagged builds (cleanup_plan), never from this list.
 image_sizes() {
-  local id size
-  # disk_line lists them once for all of its parts (_IMAGE_SIZES, local there)
+  # disk_line and images_after_update list them once for all of their parts (_IMAGE_SIZES, local there)
   if [ -n "${_IMAGE_SIZES:-}" ]; then printf '%s\n' "$_IMAGE_SIZES"; return 0; fi
-  docker image ls -a --no-trunc --format '{{.ID}}	{{.Size}}' 2>/dev/null | while IFS='	' read -r id size; do
-    printf '%s\t%s\n' "$id" "$(_bytes "$size")"
-  done
+  docker image ls -a --no-trunc --format '{{.ID}}	{{.Size}}' 2>/dev/null | _sizes_in_bytes
+}
+# _sizes_in_bytes < "ID<TAB>SIZE" lines -> "ID<TAB>BYTES", each line split as IFS=<TAB> read splits it and each size
+# read as _bytes reads it ("" for nonsense), in one awk (JON-972: an _bytes a line, two programs an image, made each
+# list some 0.3 s of shell on the test host)
+_sizes_in_bytes() {
+  awk '{
+    l = $0; sub(/^\t+/, "", l); id = l; sub(/\t.*$/, "", id); s = ""
+    if (index(l, "\t")) { s = substr(l, index(l, "\t")); sub(/^\t+/, "", s); sub(/\t+$/, "", s) }
+    b = ""
+    if (s ~ /^[0-9]/) {
+      n = s + 0; u = s; sub(/^[0-9.]+/, "", u)
+      m = (u == "B" || u == "") ? 1 : (u == "kB" || u == "KB") ? 1e3 : (u == "MB") ? 1e6 : (u == "GB") ? 1e9 : (u == "TB") ? 1e12 : -1
+      if (m >= 0) b = sprintf("%.0f", n * m)
+    }
+    printf "%s\t%s\n", id, b }'
 }
 
 # image_label REF [NAMES] -> what a person calls it: "litellm 1.105.0", "portal (unused build)", "unused build".
@@ -277,7 +289,7 @@ _PROTECTED_FAILED="could not list the images in use (docker ps or docker volume 
 # images_after_update — after a successful update: the images it replaced become previous.tsv (kept for
 # rollback); the previous-previous ones and this project's dangling builds are removed. Never fatal.
 images_after_update() {
-  local d now keep cand plan prot
+  local d now keep cand plan prot _IMAGE_SIZES
   d="$(images_dir)"; mkdir -p "$d" 2>/dev/null || return 0
   now="$(project_refs | snapshot_refs)"
   keep="$(printf '%s\n' "$now" | cut -f1; _ids "$d/before.tsv"; overlay_refs | snapshot_refs | cut -f1)"
@@ -293,6 +305,8 @@ images_after_update() {
     return 0
   fi
   cand="$(cat "$d/previous.tsv" 2>/dev/null; project_dangling | sed 's/$/	/')"
+  # (the images and their sizes once, for _present_only and images_remove both: nothing is removed in between)
+  _IMAGE_SIZES="$(image_sizes)"
   plan="$(cleanup_plan "$keep" "$cand" "$prot" | _present_only)"
   [ ! -f "$d/before.tsv" ] || mv "$d/before.tsv" "$d/previous.tsv"
   printf '%s\n' "$now" > "$d/current.tsv"

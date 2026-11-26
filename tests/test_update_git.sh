@@ -493,7 +493,7 @@ test_whats_new_lists_the_releases_it_did_with_two_version_reads() {
       [ "$o" = "$n" ] || { printf 'installed %s, from %s:\n--- before\n%s\n--- now\n%s\n' "$cur" "$from" "$o" "$n" >&2; bad=1; }
     done
   done
-  # (what they agree on: twelve releases after v0.2.0 up to the commit after v0.18.0, ten named)
+  # (what they agree on: thirteen releases after v0.2.0 up to the commit after v0.18.0, ten named)
   git -C "$STACK_DIR" checkout -q main
   n="$(releases_between "$(git -C "$STACK_DIR" rev-parse 'v0.2.0^{commit}')")"
   assert_eq "$(printf '%s\n' "$n" | sed -n '1p;10p;11p')" "v0.18.0 — the newest

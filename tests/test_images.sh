@@ -39,7 +39,7 @@ _stub_docker() {
         awk -F'\t' -v p="${last#label=com.docker.compose.project=}" '$2 == "<none>" && $4 == p { print $1 }' "$TMP/imgs" ;;
       # Docker 29 (containerd image store): without -a the list leaves untagged images out ("dangling=true" still finds them)
       "image ls --no-trunc --format {{.ID}}	{{.Size}}") awk -F'\t' '$2 != "<none>" && !s[$1]++ { print $1 "\t" $3 }' "$TMP/imgs" ;;
-      "image ls -a --no-trunc --format {{.ID}}	{{.Size}}") awk -F'\t' '!s[$1]++ { print $1 "\t" $3 }' "$TMP/imgs" ;;
+      "image ls -a --no-trunc --format {{.ID}}	{{.Size}}") echo ls-a >> "$TMP/dcalls.lsa"; awk -F'\t' '!s[$1]++ { print $1 "\t" $3 }' "$TMP/imgs" ;;
       "image ls --no-trunc --format {{.ID}}	{{.Repository}}:{{.Tag}} --filter reference="*)
         local pre="${last#reference=}"; pre="${pre%\*}"
         awk -F'\t' -v p="$pre" 'index($2, p) == 1 { print $1 "\t" $2 }' "$TMP/imgs" ;;
@@ -91,6 +91,32 @@ test_bytes_and_fmt_bytes() {
   assert_eq "$(fmt_bytes 3100000000)" "3.1 GB"
   assert_eq "$(fmt_bytes 450000000)" "450 MB"
   assert_eq "$(fmt_bytes 0)" "0 B"
+}
+
+# JON-972: Docker's list of images and their sizes is read in one awk, each line as the loop of v0.68.17 read it
+# (IFS=<TAB> read -r id size, then _bytes "$size")
+_sizes_by_read() { local id size; while IFS='	' read -r id size; do printf '%s\t%s\n' "$id" "$(_bytes "$size")"; done; }
+test_image_sizes_reads_each_line_as_the_loop_did() {
+  local in want got
+  in="$(printf '%s\n' 'sha256:aa	1.73GB' 'sha256:bb	213MB' 'sha256:cc	45.5kB' 'sha256:dd	22B' 'sha256:ee	0B' 'sha256:ff	7KB' \
+    'sha256:gg	1.5TB' 'sha256:hh	nonsense' 'sha256:ii	' 'sha256:jj' 'sha256:kk	1.73 GB' 'sha256:ll	12' 'sha256:mm	1e3B' \
+    'sha256:nn	.5GB' 'sha256:oo	3.GB' '	sha256:pp	9MB' 'sha256:qq		9MB	' 'sha256:rr	9MB	x' 'sha256:ss	5gb' 'sha256:tt	999999.99GB' \
+    '' 'sha256:uu	1.2.3MB' 'sha256:vv	-4MB' 'sha256:ww	4MiB')"
+  want="$(printf '%s\n' "$in" | _sizes_by_read)"; got="$(printf '%s\n' "$in" | _sizes_in_bytes)"
+  [ "$got" = "$want" ] || { printf -- '--- the loop\n%s\n--- one awk\n%s\n' "$want" "$got" >&2; return 1; }
+  # (the cases say something)
+  assert_contains "$got" "sha256:aa	1730000000"
+  assert_contains "$got" "sha256:hh	"
+  assert_contains "$got" "sha256:qq	9000000"
+}
+
+test_an_update_lists_the_images_and_their_sizes_once() {
+  _setup
+  _fake_update 2 L2 P2 2>/dev/null
+  : > "$TMP/dcalls.lsa"
+  _fake_update 3 L3 P3 2> "$TMP/err"
+  assert_contains "$(cat "$TMP/err")" "freed 1.9 GB (old litellm 1, portal (unused build))"
+  assert_eq "$(wc -l < "$TMP/dcalls.lsa" | tr -d ' ')" 1
 }
 
 test_compose_refs_resolve_the_project_name() {
