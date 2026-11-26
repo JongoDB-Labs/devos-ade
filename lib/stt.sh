@@ -581,6 +581,7 @@ stt_setup_service() {
   local out start
   if [ "$(stt_provider)" != bedrock ]; then stt_service_down; return 0; fi
   out="$(mktemp)"; start="$(_now)"
+  [ -z "${_UPD_PROF:-}" ] || upd_prof_mark begin "Speech-to-text (Bedrock Voxtral)"   # (the update's profile: its end has a begin)
   if _stt_build_and_up > "$out" 2>&1; then
     rm -f "$out" "$STATE_DIR/stt-start-failed"
     log "$(phase_line "Speech-to-text (Bedrock Voxtral)" $(($(_now) - start)))"

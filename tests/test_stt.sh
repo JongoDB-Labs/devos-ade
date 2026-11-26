@@ -980,6 +980,20 @@ test_setup_falls_back_to_browser_when_the_container_does_not_start() {
   [ ! -e "$STATE_DIR/stt-start-failed" ]
 }
 
+test_the_update_profile_has_the_speech_to_text_step_s_begin_as_well_as_its_end() {
+  # (an end alone made the update's time between steps count the step's own build and start as a gap)
+  _probed voxtral-small
+  printf 'STT_PROVIDER=bedrock\n' > "$ENV_FILE"; stt_sync_env
+  _stt_build_and_up() { :; }; plan_step_begin() { :; }; plan_step_end() { :; }
+  _ms_now() { echo 5000; }; _UPD_PROF_T0=1000; _UPD_PROF="$TMP/calls.tsv"; : > "$_UPD_PROF"
+  stt_setup_service > /dev/null 2>&1
+  assert_eq "$(cut -f2,3 "$_UPD_PROF")" "$(printf 'step\tbegin Speech-to-text (Bedrock Voxtral)\nstep\tend Speech-to-text (Bedrock Voxtral)')"
+  : > "$_UPD_PROF"; _stt_build_and_up() { return 1; }; dc() { :; }   # (did not start: a begin, no end — as any failed step)
+  stt_setup_service > /dev/null 2>&1
+  assert_eq "$(cut -f2,3 "$_UPD_PROF")" "$(printf 'step\tbegin Speech-to-text (Bedrock Voxtral)')"
+  _UPD_PROF=''
+}
+
 test_stt_set_bedrock_builds_first_and_changes_nothing_when_that_fails() {
   _probed voxtral-small
   mkdir -p "$TMP/litellm"; : > "$TMP/litellm/config.yaml"
