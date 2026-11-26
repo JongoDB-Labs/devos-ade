@@ -94,6 +94,19 @@ if [ -n "$COMPARE" ]; then   # the sweep twice (REF and the candidate, at once) 
     shasum -a 256 "$HERE/ui-sweep.sh" "$HERE/lib.sh" "$HERE/browser-net.sh" | cut -d' ' -f1
     printf '%s\n' "${SWEEP_WIDTHS:-}" "${SWEEP_THEMES:-}" "${SWEEP_ONLY:-}" "${SWEEP_SIZES:-}" "$LONG"; } | shasum -a 256 | cut -c1-32)"
   ref_cache="$HOME/.cache/ade-e2e/sweep-ref/$ref_key"
+  # ref_cacheable CONTROLS.JSON — 0 unless REF's Activity page showed a notice (an unread item: "Mark as read"). A notice
+  # can come from the host's load (a model check that timed out); kept, it would fail every later comparison with a
+  # candidate that had none (JON-1411). Unreadable: not kept either.
+  ref_cacheable() {
+    python3 - "$1" 2>/dev/null <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+for state, v in d.items():
+    if state.startswith("portal-activity") and isinstance(v, dict):
+        if any(isinstance(c, dict) and c.get("name") == "Mark as read" for c in v.get("visible", [])):
+            sys.exit(1)
+PY
+  }
   if [ "${SWEEP_REF_CACHE:-1}" != 0 ] && [ -s "$ref_cache/controls.json" ]; then
     mkdir -p "$CMP/ref/run/sweep" && cp "$ref_cache/controls.json" "$CMP/ref/run/sweep/controls.json"
     say "compare: $COMPARE's inventory from the cache ($ref_key, swept $(cat "$ref_cache/when" 2>/dev/null || echo '?')): not swept again"
@@ -114,8 +127,12 @@ if [ -n "$COMPARE" ]; then   # the sweep twice (REF and the candidate, at once) 
     wait "$ref_pid"; rrc=$?; ref_pid=''
     say "compare: $COMPARE's sweep ended (exit $rrc); its last lines:"; tail -n 15 "$CMP/ref.log"
     if [ -s "$CMP/ref/run/sweep/controls.json" ] && [ "${SWEEP_REF_CACHE:-1}" != 0 ]; then
-      mkdir -p "$ref_cache.tmp$$" && cp "$CMP/ref/run/sweep/controls.json" "$ref_cache.tmp$$/" && date -u '+%F %TZ' > "$ref_cache.tmp$$/when" &&
-        { rm -rf "$ref_cache"; mv "$ref_cache.tmp$$" "$ref_cache"; } || rm -rf "$ref_cache.tmp$$"
+      if ! ref_cacheable "$CMP/ref/run/sweep/controls.json"; then
+        say "compare: $COMPARE's inventory not kept: its Activity page showed a notice (it may not come back: JON-1411)"
+      else
+        mkdir -p "$ref_cache.tmp$$" && cp "$CMP/ref/run/sweep/controls.json" "$ref_cache.tmp$$/" && date -u '+%F %TZ' > "$ref_cache.tmp$$/when" &&
+          { rm -rf "$ref_cache"; mv "$ref_cache.tmp$$" "$ref_cache"; } || rm -rf "$ref_cache.tmp$$"
+      fi
     fi
   fi
   for w in ref candidate; do [ -s "$CMP/$w/run/sweep/controls.json" ] || die "the $w sweep wrote no controls.json (see $CMP/$w/logs and run/sweep.log)"; done
