@@ -91,6 +91,9 @@ test_the_certificate_is_checked_once_an_hour_in_a_shell() {
   [ -s "$d/tls.key" ] && [ "$(grep -c openssl "$calls")" -ge 1 ]
   SECONDS=$((SECONDS + 3600)); : > "$calls"; localgit_tls_ensure || return 1
   assert_eq "$(grep -c openssl "$calls")" 1
+  # (SECONDS set back, as lib/helper.sh does: checked again, not trusted for longer)
+  SECONDS=100; localgit_tls_ensure; SECONDS=0; : > "$calls"; localgit_tls_ensure || return 1
+  assert_eq "$(grep -c openssl "$calls")" 1
   local s="$STATE_DIR"; STATE_DIR="$TMP/other-state"; : > "$calls"; localgit_tls_ensure || return 1
   [ "$(grep -c openssl "$calls")" -ge 1 ] && [ -s "$STATE_DIR/localgit/tls/tls.crt" ]; STATE_DIR="$s"
 }

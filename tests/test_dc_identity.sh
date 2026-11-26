@@ -175,18 +175,40 @@ test_the_snapshot_never_reaches_a_programs_environment() {
   case $- in *a*) echo "set -a left on" >&2; return 1 ;; esac
 }
 
-test_ev_reads_as_get_env() {
-  # (_ev VAR KEY is "$(get_env KEY)" without the subshell: in dc's snapshot and outside it, for the same keys as above)
+test_dc_under_set_a_gives_docker_what_it_gives_without() {
+  # (allexport would mark everything dc sets for export — the project, the checksums, the .env values it reads: dc works
+  # with it off, gives docker the very environment old_dc gives without it, and turns it back on)
+  _env "TERMINAL_ENABLED=true" "TERMINAL_WORKSPACE=/w" "CODE_ENABLED=true" "LOCALGIT_SSO_HEADER=SECRETHDR" "PORTAL_HTTPS=true" \
+    "TERMINAL_AUTO_MODE=on" "STT_PROVIDER=bedrock" "PORTAL_HOST=devos.localhost"
+  mkdir -p "$STATE_DIR/runtimes/llamacpp"; echo 1000:1000 > "$STATE_DIR/runtimes/llamacpp/user"
+  DC_OUT="$TMP/dc-old"; unset _DC_PROJECT_WARNED; old_dc exec -T portal true
+  DC_OUT="$TMP/dc-new"; unset _DC_PROJECT_WARNED; set -a; dc exec -T portal true; set +a
+  cmp -s "$TMP/dc-old" "$TMP/dc-new" || { diff "$TMP/dc-old" "$TMP/dc-new" | head -20 >&2; return 1; }
+  local r=0; set -a; dc exec -T portal true; case $- in *a*) ;; *) r=1 ;; esac; set +a
+  [ "$r" = 0 ] || { echo "dc left set -a off" >&2; return 1; }
+  docker() { return 3; }
+  set -a; r=0; dc exec -T portal true || r=$?; case $- in *a*) ;; *) r=off ;; esac; set +a
+  assert_eq "$r" 3
+  # (dc ps's quick path too; and without set -a, dc does not turn it on)
+  _dc_ps_form() { return 0; }; _dc_ps_fast() { return 4; }
+  set -a; r=0; DEVOS_ADE_PS_VIA_COMPOSE=0 dc ps || r=$?; case $- in *a*) ;; *) r=off ;; esac; set +a
+  assert_eq "$r" 4
+  r=0; DEVOS_ADE_PS_VIA_COMPOSE=0 dc ps || r=$?; assert_eq "$r" 4
+  case $- in *a*) echo "dc turned set -a on" >&2; return 1 ;; esac
+}
+
+test_get_env_into_reads_as_get_env() {
+  # (get_env_into VAR KEY is "$(get_env KEY)" without the subshell: in dc's snapshot and outside it, for the same keys as above)
   printf '\357\273\277BOM=1\nA=1\nB=x=y z\r\n# C=no\nexport D=1\n  E=1\nF-G=1\nA=2\nH=\nI= sp \n9J=1\nL=a\\tb\\c\nM=100%%s\nN=\tt\nK=last' > "$ENV_FILE"
   local k v snap
   for snap in 0 1; do
-    for k in A B C D E F-G F G H I 9J K L M N BOM NOPE 'export D' '  E' '# C' '' 'A=' '=' v _ev_n; do
-      assert_eq "$(_dc_env_snap=$snap; [ "$snap" = 0 ] || _env_snap; _ev v "$k"; printf '%s' "$v")" "$(get_env "$k")" || { echo "_ev [$k], snapshot $snap" >&2; return 1; }
+    for k in A B C D E F-G F G H I 9J K L M N BOM NOPE 'export D' '  E' '# C' '' 'A=' '=' v _gei_n; do
+      assert_eq "$(_dc_env_snap=$snap; [ "$snap" = 0 ] || _env_snap; get_env_into v "$k"; printf '%s' "$v")" "$(get_env "$k")" || { echo "get_env_into [$k], snapshot $snap" >&2; return 1; }
     done
   done
   # (no .env: empty; one gone after the snapshot: empty, as get_env reads it)
-  assert_eq "$(_dc_env_snap=1; _env_snap; rm -f "$ENV_FILE"; v=x; _ev v A; printf '%s' "$v")" ""
-  rm -f "$ENV_FILE"; v=x; _ev v A; assert_eq "$v" ""
+  assert_eq "$(_dc_env_snap=1; _env_snap; rm -f "$ENV_FILE"; v=x; get_env_into v A; printf '%s' "$v")" ""
+  rm -f "$ENV_FILE"; v=x; get_env_into v A; assert_eq "$v" ""
 }
 
 test_text_of_reads_as_cat() {
@@ -196,7 +218,8 @@ test_text_of_reads_as_cat() {
   printf '1000:1000\n' > "$d/one"; printf '1000:1000' > "$d/nonl"; printf 'a\n\n\n' > "$d/nls"; printf 'a\nb\n' > "$d/two"
   printf '1000:1000\r\n' > "$d/crlf"; printf '  x  \n' > "$d/sp"; : > "$d/empty"; printf '\n' > "$d/nl"; printf 'a\\b %%s\n' > "$d/bs"
   ln -s "$d/one" "$d/link"; ln -s "$d/none" "$d/dangling"; printf 'x\n' > "$d/noread"; chmod 000 "$d/noread"
-  for f in one nonl nls two crlf sp empty nl bs link dangling none dir noread; do
+  ln -s /dev/null "$d/null"; ln -s "$d/dir" "$d/dirlink"
+  for f in one nonl nls two crlf sp empty nl bs link dangling none dir noread null dirlink; do
     [ "$f" != noread ] || [ "$(id -u)" != 0 ] || continue
     want="$(cat "$d/$f" 2>/dev/null || echo 65534:65534)"
     _text_of got "$d/$f" 65534:65534
@@ -206,7 +229,7 @@ test_text_of_reads_as_cat() {
 }
 
 test_the_runtime_and_mirror_checks_answer_as_before() {
-  # (rt_installed without rt_dir's subshells; localgit_mirror_wanted with _ev: as the old forms, in dc's snapshot and not)
+  # (rt_installed without rt_dir's subshells; localgit_mirror_wanted with get_env_into: as the old forms, in dc's snapshot and not)
   local id m e h s old new
   STATE_DIR="$TMP/state with space"; mkdir -p "$STATE_DIR/runtimes/ollama" "$STATE_DIR/runtimes/vllm/installed" "$STATE_DIR/runtimes/lmstudio"
   echo 1 > "$STATE_DIR/runtimes/ollama/installed"; : > "$STATE_DIR/runtimes/lmstudio/installed"

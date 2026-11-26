@@ -178,21 +178,22 @@ get_env() {
   fi
   K="$1" awk 'index($0, ENVIRON["K"] "=") == 1 { v = substr($0, length(ENVIRON["K"]) + 2) } END { printf "%s", v }' "$ENV_FILE"
 }
-# _ev VAR KEY — VAR = "$(get_env KEY)": while dc's snapshot is in effect without the subshell (a fork each, some 20 of
+# get_env_into VAR KEY — VAR = "$(get_env KEY)": while dc's snapshot is in effect without the subshell (a fork each, some 20 of
 # them a dc call: JON-972), otherwise from get_env as before. (A snapshot's values never end in a newline: no line does.)
-_ev() {
+get_env_into() {
   if [ "${_dc_env_snap:-}" = 1 ] && [ "${_ENV_SNAP_OF:-}" = "$ENV_FILE" ] && [ -f "$ENV_FILE" ]; then
-    case "$2" in '' | [0123456789]* | *[!$_ENV_KEY_CHARS]*) ;; *) local _ev_n="_ENVV_$2"; printf -v "$1" '%s' "${!_ev_n-}"; return 0 ;; esac
+    case "$2" in '' | [0123456789]* | *[!$_ENV_KEY_CHARS]*) ;; *) local _gei_n="_ENVV_$2"; printf -v "$1" '%s' "${!_gei_n-}"; return 0 ;; esac
   fi
   printf -v "$1" '%s' "$(get_env "$2")"
 }
 # _text_of VAR FILE DEFAULT — VAR = "$(cat FILE 2>/dev/null || echo DEFAULT)", without a subshell or cat: the file's
-# text without its last newlines, or DEFAULT when it is no file this user can read. (A NUL byte ends the text, where
-# cat's would be dropped: these are small files of the stack's own, such as a runtime's "uid:gid".)
+# text without its last newlines, or DEFAULT when it cannot be opened (no such file, no permission, gone meanwhile) or
+# is a folder. (A NUL byte ends the text, where cat's would be dropped: these are small files of the stack's own, such
+# as a runtime's "uid:gid".)
 _text_of() {
-  local _to_t=''
-  if [ -f "$2" ] && [ -r "$2" ]; then
-    IFS= read -r -d '' _to_t < "$2" || true
+  local _to_t='' _to_open=0
+  if [ ! -d "$2" ]; then { _to_open=1; IFS= read -r -d '' _to_t; } 2>/dev/null < "$2" || true; fi
+  if [ "$_to_open" = 1 ]; then
     while [ "${_to_t%$'\n'}" != "$_to_t" ]; do _to_t="${_to_t%$'\n'}"; done
   else _to_t="$3"; fi
   printf -v "$1" '%s' "$_to_t"
@@ -396,19 +397,24 @@ localgit_sso_ensure() {
 # legacy_hosts_mode -> on while Caddy may forward the old address (bedrock-now.localhost …) to the new one, off while the stack itself
 # serves an old name (PORTAL_HOST / PREVIEW_DOMAIN in .env still carry it: a move that has not reached .env, or was rolled back)
 legacy_hosts_mode() {
-  local h p; _ev h PORTAL_HOST; _ev p PREVIEW_DOMAIN
+  local h p; get_env_into h PORTAL_HOST; get_env_into p PREVIEW_DOMAIN
   case "$h" in bedrock-now.localhost | *.bedrock-now.localhost) echo off; return ;; esac
   case "$p" in bedrock-now-preview.localhost | *.bedrock-now-preview.localhost) echo off; return ;; esac
   echo on
 }
 dc() {
+  # (allexport off for dc's own work and restored at each return: under set -a nothing dc sets — the project, the
+  # checksums, .env's values it reads — would otherwise go into docker's environment)
+  case $- in *a*) set +a; local _dc_ae=1 ;; *) local _dc_ae=0 ;; esac
   local p; p="$(project_name)"
   localgit_sso_ensure 2>/dev/null || true
   if [ -n "${COMPOSE_PROJECT_NAME:-}" ] && [ "$COMPOSE_PROJECT_NAME" != "$p" ] && [ -z "${_DC_PROJECT_WARNED:-}" ]; then
     warn "COMPOSE_PROJECT_NAME=$COMPOSE_PROJECT_NAME in your shell is ignored: this checkout is project '$p' (from .env or the default)"
     _DC_PROJECT_WARNED=1
   fi
-  if [ "${1:-}" = ps ] && [ "${DEVOS_ADE_PS_VIA_COMPOSE:-0}" != 1 ] && _dc_ps_form "$@"; then _dc_ps_fast "$p" "$@"; return; fi
+  if [ "${1:-}" = ps ] && [ "${DEVOS_ADE_PS_VIA_COMPOSE:-0}" != 1 ] && _dc_ps_form "$@"; then
+    _dc_ps_fast "$p" "$@"; local _dc_rc=$?; [ "$_dc_ae" = 0 ] || set -a; return "$_dc_rc"
+  fi
   # .env as it is now, for this call's get_env (_env_snap: nothing below writes .env; dc ps above reads none)
   local _dc_env_snap=0; ! _env_snap || _dc_env_snap=1
   # (the OS for runtime_profiles and runtime_overlays: one uname a call, not one each)
@@ -423,7 +429,8 @@ dc() {
   # the portal's docs index (compose.portal-docs.yaml): only where this Docker Compose reads additional_contexts
   if compose_reads_contexts; then f+=(-f "$STACK_DIR/compose.portal-docs.yaml"); fi
   # (the git server's certificate checked in this shell, where localgit_tls_ensure remembers it: compose_overlays runs
-  # in a subshell, and finds it checked, as the next calls do)
+  # in a subshell, and finds it checked, as the next calls do. When the check fails, nothing is remembered, and the
+  # subshell checks again and decides, as before.)
   ! localgit_overlay_wanted > /dev/null 2>&1 || true
   for o in $(compose_overlays); do
     case "$o" in @projects) f+=(-f "$STATE_DIR/projects/compose.yaml") ;; *) f+=(-f "$STACK_DIR/$o") ;; esac
@@ -431,25 +438,25 @@ dc() {
   # The Code page's container mounts the project folders' public list (compose.code.yaml: the folder, read-only, never
   # created by Docker): there before compose needs it (lib/projects.sh writes its roots.json)
   # (mkdir only when it is not there; the mode is set at every call)
-  local v; _ev v CODE_ENABLED
+  local v; get_env_into v CODE_ENABLED
   if flag_on "$v"; then { [ -d "$STATE_DIR/projects/public" ] || mkdir -p "$STATE_DIR/projects/public" 2>/dev/null; } && chmod 700 "$STATE_DIR/projects" 2>/dev/null || true; fi
   # Bedrock speech-to-text: its container is in the "stt" profile (lib/stt.sh), so down/ps/logs include it too.
-  _ev v STT_PROVIDER
+  get_env_into v STT_PROVIDER
   if [ "${_STT_PROFILE:-}" = 1 ] || [ "$v" = bedrock ]; then f+=(--profile stt); fi
   # The built-in SearXNG (lib/websearch.sh): in the "searxng" profile, on unless WEBSEARCH_SEARXNG_BUILTIN=off
-  _ev v WEBSEARCH_SEARXNG_BUILTIN
+  get_env_into v WEBSEARCH_SEARXNG_BUILTIN
   if [ "${_WS_SEARXNG_PROFILE:-}" = 1 ] || ! flag_off "$v"; then f+=(--profile searxng); fi
   # The built-in git server, Forgejo (lib/localgit.sh): in the "forgejo" profile, on unless LOCALGIT=off
   local lg_off=0 lg_mode=on sso sso_on=false scheme=http llu vlu
-  _ev v LOCALGIT; ! flag_off "$v" || { lg_off=1; lg_mode=off; }
+  get_env_into v LOCALGIT; ! flag_off "$v" || { lg_off=1; lg_mode=off; }
   if [ "${_LG_PROFILE:-}" = 1 ] || [ "$lg_off" = 0 ]; then f+=(--profile forgejo); fi
   # The runtimes as containers (lib/runtimes.sh, Linux): each in its own profile while this stack installed it
   if declare -F runtime_profiles >/dev/null; then local rp; for rp in $(runtime_profiles); do f+=(--profile "$rp"); done; fi
   # the checksums of the configuration files the services read only at their start (config_sums, below): every compose
   # call passes the same ones, so none recreates a service whose files did not change, and each recreates one whose did
   local policy sums; policy="$(claude_policy)"; sums="$(config_sums "$policy")"
-  _ev sso LOCALGIT_SSO_HEADER; [ -z "$sso" ] || sso_on=true
-  _ev v PORTAL_HTTPS; ! flag_on "$v" || scheme=https
+  get_env_into sso LOCALGIT_SSO_HEADER; [ -z "$sso" ] || sso_on=true
+  get_env_into v PORTAL_HTTPS; ! flag_on "$v" || scheme=https
   # (the runtimes' users, as their installs wrote them: lib/runtimes.sh)
   _text_of llu "$STATE_DIR/runtimes/llamacpp/user" 65534:65534; _text_of vlu "$STATE_DIR/runtimes/vllm/user" 65534:65534
   # The browser terminal too: an exported TERMINAL_WORKSPACE must never decide what the container sees.
@@ -478,6 +485,7 @@ SUMS
     BUILDX_NO_DEFAULT_ATTESTATIONS="${BUILDX_NO_DEFAULT_ATTESTATIONS:-1}" \
     DEVOS_ADE_ENV_DISPLAY="$(env_file_display)" COMPOSE_PROJECT_NAME="$p" docker compose -p "$p" --project-directory "$STACK_DIR" -f "$STACK_DIR/compose.yaml" ${f[@]+"${f[@]}"} \
       --env-file "$ENV_FILE" "$@" )
+  local _dc_rc=$?; [ "$_dc_ae" = 0 ] || set -a; return "$_dc_rc"
 }
 
 # `dc ps` without Compose (JON-972). Compose reads and checks every compose file before it answers (about 0.3 s a call, and a
@@ -834,17 +842,17 @@ compose_reads_contexts() {
 # internet, limited to the mirrors' host names): it is on, and ./stack's record (reconciled with the server's own mirrors) has hosts
 localgit_mirror_wanted() {
   local v; localgit_on || return 1
-  _ev v LOCALGIT_MIRROR_EGRESS; flag_on "$v" || return 1
-  _ev v LOCALGIT_MIRROR_HOSTS; [ -n "$v" ]
+  get_env_into v LOCALGIT_MIRROR_EGRESS; flag_on "$v" || return 1
+  get_env_into v LOCALGIT_MIRROR_HOSTS; [ -n "$v" ]
 }
 # localgit_on -> 0 while the built-in git server is on: LOCALGIT anything but off (blank = on, the default)
-localgit_on() { local v; _ev v LOCALGIT; ! flag_off "$v"; }
+localgit_on() { local v; get_env_into v LOCALGIT; ! flag_off "$v"; }
 # localgit_overlay_wanted -> 0 while the sandbox's gateway should also serve it (compose.localgit.yaml): it is on, and so is
 # the terminal (the sandbox's gateway exists then) — and its certificate is there
 localgit_overlay_wanted() {
   local v; localgit_on || return 1
-  _ev v TERMINAL_ENABLED; flag_on "$v" || return 1
-  _ev v TERMINAL_WORKSPACE; [ -n "$v" ] && localgit_tls_ensure
+  get_env_into v TERMINAL_ENABLED; flag_on "$v" || return 1
+  get_env_into v TERMINAL_WORKSPACE; [ -n "$v" ] && localgit_tls_ensure
 }
 localgit_tls_dir() { printf '%s/localgit/tls\n' "$STATE_DIR"; }
 
@@ -888,14 +896,16 @@ EOF
 }
 # _lg_tls_checked DIR -> 0 when this shell found DIR's certificate good (a month or more left) and published it within
 # the hour, and the certificate and its published copy are still that very text (the key still there): localgit_tls_ensure
-# then runs no openssl and no cmp. dc asks for it at every compose call, some 35 an update (JON-972). bash's read
+# then runs no openssl and no cmp (a certificate that comes within a month of its end meanwhile is made again up to an
+# hour later). dc asks for it at every compose call, some 35 an update (JON-972). bash's read
 # compares the text, not a file's time (bash 3.2's are whole seconds). _LG_TLS_OK: "DIR SECONDS" of that check;
 # _LG_TLS_CRT: the certificate's text then (no secret: the key is never read).
 _LG_TLS_OK=''; _LG_TLS_CRT=''
 _lg_tls_checked() {
   local d="$1" t c='' a=''
   case "$_LG_TLS_OK" in "$d "*) t="${_LG_TLS_OK##* }" ;; *) return 1 ;; esac
-  [ $((SECONDS - t)) -lt 3600 ] && [ -s "$d/tls.key" ] || return 1
+  # (SECONDS set back by someone, as lib/helper.sh does: no longer within the hour)
+  t=$((SECONDS - t)); [ "$t" -ge 0 ] && [ "$t" -lt 3600 ] && [ -s "$d/tls.key" ] || return 1
   IFS= read -r -d '' c 2>/dev/null < "$d/tls.crt" || true
   IFS= read -r -d '' a 2>/dev/null < "$d/ca/tls.crt" || true
   [ -n "$c" ] && [ "$c" = "$_LG_TLS_CRT" ] && [ "$a" = "$c" ]
@@ -926,9 +936,9 @@ localgit_ca_publish() {
 # (its sandbox). The project folders' generated file (.state/projects/compose.yaml, lib/projects.sh) comes after the
 # terminal's (@projects).
 compose_overlays() {
-  local v em   # (.env's values, read by _ev: no subshell while dc's snapshot is in effect)
+  local v em   # (.env's values, read by get_env_into: no subshell while dc's snapshot is in effect)
   if [ "${REMOTE_DEGRADED:-0}" != 1 ]; then   # remote network unusable this run (lib/remote.sh remote_net_preflight)
-    _ev v REMOTE_MODE
+    get_env_into v REMOTE_MODE
     case "$v" in
       tailscale) echo compose.tailscale.yaml ;;
       domain) echo compose.tailscale.yaml compose.domain.yaml ;;
@@ -936,20 +946,20 @@ compose_overlays() {
   fi
   # (Without a folder in TERMINAL_WORKSPACE compose could not even read that file: it is left out, and ./stack up
   # says why — lib/terminal.sh terminal_up_hook.)
-  _ev v TERMINAL_ENABLED
-  if flag_on "$v" && { _ev v TERMINAL_WORKSPACE; [ -n "$v" ]; }; then
+  get_env_into v TERMINAL_ENABLED
+  if flag_on "$v" && { get_env_into v TERMINAL_WORKSPACE; [ -n "$v" ]; }; then
     echo compose.terminal.yaml
     # the project folders of this computer (lib/projects.sh generates it while there are any): @projects is
     # .state/projects/compose.yaml for dc (a word: a checkout's path may have spaces)
     [ ! -f "$STATE_DIR/projects/compose.yaml" ] || echo @projects
-    _ev v TERMINAL_EGRESS; em="$(egress_mode "$v")"
+    get_env_into v TERMINAL_EGRESS; em="$(egress_mode "$v")"
     case "$em" in
       internet) echo compose.terminal-proxy.yaml ;;
       host) echo compose.terminal-egress.yaml ;;
     esac
     # the built-in git server as the sandbox's git host: the gateway's TLS listener (lib/localgit.sh)
     ! localgit_overlay_wanted || echo compose.localgit.yaml
-    _ev v CODE_ENABLED
+    get_env_into v CODE_ENABLED
     if flag_on "$v"; then
       echo compose.code.yaml
       # (Chat's sandbox's way out: the terminal's proxy; with the direct one, a proxy of its own; none with none —
@@ -1023,9 +1033,9 @@ egress_mode() {
 #   code-auto  only CODE_AUTO_MODE: auto mode available (the Code page switches its sessions to it; managed settings
 #              would win over the page), the terminal's claude starts in Manual and its Plan mode asks
 claude_policy() {
-  local v; _ev v TERMINAL_AUTO_MODE
+  local v; get_env_into v TERMINAL_AUTO_MODE
   if flag_on "$v"; then echo on; return 0; fi
-  _ev v CODE_AUTO_MODE
+  get_env_into v CODE_AUTO_MODE
   if flag_on "$v"; then echo code-auto; else echo off; fi
 }
 
