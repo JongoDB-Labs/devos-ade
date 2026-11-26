@@ -6,6 +6,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.68.15] - 2026-11-26
+
 ### Fixed
 - **A request through the portal's front door no longer fails now and then with 502 Bad Gateway.** The portal, Open
   WebUI and the Code page's servers close a connection after 5 s without requests; Caddy, in front of them, kept such a
@@ -14,6 +16,9 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   go after 2 s, before any service does, on every route, the terminal's and Ollama's gateways included. With the same
   Caddy and uvicorn as the stack, requests paused near 5 s: 8 of 61 failed before, none after. The first update to this
   release restarts Caddy and the gateways (about a second). (JON-1414)
+
+### To get it
+Existing installs: Home › Update now.
 
 ## [0.68.14] - 2026-11-26
 
