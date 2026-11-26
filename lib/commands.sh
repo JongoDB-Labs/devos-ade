@@ -2437,6 +2437,12 @@ cmd_update() {
     fi
   fi
   stack_lock update   # lib/lock.sh: one update/rollback/clean/restore/setup at a time (kept across the re-exec)
+  # (with the update's trace on — the e2e upgrade test's stack — this command's own steps have their calls timed too, the
+  # backup's and the clean-up's: a file before the re-exec, one after, apart from the setup's; JON-972)
+  if upd_trace_on; then
+    [ "$reexec" = 1 ] || rm -rf "$STATE_DIR/update/job-trace"
+    upd_prof_begin "$STATE_DIR/update/job-trace/calls-$([ "$reexec" = 1 ] && echo new || echo old).tsv"
+  fi
   # lib/plan.sh: this run's plan and its steps so far. The re-exec goes on with them, unless the code it came from had no
   # plan (the first update to this release): then the plan starts here, with the steps still to come.
   [ "$reexec" = 1 ] && [ "${DEVOS_ADE_PLAN_RUN:-}" = 1 ] || plan_run_start

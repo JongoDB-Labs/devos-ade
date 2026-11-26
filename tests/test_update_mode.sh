@@ -222,6 +222,25 @@ test_the_call_profile_times_each_docker_curl_and_sleep_by_its_callers_and_keeps_
   [ "$(stat -c %a "$STATE_DIR/update/trace/calls.tsv" 2>/dev/null || stat -f %Lp "$STATE_DIR/update/trace/calls.tsv")" = 600 ] || { echo "profile not private" >&2; return 1; }
 }
 
+test_the_call_profile_goes_to_the_file_it_is_given() {
+  # (./stack update's own steps: a file of their own, beside the setup's, which stays as it was)
+  _um_setup
+  local f="$STATE_DIR/update/job-trace/calls-old.tsv" p
+  curl() { return 0; }
+  upd_prof_begin "$f"
+  [ ! -e "$f" ] || { echo "a profile without the switch" >&2; return 1; }
+  mkdir -p "$STATE_DIR/update"; : > "$STATE_DIR/update/trace-on"
+  upd_prof_begin "$f"
+  curl -H "Authorization: Bearer sk-secret" http://x/
+  phase_start "Backup"; phase_line "Backup" 1 > /dev/null
+  p="$(cat "$f")"
+  assert_contains "$p" "	curl	"; assert_contains "$p" "0	step	begin Backup	"; assert_contains "$p" "0	step	end Backup	"
+  assert_not_contains "$p" "sk-secret"
+  [ ! -e "$STATE_DIR/update/trace/calls.tsv" ] || { echo "the setup's file was written too" >&2; return 1; }
+  [ "$(stat -c %a "$f" 2>/dev/null || stat -f %Lp "$f")" = 600 ] || { echo "profile not private" >&2; return 1; }
+  [ "$(stat -c %a "${f%/*}" 2>/dev/null || stat -f %Lp "${f%/*}")" = 700 ] || { echo "its folder not private" >&2; return 1; }
+}
+
 test_the_call_profile_times_each_digest_by_its_step_and_role_and_keeps_no_input() {
   _um_setup
   upd_begin; UPD_MODE=1

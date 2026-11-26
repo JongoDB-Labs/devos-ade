@@ -552,15 +552,18 @@ _upd_trace() {   # ROLE NAME FILE
 # so the time between calls is placed. Where the steps that always run spend their time (JON-972: an update in 30 s),
 # measured rather than guessed. What is called stays what it was (a function of that name — a test's stub — or the
 # program): it is only timed.
+# upd_prof_begin [FILE] — into FILE: the setup's is trace/calls.tsv (the default); ./stack update's own steps, the backup
+# and the clean-up, have files of their own in job-trace/ (each setup moves trace/ aside)
 _UPD_PROF=''; _UPD_PROF_T0=0
 upd_prof_begin() {
-  local d="$STATE_DIR/update/trace" n
+  local f="${1:-$STATE_DIR/update/trace/calls.tsv}" d n
+  d="${f%/*}"
   upd_trace_on || return 0
   mkdir -p "$d" 2>/dev/null && chmod 700 "$d" 2>/dev/null || return 0
-  : > "$d/calls.tsv" 2>/dev/null && chmod 600 "$d/calls.tsv" 2>/dev/null || return 0
+  : > "$f" 2>/dev/null && chmod 600 "$f" 2>/dev/null || return 0
   _UPD_PROF_T0="$(_ms_now)"; case "$_UPD_PROF_T0" in '' | *[!0-9]*) _UPD_PROF_T0=0 ;; esac
-  [ -z "$_UPD_PROF" ] || { _UPD_PROF="$d/calls.tsv"; return 0; }   # (wrapped once: a wrapper of the wrapper would call itself)
-  _UPD_PROF="$d/calls.tsv"
+  [ -z "$_UPD_PROF" ] || { _UPD_PROF="$f"; return 0; }   # (wrapped once: a wrapper of the wrapper would call itself)
+  _UPD_PROF="$f"
   for n in docker curl sleep; do
     if [ "$(type -t "$n")" = function ]; then eval "_upd_prof_was_$n$(declare -f "$n" | sed '1s/^[^ (]*//')"
     elif type -P "$n" > /dev/null 2>&1; then eval "_upd_prof_was_$n() { command $n \"\$@\"; }"

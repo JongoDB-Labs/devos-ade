@@ -716,6 +716,29 @@ if [ -f "$STACK/.state/update/trace/calls.tsv" ]; then
     head -n 25 "$OUT/profile-update.tsv" | while IFS= read -r l; do say "profiled update (ms, count, depth, function@file:line): $l"; done
   fi
   profile_summaries "$OUT/calls-update.tsv" "$OUT/calls-update"
+  # (./stack update's own steps — the backup, the clean-up — in its own process: each step's time and its slowest calls;
+  # before the re-exec only when FROM has the trace there too)
+  for f in "$STACK"/.state/update/job-trace/calls-*.tsv; do
+    [ -s "$f" ] || continue
+    n="${f##*/calls-}"; n="${n%.tsv}"; cp "$f" "$OUT/calls-job-$n.tsv"
+    python3 - "$f" <<'PY' | while IFS= read -r l; do say "update's own step ($n; ms, slowest calls: ms what caller): $l"; done
+import sys
+rows = [l.rstrip("\n").split("\t") for l in open(sys.argv[1])]
+rows = [r for r in rows if len(r) == 4 and r[0].isdigit() and r[3].isdigit()]
+calls = [(int(r[0]), r[1], r[2].split("<")[0], int(r[3])) for r in rows if r[1] not in ("step", "digest")]
+begins = {}
+for r in rows:
+    if r[1] != "step":
+        continue
+    w, _, label = r[2].partition(" ")
+    if w == "begin":
+        begins[label] = int(r[3])
+    elif label in begins:
+        b = begins.pop(label); t = int(r[3])
+        top = sorted((c for c in calls if b <= c[3] <= t), reverse=True)[:4]
+        print("%d %s: %s" % (t - b, label[:40], "; ".join("%d %s %s" % c[:3] for c in top)))
+PY
+  done
   say "update: between steps $(awk -F '\t' '$3 == "all" { printf "%d ms, of it %d ms in digests", $1, $2 }' "$OUT/calls-update-gaps.tsv"); digests in all $(awk -F '\t' '$4 == "all" { printf "%d ms (%d)", $1, $2 }' "$OUT/calls-update-digests.tsv")"
   grep -v '	all	' "$OUT/calls-update-gaps.tsv" | head -n 6 | while IFS= read -r l; do say "update gap (ms, digests ms, before, after): $l"; done
   head -n 8 "$OUT/calls-update-digests.tsv" | while IFS= read -r l; do say "update digests (ms, count, slowest, step<role): $l"; done
