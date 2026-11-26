@@ -358,7 +358,8 @@ rt_compose_on() { [ "${2:-$(rt_os)}" = linux ] && rt_installed "$1" && { [ "$1" 
 # rt_services ID -> its compose services (Linux): Ollama and its gate; llama.cpp; vLLM
 rt_services() { case "$1" in ollama) echo "ollama ollama-gate" ;; llamacpp) echo llamacpp ;; vllm) echo vllm ;; esac; }   # (LM Studio: none)
 # runtime_services -> the runtime containers ./stack up starts (lib/commands.sh optional_services)
-runtime_services() { local id out=''; for id in $RUNTIME_IDS; do ! rt_compose_on "$id" || out="$out${out:+ }$(rt_services "$id")"; done; printf '%s\n' "$out"; }
+# (the system's name asked once for the list, not once a runtime: JON-972)
+runtime_services() { local id out='' os; os="$(rt_os)"; for id in $RUNTIME_IDS; do ! rt_compose_on "$id" "$os" || out="$out${out:+ }$(rt_services "$id")"; done; printf '%s\n' "$out"; }
 # runtime_profiles -> the compose profiles of the runtime containers (lib/common.sh dc): each installed one's, and the one
 # _RT_PROFILE names (its own pull, rm and logs, before it is installed or after it is not)
 runtime_profiles() { local id os="${_dc_os:-}"; [ -n "$os" ] || os="$(rt_os)"; for id in $RUNTIME_IDS; do ! { rt_compose_on "$id" "$os" || [ "${_RT_PROFILE:-}" = "$id" ]; } || echo "$id"; done; }

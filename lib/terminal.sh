@@ -42,8 +42,10 @@ terminal_egress_words() {
 terminal_remote_wanted() { flag_on "$(get_env REMOTE_TERMINAL)"; }
 
 # terminal_ready -> 0 while the terminal is on and its workspace folder exists and still passes
-# terminal_workspace_check (a folder replaced by a symlink to your home folder since enable is refused, too)
+# terminal_workspace_check (a folder replaced by a symlink to your home folder since enable is refused, too). While
+# optional_services lists the services, its answer from the start of that list (_TERMINAL_READY_MEMO, its local: 0 or 1).
 terminal_ready() {
+  case "${_TERMINAL_READY_MEMO:-}" in 0) return 0 ;; 1) return 1 ;; esac
   local ws; ws="$(get_env TERMINAL_WORKSPACE)"
   terminal_on && [ -n "$ws" ] && [ -d "$ws" ] && terminal_workspace_check "$ws" >/dev/null
 }
@@ -94,10 +96,12 @@ terminal_default_workspace() {
 }
 
 # _phys DIR -> DIR with every symlink resolved, in its on-disk spelling (the external pwd: on macOS the shell's own
-# keeps the case you typed, and the file system ignores case); empty when it cannot be opened
-_phys() { (cd "$1" 2>/dev/null && /bin/pwd -P) || true; }
+# keeps the case you typed, and the file system ignores case); empty when it cannot be opened. (exec: the subshell
+# becomes pwd, one process fewer; a folder check runs this some 7 times.)
+_phys() { (cd "$1" 2>/dev/null && exec /bin/pwd -P) || true; }
 # _fold PATH -> PATH as compared: lower case on macOS (its file systems ignore case), unchanged elsewhere. The system's
-# name is asked once a shell (_FOLD_OS): a folder check folded some 35 paths, each with its own uname (JON-972).
+# name is asked once a shell (_FOLD_OS): a folder check folded some 35 paths, each with its own uname (JON-972). It is
+# kept for the shell's life: a test that stubs uname after a check ran sets _FOLD_OS='' first.
 _FOLD_OS=''
 _fold() {
   [ -n "$_FOLD_OS" ] || _FOLD_OS="$(uname -s)"

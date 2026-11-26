@@ -9,9 +9,12 @@ STACK_SERVICES="$STACK_BASE_SERVICES"
 stack_services() { local extra; extra="$(optional_services)"; printf '%s\n' "$STACK_BASE_SERVICES${extra:+ $extra}"; }
 # optional_services -> the services .env turns on besides those: stt (Bedrock speech-to-text), terminal (./stack terminal),
 # code (./stack code), searxng (the built-in web search: on unless WEBSEARCH_SEARXNG_BUILTIN=off, lib/websearch.sh), forgejo
-# (the built-in git server: on unless LOCALGIT=off, lib/localgit.sh)
+# (the built-in git server: on unless LOCALGIT=off, lib/localgit.sh). The terminal's folder check runs once for the
+# list (terminal_ready, _TERMINAL_READY_MEMO): the terminal's and the Code page's services both ask, each in a subshell
+# of its own, and an update lists the services some 20 times (JON-972). Nothing here changes what it answers.
 optional_services() {
-  local out='' x
+  local out='' x _TERMINAL_READY_MEMO=''
+  if terminal_ready; then _TERMINAL_READY_MEMO=0; else _TERMINAL_READY_MEMO=1; fi
   for x in "$(stt_services)" "$(terminal_services)" "$(code_services)" "$(websearch_builtin_services)" "$(localgit_services)" "$(runtime_services)"; do [ -z "$x" ] || out="$out${out:+ }$x"; done
   printf '%s\n' "$out"
 }
