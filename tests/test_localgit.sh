@@ -65,6 +65,49 @@ test_the_gateways_listener_needs_the_terminal_and_the_switch() {
 
 # --- the certificate ---
 
+test_the_certificate_is_checked_once_an_hour_in_a_shell() {
+  # (dc asks at every compose call, some 35 an update: openssl and cmp once, then only while something changed; JON-972)
+  command -v openssl >/dev/null 2>&1 || { echo "no openssl" >&2; return 77; }
+  printf 'X=1\n' > "$ENV_FILE"
+  localgit_tls_ensure || return 1
+  local d calls="$TMP/calls" c
+  d="$(localgit_tls_dir)"
+  openssl() { echo openssl >> "$calls"; command openssl "$@"; }
+  cmp() { echo cmp >> "$calls"; command cmp "$@"; }
+  : > "$calls"; localgit_tls_ensure; localgit_tls_ensure; ( localgit_tls_ensure ) || return 1
+  assert_eq "$(wc -l < "$calls" | tr -d ' ')" 0
+  # (checked again: the published copy gone, then changed; the certificate another; the key gone; an hour on; another folder)
+  rm -f "$d/ca/tls.crt"; : > "$calls"; localgit_tls_ensure || return 1
+  assert_eq "$(grep -c openssl "$calls")" 1; [ -s "$d/ca/tls.crt" ]
+  printf 'x\n' >> "$d/ca/tls.crt"; : > "$calls"; localgit_tls_ensure || return 1
+  assert_eq "$(grep -c openssl "$calls")" 1; assert_eq "$(cat "$d/ca/tls.crt")" "$(cat "$d/tls.crt")"
+  c="$(cat "$d/tls.crt")"
+  command openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 2 -subj /CN=gateway -keyout "$d/tls.key" -out "$d/tls.crt" >/dev/null 2>&1
+  : > "$calls"; localgit_tls_ensure || return 1
+  [ "$(cat "$d/tls.crt")" != "$c" ] && [ "$(grep -c openssl "$calls")" -ge 2 ] || { echo "a certificate ending in 2 days was kept" >&2; return 1; }
+  assert_eq "$(cat "$d/ca/tls.crt")" "$(cat "$d/tls.crt")"
+  : > "$calls"; localgit_tls_ensure; assert_eq "$(wc -l < "$calls" | tr -d ' ')" 0
+  rm -f "$d/tls.key"; : > "$calls"; localgit_tls_ensure || return 1
+  [ -s "$d/tls.key" ] && [ "$(grep -c openssl "$calls")" -ge 1 ]
+  SECONDS=$((SECONDS + 3600)); : > "$calls"; localgit_tls_ensure || return 1
+  assert_eq "$(grep -c openssl "$calls")" 1
+  local s="$STATE_DIR"; STATE_DIR="$TMP/other-state"; : > "$calls"; localgit_tls_ensure || return 1
+  [ "$(grep -c openssl "$calls")" -ge 1 ] && [ -s "$STATE_DIR/localgit/tls/tls.crt" ]; STATE_DIR="$s"
+}
+
+test_dc_checks_the_certificate_once_for_its_calls() {
+  command -v openssl >/dev/null 2>&1 || { echo "no openssl" >&2; return 77; }
+  printf 'TERMINAL_ENABLED=true\nTERMINAL_WORKSPACE=/w\nLOCALGIT_SSO_HEADER=X\n' > "$ENV_FILE"
+  local calls="$TMP/calls"
+  docker() { printf '%s\n' "$*" >> "$TMP/docker"; }
+  openssl() { echo openssl >> "$calls"; command openssl "$@"; }
+  : > "$calls"; dc exec -T portal true; dc exec -T portal true; dc up -d portal
+  # (the first call made it: openssl's req; the gateway's overlay in every call)
+  assert_eq "$(grep -c openssl "$calls")" 1
+  assert_eq "$(grep -c 'compose.localgit.yaml' "$TMP/docker")" 3
+  : > "$calls"; dc exec -T portal true; assert_eq "$(wc -l < "$calls" | tr -d ' ')" 0
+}
+
 test_the_certificate_is_made_once_for_the_name_gateway_and_is_its_own_ca() {
   command -v openssl >/dev/null 2>&1 || { echo "no openssl" >&2; return 77; }
   printf 'X=1\n' > "$ENV_FILE"

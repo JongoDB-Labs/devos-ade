@@ -401,6 +401,9 @@ dc() {
   local f=() o
   # the portal's docs index (compose.portal-docs.yaml): only where this Docker Compose reads additional_contexts
   if compose_reads_contexts; then f+=(-f "$STACK_DIR/compose.portal-docs.yaml"); fi
+  # (the git server's certificate checked in this shell, where localgit_tls_ensure remembers it: compose_overlays runs
+  # in a subshell, and finds it checked, as the next calls do)
+  ! localgit_overlay_wanted > /dev/null 2>&1 || true
   for o in $(compose_overlays); do
     case "$o" in @projects) f+=(-f "$STATE_DIR/projects/compose.yaml") ;; *) f+=(-f "$STACK_DIR/$o") ;; esac
   done
@@ -816,7 +819,11 @@ localgit_tls_dir() { printf '%s/localgit/tls\n' "$STATE_DIR"; }
 localgit_tls_ensure() {
   local d crt key cfg rc=0
   d="$(localgit_tls_dir)"; crt="$d/tls.crt"; key="$d/tls.key"
-  if [ -s "$crt" ] && [ -s "$key" ] && openssl x509 -in "$crt" -noout -checkend 2592000 >/dev/null 2>&1; then localgit_ca_publish; return $?; fi
+  ! _lg_tls_checked "$d" || return 0
+  if [ -s "$crt" ] && [ -s "$key" ] && openssl x509 -in "$crt" -noout -checkend 2592000 >/dev/null 2>&1; then
+    localgit_ca_publish || return $?
+    _lg_tls_mark "$d"; return 0
+  fi
   command -v openssl >/dev/null 2>&1 || return 1
   mkdir -p "$d" 2>/dev/null || return 1
   cfg="$(mktemp)" || return 1
@@ -840,7 +847,28 @@ EOF
   else rc=1; rm -f "$key.new" "$crt.new"; fi
   rm -f "$cfg"
   [ "$rc" = 0 ] && { localgit_ca_publish || rc=1; }
+  [ "$rc" != 0 ] || _lg_tls_mark "$d"
   return "$rc"
+}
+# _lg_tls_checked DIR -> 0 when this shell found DIR's certificate good (a month or more left) and published it within
+# the hour, and the certificate and its published copy are still that very text (the key still there): localgit_tls_ensure
+# then runs no openssl and no cmp. dc asks for it at every compose call, some 35 an update (JON-972). bash's read
+# compares the text, not a file's time (bash 3.2's are whole seconds). _LG_TLS_OK: "DIR SECONDS" of that check;
+# _LG_TLS_CRT: the certificate's text then (no secret: the key is never read).
+_LG_TLS_OK=''; _LG_TLS_CRT=''
+_lg_tls_checked() {
+  local d="$1" t c='' a=''
+  case "$_LG_TLS_OK" in "$d "*) t="${_LG_TLS_OK##* }" ;; *) return 1 ;; esac
+  [ $((SECONDS - t)) -lt 3600 ] && [ -s "$d/tls.key" ] || return 1
+  IFS= read -r -d '' c 2>/dev/null < "$d/tls.crt" || true
+  IFS= read -r -d '' a 2>/dev/null < "$d/ca/tls.crt" || true
+  [ -n "$c" ] && [ "$c" = "$_LG_TLS_CRT" ] && [ "$a" = "$c" ]
+}
+# _lg_tls_mark DIR — what _lg_tls_checked asks for: DIR's certificate, as it is now, good and published
+_lg_tls_mark() {
+  local c=''
+  IFS= read -r -d '' c 2>/dev/null < "$1/tls.crt" || true
+  _LG_TLS_OK="$1 $SECONDS"; _LG_TLS_CRT="$c"
 }
 
 # localgit_ca_publish -> 0 with the certificate (never the key) copied to .state/localgit/tls/ca/tls.crt: the one folder the
