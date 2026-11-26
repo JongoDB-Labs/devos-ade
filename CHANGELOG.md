@@ -6,6 +6,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.68.8] - 2026-11-26
+
 ### Changed
 - **Each Docker Compose call of the stack is ready sooner: some 5 to 6 seconds less an update.** Before each of its
   some 35 calls to Docker Compose in an update, the stack works out the settings and file checksums it hands to
@@ -14,6 +16,9 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   takes the configuration files' checksums in two runs of `cksum`, not up to fifteen. A call now takes about 0.1 s on
   the Mac and 0.15 s on the busy Linux host. Compose gets the very same settings and checksums, so it recreates
   nothing it did not before. (JON-972)
+
+### To get it
+Existing installs: Home › Update now.
 
 ## [0.68.7] - 2026-11-26
 
