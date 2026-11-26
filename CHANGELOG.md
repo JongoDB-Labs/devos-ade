@@ -6,6 +6,16 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Changed
+- **An update is some two thirds of a second quicker again.** Before each step, an update works out whether anything the
+  step reads has changed (a digest of its inputs, some 27 an update); each digest read .env once for every setting it
+  looked at — up to 40 times, a program each time. It now reads .env once per digest: the digests are byte for byte what
+  they were (so no step runs, or is skipped, that was not before). 15 digests: 1.44 s → 1.29 s on Linux, 1.61 s → 1.31 s
+  on macOS. And the portal password's two checks (its hash in .env and the update helper's own copy, each 600 000 rounds
+  of PBKDF2) now run side by side: the settings step's own time 1.7 s → 1.3 s on Linux. (JON-972)
+- The e2e upgrade test now says, for each step an update ran, which of its inputs had changed since the setup before
+  (setting names and checksums only). (JON-972)
+
 ## [0.68.11] - 2026-11-26
 
 ### Changed
