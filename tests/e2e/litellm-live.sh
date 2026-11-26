@@ -85,7 +85,7 @@ cp "$STACK/litellm/config.yaml" "$STACK/.state/config-1.yaml"
 run_eval 'export $(config_sums | tr "\n" " "); dc up -d --wait postgres litellm' >> "$LOG" 2>&1 || { bad "postgres and litellm start (see $LOG)"; docker compose -p "$PROJECT" --env-file "$STACK/.env" logs litellm 2>&1 | tail -30 >> "$LOG"; exit 1; }
 ok "postgres and litellm are up on the pinned images"
 
-cid="$(docker ps -q --no-trunc --filter "label=com.docker.compose.project=$PROJECT" --filter "label=com.docker.compose.service=litellm")"
+cid="$(docker ps -q --no-trunc --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.oneoff=False --filter "label=com.docker.compose.service=litellm")"
 started="$(docker inspect -f '{{.State.StartedAt}}' "$cid")"
 # the pinned image really is the one running (the digest check ./stack update makes)
 pinned="$(sed -n 's|^    image: ghcr.io/berriai/litellm:[^@ ]*@\(sha256:[0-9a-f]*\)$|\1|p' "$STACK/compose.yaml")"
@@ -110,10 +110,10 @@ have "adding a model goes live (litellm_live_sync: 0)" "$out" "rc=0"
 models="$(api "http://127.0.0.1:$PORT/v1/models")"
 have "the added model is served at once" "$models" '"mistral-large-3"'
 check "LiteLLM was not restarted" "$(docker inspect -f '{{.State.StartedAt}}' "$cid")" "$started"
-check "the container is the same one" "$(docker ps -q --no-trunc --filter "label=com.docker.compose.project=$PROJECT" --filter "label=com.docker.compose.service=litellm")" "$cid"
+check "the container is the same one" "$(docker ps -q --no-trunc --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.oneoff=False --filter "label=com.docker.compose.service=litellm")" "$cid"
 info="$(api "http://127.0.0.1:$PORT/model/info")"
 have "the added model has our hook's keys and stable id" "$info" '"id":"bn-mistral-large-3"'
-rows="$(docker exec "$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter "label=com.docker.compose.service=postgres")" psql -U postgres -d litellm -qAt -c "SELECT count(*) FROM \"LiteLLM_ProxyModelTable\" WHERE model_id LIKE 'bn-%'")"
+rows="$(docker exec "$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.oneoff=False --filter "label=com.docker.compose.service=postgres")" psql -U postgres -d litellm -qAt -c "SELECT count(*) FROM \"LiteLLM_ProxyModelTable\" WHERE model_id LIKE 'bn-%'")"
 check "no database row of ours is left (config.yaml stays the only record)" "$rows" 0
 
 # live: remove a model

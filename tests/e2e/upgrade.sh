@@ -276,7 +276,7 @@ $1" ) </dev/null
 # cexec SERVICE ARGS... — docker exec in the throwaway's container of SERVICE (an overlay's service too)
 cexec() {
   local s="$1" id; shift
-  id="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter "label=com.docker.compose.service=$s" | head -n 1)"
+  id="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.oneoff=False --filter "label=com.docker.compose.service=$s" | head -n 1)"
   [ -n "$id" ] || { echo "no $s container in project $PROJECT" >&2; return 1; }
   docker exec -i "$id" "$@"
 }
@@ -1026,7 +1026,7 @@ if [ "$MIGRATE" = 0 ] && [ "$FAST_CHECK" = 1 ]; then
     fi
   fi
   # the backup through docker exec: seconds, the same files
-  fid="$(docker ps -q --no-trunc --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.service=forgejo --filter status=running 2>/dev/null | head -n 1)"
+  fid="$(docker ps -q --no-trunc --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.oneoff=False --filter label=com.docker.compose.service=forgejo --filter status=running 2>/dev/null | head -n 1)"
   T0="$(now)"; st backup > "$LOGS/fast-backup.log" 2>&1; n=$?; T1="$(now)"
   bdir="$STACK/$(sed -n 's/.*backup written to \(backups\/[0-9-]*\).*/\1/p' "$LOGS/fast-backup.log" | tail -n 1)"
   check fast-backup-ran "$n" "./stack backup: exit $n"

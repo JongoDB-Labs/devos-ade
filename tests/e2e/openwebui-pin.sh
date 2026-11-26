@@ -83,7 +83,7 @@ run_eval 'export $(config_sums | tr "\n" " "); dc build open-webui && dc up -d -
   || { bad "the Open WebUI image builds and starts (see $LOG)"; docker compose -p "$PROJECT" --env-file "$STACK/.env" logs open-webui 2>&1 | tail -40 >> "$LOG"; exit 1; }
 ok "the Open WebUI image builds on the pinned base and starts healthy"
 
-cid="$(docker ps -q --no-trunc --filter "label=com.docker.compose.project=$PROJECT" --filter "label=com.docker.compose.service=open-webui")"
+cid="$(docker ps -q --no-trunc --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.oneoff=False --filter "label=com.docker.compose.service=open-webui")"
 pinned="$(sed -n 's|^        image: ghcr.io/open-webui/open-webui:[^@ ]*@\(sha256:[0-9a-f]*\)$|\1|p' "$STACK/compose.yaml")"
 have "the image's base-image label names the pinned digest" "$(docker image inspect -f '{{index .Config.Labels "dev.devos-ade.base-image"}}' "$(docker inspect -f '{{.Image}}' "$cid")")" "$pinned"
 # the version Open WebUI itself reports (/api/config): the package's own metadata is not installed in the image

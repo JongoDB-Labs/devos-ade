@@ -552,14 +552,19 @@ if [ "$TERMINAL" = 1 ]; then
   fi
   cli terminal-status 0 'Workspace .*-workspace → /workspace' terminal status
   t0="$(now)"
-  tc="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.service=terminal)"
+  tc="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.oneoff=False --filter label=com.docker.compose.service=terminal)"
   if [ "$GIT_SERVER" = 1 ]; then record terminal terminal-isolation SKIP 0 "TERMINAL_EGRESS=host for the suite's git server (--git-server): the egress proxy's checks do not apply"
   elif [ "$HOST_EGRESS" = 1 ]; then record terminal terminal-isolation SKIP 0 "TERMINAL_EGRESS=host (--host-egress): the terminal's egress proxy's checks do not apply (Chat's own: hostegress/*)"
   elif [ -z "$tc" ]; then record terminal terminal-isolation FAIL 0 "no running terminal container"
+  elif [ "$(printf '%s\n' "$tc" | grep -c .)" -gt 1 ]; then
+    # (the 0.68.18a matrix: docker exec, stop and inspect of two IDs at once failed — "page not found" — and every target
+    # read as reachable; one-offs are left out above, so name what else answers as the terminal service)
+    record terminal terminal-isolation FAIL 0 "$(printf '%s\n' "$tc" | grep -c .) terminal containers, not one: $(docker ps -a --filter "label=com.docker.compose.project=$PROJECT" \
+      --filter label=com.docker.compose.service=terminal --format '{{.Names}} ({{.Status}}, one-off: {{.Label "com.docker.compose.oneoff"}})' | tr '\n' ';' | cut -c1-300)"
   else
     # (on Docker's default bridge: with --network none, --add-host writes no hosts entry)
     hg="$(docker run --rm --add-host hg:host-gateway --entrypoint getent "$PROJECT/terminal:local" ahostsv4 hg 2>/dev/null | awk 'NR == 1 { print $1 }')"
-    eg="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.service=terminal-egress)"
+    eg="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.oneoff=False --filter label=com.docker.compose.service=terminal-egress)"
     probe="$(terminal_probe "$tc" "${hg:-192.0.2.1}" 2>&1)"
     # DNS rebinding: its first answers came with the probe; one with no answer at all (the proxy's own lookup timed out,
     # the proxy not reached) is asked again — never one refused, reached or answered otherwise (lib.sh rebind_steady)
@@ -633,11 +638,11 @@ proxy-rebind	$REBIND_RB"
     env_has LITELLM_KEY_TERMINAL "$ins" || bad="$bad no-terminal-key"
     unset ins
     # The main Caddy shares no network with the terminal; through the gateway, ttyd wants the secret header
-    cad="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.service=caddy)"
+    cad="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.oneoff=False --filter label=com.docker.compose.service=caddy)"
     out="$(docker exec "$cad" sh -c 'wget -q -T 4 -O /dev/null http://terminal:7681/ 2>&1 | head -n 1; wget -S -T 10 -O /dev/null --header "X-Portal-User: admin@example.com" http://terminal-upstream:7681/ 2>&1 | awk "/^  HTTP\// { print \$2; exit }"' 2>&1)"
     case "$out" in *"bad address"*407* | *"resolve"*407*) ;; *) bad="$bad main-caddy:$(printf '%s' "$out" | tr '\n' ' ' | cut -c1-80)" ;; esac
     # The gateway's own neighbours: LiteLLM (and shared-mcp, the main Caddy), never the portal, Open WebUI or the data
-    tgw="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.service=terminal-gateway)"
+    tgw="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.oneoff=False --filter label=com.docker.compose.service=terminal-gateway)"
     out="$(docker exec "$tgw" sh -c 'for h in portal:8000 open-webui:8080 postgres:5432 rustfs:9000 stt:8000; do wget -q -T 3 -O /dev/null "http://$h/" 2>&1 | head -n 1 | grep "bad address" >/dev/null || echo "$h"; done; wget -q -T 5 -O /dev/null http://litellm:4000/health/liveliness || echo litellm-unreachable' 2>&1)"
     [ -z "$out" ] || bad="$bad gateway-neighbours:$(printf '%s' "$out" | tr '\n' ' ' | cut -c1-80)"
     if [ -z "$bad" ]; then
@@ -662,8 +667,8 @@ proxy-rebind	$REBIND_RB"
   # Caddy's own check of every terminal/remote combination of the main Caddyfile, and of the gateway's file, with the
   # pinned binary in the running containers (own-domain mode needs the DNS-plugin build: not here)
   t0="$(now)"; bad=''
-  cad="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.service=caddy)"
-  tgw="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.service=terminal-gateway)"
+  cad="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.oneoff=False --filter label=com.docker.compose.service=caddy)"
+  tgw="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.oneoff=False --filter label=com.docker.compose.service=terminal-gateway)"
   for tm in off on; do for cm in off on; do for rm in off tailscale; do
     [ "$tm:$cm" != off:on ] || continue                    # the Code page only with the terminal
     [ "$cm" = off ] || [ "$CODE" = 1 ] || continue           # (its snippets need CODE_* only while it is on)
@@ -727,9 +732,9 @@ if [ "$CODE" = 1 ]; then
   fi
   cli code-status 0 'Container  running' code status
   t0="$(now)"; bad=''
-  cc="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.service=code)"
-  tc="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.service=terminal)"
-  cad="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.service=caddy)"
+  cc="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.oneoff=False --filter label=com.docker.compose.service=code)"
+  tc="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.oneoff=False --filter label=com.docker.compose.service=terminal)"
+  cad="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.oneoff=False --filter label=com.docker.compose.service=caddy)"
   if [ -z "$cc" ] || [ -z "$tc" ]; then record code code-isolation FAIL 0 "no running code or terminal container"
   else
     probe="$(code_probe "$cc" 2>&1)"; printf '%s\n' "$probe" > "$LOGS/code-isolation.log"; redact "$LOGS/code-isolation.log"
@@ -764,7 +769,7 @@ fi
 
 # --- 1d. web search: the built-in SearXNG, the default search backend (lib/websearch.sh; --only websearch) ---
 # ws_svc SERVICE -> its running container's id
-ws_svc() { docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter "label=com.docker.compose.service=$1" | head -n 1; }
+ws_svc() { docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.oneoff=False --filter "label=com.docker.compose.service=$1" | head -n 1; }
 # ws_reach CONTAINER TOOL -> open | closed: whether CONTAINER opens a TCP connection to searxng:8080 (a name it cannot
 # resolve: closed), with the tool its image has (py, node, bash, wget)
 ws_reach() {
@@ -1123,8 +1128,8 @@ if part_on browser && part1; then
   # then the stand-in puts ttyd's socket back. The gateway restarts each time, so it keeps no connection to the other.
   # The main Caddy's policy for the terminal host must hold for the stand-in's page.
   if [ "$TERMINAL" = 1 ]; then
-    tc="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.service=terminal)"
-    tgw="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.service=terminal-gateway)"
+    tc="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.oneoff=False --filter label=com.docker.compose.service=terminal)"
+    tgw="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.oneoff=False --filter label=com.docker.compose.service=terminal-gateway)"
     gw_fresh() { docker restart -t 5 "$tgw" >/dev/null 2>&1; for _ in $(seq 1 30); do [ "$(docker inspect -f '{{.State.Health.Status}}' "$tgw" 2>/dev/null)" = healthy ] && return 0; sleep 1; done; return 1; }
     t0="$(now)"
     if [ -n "$tc" ] && [ -n "$tgw" ] && docker exec -i "$tc" sh -c 'cat > /tmp/bn-stub.py' < "$HERE/terminal-stub.py" &&
@@ -1147,8 +1152,8 @@ if part_on browser && part1; then
   # moves bn-coded's socket aside and answers with markup, bogus ids, an oversized frame and an endless line; the
   # browser check then runs against it, and the stand-in puts bn-coded's socket back.
   if [ "$CODE" = 1 ]; then
-    tc="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.service=terminal)"
-    cc="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.service=code)"
+    tc="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.oneoff=False --filter label=com.docker.compose.service=terminal)"
+    cc="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.oneoff=False --filter label=com.docker.compose.service=code)"
     t0="$(now)"
     if [ -n "$tc" ] && docker exec -i "$tc" sh -c 'cat > /tmp/code-stub.mjs' < "$HERE/code-stub.mjs" &&
        docker exec -d "$tc" node /tmp/code-stub.mjs /run/bn-code/coded.sock; then
@@ -1168,7 +1173,7 @@ if part_on browser && part1; then
     # terminal's, the preview's and the git server's sign-in header; the terminal's gateway the terminal's. (Only counts
     # are said, never a secret.)
     logs="$(for svc in caddy terminal-gateway; do
-      docker logs "$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter "label=com.docker.compose.service=$svc")" 2>&1; done)"
+      docker logs "$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.oneoff=False --filter "label=com.docker.compose.service=$svc")" 2>&1; done)"
     leaks="" keys=""
     for k in CODE_PROXY_SECRET PORTAL_PROXY_SECRET TERMINAL_PROXY_SECRET PREVIEW_PROXY_SECRET LOCALGIT_SSO_HEADER; do
       sec="$(get_env "$k")"
@@ -1188,7 +1193,7 @@ fi
 # Two folders made under this run's --out (never one of yours). The sandbox restarts at each ./stack project command
 # (--now); the browser passes a, b and c run in between (browser/code-host-folders-*; pass a keeps its session's id
 # in OUT/browser/host-folders-session.txt for b and c).
-svc_id() { docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter "label=com.docker.compose.service=$1"; }
+svc_id() { docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.oneoff=False --filter "label=com.docker.compose.service=$1"; }
 # host_probe TERMINAL_CONTAINER APP NOTES_HOST HOME -> lines: what the sandbox sees of the two folders and of HOME
 host_probe() {
   # shellcheck disable=SC2016  # expanded in the container
@@ -1768,8 +1773,8 @@ else
   say "voice: speech-to-text isolation and off/on round trip"
   record voice bedrock-stt-on-after-setup PASS 0 "STT_PROVIDER=bedrock, Open WebUI engine $(get_env OWUI_STT_ENGINE)"
   t0="$(now)"
-  sttc="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.service=stt)"
-  owc="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.service=open-webui)"
+  sttc="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.oneoff=False --filter label=com.docker.compose.service=stt)"
+  owc="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.oneoff=False --filter label=com.docker.compose.service=open-webui)"
   if [ -z "$sttc" ] || [ -z "$owc" ]; then record voice stt-isolation FAIL 0 "no running stt / open-webui container"
   else
     probe="$(stt_probe "$sttc" 2>&1)"; printf '%s\n' "$probe" > "$LOGS/voice-stt-isolation.log"

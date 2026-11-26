@@ -167,7 +167,7 @@ st() { # the throwaway's ./stack, clean environment, no terminal
     cd "$STACK" && exec "$NOTTY" "$STACK/stack" "$@" </dev/null )
 }
 cexec() { local s="$1" id; shift
-  id="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter "label=com.docker.compose.service=$s" | head -n 1)"
+  id="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.oneoff=False --filter "label=com.docker.compose.service=$s" | head -n 1)"
   [ -n "$id" ] || { echo "no $s container" >&2; return 1; }; docker exec -i "$id" "$@"; }
 codeapi() { # METHOD PATH [JSON]: the Code page's own API, asked in its container as the main Caddy asks it
   cexec code node -e '
