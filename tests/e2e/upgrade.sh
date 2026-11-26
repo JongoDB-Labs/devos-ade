@@ -15,7 +15,7 @@
 #                    this checkout, and the release to update to is a local tag on its HEAD plus its working tree (as
 #                    run.sh stages it), in the throwaway only: v0.25.0, or, once that release exists, the patch after
 #                    the newest release here (a tag the update's fetch never meets).
-#   --no-fast-check  skip the fast-apply block at the end (JON-972; see below)
+#   --no-fast-check  skip the fast-apply block at the end (JON-972; see below; UPGRADE_PROFILE=0: without its profiled apply)
 #   --no-prepare-check  do not prepare TO ahead of the Update now request, and keep the cold bound only (JON-972 phase B; below)
 #   --setup-stopped TAG [--resume to | plain]
 #                    the way out of an update that stopped in its setup (2026-11-01: an owner's 0.45.1 -> 0.47.0 update,
@@ -897,6 +897,21 @@ if [ "$MIGRATE" = 0 ] && [ "$FAST_CHECK" = 1 ]; then
     awk -F'\t' '$2 == "up-changed" { print $3 }' "$OUT/calls.tsv" | while IFS= read -r l; do say "fast apply compose up, because: $l"; done
   fi
   check fast-apply-one-up "$([ "$(grep -c '^==> Services ([0-9]*).*ready' "$LOGS/fast-apply.log")" = 1 ] && echo 0 || echo 1)" "the services started in one phase"
+  # (the shell's own time, line by line: an apply of its own with .state/update/profile-on, as profiling slows the shell —
+  # lib/steps.sh upd_shprof_begin; UPGRADE_PROFILE=0 leaves it out. Its time is said, never bounded.)
+  if [ "${UPGRADE_PROFILE:-1}" = 1 ]; then
+    : > "$tdir/profile-on"
+    T0="$(now)"; st setup --yes --update-mode > "$LOGS/profiled-apply.log" 2>&1; n=$?; T1="$(now)"; redact "$LOGS/profiled-apply.log"
+    rm -f "$tdir/profile-on"
+    check profiled-apply-ran "$n" "a second apply with nothing changed and the shell profiled: exit $n, $((T1 - T0))s"
+    if [ -s "$tdir/trace/profile.tsv" ]; then
+      cp "$tdir/trace/profile.tsv" "$OUT/profile-apply.tsv"
+      awk -F '\t' '{ s += $1 } END { printf "%d ms in %d lines\n", s, NR }' "$OUT/profile-apply.tsv" | while IFS= read -r l; do say "profiled apply, the shell's own time: $l"; done
+      head -n 20 "$OUT/profile-apply.tsv" | while IFS= read -r l; do say "profiled apply (ms, count, function@file:line): $l"; done
+    else
+      say "profiled apply: no profile written (a bash without EPOCHREALTIME?)"
+    fi
+  fi
   # the backup through docker exec: seconds, the same files
   T0="$(now)"; st backup > "$LOGS/fast-backup.log" 2>&1; n=$?; T1="$(now)"
   bdir="$STACK/$(sed -n 's/.*backup written to \(backups\/[0-9-]*\).*/\1/p' "$LOGS/fast-backup.log" | tail -n 1)"

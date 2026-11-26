@@ -238,6 +238,46 @@ test_the_call_profile_times_each_digest_by_its_step_and_role_and_keeps_no_input(
     { echo "a digest line that is not MS digest NAME<ROLE START: $p" >&2; return 1; }
 }
 
+test_the_shell_profile_needs_its_switch_the_trace_and_bash_5() {
+  _um_setup
+  mkdir -p "$STATE_DIR/update"
+  # (the switch without the trace, or the trace without the switch: no DEBUG trap, no profile)
+  : > "$STATE_DIR/update/profile-on"; upd_begin
+  assert_eq "$(trap -p DEBUG)" ""; upd_commit; [ ! -e "$STATE_DIR/update/trace/profile.tsv" ] || { echo "a profile without the trace" >&2; return 1; }
+  rm -f "$STATE_DIR/update/profile-on"; : > "$STATE_DIR/update/trace-on"; upd_begin
+  assert_eq "$(trap -p DEBUG)" ""; upd_commit; [ ! -e "$STATE_DIR/update/trace/profile.tsv" ] || { echo "a profile without the switch" >&2; return 1; }
+  # (both, on a bash without EPOCHREALTIME — macOS's 3.2: none)
+  if [ -z "${EPOCHREALTIME:-}" ]; then
+    : > "$STATE_DIR/update/profile-on"; upd_begin
+    assert_eq "$(trap -p DEBUG)" ""; upd_commit; [ ! -e "$STATE_DIR/update/trace/profile.tsv" ] || { echo "a profile on bash ${BASH_VERSION}" >&2; return 1; }
+  fi
+  case $- in *T*) echo "set -T left on" >&2; return 1 ;; esac
+}
+
+test_the_shell_profile_times_each_line_and_keeps_no_text() {
+  [ -n "${EPOCHREALTIME:-}" ] || { echo "bash ${BASH_VERSION%%(*}: no EPOCHREALTIME" >&2; return 77; }
+  _um_setup
+  mkdir -p "$STATE_DIR/update"; : > "$STATE_DIR/update/trace-on"; : > "$STATE_DIR/update/profile-on"
+  um_slow() { local secret="sk-profile-secret"; command sleep 0.3; [ -n "$secret" ]; }
+  um_sub() { local v; v="$(command sleep 0.2; echo x)"; [ "$v" = x ]; }
+  upd_begin
+  [ -n "$(trap -p DEBUG)" ] || { echo "no DEBUG trap" >&2; return 1; }
+  um_slow; um_sub
+  # ($? of the command before is kept; errexit and || work as without it)
+  local rc=0; false || rc=$?; assert_eq "$rc" 1
+  rc=0; (exit 3) || rc=$?; assert_eq "$rc" 3
+  upd_commit
+  assert_eq "$(trap -p DEBUG)" ""; case $- in *T*) echo "set -T left on" >&2; return 1 ;; esac
+  local p; p="$(cat "$STATE_DIR/update/trace/profile.tsv")"
+  # (MS COUNT FUNCTION@FILE:LINE, biggest first; the sleep in um_slow, the subshell in um_sub charged to its line)
+  printf '%s\n' "$p" | awk -F '\t' 'NF != 3 || $1 !~ /^[0-9]+$/ || $2 !~ /^[0-9]+$/ || $3 !~ /^[A-Za-z_][A-Za-z0-9_]*@[^:]*:[0-9]+$/ { bad = 1 }
+    NR > 1 && $1 > last { bad = 1 } { last = $1 } END { exit bad }' || { echo "not MS COUNT FUNCTION@FILE:LINE, biggest first: $p" >&2; return 1; }
+  [ "$(printf '%s\n' "$p" | awk -F '\t' '$3 ~ /^um_slow@/ { s += $1 } END { print (s >= 250) }')" = 1 ] || { echo "um_slow's sleep not there: $p" >&2; return 1; }
+  [ "$(printf '%s\n' "$p" | awk -F '\t' '$3 ~ /^um_sub@/ { s += $1 } END { print (s >= 150) }')" = 1 ] || { echo "um_sub's subshell not there: $p" >&2; return 1; }
+  for v in sk-profile-secret sleep secret '$('; do assert_not_contains "$p" "$v"; done
+  [ "$(stat -c %a "$STATE_DIR/update/trace/profile.tsv" 2>/dev/null || stat -f %Lp "$STATE_DIR/update/trace/profile.tsv")" = 600 ] || { echo "profile not private" >&2; return 1; }
+}
+
 test_the_digest_helpers_read_files_folders_and_keys_in_one_go_with_the_lines_of_one_call_each() {
   _um_setup
   local d="$TMP/in" a rc u=1; mkdir -p "$d/sp ace" "$d/empty"; echo a > "$d/sp ace/f 1"; echo bb > "$d/sp ace/.h"; echo c > "$d/u"; chmod 000 "$d/u"
