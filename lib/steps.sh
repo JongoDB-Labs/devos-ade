@@ -596,7 +596,8 @@ upd_prof_mark() {
 # setup's time); a line that starts a subshell — $( ), a pipe — includes that subshell's time, and the subshell's own
 # lines are there too at depth 1 and more. The switch is used once: removed when a setup starts with it. It slows the
 # shell's own work (about twice): the e2e upgrade test turns it on for an apply of its own, never a timed one. A setup
-# that fails keeps the trap until it exits, and leaves profile.raw. Errexit applies inside a trap: the write is guarded,
+# that fails keeps the trap until it exits, and leaves profile.raw (so may a background job that outlives the setup;
+# the next traced setup moves trace/ away). Errexit applies inside a trap: the write is guarded,
 # and nothing in it prints (inside $( ) that would be captured). The trap's variables are _UPD_SP_*, a name nothing else
 # uses (it runs inside every function); it keeps $? for the command it comes before, and sets $_ (nothing here reads it).
 _UPD_SP=0; _UPD_SP_RAW=''
