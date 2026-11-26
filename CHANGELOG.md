@@ -6,14 +6,19 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.68.19] - 2026-11-26
+
 ### Changed
-- **An update's clean-up of old images takes about half the time** (1.7 s on the test host). It listed Docker's images
-  twice and converted each image's size with programs of its own; it lists them once now and converts them all in one
-  pass. `./stack clean` and the disk line of `./stack status` read the sizes the same faster way. (JON-972)
+- **An update's clean-up of old images takes about a third less time** (1.7 s to 1.1 s on the test host). It listed
+  Docker's images twice and converted each image's size with programs of its own; it lists them once now and converts
+  them all in one pass. `./stack clean` and the disk line of `./stack status` read the sizes the same faster way. (JON-972)
 - e2e: the suite finds a service's container by Compose's own labels and never a one-off of it. Two containers found for
   the Terminal once made its isolation check read every service as reachable when the check had not run at all; they are
   now named instead. `tests/e2e/upgrade.sh --settled` measures an update of an install that has been applied before, as
   an owner's is. (JON-972)
+
+### To get it
+Existing installs: Home › Update now.
 
 ## [0.68.18] - 2026-11-26
 
