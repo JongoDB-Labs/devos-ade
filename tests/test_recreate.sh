@@ -314,7 +314,7 @@ test_setups_front_waits_for_the_buckets_rather_than_running_them_again() {
   ensure_portal_password_hash() { :; }; compose_reads_contexts() { :; }
   SETUP_BUILT=" portal shared-mcp "
   dc() { case "$*" in "ps -a -q rustfs-init") [ -z "${INIT_ID:-}" ] || echo "$INIT_ID" ;; "ps --format"*) ;; *) echo "dc $*" >> "$TMP/calls" ;; esac; return 0; }
-  docker() { echo "docker $*" >> "$TMP/calls"; case "$1" in inspect) [ -z "${INIT_ST:-}" ] || echo "$INIT_ST" ;; wait) echo "${INIT_RC:-0}" ;; esac; }
+  docker() { echo "docker $*" >> "$TMP/calls"; case "$1" in inspect) [ -z "${INIT_ST:-}" ] || echo "$INIT_ST" ;; wait) echo "${INIT_RC-0}" ;; esac; }
   local named='dc up -d --wait --no-deps postgres rustfs litellm open-webui portal caddy shared-mcp' plain='dc up -d --wait open-webui portal caddy shared-mcp'
   _front() { : > "$TMP/calls"; UP_FRONT_AFTER_DATA="$1" _build_and_up_front open-webui portal caddy shared-mcp > "$TMP/out" 2>&1; }
   # it ended well: no wait, the named call
@@ -329,7 +329,8 @@ $named"
   assert_not_contains "$(cat "$TMP/calls")" "dc up"; assert_contains "$(cat "$TMP/out")" "the buckets (rustfs-init) ended with 1"
   INIT_ST="running 0" INIT_RC=3; if _front 1; then echo "a rustfs-init that failed while waited for let the front up" >&2; return 1; fi
   assert_not_contains "$(cat "$TMP/calls")" "dc up"; assert_contains "$(cat "$TMP/out")" "ended with 3"
-  # none that ran (none at all, one created and never started): compose's own dependencies
+  # none that ran (none at all, one created and never started), or a wait that said no exit code: compose's own dependencies
+  INIT_ST="running 0" INIT_RC=''; _front 1 || return 1; assert_eq "$(grep -v '^docker inspect\|^docker wait' "$TMP/calls")" "$plain"
   INIT_ID='' INIT_ST=''; _front 1 || return 1; assert_eq "$(cat "$TMP/calls")" "$plain"
   INIT_ID=c-init INIT_ST="created 0"; _front 1 || return 1; assert_eq "$(grep -v '^docker inspect' "$TMP/calls")" "$plain"
   # every other caller: as before, rustfs-init not even asked about

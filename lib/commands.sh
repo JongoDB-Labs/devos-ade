@@ -1043,7 +1043,7 @@ _buckets_made() {
   [ -n "$id" ] || return 2
   st="$(docker inspect --format '{{.State.Status}} {{.State.ExitCode}}' "$id" 2>/dev/null)" || return 2
   case "$st" in
-    running\ *) st="$(docker wait "$id" 2>/dev/null)" || return 2; st="exited $st" ;;
+    running\ *) st="$(docker wait "$id" 2>/dev/null)" && [ -n "$st" ] || return 2; st="exited $st" ;;
     exited\ *) ;;
     *) return 2 ;;
   esac
