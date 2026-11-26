@@ -630,6 +630,35 @@ test_owui_our_icon_hashes_cover_current_logos_and_old_badges() {
   ICONS_DIR="$TMP/none"; assert_eq "$(owui_our_icon_hashes)" "$(printf '%s' "$OWUI_LEGACY_ICON_HASHES" | tr '\n' ' ')"
 }
 
+test_owui_our_icon_hashes_are_kept_for_the_same_icons_and_made_again_for_others() {
+  # (two openssl for each of the 60-odd icons took 0.7 s on a Mac, and a sync asked for them up to three times)
+  ICONS_DIR="$TMP/icons"; mkdir -p "$ICONS_DIR/or" "$STATE_DIR"
+  printf 'png-bytes' > "$ICONS_DIR/a.png"; printf 'or-bytes' > "$ICONS_DIR/or/b.png"
+  local first n="$TMP/openssl-calls" want
+  first="$(owui_our_icon_hashes)"
+  [ -f "$STATE_DIR/owui-icon-hashes" ]
+  openssl() { echo x >> "$n"; command openssl "$@"; }
+  : > "$n"; assert_eq "$(owui_our_icon_hashes)" "$first"; assert_eq "$(wc -l < "$n" | tr -d ' ')" 0   # (the same icons: kept)
+  # other bytes of the same size, one icon more, one fewer, a damaged record: made again, as with no record at all
+  printf 'PNG-bytes' > "$ICONS_DIR/a.png"
+  want="$(STATE_DIR="$TMP/no-state" owui_our_icon_hashes)"; [ "$want" != "$first" ]
+  : > "$n"; assert_eq "$(owui_our_icon_hashes)" "$want"; [ "$(wc -l < "$n" | tr -d ' ')" -gt 0 ]
+  printf 'c' > "$ICONS_DIR/or/c.png"; want="$(STATE_DIR="$TMP/no-state" owui_our_icon_hashes)"
+  assert_eq "$(owui_our_icon_hashes)" "$want"
+  rm -f "$ICONS_DIR/or/b.png" "$ICONS_DIR/or/c.png"; want="$(STATE_DIR="$TMP/no-state" owui_our_icon_hashes)"
+  assert_eq "$(owui_our_icon_hashes)" "$want"
+  printf 'v1 junk\n\n' > "$STATE_DIR/owui-icon-hashes"; assert_eq "$(owui_our_icon_hashes)" "$want"
+  : > "$STATE_DIR/owui-icon-hashes"; assert_eq "$(owui_our_icon_hashes)" "$want"
+  # (other old hashes: made again; a state folder it cannot write to: made each time, the same answer)
+  OWUI_LEGACY_ICON_HASHES="$OWUI_LEGACY_ICON_HASHES feed"; assert_contains " $(owui_our_icon_hashes) " " feed "
+  assert_eq "$(STATE_DIR="$TMP/no-state" owui_our_icon_hashes)" "$(owui_our_icon_hashes)"
+  if [ "$(id -u)" != 0 ]; then
+    rm -f "$STATE_DIR/owui-icon-hashes"; chmod 500 "$STATE_DIR"
+    assert_eq "$(owui_our_icon_hashes)" "$(STATE_DIR="$TMP/no-state" owui_our_icon_hashes)"; chmod 700 "$STATE_DIR"
+  fi
+  unset -f openssl
+}
+
 # An install from 0.2.0 or older shows the generic two-letter badges; they are ours, so they get upgraded.
 test_old_generic_badges_are_recognised_as_ours() {
   local f

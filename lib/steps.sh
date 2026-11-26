@@ -375,7 +375,7 @@ upd_in_settings() {
   _upd_env_settings
   _upd_fn _setup_settings setup_ports setup_secrets setup_portal_host resolve_portal_port resolve_port migrate_direct_ports \
     remote_net_preflight localgit_net_preflight setup_remote_choice setup_openrouter setup_explabs setup_stt ensure_portal_password_hash localgit_secrets \
-    remote_ensure_proxy_secret owner_email_lowercase
+    remote_ensure_proxy_secret owner_email_lowercase _pw_hash_memo_key ensure_env_hex
   _upd_files "$STACK_DIR"/lib/ports.sh "$STACK_DIR"/lib/remote.sh "$STACK_DIR"/lib/localgit.sh "$STACK_DIR"/lib/openrouter.sh "$STACK_DIR"/lib/explabs.sh "$STACK_DIR"/lib/stt.sh
   if ! remote_on; then echo remote-off; else echo "remote-on $RANDOM$RANDOM"; fi
 }

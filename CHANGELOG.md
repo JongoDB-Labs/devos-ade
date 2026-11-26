@@ -12,6 +12,9 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   step and again before starting the portal. Now a run checks the same password and hashes once; a password or hash
   that changes is still checked again. Setup also no longer makes a dozen new random secrets only to throw them away
   when every one is already in `.env`. `.env` and the hashes are the same as before. (JON-972)
+- **Syncing models to Chat is quicker.** To tell DevOS ADE's model icons from ones you picked yourself, each sync
+  fingerprinted every icon again, about 0.5 seconds on a Mac, up to three times per update or settings change. The
+  fingerprints are now kept until the icons themselves change. (JON-972)
 
 ## [0.68.5] - 2026-11-25
 

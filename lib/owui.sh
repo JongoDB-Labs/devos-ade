@@ -66,14 +66,23 @@ icon_data_uri() { printf 'data:image/png;base64,%s' "$(openssl base64 -A < "$1")
 
 # owui_our_icon_hashes -> the sha256 of every data: URI DevOS ADE sends (catalog/icons/*.png and
 # catalog/icons/or/*.png) or used to send (OWUI_LEGACY_ICON_HASHES), space-separated: how owui_merge_model
-# and the OpenRouter sync tell our icons from one the user picked.
+# and the OpenRouter sync tell our icons from one the user picked. Kept in .state/owui-icon-hashes under a checksum
+# of the icons (their names, sizes and contents) and the old hashes, and made again for any other set: two openssl
+# for each of the 60-odd icons took 0.7 s on a Mac, and a sync asked for them up to three times (JON-972).
 owui_our_icon_hashes() {
-  local f out=''
+  local f out='' key rec="$STATE_DIR/owui-icon-hashes" k1='' h1='' tmp
+  key="$({ cksum "$ICONS_DIR"/*.png "$ICONS_DIR"/or/*.png 2>/dev/null || true; printf '%s\n' "$OWUI_LEGACY_ICON_HASHES"; } | cksum)"
+  [ ! -f "$rec" ] || { IFS= read -r k1; IFS= read -r h1; } < "$rec" 2>/dev/null || true
+  if [ "$k1" = "v1 $key" ] && [ -n "$h1" ]; then printf '%s\n' "$h1"; return 0; fi
   for f in "$ICONS_DIR"/*.png "$ICONS_DIR"/or/*.png; do
     [ -r "$f" ] || continue
     out="$out $(icon_data_uri "$f" | openssl dgst -sha256 | awk '{print $NF}')"
   done
-  printf '%s\n' "$(printf '%s %s' "${out# }" "$OWUI_LEGACY_ICON_HASHES" | tr '\n' ' ' | tr -s ' ' | sed 's/^ //; s/ $//')"
+  out="$(printf '%s %s' "${out# }" "$OWUI_LEGACY_ICON_HASHES" | tr '\n' ' ' | tr -s ' ' | sed 's/^ //; s/ $//')"
+  printf '%s\n' "$out"
+  [ -d "$STATE_DIR" ] && tmp="$(mktemp "$STATE_DIR/.owui-icon-hashes.XXXXXX" 2>/dev/null)" || return 0
+  { printf 'v1 %s\n%s\n' "$key" "$out" > "$tmp" && chmod 644 "$tmp" && mv -f "$tmp" "$rec"; } 2>/dev/null || rm -f "$tmp"
+  return 0
 }
 
 # model_tier NAME -> "$" (< $0.50), "$$" (< $3.00) or "$$$" by input price per 1M tokens; empty without one.

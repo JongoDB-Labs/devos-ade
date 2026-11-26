@@ -260,6 +260,10 @@ test_the_password_and_its_hashes_are_checked_once_in_a_run_and_again_when_one_of
   helper_password_ok 'correct horse battery'
   set_env PORTAL_PASSWORD_HASH 'pbkdf2-sha256:600000:00:00'; ensure_portal_password_hash
   pw_verify 'correct horse battery' "$(get_env PORTAL_PASSWORD_HASH)"
+  # (the helper's copy removed: written again)
+  rm -f "$(helper_password_file)"; ensure_portal_password_hash; helper_password_ok 'correct horse battery'
+  # a memo hit does not even look at the helper's copy again
+  helper_password_sync() { echo sync >> "$n"; }; : > "$n"; ensure_portal_password_hash; assert_eq "$(cat "$n")" ""
   # a helper copy that cannot be written fails as before, and is tried again on the next call
   helper_password_sync() { return 1; }; _PW_HASH_MEMO=''
   if ensure_portal_password_hash; then return 1; fi
