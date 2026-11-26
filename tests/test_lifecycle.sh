@@ -24,7 +24,8 @@ _stub_dc() { # logs every dc call; pg_dump prints a fake dump unless PG_FAIL=1
   _stub_gitdata_docker
 }
 
-# The git server's volume (JON-1012): LG_VOL=1 = the volume exists; LG_RUNNING=1 = forgejo is up; TAR_FAIL=1 = the copy breaks.
+# The git server's volume (JON-1012): LG_VOL=1 = the volume exists; LG_RUNNING=1 = forgejo is up (container cid123); TAR_FAIL=1 =
+# the copy breaks.
 # docker volume inspect / docker run (the throwaway tar container) are logged to calls; a "backup" run writes a real tar.gz
 # of $TMP/gitsrc into the folder mounted at /backup, a "restore" run extracts the one it finds there into $TMP/gitvol.
 _stub_gitdata_docker() {
@@ -32,6 +33,9 @@ _stub_gitdata_docker() {
     echo "docker $*" >> "$TMP/calls"
     case "$1 $2" in
       "volume inspect") [ "${LG_VOL:-0}" = 1 ] ;;
+      # (the git server's own container, stopped and started by Docker around the copy; DK_STOP_FAIL / DK_START_FAIL=1 refuse)
+      "stop "*) [ "${DK_STOP_FAIL:-0}" != 1 ] ;;
+      "start "*) [ "${DK_START_FAIL:-0}" != 1 ] ;;
       "run --rm")
         local a host='' script=''
         for a in "$@"; do case "$a" in *:/backup*) host="${a%%:/backup*}" ;; esac; script="$a"; done
@@ -91,6 +95,7 @@ test_backup_skips_the_git_server_when_it_is_off_or_has_no_volume() {
   printf 'LOCALGIT=off\n' > "$ENV_FILE"; _stub_dc; LG_VOL=1; LG_RUNNING=1
   cmd_backup 2> "$TMP/err"
   assert_eq "$(ls "$STACK_DIR"/backups/*/gitdata.tar.gz 2>/dev/null | wc -l | tr -d ' ')" 0
+  assert_not_contains "$(cat "$TMP/calls")" "docker stop"
   assert_not_contains "$(cat "$TMP/calls")" "dc stop forgejo"
   assert_not_contains "$(cat "$TMP/calls")" "docker run"
   # on, but no volume yet (the server never started)
@@ -104,13 +109,15 @@ test_backup_stops_forgejo_around_the_copy_and_starts_it_again() {
   STACK_DIR="$TMP/stack"; mkdir -p "$STACK_DIR"; _mk_gitsrc
   printf 'LOCALGIT=on\n' > "$ENV_FILE"; _stub_dc; LG_VOL=1; LG_RUNNING=1
   cmd_backup 2> "$TMP/err"
-  c="$(grep -n 'dc stop forgejo\|docker run\|dc start forgejo' "$TMP/calls" | sed 's/^[0-9]*://' | cut -c1-20)"
-  assert_eq "$c" "dc stop forgejo
+  c="$(grep -n 'docker stop\|docker run\|docker start\|dc stop\|dc start' "$TMP/calls" | sed 's/^[0-9]*://' | cut -c1-20)"
+  # (Docker's own stop and start of the container that ran: no compose call, JON-972)
+  assert_eq "$c" "docker stop cid123
 docker run --rm --ne
-dc start forgejo"
+docker start cid123"
   # it was not running to begin with (the owner stopped it): it stays that way
   rm -rf "$STACK_DIR/backups"; : > "$TMP/calls"; LG_RUNNING=0
   cmd_backup 2> "$TMP/err"
+  assert_not_contains "$(cat "$TMP/calls")" "docker start"
   assert_not_contains "$(cat "$TMP/calls")" "dc start forgejo"
   assert_contains "$(cat "$TMP/calls")" "docker run"
 }
@@ -122,17 +129,14 @@ test_backup_never_leaves_forgejo_stopped_even_when_the_copy_fails() {
   if out="$( (cmd_backup) 2>&1)"; then echo "should fail" >&2; return 1; fi
   assert_contains "$out" "could not copy the git server"
   assert_contains "$out" "incomplete backup was removed"
-  c="$(cat "$TMP/calls")"
-  assert_contains "$c" "dc stop forgejo"
-  assert_contains "$c" "dc start forgejo"
-  assert_eq "$(grep -n 'dc stop forgejo\|dc start forgejo' "$TMP/calls" | sed 's/^[0-9]*://')" "dc stop forgejo
-dc start forgejo"
+  assert_eq "$(grep -n 'docker stop\|docker start\|dc stop\|dc start' "$TMP/calls" | sed 's/^[0-9]*://')" "docker stop cid123
+docker start cid123"
   assert_eq "$(ls -A "$STACK_DIR/backups" 2>/dev/null)" ""
   # an interrupt (the shell leaves) in the middle of the copy: the exit hook starts it again
   : > "$TMP/calls"; TAR_FAIL=0
   docker() { echo "docker $*" >> "$TMP/calls"; case "$1 $2" in "volume inspect") return 0 ;; "run --rm") exit 130 ;; esac; }
   ( cmd_backup ) >/dev/null 2>&1 || true
-  assert_contains "$(cat "$TMP/calls")" "dc start forgejo"
+  assert_contains "$(cat "$TMP/calls")" "docker start cid123"
 }
 
 # JON-972: the git copy runs beside the dumps. The pg_dump stub waits (up to 5 s) for the git copy's tar container to have
@@ -158,7 +162,7 @@ test_backup_copies_the_git_volume_while_the_databases_are_dumped() {
   [ -d "$d/s3/shared" ]
   localgit_validate_archive "$d/gitdata.tar.gz"
   _is_backup "$d"
-  assert_contains "$(cat "$TMP/calls")" "dc start forgejo"
+  assert_contains "$(cat "$TMP/calls")" "docker start cid123"
   assert_eq "$(trap -p EXIT)" ""
 }
 
@@ -167,7 +171,7 @@ test_a_failed_dump_still_starts_the_git_server_again_and_removes_the_backup() {
   printf 'LOCALGIT=on\n' > "$ENV_FILE"; _stub_dc; LG_VOL=1; LG_RUNNING=1; PG_FAIL=1
   if out="$( (cmd_backup) 2>&1)"; then echo "should fail" >&2; return 1; fi
   assert_contains "$out" "could not dump database litellm"
-  assert_contains "$(cat "$TMP/calls")" "dc start forgejo"
+  assert_contains "$(cat "$TMP/calls")" "docker start cid123"
   assert_eq "$(ls -A "$STACK_DIR/backups" 2>/dev/null)" ""
 }
 
@@ -176,13 +180,13 @@ test_a_failed_git_copy_fails_the_backup_and_starts_the_server_again() {
   printf 'LOCALGIT=on\n' > "$ENV_FILE"; _stub_dc; LG_VOL=1; LG_RUNNING=1; TAR_FAIL=1
   if out="$( (cmd_backup) 2>&1)"; then echo "should fail" >&2; return 1; fi
   assert_contains "$out" "could not copy the git server's repositories"
-  assert_contains "$(cat "$TMP/calls")" "dc start forgejo"
+  assert_contains "$(cat "$TMP/calls")" "docker start cid123"
   assert_eq "$(ls -A "$STACK_DIR/backups" 2>/dev/null)" ""
 }
 
 # JON-972 review: the copy runs in a subshell; a signal to it between "stop" and "start" must not leave the server stopped.
 # (a parent EXIT hook exists before the fork, as in real use: stack_lock's)
-_git_signal_case() { # SIGNAL
+_git_signal_case() { # SIGNAL CALL — CALL: what starts the server again
   STACK_DIR="$TMP/stack"; mkdir -p "$STACK_DIR"; _mk_gitsrc
   printf 'LOCALGIT=on\n' > "$ENV_FILE"; _stub_dc; LG_VOL=1; LG_RUNNING=1
   eval "_lc_$(declare -f docker)"
@@ -190,11 +194,12 @@ _git_signal_case() { # SIGNAL
   docker() { case "$1 $2" in "run --rm") echo "docker $*" >> "$TMP/calls"; sh -c 'echo $PPID' > "$TMP/subpid"; kill -"$SIG" "$(cat "$TMP/subpid")"; sleep 1; return 0 ;; esac; _lc_docker "$@"; }
   SIG="$1"; _t_parent_hook() { :; }; on_exit _t_parent_hook
   if out="$( (cmd_backup) 2>&1)"; then echo "should fail" >&2; return 1; fi
-  assert_contains "$(cat "$TMP/calls")" "dc start forgejo"
+  assert_contains "$(cat "$TMP/calls")" "$2"
   assert_eq "$(ls -A "$STACK_DIR/backups" 2>/dev/null)" ""
 }
-test_a_terminated_git_copy_starts_the_server_again() { _git_signal_case TERM; }
-test_a_killed_git_copy_is_made_up_for_by_the_parent() { _git_signal_case KILL; }
+test_a_terminated_git_copy_starts_the_server_again() { _git_signal_case TERM "docker start cid123"; }
+# (the copy's own hook cannot run: the parent starts the service through compose, by its name)
+test_a_killed_git_copy_is_made_up_for_by_the_parent() { _git_signal_case KILL "dc start forgejo"; }
 
 test_a_bucket_copy_failure_during_the_git_copy_starts_the_server_again() {
   STACK_DIR="$TMP/stack"; mkdir -p "$STACK_DIR"; _mk_gitsrc
@@ -202,7 +207,7 @@ test_a_bucket_copy_failure_during_the_git_copy_starts_the_server_again() {
   _backup_buckets_exec() { return 1; }; s3_job() { return 1; }
   if out="$( (cmd_backup) 2>&1)"; then echo "should fail" >&2; return 1; fi
   assert_contains "$out" "could not copy the object-store buckets"
-  assert_contains "$(cat "$TMP/calls")" "dc start forgejo"
+  assert_contains "$(cat "$TMP/calls")" "docker start cid123"
   assert_eq "$(ls -A "$STACK_DIR/backups" 2>/dev/null)" ""
 }
 
@@ -235,14 +240,113 @@ test_the_volume_job_copies_the_right_volume_with_few_privileges() {
 test_backup_leaves_the_git_server_out_loudly_when_it_cannot_be_stopped() {
   STACK_DIR="$TMP/stack"; mkdir -p "$STACK_DIR"; _mk_gitsrc
   printf 'LOCALGIT=on\n' > "$ENV_FILE"; _stub_dc; LG_VOL=1; LG_RUNNING=1
-  eval "_lc_$(declare -f dc)"
-  dc() { case "$*" in "stop forgejo") echo "dc stop forgejo" >> "$TMP/calls"; return 1 ;; esac; _lc_dc "$@"; }
+  DK_STOP_FAIL=1
   cmd_backup 2> "$TMP/err"
   d="$(ls -d "$STACK_DIR"/backups/*)"
   assert_eq "$([ -e "$d/gitdata.tar.gz" ] && echo has || echo none)" none
   assert_eq "$(cat "$d/litellm.dump")" "PGDMP-litellm"   # the rest of the backup stands
   assert_not_contains "$(cat "$TMP/calls")" "docker run"
   assert_contains "$(cat "$TMP/err")" "LEFT OUT of this backup"
+  assert_contains "$(cat "$TMP/calls")" "docker start cid123"   # (a stop that failed may have stopped it all the same)
+}
+
+# JON-972: the git server's container is started again by Docker; failing that, by compose (by the service's name); failing
+# both, said loudly. The backup stands either way: the copy was made.
+test_the_git_server_is_started_again_through_compose_when_docker_cannot() {
+  STACK_DIR="$TMP/stack"; mkdir -p "$STACK_DIR"; _mk_gitsrc
+  printf 'LOCALGIT=on\n' > "$ENV_FILE"; _stub_dc; LG_VOL=1; LG_RUNNING=1; DK_START_FAIL=1
+  cmd_backup 2> "$TMP/err"
+  assert_eq "$(grep -n 'docker start\|dc start' "$TMP/calls" | sed 's/^[0-9]*://')" "docker start cid123
+dc start forgejo"
+  assert_not_contains "$(cat "$TMP/err")" "STILL STOPPED"
+  assert_eq "$(ls "$STACK_DIR"/backups/*/gitdata.tar.gz | wc -l | tr -d ' ')" 1
+  rm -rf "$STACK_DIR/backups"; : > "$TMP/calls"
+  eval "_lc_$(declare -f dc)"
+  dc() { case "$*" in "start forgejo") echo "dc start forgejo" >> "$TMP/calls"; return 1 ;; esac; _lc_dc "$@"; }
+  cmd_backup 2> "$TMP/err"
+  assert_contains "$(cat "$TMP/err")" "THE GIT SERVER IS STILL STOPPED"
+  assert_eq "$(ls "$STACK_DIR"/backups/*/gitdata.tar.gz | wc -l | tr -d ' ')" 1
+}
+
+# JON-972: a backup (and a restore) starts Postgres and RustFS only when they are not both running already — one container
+# each, running, neither starting nor unhealthy: what `up --wait` of the two waits for (RustFS has no health check).
+test_the_data_services_are_started_only_when_they_are_not_running() {
+  STACK_DIR="$TMP/stack"; mkdir -p "$STACK_DIR"
+  printf 'X=1\n' > "$ENV_FILE"; _stub_dc
+  eval "_lc_$(declare -f dc)"
+  dc() {
+    case "$*" in
+      "ps -a --format {{.Service}} {{.State}} {{.Health}} postgres rustfs")
+        echo "dc $*" >> "$TMP/calls"; [ "${DS_FAIL:-0}" != 1 ] || return 1
+        [ -z "$DS_ROWS" ] || printf '%s\n' "$DS_ROWS"; return 0 ;;
+      "up -d --wait postgres rustfs") echo "dc $*" >> "$TMP/calls"; [ "${UP_FAIL:-0}" != 1 ] ;;
+      *) _lc_dc "$@" ;;
+    esac
+  }
+  local want rows got bad=0
+  while IFS='|' read -r want rows; do
+    : > "$TMP/calls"
+    DS_ROWS="$(printf '%b' "$rows")" _data_services_up
+    got=skip; ! grep -q 'dc up' "$TMP/calls" || got=up
+    [ "$got" = "$want" ] || { echo "rows [$rows]: $got, want $want" >&2; bad=1; }
+    grep -q 'dc ps' "$TMP/calls" || { echo "rows [$rows]: Docker's list was not read" >&2; bad=1; }
+  done <<'CASES'
+skip|postgres running healthy\nrustfs running
+skip|rustfs running\npostgres running healthy
+up|postgres running starting\nrustfs running
+up|postgres running unhealthy\nrustfs running
+up|postgres exited\nrustfs running
+up|postgres running healthy\nrustfs exited
+up|postgres running healthy\nrustfs restarting
+up|postgres running healthy\nrustfs paused
+up|postgres running healthy
+up|rustfs running
+up|postgres running healthy\npostgres running healthy\nrustfs running
+up|postgres running healthy\nrustfs running\nlitellm running healthy
+up|
+CASES
+  # (the list cannot be read: compose decides)
+  : > "$TMP/calls"; DS_ROWS='' DS_FAIL=1 _data_services_up
+  assert_contains "$(cat "$TMP/calls")" "dc up -d --wait postgres rustfs"
+  # (and the up failing: the backup stops, saying so)
+  if out="$( (DS_ROWS='postgres exited' UP_FAIL=1 _data_services_up) 2>&1)"; then echo "should fail" >&2; return 1; fi
+  assert_contains "$out" "could not start postgres/rustfs"
+  return "$bad"
+}
+
+test_the_data_services_check_is_one_docker_call() {
+  # (a form dc answers from Docker's own list, as Compose prints it: lib/common.sh _dc_ps_fast; tests/run.sh sends the other
+  # tests' ps to their compose stubs)
+  _dc_ps_form ps -a --format '{{.Service}} {{.State}} {{.Health}}' postgres rustfs
+  unset DEVOS_ADE_PS_VIA_COMPOSE
+  printf 'X=1\n' > "$ENV_FILE"
+  docker() { echo "docker $*" >> "$TMP/calls"; case "$1" in ps) printf '%s\n' "$DK_ROWS" ;; *) return 1 ;; esac; }
+  local p; p="$(project_name)"
+  : > "$TMP/calls"
+  DK_ROWS="$p-litellm-1|i3|litellm|running|Up 3 minutes (healthy)
+$p-postgres-1|i1|postgres|running|Up 3 minutes (healthy)
+$p-rustfs-1|i2|rustfs|running|Up 3 minutes" _data_services_ready
+  assert_eq "$(grep -c '^docker ' "$TMP/calls")" 1
+  assert_contains "$(cat "$TMP/calls")" "docker ps -a "
+  assert_not_contains "$(cat "$TMP/calls")" "docker compose"
+  if DK_ROWS="$p-postgres-1|i1|postgres|running|Up 2 seconds (health: starting)
+$p-rustfs-1|i2|rustfs|running|Up 3 minutes" _data_services_ready; then echo "a postgres still starting was taken as ready" >&2; return 1; fi
+  if DK_ROWS="$p-postgres-1|i1|postgres|running|Up 3 minutes (healthy)
+$p-rustfs-1|i2|rustfs|exited|Exited (0) 5 seconds ago" _data_services_ready; then echo "a stopped rustfs was taken as ready" >&2; return 1; fi
+}
+
+test_the_backup_times_its_own_calls_with_the_trace_on() {
+  STACK_DIR="$TMP/stack"; mkdir -p "$STACK_DIR"; _mk_gitsrc
+  printf 'LOCALGIT=on\n' > "$ENV_FILE"; _stub_dc; LG_VOL=1; LG_RUNNING=1
+  local f="$STATE_DIR/update/job-trace/calls-backup.tsv"
+  cmd_backup 2> "$TMP/err"
+  assert_eq "$([ -e "$f" ] && echo traced || echo none)" none
+  mkdir -p "$STATE_DIR/update"; : > "$STATE_DIR/update/trace-on"
+  ( cmd_backup ) 2> "$TMP/err"
+  # (its calls by name and caller, never an argument)
+  assert_contains "$(cut -f2,3 "$f")" "docker stop	localgit_backup_into<"
+  assert_contains "$(cut -f2,3 "$f")" "docker start	_lg_resume<"
+  assert_not_contains "$(cat "$f")" "cid123"
 }
 
 test_validate_archive_rejects_links_devices_and_absolute_names() {

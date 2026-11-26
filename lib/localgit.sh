@@ -263,24 +263,30 @@ _lg_volume_job() {
     -v "$host:/backup:${hmode:+$hmode,}z" --entrypoint sh "$img" -c "$script"
 }
 
-# The server is stopped for the copy only when it was running; _lg_resume starts it again (also from the EXIT trap: ^C)
+# The server is stopped for the copy only when it was running; _lg_resume starts that container again (also from the EXIT
+# trap: ^C). Docker's own stop and start of the one container (_LG_PAUSED, its ID): Compose's took some 0.2 s more each, to
+# read every compose file (JON-972). The rest of the stop is Forgejo's own clean shutdown, which waits a fixed second before
+# it ends. (A pause would not wait at all, but Docker marks a paused container unhealthy until its next health check, up to
+# 10 s later, and an `up --wait` waits that long.)
 _LG_PAUSED=''
 _lg_resume() {
-  [ -n "$_LG_PAUSED" ] || return 0
+  local id="$_LG_PAUSED"
+  [ -n "$id" ] || return 0
   _LG_PAUSED=''; off_exit _lg_resume
-  dc start forgejo >/dev/null 2>&1 ||
+  docker start "$id" >/dev/null 2>&1 || dc start forgejo >/dev/null 2>&1 ||
     warn "!! THE GIT SERVER IS STILL STOPPED: it did not start again after the backup — run ./stack up now (./stack logs forgejo says why)"
 }
 
 # localgit_backup_into DIR — DIR/gitdata.tar.gz, when the server is on and its volume exists (nothing otherwise). Returns 1
 # when the copy failed; the server runs again either way.
 localgit_backup_into() {
-  local rc=0
+  local rc=0 id
   localgit_on || return 0
   docker volume inspect "$(localgit_volume)" >/dev/null 2>&1 || return 0
-  if [ -n "$(dc ps -q --status running forgejo 2>/dev/null | head -n 1)" ]; then
-    _LG_PAUSED=1; on_exit _lg_resume
-    if ! dc stop forgejo >/dev/null 2>&1; then
+  id="$(dc ps -q --status running forgejo 2>/dev/null | head -n 1 || true)"
+  if [ -n "$id" ]; then
+    _LG_PAUSED="$id"; on_exit _lg_resume
+    if ! docker stop "$id" >/dev/null 2>&1; then
       # a copy of a database a running server may be writing can be torn: no copy at all, said loudly (the rest of the backup stands)
       warn "!! BACKUP WARNING: the git server could not be stopped, so its repositories were LEFT OUT of this backup (a copy while it runs could be torn) — run ./stack backup again"
       _lg_resume

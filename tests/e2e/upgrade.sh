@@ -1013,6 +1013,7 @@ if [ "$MIGRATE" = 0 ] && [ "$FAST_CHECK" = 1 ]; then
     fi
   fi
   # the backup through docker exec: seconds, the same files
+  fid="$(docker ps -q --no-trunc --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.service=forgejo --filter status=running 2>/dev/null | head -n 1)"
   T0="$(now)"; st backup > "$LOGS/fast-backup.log" 2>&1; n=$?; T1="$(now)"
   bdir="$STACK/$(sed -n 's/.*backup written to \(backups\/[0-9-]*\).*/\1/p' "$LOGS/fast-backup.log" | tail -n 1)"
   check fast-backup-ran "$n" "./stack backup: exit $n"
@@ -1023,6 +1024,22 @@ if [ "$MIGRATE" = 0 ] && [ "$FAST_CHECK" = 1 ]; then
   gl="$(tar -tzf "$bdir/gitdata.tar.gz" 2>/dev/null || true)"; gok=1
   case "$gl" in *app.ini*) gok=0 ;; esac
   check fast-backup-git "$gok" "the git server's repositories and app.ini (gitdata.tar.gz, $(printf '%s\n' "$gl" | grep -c .) entries) in ${bdir#"$STACK"/}"
+  # (JON-972) the git server runs again after the backup: the container that ran before it, stopped and started, not a new one
+  fst="$(docker inspect --format '{{.State.Status}}' "${fid:-none}" 2>/dev/null || true)"
+  check fast-backup-git-running "$([ -n "$fid" ] && [ "$fst" = running ] && echo 0 || echo 1)" "the git server's container ${fid:0:12} is ${fst:-gone} after the backup"
+  # its own calls, timed (the update's trace is on on this stack: job-trace/calls-backup.tsv): Postgres and RustFS ran
+  # already, so no compose up; the git server's container stopped and started by Docker, not compose
+  bt="$tdir/job-trace/calls-backup.tsv"
+  if [ -s "$bt" ]; then
+    cp "$bt" "$OUT/calls-backup.tsv"
+    sort -t "$(printf '\t')" -k4,4n "$bt" | awk -F '\t' '{ printf "%s ms at %s ms: %s (%s)\n", $1, $4, $2, $3 }' | while IFS= read -r l; do say "backup call: $l"; done
+    bup=0; ! grep -q $'\tdocker compose.up\t' "$bt" || bup=1
+    check fast-backup-no-up "$bup" "Postgres and RustFS were running: the backup made no compose up"
+    bgit=1; grep -q $'\tdocker stop\tlocalgit_backup_into<' "$bt" && grep -q $'\tdocker start\t_lg_resume<' "$bt" && ! grep -q $'\tdocker compose.st' "$bt" && bgit=0
+    check fast-backup-git-by-docker "$bgit" "the git server's container stopped and started by Docker, not compose"
+  else
+    check fast-backup-traced 1 "the backup wrote no trace: $bt"
+  fi
   # a chat written after the update, then the rollback: code, data and images as they were before the update
   owui "print(api('POST', '/api/v1/chats/new', {'chat': {'title': 'e2e-after-fast', 'messages': []}}, TOKEN)['id'])" > /dev/null 2>&1
   st rollback --yes > "$LOGS/fast-rollback.log" 2>&1; n=$?; redact "$LOGS/fast-rollback.log"

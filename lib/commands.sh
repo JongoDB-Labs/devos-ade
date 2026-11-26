@@ -1973,7 +1973,21 @@ s3_job() {
 
 # Postgres + RustFS must be running for backup/restore (harmless if they already are).
 _data_services_up() {
-  dc up -d --wait postgres rustfs >/dev/null 2>&1 || die "could not start postgres/rustfs — see ./stack logs postgres"
+  _data_services_ready || dc up -d --wait postgres rustfs >/dev/null 2>&1 || die "could not start postgres/rustfs — see ./stack logs postgres"
+}
+# _data_services_ready -> 0 when postgres and rustfs have one container each, running, and not starting or unhealthy: what
+# `up --wait` of the two waits for (a service without a health check: running). Docker's list says so in milliseconds (dc ps:
+# _dc_ps_fast); Compose's up of the two, already running, took 0.8 s, before anything else of a backup began (JON-972).
+_data_services_ready() {
+  local rows svc st h np=0 nr=0
+  rows="$(dc ps -a --format '{{.Service}} {{.State}} {{.Health}}' postgres rustfs 2>/dev/null)" || return 1
+  while read -r svc st h; do
+    [ "$st" = running ] && [ "$h" != starting ] && [ "$h" != unhealthy ] || return 1
+    case "$svc" in postgres) np=$((np + 1)) ;; rustfs) nr=$((nr + 1)) ;; *) return 1 ;; esac
+  done <<EOF
+$rows
+EOF
+  [ "$np" = 1 ] && [ "$nr" = 1 ]
 }
 
 # A failed backup must not leave a half-written directory behind (globals: the EXIT trap outlives locals).
@@ -1986,6 +2000,9 @@ cmd_backup() {
   [ -f "$ENV_FILE" ] || die "nothing to back up — run ./stack setup first"
   ! stack_lock_ours || own=0   # (restore, rollback and clean ask for one holding their own lock)
   stack_lock backup   # lib/lock.sh: ./stack up must not recreate Postgres or RustFS halfway
+  # (with the update's trace on — the e2e upgrade test's stack — the backup's own calls are timed, unless something timing
+  # its calls already runs it: lib/steps.sh upd_prof_begin; JON-972)
+  [ -n "$_UPD_PROF" ] || ! upd_trace_on || upd_prof_begin "$STATE_DIR/update/job-trace/calls-backup.tsv"
   case "${1:-}" in
     '') [ $# -eq 0 ] || die "usage: ./stack backup [--nightly | --portal]"; _backup_named "" ;;
     # the update helper's nightly backup (BACKUP_NIGHTLY=on): backups/<timestamp>-nightly/, the newest BACKUP_KEEP kept
