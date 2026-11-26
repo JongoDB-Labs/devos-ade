@@ -1857,36 +1857,60 @@ _test_mcp() {
 }
 
 # _test_group DIR NAME FUNC — FUNC, a group of checks, in a subshell in the background, on counts of its own: what it
-# prints goes to DIR/NAME.out and NAME.err, its counts to NAME.n and NAME.slow, a die's message to NAME.die ($! is its pid)
+# prints goes to DIR/NAME.out and NAME.err, its counts to NAME.n and NAME.slow, a die's message to NAME.die. In a process
+# group of its own (set -m, as _with_deadline's): a job in the background does not see a Ctrl-C, so _test_checks_stop
+# ends it, and everything it started, on the way out. Its pid joins _TC_PIDS.
 _test_group() {
-  local d="$1" g="$2"; shift 2
+  local d="$1" g="$2" m=''; shift 2
+  case $- in *m*) m=1 ;; esac
+  set -m
   (
     _TG_DIE="$d/$g.die"; on_exit _test_group_die
     fails=0; slow=0; slow_list=''
     "$@"
     printf '%s %s\n' "$fails" "$slow" > "$d/$g.n"; printf '%s' "$slow_list" > "$d/$g.slow"
-  ) > "$d/$g.out" 2> "$d/$g.err" &
+  ) < /dev/null > "$d/$g.out" 2> "$d/$g.err" &
+  _TC_PIDS="${_TC_PIDS:-} $!"
+  [ -n "$m" ] || set +m
 }
 _test_group_die() { [ -z "${_BN_DIE_MSG:-}" ] || printf '%s' "$_BN_DIE_MSG" > "$_TG_DIE"; }
+# _test_wait — the groups started since the last wait have ended (their own pids only: setup has other work in the
+# background)
+_test_wait() { local p; for p in ${_TC_PIDS:-}; do wait "$p" 2>/dev/null || true; done; _TC_PIDS=''; }
+# _test_checks_stop — on the way out of a Ctrl-C, a TERM (the helper's, to the job's process group) or a die while the
+# checks run: the groups still running end, with what they started, and the folder goes
+_test_checks_stop() {
+  local p
+  for p in ${_TC_PIDS:-}; do kill -TERM -- "-$p" 2>/dev/null || true; done
+  [ -z "${_TC_DIR:-}" ] || rm -rf -- "$_TC_DIR"
+  _TC_PIDS=''; _TC_DIR=''
+}
 
 # _test_checks — one pass of every smoke check, on cmd_test's `fails`, `slow` and `slow_list`. JON-972: the groups run
 # side by side (each mostly waits, on a container or on Bedrock; one after the other they took some 15 s of an update),
-# each in a subshell of its own; what each printed is said afterwards, in the order they ran in before, and their counts
-# added up. Speech-to-text's run last, alone: when its check fails on a voice that was on by default, it restarts Open
-# WebUI and the portal, which the portal's and the Code page's checks call. A group that ends without its counts (a die,
-# set -e) counts as a failure; a die's message is this one's, as when they ran one after the other. Waits for the
-# groups' own pids only (setup has other work in the background).
+# each in a subshell of its own; what each printed is said afterwards, in the order they ran in before (a group's
+# warnings after its own lines), and their counts added up. Two run alone: the projects' first (it may write their
+# compose file and update the sandbox, which the others' dc calls read), speech-to-text's last (when its check fails on
+# a voice that was on by default, it restarts Open WebUI and the portal, which the portal's and the Code page's checks
+# call). A group that ends without its counts (a die, set -e) counts as a failure; a die's message is this one's, as
+# when they ran one after the other.
 _test_checks() {
-  local d g p pids='' n s x msg=''
+  local d g n s x msg=''
   d="$(mktemp -d "${TMPDIR:-/tmp}/devos-ade-test.XXXXXX")" || die "cannot make a temporary folder for the checks"
-  for g in litellm:_test_litellm portal:_test_portal mcp:_test_mcp terminal:terminal_test_checks projects:projects_test_checks code:code_test_checks; do
-    _test_group "$d" "${g%%:*}" "${g#*:}"; pids="$pids $!"
+  _TC_DIR="$d"; _TC_PIDS=''; on_exit _test_checks_stop
+  # (what every dc call makes sure of first, once, here, as dc does it — the git server's header in .env, its
+  # certificate: on a stack without them yet, the groups' dc calls would all make them at once; each group then finds
+  # the certificate checked, lib/common.sh dc)
+  localgit_sso_ensure 2> /dev/null || true; localgit_overlay_wanted > /dev/null 2>&1 || true
+  # lib/projects.sh: the sandbox sees each project folder, read-only where chosen
+  _test_group "$d" projects projects_test_checks; _test_wait
+  # lib/terminal.sh: the browser terminal's, when on; lib/code.sh: the Code page's, when on (neither calls Bedrock)
+  for g in litellm:_test_litellm portal:_test_portal mcp:_test_mcp terminal:terminal_test_checks code:code_test_checks; do
+    _test_group "$d" "${g%%:*}" "${g#*:}"
   done
-  for p in $pids; do wait "$p" 2>/dev/null || true; done
-  # lib/stt.sh: Bedrock speech-to-text, when on (~$0.00005); terminal, projects, code: lib/terminal.sh (the browser
-  # terminal's, when on; no Bedrock calls), lib/projects.sh (the sandbox sees each project folder, read-only where chosen),
-  # lib/code.sh (the Code page's, when on; no Bedrock calls)
-  _test_group "$d" stt stt_test_checks; wait "$!" 2>/dev/null || true
+  _test_wait
+  # lib/stt.sh: Bedrock speech-to-text, when on (~$0.00005)
+  _test_group "$d" stt stt_test_checks; _test_wait
   for g in litellm portal mcp stt terminal projects code; do
     cat "$d/$g.out" 2>/dev/null || true; cat "$d/$g.err" >&2 2>/dev/null || true
     if [ -s "$d/$g.n" ]; then
@@ -1898,7 +1922,7 @@ _test_checks() {
       else printf '  FAIL  the %s checks ended before they were done\n' "$g"; fi
     fi
   done
-  rm -rf -- "$d"
+  off_exit _test_checks_stop; rm -rf -- "$d"; _TC_DIR=''
   # (a group's die: its own words were said above; this ends as it would have, with them for Home)
   [ -z "$msg" ] || { _BN_DIE_MSG="$msg"; exit 1; }
   return 0

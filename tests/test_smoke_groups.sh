@@ -8,7 +8,7 @@
 
 # _sg_setup — .env for the LiteLLM and shared-mcp checks; curl, curl_auth and litellm_key_status answer as SG_* say; every
 # other group prints what SG_<GROUP> holds (lines: ok LABEL | fail LABEL | slow LABEL | warn TEXT | die TEXT | sleep S |
-# false), and notes its start and end in $TMP/order
+# child S, a program of its own that sleeps, then notes its end | false), and notes its start and end in $TMP/order
 _sg_setup() {
   printf 'LITELLM_PORT=4000\nSHARED_MCP_PORT=8765\nCLAUDE_BEDROCK_HAIKU_MODEL=haiku-x\nLITELLM_KEY_SETUP=sk-s\nLITELLM_KEY_CLAUDE_CODE=sk-c\nLITELLM_KEY_OPENWEBUI=sk-o\nLITELLM_KEY_TERMINAL=sk-t\nOWUI_EMBED_MODEL=embed-x\nSHARED_MCP_TOKEN=tok\n' > "$ENV_FILE"
   mkdir -p "$STATE_DIR"; : > "$TMP/order"
@@ -44,6 +44,7 @@ _sg_group() {
       warn) warn "$1: $a" ;;
       die) die "$1: $a" ;;
       sleep) sleep "$a" ;;
+      child) sh -c 'sleep "$1"; echo "child-end $2" >> "$3"' _ "$a" "$1" "$TMP/order" ;;
       false) false ;;
     esac
   done <<EOF
@@ -84,25 +85,57 @@ test_the_groups_say_and_count_what_they_said_one_after_the_other() {
   return "$bad"
 }
 
-test_the_groups_run_side_by_side_and_speech_to_text_after_them() {
+test_the_groups_run_side_by_side_the_projects_first_and_speech_to_text_last() {
   _sg_setup
   local t0 t1
+  # (what every dc call makes sure of first: once, before any group)
+  localgit_sso_ensure() { echo ensure >> "$TMP/order"; }
   t0=$SECONDS
-  SG_PORTAL='sleep 2' SG_TERMINAL='sleep 2' SG_PROJECTS='sleep 2' SG_CODE='sleep 2' SG_STT='sleep 1' _sg_run _test_checks > /dev/null
+  SG_PORTAL='sleep 3' SG_TERMINAL='sleep 3' SG_CODE='sleep 3' SG_STT='sleep 1' _sg_run _test_checks > /dev/null
   t1=$SECONDS
-  # (one after the other: 9 s)
-  [ $((t1 - t0)) -le 5 ] || { echo "the groups took $((t1 - t0)) s: not side by side" >&2; return 1; }
-  # speech-to-text starts once every other group has ended
-  assert_eq "$(awk '/^start stt$/ { print NR }' "$TMP/order")" 9
-  assert_eq "$(grep -c '^end ' "$TMP/order")" 5
+  # (one after the other: 10 s; side by side about 4)
+  [ $((t1 - t0)) -le 7 ] || { echo "the groups took $((t1 - t0)) s: not side by side" >&2; return 1; }
+  # the projects' first and alone, speech-to-text's once every other group has ended
+  assert_eq "$(sed -n 1,3p "$TMP/order" | tr '\n' ' ')" "ensure start projects end projects "
+  assert_eq "$(grep -c ensure "$TMP/order")" 1
+  assert_eq "$(awk '/^start stt$/ { print NR }' "$TMP/order")" 10
+  assert_eq "$(sed -n 1,9p "$TMP/order" | grep -c '^end ')" 4
+}
+
+test_a_term_or_a_ctrl_c_ends_the_groups_with_what_they_started() {
+  _sg_setup
+  local sig pid
+  mkdir -p "$TMP/t"
+  for sig in TERM INT; do
+    : > "$TMP/order"
+    # (the checks in a process group of their own, in front, as setup is: a terminal's Ctrl-C goes to that group, the
+    # helper's TERM too)
+    set -m
+    ( fails=0; slow=0; slow_list=''; SG_PORTAL='child 3' SG_TERMINAL='child 3' SG_CODE='child 3' SG_STT='ok voice' \
+        TMPDIR="$TMP/t" _test_checks > /dev/null 2>&1 ) &
+    pid=$!
+    set +m
+    sleep 1
+    kill -"$sig" -- "-$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+    sleep 4
+    assert_eq "$(grep -c '^start ' "$TMP/order")" 4   # (projects, portal, terminal, code: not speech-to-text)
+    assert_eq "$(grep -c 'end' "$TMP/order")" 1      # (the projects' only: no group, and no program one started, went on)
+    assert_eq "$(find "$TMP/t" -mindepth 1 | wc -l | tr -d ' ')" 0
+  done
 }
 
 test_a_group_that_dies_ends_the_checks_with_its_words_said_once() {
   _sg_setup
   local out
-  out="$( ( trap 'printf "\nmsg=[%s]\n" "${_BN_DIE_MSG:-}"' EXIT
+  mkdir -p "$TMP/t"
+  # (setup's own hooks are on_exit's, as this one)
+  _sg_msg() { printf '\nmsg=[%s]\n' "${_BN_DIE_MSG:-}"; }
+  out="$( ( on_exit _sg_msg
     fails=0; slow=0; slow_list=''; smoke_slow_ok=1
-    SG_PORTAL='ok login page' SG_CODE=$'ok unlock\ndie no portal secret' SG_TERMINAL='ok gateway' _test_checks 2>&1; echo "after rc=$?" ) )" || true
+    SG_PORTAL='ok login page' SG_CODE=$'ok unlock\ndie no portal secret' SG_TERMINAL='ok gateway' TMPDIR="$TMP/t" _test_checks 2>&1
+    echo "after rc=$?" ) )" || true
+  assert_eq "$(find "$TMP/t" -mindepth 1 | wc -l | tr -d ' ')" 0
   assert_contains "$out" "msg=[code: no portal secret]"
   assert_not_contains "$out" "after rc="
   assert_eq "$(printf '%s\n' "$out" | grep -c 'code: no portal secret')" 2   # (said once, plus the trap's line)

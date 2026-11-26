@@ -25,6 +25,7 @@ real_dir() { (cd "$1" 2>/dev/null && pwd -P) || printf '%s\n' "$1"; }
 record() {
   printf '%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" "$(printf '%s' "$5" | tr '\t\n\r' '   ' | cut -c1-400)" >> "$RESULTS"
   case "$3" in PASS) printf '  ok    %s\n' "$2" >&2 ;; SKIP) printf '  skip  %s (%s)\n' "$2" "$5" >&2 ;;
+    XFAIL) printf '  xfail %s: %s\n' "$2" "$5" >&2 ;;
     *) printf '  FAIL  %s: %s\n' "$2" "$5" >&2 ;; esac
 }
 
