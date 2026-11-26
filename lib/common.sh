@@ -257,6 +257,9 @@ unset_env() {
 
 # ensure_env KEY VALUE -> set only if currently empty (makes setup idempotent).
 ensure_env() { [ -n "$(get_env "$1")" ] || set_env "$1" "$2"; }
+# ensure_env_hex KEY NBYTES [PREFIX] — ensure_env KEY PREFIX<new hex>, the hex made only for a KEY that has none (an
+# openssl for each of a dozen secrets that were all there made a part of every setup's settings step; JON-972)
+ensure_env_hex() { [ -n "$(get_env "$1")" ] || set_env "$1" "${3:-}$(gen_hex "$2")"; }
 
 # gen_hex NBYTES -> 2*NBYTES hex chars (openssl is a checked prerequisite).
 gen_hex() { openssl rand -hex "${1:-32}"; }

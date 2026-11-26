@@ -239,6 +239,52 @@ test_portal_password_hash_follows_env_and_the_helper_keeps_its_own() {
   helper_password_ok 'edited by hand xx'
 }
 
+test_the_password_and_its_hashes_are_checked_once_in_a_run_and_again_when_one_of_them_changes() {
+  # (two PBKDF2s of 600 000 rounds each, 0.7 s on Linux, ran in the settings step and again before the portal starts)
+  _env
+  set_env_batch -PORTAL_PASSWORD_HASH ''; rm -f "$(helper_password_file)"
+  ensure_portal_password_hash
+  local n="$TMP/pbkdf2-calls" h hf
+  eval "$(declare -f _pbkdf2 | sed '1s/_pbkdf2/_pbkdf2_real/')"
+  _pbkdf2() { echo x >> "$n"; _pbkdf2_real "$@"; }
+  : > "$n"; ensure_portal_password_hash; ensure_portal_password_hash
+  assert_eq "$(wc -l < "$n" | tr -d ' ')" 0   # (the pair this run made and checked: not again)
+  _PW_HASH_MEMO=''; : > "$n"; ensure_portal_password_hash; ensure_portal_password_hash
+  assert_eq "$(wc -l < "$n" | tr -d ' ')" 2   # (a run that starts: both checked once — .env's hash and the helper's own)
+  # a change to any of the three is checked again
+  h="$(get_env PORTAL_PASSWORD_HASH)"; hf="$(head -c 200 "$(helper_password_file)")"
+  set_env PORTAL_PASSWORD 'edited by hand xx'; ensure_portal_password_hash
+  pw_verify 'edited by hand xx' "$(get_env PORTAL_PASSWORD_HASH)"; helper_password_ok 'edited by hand xx'
+  set_env PORTAL_PASSWORD 'correct horse battery'; set_env PORTAL_PASSWORD_HASH "$h"
+  printf 'pbkdf2-sha256:600000:00:00\n' > "$(helper_password_file)"; : > "$n"; ensure_portal_password_hash
+  helper_password_ok 'correct horse battery'
+  set_env PORTAL_PASSWORD_HASH 'pbkdf2-sha256:600000:00:00'; ensure_portal_password_hash
+  pw_verify 'correct horse battery' "$(get_env PORTAL_PASSWORD_HASH)"
+  # a helper copy that cannot be written fails as before, and is tried again on the next call
+  helper_password_sync() { return 1; }; _PW_HASH_MEMO=''
+  if ensure_portal_password_hash; then return 1; fi
+  if ensure_portal_password_hash; then return 1; fi
+  [ "$hf" != '' ]
+}
+
+test_setup_makes_a_secret_only_for_a_key_that_has_none() {
+  printf 'OPENWEBUI_ADMIN_EMAIL=a@b.c\n' > "$ENV_FILE"
+  setup_secrets 2>/dev/null
+  local k before n="$TMP/gen"; before="$(cat "$ENV_FILE")"
+  gen_hex() { echo x >> "$n"; openssl rand -hex "${1:-32}"; }
+  : > "$n"; setup_secrets 2>/dev/null
+  assert_eq "$(cat "$ENV_FILE")" "$before"
+  assert_eq "$(wc -l < "$n" | tr -d ' ')" 0
+  for k in PORTAL_SECRET POSTGRES_PASSWORD LITELLM_MASTER_KEY LITELLM_SALT_KEY LITELLM_UI_PASSWORD WEBUI_SECRET_KEY \
+    OPENWEBUI_ADMIN_PASSWORD RUSTFS_ACCESS_KEY RUSTFS_SECRET_KEY SHARED_MCP_TOKEN WEBSEARCH_SEARXNG_SECRET; do set_env "$k" ''; done
+  : > "$n"; setup_secrets 2>/dev/null
+  assert_eq "$(wc -l < "$n" | tr -d ' ')" 11
+  case "$(get_env LITELLM_MASTER_KEY)/$(get_env LITELLM_SALT_KEY)" in sk-????????????????????????????????????????????????/sk-*) ;; *) return 1 ;; esac
+  case "$(get_env LITELLM_UI_PASSWORD)" in Bn9-????????????????????????) ;; *) return 1 ;; esac
+  case "$(get_env RUSTFS_ACCESS_KEY)" in bn-????????????) ;; *) return 1 ;; esac
+  k="$(get_env PORTAL_SECRET)"; assert_eq "${#k}" 64
+}
+
 # --- the snapshot ---
 
 test_snapshot_masks_every_secret() {

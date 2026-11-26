@@ -101,7 +101,7 @@ localgit_services() { ! localgit_on || echo forgejo; }
 # localgit_secrets — the owner's account password (never printed), and the switch's default
 localgit_secrets() {
   ensure_env LOCALGIT "on"
-  ensure_env LOCALGIT_ADMIN_PASSWORD "Lg9-$(gen_hex 14)"
+  ensure_env_hex LOCALGIT_ADMIN_PASSWORD 14 Lg9-
   localgit_sso_ensure   # the name of the header the portal sign-in uses: nobody else knows it (lib/common.sh; every dc call does it too)
 }
 

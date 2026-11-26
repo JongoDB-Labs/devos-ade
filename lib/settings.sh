@@ -104,13 +104,19 @@ helper_password_ok() {
 }
 
 # ensure_portal_password_hash — PORTAL_PASSWORD_HASH in .env matches PORTAL_PASSWORD (a password edited by hand
-# gets a new hash), and so does the helper's copy. Before every start of the portal.
+# gets a new hash), and so does the helper's copy. Before every start of the portal. Once per run for the same password
+# and hashes (_PW_HASH_MEMO, this process only: each check is a PBKDF2 of PW_HASH_ITER rounds, about 0.4 s on Linux, and
+# a setup checked both twice; JON-972); any change to the three is checked again.
+_PW_HASH_MEMO=''
+_pw_hash_memo_key() { printf '%s\n%s\n%s' "$1" "$(get_env PORTAL_PASSWORD_HASH)" "$(head -c 200 "$(helper_password_file)" 2>/dev/null)"; }
 ensure_portal_password_hash() {
   local pw h
   pw="$(get_env PORTAL_PASSWORD)"; [ -n "$pw" ] || return 0
+  [ -z "$_PW_HASH_MEMO" ] || [ "$(_pw_hash_memo_key "$pw")" != "$_PW_HASH_MEMO" ] || return 0
   h="$(get_env PORTAL_PASSWORD_HASH)"
   if [ -z "$h" ] || ! pw_verify "$pw" "$h"; then set_env PORTAL_PASSWORD_HASH "$(pw_hash "$pw")"; fi
-  helper_password_sync
+  helper_password_sync || return
+  _PW_HASH_MEMO="$(_pw_hash_memo_key "$pw")"
 }
 
 # --- validators: _sv_NAME VALUE -> 0, or 1 with SV_ERR (never the value). portal/portal/settings.py mirrors them;
@@ -1108,7 +1114,7 @@ _cfg_post() {
   if _cfg_on websearch; then
     websearch_searxng_write
     if websearch_builtin_on; then
-      ensure_env WEBSEARCH_SEARXNG_SECRET "$(gen_hex 32)"
+      ensure_env_hex WEBSEARCH_SEARXNG_SECRET 32
       ws_t0="$(_ms_now)"; ( dc up -d --no-deps --wait searxng ) >/dev/null 2>&1 & ws_pid=$!
     else _cfg_t "Restart · the built-in SearXNG removed" websearch_builtin_down; fi
   fi

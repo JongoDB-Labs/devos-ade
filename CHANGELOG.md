@@ -4,6 +4,15 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- **The settings step of an update is quicker.** The portal password is checked against its two stored hashes with
+  600,000 rounds of hashing each, about 0.15 s each on a Mac and 0.4 s on Linux. An update did that in its settings
+  step and again before starting the portal. Now a run checks the same password and hashes once; a password or hash
+  that changes is still checked again. Setup also no longer makes a dozen new random secrets only to throw them away
+  when every one is already in `.env`. `.env` and the hashes are the same as before. (JON-972)
+
 ## [0.68.5] - 2026-11-25
 
 ### Changed

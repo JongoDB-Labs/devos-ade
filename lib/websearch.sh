@@ -292,7 +292,7 @@ websearch_builtin_services() { ! websearch_builtin_on || echo searxng; }
 websearch_builtin_up() {
   websearch_searxng_write
   if ! websearch_builtin_on; then websearch_builtin_down; services_status_write; return 0; fi
-  ensure_env WEBSEARCH_SEARXNG_SECRET "$(gen_hex 32)"
+  ensure_env_hex WEBSEARCH_SEARXNG_SECRET 32
   run_phase "Web search (the built-in SearXNG)" searxng dc up -d --no-deps --wait searxng ||
     warn "the built-in SearXNG did not start — ./stack logs searxng says why; Claude Code's WebSearch fails until it does (./stack websearch status)"
   services_status_write

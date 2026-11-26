@@ -584,19 +584,19 @@ upgrade_litellm_password() {
 # the next summary that gets printed (marker .state/portal-password-shown), even if this run fails first.
 setup_secrets() {
   [ -n "$(get_env PORTAL_PASSWORD)" ] || rm -f "$STATE_DIR/portal-password-shown"
-  ensure_env PORTAL_PASSWORD "$(gen_hex 10)"
+  ensure_env_hex PORTAL_PASSWORD 10
   ensure_portal_password_hash   # lib/settings.sh: the portal gets the hash, never the password
-  ensure_env PORTAL_SECRET "$(gen_hex 32)"
-  ensure_env POSTGRES_PASSWORD "$(gen_hex 24)"
-  ensure_env LITELLM_MASTER_KEY "sk-$(gen_hex 24)"
-  ensure_env LITELLM_SALT_KEY "sk-$(gen_hex 24)"   # never change after first run: encrypts stored creds
-  ensure_env LITELLM_UI_PASSWORD "Bn9-$(gen_hex 12)"   # LiteLLM's policy: upper+lower case, digit, symbol
+  ensure_env_hex PORTAL_SECRET 32
+  ensure_env_hex POSTGRES_PASSWORD 24
+  ensure_env_hex LITELLM_MASTER_KEY 24 sk-
+  ensure_env_hex LITELLM_SALT_KEY 24 sk-   # never change after first run: encrypts stored creds
+  ensure_env_hex LITELLM_UI_PASSWORD 12 Bn9-   # LiteLLM's policy: upper+lower case, digit, symbol
   upgrade_litellm_password
-  ensure_env WEBUI_SECRET_KEY "$(gen_hex 32)"
-  ensure_env OPENWEBUI_ADMIN_PASSWORD "$(gen_hex 12)"
-  ensure_env RUSTFS_ACCESS_KEY "bn-$(gen_hex 6)"
-  ensure_env RUSTFS_SECRET_KEY "$(gen_hex 24)"
-  ensure_env SHARED_MCP_TOKEN "$(gen_hex 32)"
+  ensure_env_hex WEBUI_SECRET_KEY 32
+  ensure_env_hex OPENWEBUI_ADMIN_PASSWORD 12
+  ensure_env_hex RUSTFS_ACCESS_KEY 6 bn-
+  ensure_env_hex RUSTFS_SECRET_KEY 24
+  ensure_env_hex SHARED_MCP_TOKEN 32
   remote_ensure_proxy_secret   # Caddy → portal: proves a request came through Caddy (lib/remote.sh)
   ensure_env BUDGET_CLAUDE_CODE 200
   ensure_env BUDGET_OPENWEBUI 50
@@ -604,7 +604,7 @@ setup_secrets() {
   ensure_env LITELLM_STORE_PROMPTS false
   # the built-in SearXNG (lib/websearch.sh): on by default (off stays off), and its own secret (never printed)
   ensure_env WEBSEARCH_SEARXNG_BUILTIN on
-  ensure_env WEBSEARCH_SEARXNG_SECRET "$(gen_hex 32)"
+  ensure_env_hex WEBSEARCH_SEARXNG_SECRET 32
   localgit_secrets   # lib/localgit.sh: the built-in git server on by default (off stays off), and its owner account's password
   local email src def typed asked=0
   owner_email_lowercase   # lib/settings.sh: Chat keeps emails in lowercase
@@ -1512,7 +1512,7 @@ cmd_up() {
   # lib/websearch.sh: the built-in SearXNG's settings before compose starts it (a changed file recreates it); turned off
   # (WEBSEARCH_SEARXNG_BUILTIN=off by hand in .env), its container goes
   websearch_searxng_write
-  if websearch_builtin_on; then ensure_env WEBSEARCH_SEARXNG_SECRET "$(gen_hex 32)"; else websearch_builtin_down; fi
+  if websearch_builtin_on; then ensure_env_hex WEBSEARCH_SEARXNG_SECRET 32; else websearch_builtin_down; fi
   # lib/localgit.sh: the git server's secret and certificate before compose starts it; turned off by hand in .env, its container goes
   if localgit_on; then localgit_secrets; localgit_tls_ensure || true; else localgit_remove; fi
   # The stack's own services only: the Tailscale sidecar (remote access) is started afterwards without waiting.
