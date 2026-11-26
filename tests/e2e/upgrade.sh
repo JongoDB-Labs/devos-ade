@@ -25,7 +25,8 @@
 #                    late "Code page default" step, after the steps before it noted their inputs, so an update straight
 #                    after it runs every step that reads .env again; after the second apply those steps are skipped unless
 #                    something they read changed. For measuring an owner's kind of update (JON-972); never a release's run,
-#                    which keeps the update that runs every step.
+#                    which keeps the update that runs every step. Needs a FROM with ./stack setup --update-mode (v0.49.0 and
+#                    later); refused before the first setup otherwise.
 #   --setup-stopped TAG [--resume to | plain]
 #                    the way out of an update that stopped in its setup (2026-11-01: an owner's 0.45.1 -> 0.47.0 update,
 #                    whose smoke test timed out on a loaded Mac): from --from, ./stack update --to TAG in a terminal, killed
@@ -469,6 +470,8 @@ else
 fi
 [ -n "$TO" ] || die "no release to update to"
 git -C "$STACK" -c advice.detachedHead=false checkout -q "$FROM" || die "cannot check out $FROM"
+[ "$SETTLED" = 0 ] || grep -q -- '--update-mode) UPD_MODE=1' "$STACK/lib/commands.sh" 2>/dev/null ||
+  die "--settled needs a FROM with ./stack setup --update-mode (v0.49.0 and later): $FROM has none"
 : > "$STACK/.devos-ade-e2e"; printf '/.devos-ade-e2e\n' >> "$STACK/.git/info/exclude"   # (the marker lib.sh's teardown reads)
 cp "$STACK/.env.example" "$STACK/.env"; chmod 600 "$STACK/.env"
 pick_port P 18580; pick_port L 14580; pick_port M 18965
