@@ -169,10 +169,37 @@ _probe_deadline() {
 
 # --- .env access. Never `source` the file: values can contain $, quotes, etc. ---
 
-# get_env KEY -> value (empty if unset). Last occurrence wins, like docker compose.
+# get_env KEY -> value (empty if unset). Last occurrence wins, like docker compose. While dc runs, from its snapshot of
+# .env (_env_snap, below), without an awk.
 get_env() {
   [ -f "$ENV_FILE" ] || return 0
+  if [ "${_dc_env_snap:-}" = 1 ] && [ "${_ENV_SNAP_OF:-}" = "$ENV_FILE" ]; then
+    case "$1" in '' | [0123456789]* | *[!$_ENV_KEY_CHARS]*) ;; *) local n="_ENVV_$1"; printf '%s' "${!n-}"; return 0 ;; esac
+  fi
   K="$1" awk 'index($0, ENVIRON["K"] "=") == 1 { v = substr($0, length(ENVIRON["K"]) + 2) } END { printf "%s", v }' "$ENV_FILE"
+}
+
+# _env_snap -> .env as it is now, a variable a key: _ENVV_<KEY>, the value of its last line, as get_env reads it. dc takes
+# one for each call (after localgit_sso_ensure, the one thing in it that may write .env): its own and its helpers' some
+# 20 get_env then run no awk each (JON-972). Only while _dc_env_snap is 1 (dc's local) and for this ENV_FILE does
+# get_env read it; set_env, set_env_batch and unset_env drop it. Keys of an identifier's characters only (spelled out:
+# a range such as A-Z may take in other letters in some locales); get_env reads any other key from the file. Status 1,
+# and no snapshot, without a readable .env.
+_ENV_KEY_CHARS=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_
+_env_snap() {
+  local line k
+  # shellcheck disable=SC2086  # (the last snapshot's names, identifiers, a word each)
+  [ -z "${_ENV_SNAP_KEYS:-}" ] || unset $_ENV_SNAP_KEYS
+  _ENV_SNAP_KEYS=''; _ENV_SNAP_OF=''
+  [ -f "$ENV_FILE" ] && [ -r "$ENV_FILE" ] || return 1
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in *=*) ;; *) continue ;; esac
+    k="${line%%=*}"
+    case "$k" in '' | [0123456789]* | *[!$_ENV_KEY_CHARS]*) continue ;; esac
+    printf -v "_ENVV_$k" '%s' "${line#*=}"
+    _ENV_SNAP_KEYS="$_ENV_SNAP_KEYS _ENVV_$k"
+  done < "$ENV_FILE"
+  _ENV_SNAP_OF="$ENV_FILE"
 }
 
 # env_value_problem VALUE -> why set_env would refuse VALUE (nothing, status 1, when it is fine)
@@ -193,6 +220,7 @@ env_value_problem() {
 # AWS keys are [A-Za-z0-9+/], emails are fine; backslashes pass through literally).
 set_env() {
   local tmp
+  _ENV_SNAP_OF=''
   _env_value_check "$1" "$2"
   [ -f "$ENV_FILE" ] || { : > "$ENV_FILE"; }
   chmod 600 "$ENV_FILE"
@@ -219,6 +247,7 @@ _env_value_check() {
 # exported in a subshell, never through a command line.
 set_env_batch() {
   local tmp n=0 i=0 k a=("$@")
+  _ENV_SNAP_OF=''
   [ $(($# % 2)) -eq 0 ] || die "set_env_batch: KEY VALUE pairs expected"
   while [ "$i" -lt "$#" ]; do
     k="${a[$i]#-}"
@@ -247,6 +276,7 @@ set_env_batch() {
 # unset_env KEY -> removes every KEY= line from $ENV_FILE atomically (mode 600 kept); no-op if absent.
 unset_env() {
   local tmp
+  _ENV_SNAP_OF=''
   [ -f "$ENV_FILE" ] || return 0
   tmp="$(mktemp "${ENV_FILE}.XXXXXX")" || die "unset_env: cannot create temp file next to $ENV_FILE"
   chmod 600 "$tmp"
@@ -357,6 +387,8 @@ dc() {
     _DC_PROJECT_WARNED=1
   fi
   if [ "${1:-}" = ps ] && [ "${DEVOS_ADE_PS_VIA_COMPOSE:-0}" != 1 ] && _dc_ps_form "$@"; then _dc_ps_fast "$p" "$@"; return; fi
+  # .env as it is now, for this call's get_env (_env_snap: nothing below writes .env; dc ps above reads none)
+  local _dc_env_snap=0; ! _env_snap || _dc_env_snap=1
   # Compose lets shell variables beat --env-file: OpenRouter, Experiential Labs, speech-to-text and the search keys are
   # opt-in via .env only, so an OPENROUTER_*, EXPLABS_*, STT_* or WEBSEARCH_* in your shell never switches them on (or
   # keeps them on after a remove).

@@ -106,9 +106,44 @@ test_a_dc_call_runs_fewer_programs() {
   local calls="$TMP/calls"
   tr() { echo tr >> "$calls"; command tr "$@"; }
   uname() { echo uname >> "$calls"; case "${1:-}" in -s) echo Linux ;; *) command uname "$@" ;; esac; }
+  awk() { echo awk >> "$calls"; command awk "$@"; }
   DC_OUT="$TMP/dc-new"; : > "$calls"; dc exec -T portal true
   assert_eq "$(grep -c '^tr$' "$calls")" 0
   [ "$(grep -c '^uname$' "$calls")" -le 2 ]
+  # (get_env: an awk each for the few reads before dc's .env snapshot, none after)
+  [ "$(grep -c '^awk$' "$calls")" -le 5 ] || { grep -c '^awk$' "$calls" >&2; return 1; }
+}
+
+test_get_env_reads_the_snapshot_as_it_reads_the_file() {
+  # (CRLF, a key twice, comments, "export", leading spaces, other characters in keys, "=" and spaces and backslashes and
+  # % in values, empty values, a byte-order mark, no newline at the end)
+  printf '\357\273\277BOM=1\nA=1\nB=x=y z\r\n# C=no\nexport D=1\n  E=1\nF-G=1\nA=2\nH=\nI= sp \n9J=1\nL=a\\tb\\c\nM=100%%s\nN=\tt\nK=last' > "$ENV_FILE"
+  local k want got
+  for k in A B C D E F-G F G H I 9J K L M N BOM NOPE 'export D' '  E' '# C' '' 'A=' '='; do
+    want="$(get_env "$k"; echo "x$?")"
+    got="$(_dc_env_snap=1; _env_snap; get_env "$k"; echo "x$?")"
+    assert_eq "$got" "$want" || { echo "get_env [$k]" >&2; return 1; }
+  done
+  assert_eq "$(_dc_env_snap=1; _env_snap; get_env A)" 2
+  assert_eq "$(_dc_env_snap=1; _env_snap; get_env K)" last
+}
+
+test_the_snapshot_is_dropped_on_each_write_and_after_dc() {
+  local _dc_env_snap=1
+  printf 'A=1\nZ=1\n' > "$ENV_FILE"; _env_snap
+  assert_eq "$(get_env A)" 1
+  set_env A 2; assert_eq "$(get_env A)" 2
+  _env_snap; unset_env A; assert_eq "$(get_env A)" ""
+  _env_snap; set_env_batch A 3 B 4; assert_eq "$(get_env A)$(get_env B)" 34
+  # (a key no longer in .env is not read from an older snapshot; another ENV_FILE is read from the file)
+  printf 'Y=1\n' > "$ENV_FILE"; _env_snap; assert_eq "$(get_env Z)" ""
+  local e="$ENV_FILE"; ENV_FILE="$TMP/other.env"; printf 'Y=other\n' > "$ENV_FILE"; assert_eq "$(get_env Y)" other; ENV_FILE="$e"
+  # (no .env, or one not readable: no snapshot)
+  rm -f "$ENV_FILE"; ! _env_snap; assert_eq "$(get_env Y)" ""
+  _dc_env_snap=0
+  # (after dc, get_env reads the file again)
+  _env "TERMINAL_ENABLED=true" "LOCALGIT_SSO_HEADER=X" "A=1"; DC_OUT="$TMP/dc-new"; dc ps
+  printf 'A=2\n' >> "$ENV_FILE"; assert_eq "$(get_env A)" 2
 }
 
 # _sums_same LABEL [POLICY] — config_sums and old_config_sums: the same lines, the same status
