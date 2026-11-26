@@ -317,7 +317,7 @@ CASES
 test_the_data_services_check_is_one_docker_call() {
   # (a form dc answers from Docker's own list, as Compose prints it: lib/common.sh _dc_ps_fast; tests/run.sh sends the other
   # tests' ps to their compose stubs)
-  _dc_ps_form ps -a --format '{{.Service}} {{.State}} {{.Health}}' postgres rustfs
+  _dc_ps_form ps -a --format '{{.Service}} {{.State}} {{.Health}}' postgres rustfs || { echo "dc would ask Compose for the data services' list" >&2; return 1; }
   unset DEVOS_ADE_PS_VIA_COMPOSE
   printf 'X=1\n' > "$ENV_FILE"
   docker() { echo "docker $*" >> "$TMP/calls"; case "$1" in ps) printf '%s\n' "$DK_ROWS" ;; *) return 1 ;; esac; }

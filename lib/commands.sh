@@ -1977,7 +1977,9 @@ _data_services_up() {
 }
 # _data_services_ready -> 0 when postgres and rustfs have one container each, running, and not starting or unhealthy: what
 # `up --wait` of the two waits for (a service without a health check: running). Docker's list says so in milliseconds (dc ps:
-# _dc_ps_fast); Compose's up of the two, already running, took 0.8 s, before anything else of a backup began (JON-972).
+# _dc_ps_fast); Compose's up of the two, already running, took 0.8 s, before anything else of a backup began (JON-972). (Compose's
+# up also recreated a running one whose configuration had changed since it started: a backup or a restore has no need of that,
+# and ./stack up, setup and update still do it.)
 _data_services_ready() {
   local rows svc st h np=0 nr=0
   rows="$(dc ps -a --format '{{.Service}} {{.State}} {{.Health}}' postgres rustfs 2>/dev/null)" || return 1
