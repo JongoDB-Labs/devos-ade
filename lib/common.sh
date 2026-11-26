@@ -169,8 +169,8 @@ _probe_deadline() {
 
 # --- .env access. Never `source` the file: values can contain $, quotes, etc. ---
 
-# get_env KEY -> value (empty if unset). Last occurrence wins, like docker compose. While dc runs, from its snapshot of
-# .env (_env_snap, below), without an awk.
+# get_env KEY -> value (empty if unset). Last occurrence wins, like docker compose. While dc or an update's digest
+# (lib/steps.sh upd_hash) runs, from its snapshot of .env (_env_snap, below), without an awk.
 get_env() {
   [ -f "$ENV_FILE" ] || return 0
   if [ "${_dc_env_snap:-}" = 1 ] && [ "${_ENV_SNAP_OF:-}" = "$ENV_FILE" ]; then
@@ -201,7 +201,8 @@ _text_of() {
 
 # _env_snap -> .env as it is now, a variable a key: _ENVV_<KEY>, the value of its last line, as get_env reads it. dc takes
 # one for each call (after localgit_sso_ensure, the one thing in it that may write .env): its own and its helpers' some
-# 20 get_env then run no awk each (JON-972). Only while _dc_env_snap is 1 (dc's local) and for this ENV_FILE does
+# 20 get_env then run no awk each (JON-972); so does each update digest (upd_hash). Only while _dc_env_snap is 1 (dc's or
+# upd_hash's local) and for this ENV_FILE does
 # get_env read it; set_env, set_env_batch and unset_env drop it. Keys of an identifier's characters only (spelled out:
 # a range such as A-Z may take in other letters in some locales); get_env reads any other key from the file. Every
 # _ENVV_ variable from before goes first (the last snapshot's, and any this shell was given), and none is exported,

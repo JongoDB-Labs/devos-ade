@@ -274,7 +274,18 @@ upd_commit() {
   printf '%s\n' "$UPD_NOW" > "$f.tmp" 2>/dev/null && chmod 600 "$f.tmp" && mv -f "$f.tmp" "$f" 2>/dev/null || rm -f "$f.tmp" 2>/dev/null
   return 0
 }
-_upd_sum() { openssl dgst -sha256 2>/dev/null | awk '{ print $NF }'; }
+# _upd_sum -> the SHA-256 of its input, in hex: the last word openssl prints ("SHA2-256(stdin)= …", "(stdin)= …" or the hex
+# alone), nothing when it prints nothing; openssl's status under pipefail, else 0, as the pipe into awk it was. (Without
+# an awk: a digest's each; JON-972.)
+_upd_sum() {
+  local h rc=0; h="$(openssl dgst -sha256 2>/dev/null)" || rc=$?
+  case "$h" in
+    *$'\n'* | *[![:print:]]* | ' '*) printf '%s\n' "$h" | awk '{ print $NF }' ;;
+    *) h="${h%"${h##*[! ]}"}"; [ -z "$h" ] || printf '%s\n' "${h##* }" ;;
+  esac
+  case ":$SHELLOPTS:" in *:pipefail:*) return "$rc" ;; esac
+  return 0
+}
 # _upd_files FILE... -> each file's name and checksum ("-" for one that is not there, nothing after the name for one that
 # cannot be read), in their order; status 0. One cksum and one awk for the readable ones (a pair of processes for each
 # file made the digests between an update's steps take seconds on a Mac; JON-972), with the same lines as one cksum
@@ -501,10 +512,13 @@ upd_in_codedefault() {
 
 # upd_hash NAME -> the digest of the step's inputs now
 # (through a file, so a grep that finds nothing is not a failure; called as $(upd_hash …), a subshell: what an input keeps — the
-# images' IDs, the containers — is gone with it, and the next digest asks Docker again)
+# images' IDs, the containers — is gone with it, and the next digest asks Docker again. .env is read once for it, as dc reads
+# it (_env_snap, lib/common.sh): the inputs' some 4 to 40 get_env then run no awk each; a digest only reads .env, and a set_env
+# would drop the snapshot. A local: for this digest alone. JON-972.)
 upd_hash() {
-  local t h t0=''
+  local t h t0='' _dc_env_snap=0
   [ -z "$_UPD_PROF" ] || t0="$(_ms_now)"
+  ! _env_snap || _dc_env_snap=1
   t="$(mktemp)" || return 1
   { printf 'v1 %s %s\n' "$(project_name)" "$STACK_DIR"; "upd_in_$1" || true; } > "$t" 2>/dev/null
   h="$(_upd_sum < "$t")"
