@@ -673,6 +673,14 @@ if [ "$MIGRATE" = 0 ] && [ "$PREPARE_CHECK" = 1 ] && [ -f "$STACK/lib/prepare.sh
 elif [ "$MIGRATE" = 0 ] && [ "$PREPARE_CHECK" = 1 ]; then
   say "prepare ahead: skipped — $FROM has no lib/prepare.sh, so its helper cannot prepare (the cold bound is all there is)"
 fi
+# (Docker's own events for the stack while it updates — each container made, started, healthy, ended — watched as they
+# happen: Docker replays only its last 256 events to a later --since. events-update.tsv, and a line a service: where the
+# steps that start containers spend their time)
+EV_T0="$(python3 -c 'import time; print(time.time_ns() // 1000000)')"
+docker events --filter "label=com.docker.compose.project=$PROJECT" --filter type=container \
+  --filter event=create --filter event=start --filter event=die --filter event=destroy --filter event=health_status \
+  --format '{{.TimeNano}}|{{index .Actor.Attributes "com.docker.compose.service"}}|{{.Action}}' > "$LOGS/update-events.log" 2>&1 &
+EV_PID=$!
 UPD_T0="$(now)"
 nonce="$(openssl rand -hex 16)"
 mkdir -p "$STACK/.state/requests"
@@ -688,6 +696,13 @@ for _ in $(seq 1 1800); do   # an update takes minutes (images are rebuilt); at 
 done
 e2e_helper_stop
 UPD_T1="$(now)"
+sleep 1; kill "$EV_PID" 2>/dev/null; wait "$EV_PID" 2>/dev/null || true
+# (ms since the request, the service, what happened; then a service a line: each of its events, in seconds)
+awk -F '|' -v t0="$EV_T0" 'NF >= 3 && $1 ~ /^[0-9]+$/ { printf "%d\t%s\t%s\n", int($1 / 1000000) - t0, $2, $3 }' "$LOGS/update-events.log" > "$OUT/events-update.tsv"
+awk -F '\t' '{ a = $3; sub(/^health_status: /, "", a); if (!($2 in line)) { order[++n] = $2; line[$2] = "" }
+    line[$2] = line[$2] sprintf(" %s %.1f", a, $1 / 1000) }
+  END { for (i = 1; i <= n; i++) print order[i] ":" line[order[i]] }' "$OUT/events-update.tsv" |
+  while IFS= read -r l; do say "update containers (s since the request): $l"; done
 cp "$STACK/.state/status/helper-status.json" "$LOGS/helper-status.json" 2>/dev/null || true
 s="$(cat "$LOGS/helper-status.json" 2>/dev/null)"
 case "$s" in *'"phase": "done"'*) check update-now 0 "the helper's update finished: $(printf '%s' "$s" | sed -n 's/.*"message": "\([^"]*\)".*/\1/p')" ;;
