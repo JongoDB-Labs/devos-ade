@@ -559,7 +559,8 @@ test_compose_code_is_a_sandboxed_container_on_its_own_network() {
               "reverse_proxy @chat code-upstream:8096" "respond 404" "max_size 24MB"; do
     assert_contains "$site" "$want"
   done
-  assert_not_contains "$(grep -n '8098' "$STACK_DIR/compose.yaml" "$STACK_DIR/compose.code.yaml" | grep -i 'ports')" "8098"
+  # (-h: the lines alone, not the files' names — a checkout in a folder named "…ports…" matched)
+  assert_not_contains "$(grep -hn '8098' "$STACK_DIR/compose.yaml" "$STACK_DIR/compose.code.yaml" | grep -i 'ports')" "8098"
   assert_contains "$c" "- chat-socket:/run/bn-chat:ro"
   # Chat's sandbox (subs-chat): the terminal's image and home, bn-coded in Chat's role — none of your files, no key, no
   # token, not on the terminal's network; its way out only through the overlays (the terminal's own way)
