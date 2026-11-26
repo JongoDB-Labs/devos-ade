@@ -168,8 +168,10 @@ test_job_log_lines_carry_their_time_and_read_the_same() {
   date() { case "$1" in +%z) echo "${FAKE_TZ}" ;; +%s) echo 3600 ;; *) command date "$@" ;; esac; }
   FAKE_TZ=+0530; assert_eq "$(_utc_offset_s)" 19800
   FAKE_TZ=-0500; assert_eq "$(_utc_offset_s)" -18000
-  FAKE_TZ=+0000; assert_eq "$(printf 'x\n' | _job_stamp)" "01:00:00 x"
-  FAKE_TZ=-0200; assert_eq "$(printf 'x\n' | _job_stamp)" "23:00:00 x"
+  # (the stamp adds the seconds bash counted since it began: one more when it began just before a second ended — a Mac
+  # under load, the gates of 7cad8992)
+  FAKE_TZ=+0000; out="$(printf 'x\n' | _job_stamp)"; case "$out" in "01:00:00 x" | "01:00:01 x") ;; *) assert_eq "$out" "01:00:00 x" ;; esac
+  FAKE_TZ=-0200; out="$(printf 'x\n' | _job_stamp)"; case "$out" in "23:00:00 x" | "23:00:01 x") ;; *) assert_eq "$out" "23:00:00 x" ;; esac
   FAKE_TZ=garbage; assert_eq "$(_utc_offset_s)" 0
   unset -f date
   # the readers: steps and the last error, stamped or not
