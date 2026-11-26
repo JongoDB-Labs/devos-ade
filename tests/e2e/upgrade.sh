@@ -16,6 +16,9 @@
 #                    run.sh stages it), in the throwaway only: v0.25.0, or, once that release exists, the patch after
 #                    the newest release here (a tag the update's fetch never meets).
 #   --no-fast-check  skip the fast-apply block at the end (JON-972; see below; UPGRADE_PROFILE=0: without its profiled apply)
+#   --profile-update the Update now's own setup profiled too (lib/steps.sh upd_shprof_begin: profile-update.tsv). Its time
+#                    checks still run, with the profile's cost in them: for finding where an update's time goes, never a
+#                    release's run.
 #   --no-prepare-check  do not prepare TO ahead of the Update now request, and keep the cold bound only (JON-972 phase B; below)
 #   --setup-stopped TAG [--resume to | plain]
 #                    the way out of an update that stopped in its setup (2026-11-01: an owner's 0.45.1 -> 0.47.0 update,
@@ -116,6 +119,7 @@ while [ $# -gt 0 ]; do
     --migrate-pair) MIGRATE=pair; NEWP="${2:?}"; shift 2 ;;
     --then) THEN="${2:?}"; case "$THEN" in rollback | next-update) ;; *) echo "--then takes rollback or next-update" >&2; exit 2 ;; esac; shift 2 ;;
     --no-fast-check) FAST_CHECK=0; shift ;;
+    --profile-update) PROFILE_UPDATE=1; shift ;;
     --no-prepare-check) PREPARE_CHECK=0; shift ;;
     --keep) KEEP=1; shift ;;
     --real-github) REAL_GITHUB=1; shift ;;
@@ -633,6 +637,8 @@ else
 docker image inspect --format '{{.Id}}' "$PROJECT/portal:local" > "$OUT/portal-id-before" 2>/dev/null || : > "$OUT/portal-id-before"
 # (the update's setup keeps each step's inputs, values as checksums: the fast apply below says what made a step run)
 [ "$FAST_CHECK" != 1 ] || { mkdir -p "$STACK/.state/update" && : > "$STACK/.state/update/trace-on"; }
+# (--profile-update: the update's setup profiles its shell too — it needs the trace, and uses the switch up)
+[ "${PROFILE_UPDATE:-0}" != 1 ] || [ "$FAST_CHECK" != 1 ] || : > "$STACK/.state/update/profile-on"
 PREPARED=0
 if [ "$MIGRATE" = 0 ] && [ "$PREPARE_CHECK" = 1 ] && [ -f "$STACK/lib/prepare.sh" ]; then
   # the release updated FROM prepares ahead (JON-972 phase B): the portal's check names TO, and the helper, started first,
@@ -677,6 +683,11 @@ case "$s" in *'"phase": "done"'*) check update-now 0 "the helper's update finish
 # (where the update's setup spent its time: its profile, as the fast apply's below — the steps, their digests, the time between)
 if [ -f "$STACK/.state/update/trace/calls.tsv" ]; then
   cp "$STACK/.state/update/trace/calls.tsv" "$OUT/calls-update.tsv"
+  if [ -s "$STACK/.state/update/trace/profile.tsv" ]; then
+    cp "$STACK/.state/update/trace/profile.tsv" "$OUT/profile-update.tsv"
+    awk -F '\t' '$3 == 0 { s += $1; n++ } END { printf "%d ms in %d lines of its own shell\n", s, n }' "$OUT/profile-update.tsv" | while IFS= read -r l; do say "profiled update: $l"; done
+    head -n 25 "$OUT/profile-update.tsv" | while IFS= read -r l; do say "profiled update (ms, count, depth, function@file:line): $l"; done
+  fi
   profile_summaries "$OUT/calls-update.tsv" "$OUT/calls-update"
   say "update: between steps $(awk -F '\t' '$3 == "all" { printf "%d ms, of it %d ms in digests", $1, $2 }' "$OUT/calls-update-gaps.tsv"); digests in all $(awk -F '\t' '$4 == "all" { printf "%d ms (%d)", $1, $2 }' "$OUT/calls-update-digests.tsv")"
   grep -v '	all	' "$OUT/calls-update-gaps.tsv" | head -n 6 | while IFS= read -r l; do say "update gap (ms, digests ms, before, after): $l"; done
