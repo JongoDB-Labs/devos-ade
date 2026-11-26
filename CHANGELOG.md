@@ -6,6 +6,12 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Changed
+- **Syncing models to Chat is quicker still.** The list of models to sync was built one model at a time, with about a
+  dozen small programs for each: about 1.1 seconds on Linux and 1 second on a Mac for the 18 entries of a default
+  install. It is now built in one pass, in under 0.15 seconds. Chat gets the same names, prices, tags and icons, byte
+  for byte. (JON-972)
+
 ## [0.68.6] - 2026-11-25
 
 ### Changed

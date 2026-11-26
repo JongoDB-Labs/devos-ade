@@ -30,13 +30,14 @@ ICONS_DIR="${ICONS_DIR:-$STACK_DIR/catalog/icons}"
 # rendered by catalog/icons/build.sh) as an inline data:image/png URI (no network needed), a
 # data:/http(s)/absolute URL as written, or nothing. PNG, not SVG: Open WebUI only keeps png/jpeg/gif/webp
 # data URIs (an SVG one is silently stored as no icon).
-icon_url() {
-  local v; v="$(display_field "$1" 3)"
-  case "$v" in
+icon_url() { _icon_url_of "$(display_field "$1" 3)"; }
+# _icon_url_of VALUE (display.tsv's icon column) -> the URL icon_url gives for it
+_icon_url_of() {
+  case "$1" in
     '') ;;
-    data:* | http://* | https://* | /*) printf '%s\n' "$v" ;;
+    data:* | http://* | https://* | /*) printf '%s\n' "$1" ;;
     *[!a-z0-9_-]*) ;;
-    *) [ -r "$ICONS_DIR/$v.png" ] && printf 'data:image/png;base64,%s\n' "$(openssl base64 -A < "$ICONS_DIR/$v.png")" ;;
+    *) [ -r "$ICONS_DIR/$1.png" ] && printf 'data:image/png;base64,%s\n' "$(openssl base64 -A < "$ICONS_DIR/$1.png")" ;;
   esac
   return 0
 }
@@ -293,28 +294,64 @@ _owui_create_wanted() {
     "$(printf '%s' "$row" | cut -f5)" "$(printf '%s' "$row" | cut -f6)" "$(printf '%s' "$row" | cut -f7)"
 }
 
-# _owui_models_wanted -> one tab-separated line per enabled model and alias (OWUI_MODELS_SYNC_PY's stdin), built in
-# one pass over the catalog. The MODELS_HIDDEN wish is for enabled chat models only.
+# _owui_models_wanted -> one tab-separated line per enabled model and alias (OWUI_MODELS_SYNC_PY's stdin): name, picker
+# name, display name, description, tags, hidden, icon, wish. One awk reads the catalog, prices.tsv, display.tsv, the
+# enabled list and MODELS_HIDDEN and writes what price_label, owui_model_name, display_name and owui_tags_json say for
+# each, with the icon column as display.tsv has it; each of those is then made into its URL once (_icon_url_of). The
+# per-model helpers took about 80 ms a model (JON-972). tests/test_owui_wanted_identity.sh holds it to them, byte for
+# byte: a catalog row splits as bash's read with IFS=TAB does (a run of tabs is one break; leading and trailing ones
+# go), each file's first row for a name counts, CRs are dropped, and prices compare as numbers.
 _owui_models_wanted() {
-  local en name mode aliases a hidden wish list price
-  local -a alias_list
-  en="$(_enabled_or_all)"
-  list=",$(get_env MODELS_HIDDEN),"
-  while IFS=$'\t' read -r name mode _ aliases _ <&3; do
-    is_enabled "$name" "$en" || continue
-    price="$(price_label "$name")"
-    if [ "$mode" = chat ]; then
-      hidden=false; wish=false; case "$list" in *",$name,"*) wish=true ;; esac
-    else hidden=true; wish=-; fi
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$name" "$(owui_model_name "$name" "$mode")" "$(display_name "$name")" \
-      "AWS Bedrock · $price" "$(owui_tags_json "$name" "$mode")" "$hidden" "$(icon_url "$name")" "$wish"
-    [ "$aliases" != - ] && [ -n "$aliases" ] || continue
-    IFS=, read -r -a alias_list <<< "$aliases"
-    for a in ${alias_list[@]+"${alias_list[@]}"}; do
-      [ -n "$a" ] || continue
-      printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$a" "$a" "$a" "AWS Bedrock · alias of $name · $price" '[{"name":"Bedrock"}]' true '' -
-    done
-  done 3< <(catalog_rows)
+  local rows map v
+  rows="$(mktemp)" || return 0
+  map="$(mktemp)" || { rm -f "$rows"; return 0; }
+  F_EN="$(_enabled_or_all)" F_PRICES="$PRICES" F_DISP="$DISPLAY_CATALOG" F_HIDDEN="$(get_env MODELS_HIDDEN)" awk '
+    function rd(f, arr,    l, a) {
+      while ((getline l < f) > 0) { gsub(/\r/, "", l); if (l ~ /^[[:space:]]*#/) continue; split(l, a, "\t"); if (!(a[1] in arr)) arr[a[1]] = l }
+      close(f)
+    }
+    function df(n, c,    a) { if (!(n in D)) return ""; split(D[n], a, "\t"); return a[c] == "-" ? "" : a[c] }
+    function pf(n, i,    a) { if (!(n in P)) return ""; split(P[n], a, "\t"); return (a[i + 1] != "-" && a[i + 1] != "") ? a[i + 1] : "" }
+    function money(v,    s) { s = sprintf("%.4f", v); while (s ~ /\.[0-9][0-9][0-9]+$/ && s ~ /0$/) s = substr(s, 1, length(s) - 1); return "$" s }
+    function tier(n,    p) { p = pf(n, 1); if (p == "") return ""; if (p < 0.5) return "$"; if (p < 3) return "$$"; return "$$$" }
+    function plabel(n,    i, o, im, q) {
+      i = pf(n, 1); o = pf(n, 2); im = pf(n, 5); q = pf(n, 6)
+      if (i != "" && o != "") return money(i) " in / " money(o) " out per 1M tokens"
+      if (i != "") return money(i) " per 1M tokens"
+      if (im != "") return money(im) " per image"
+      if (q != "") return money((q * 1000) "") " per 1K queries"
+      return "price not in catalog"
+    }
+    BEGIN {
+      if (ENVIRON["F_PRICES"] != "") rd(ENVIRON["F_PRICES"], P)
+      if (ENVIRON["F_DISP"] != "") rd(ENVIRON["F_DISP"], D)
+      en = ENVIRON["F_EN"]
+      if (en != "") { while ((getline l < en) > 0) E[l] = 1; close(en) }
+      hid = "," ENVIRON["F_HIDDEN"] ","
+    }
+    {
+      l = $0; sub(/^\t+/, "", l); sub(/\t+$/, "", l); split(l, f, /\t+/)
+      n = f[1]; mode = f[2]; al = f[4]
+      if (en != "" && !(n in E)) next
+      price = plabel(n)
+      t = mode == "chat" ? tier(n) : ""
+      if (mode == "chat") { h = "false"; w = index(hid, "," n ",") ? "true" : "false" } else { h = "true"; w = "-" }
+      dn = df(n, 2); if (dn == "") dn = n
+      tags = (t != "" ? "{\"name\":\"" t "\"}," : "") "{\"name\":\"Bedrock\"}"
+      k = split(df(n, 4), tg, ","); for (i = 1; i <= k; i++) if (tg[i] != "") tags = tags ",{\"name\":\"" tg[i] "\"}"
+      print n "\t" (t != "" ? dn " · " t : dn) "\t" dn "\tAWS Bedrock · " price "\t[" tags "]\t" h "\t" df(n, 3) "\t" w
+      if (al == "-" || al == "") next
+      k = split(al, a, ","); for (i = 1; i <= k; i++) if (a[i] != "")
+        print a[i] "\t" a[i] "\t" a[i] "\tAWS Bedrock · alias of " n " · " price "\t[{\"name\":\"Bedrock\"}]\ttrue\t\t-"
+    }' < <(catalog_rows) > "$rows"
+  cut -f7 "$rows" | LC_ALL=C sort -u | while IFS= read -r v; do
+    [ -z "$v" ] || printf '%s\t%s\n' "$v" "$(_icon_url_of "$v")"
+  done > "$map"
+  F_MAP="$map" awk -F'\t' '
+    BEGIN { while ((getline l < ENVIRON["F_MAP"]) > 0) { i = index(l, "\t"); m[substr(l, 1, i - 1)] = substr(l, i + 1) } }
+    { print $1 "\t" $2 "\t" $3 "\t" $4 "\t" $5 "\t" $6 "\t" (($7 != "" && ($7 in m)) ? m[$7] : "") "\t" $8 }' "$rows"
+  rm -f "$rows" "$map"
+  return 0
 }
 
 # sync_openwebui_models — friendly names ("Claude Sonnet 5.5 · $$"), exact prices in the description and
