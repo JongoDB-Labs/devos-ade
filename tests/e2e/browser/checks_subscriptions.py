@@ -12,6 +12,7 @@ import json
 import os
 import re
 import socket
+import time
 
 from playwright.sync_api import expect as see
 
@@ -139,6 +140,13 @@ def terminal_open(ctx):
     # (a launch token the portal made on this click: <iat>-<16 hex>-<32 hex>)
     page.wait_for_function("() => /[?&]arg=open&arg=codex&arg=[0-9]{10}-[0-9a-f]{16}-[0-9a-f]{32}$/.test(document.querySelector('iframe[data-app=terminal]').src)", timeout=15000)
     f = terminal_frame(page)
+    # (the iframe's src changes on the click, but its old page stays, xterm and all, until the new one arrives: a read
+    # then has the page go away under it — "Execution context was destroyed", the v0.68.15 matrix; as checks_terminal.py's
+    # Open a shell waits)
+    t0 = time.time()
+    while "arg=codex" not in f.url and time.time() - t0 < 15:
+        page.wait_for_timeout(200)
+    expect("arg=codex" in f.url, f"the terminal never went to Codex's window: {f.url[:80]}")
     wait_xterm(f)
     screen = wait_text(f, CODEX_SIGNIN, 60)
     expect(re.search(r"\bcodex\b", screen), "no codex window in tmux's status line")
