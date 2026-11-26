@@ -6,16 +6,23 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.68.11] - 2026-11-26
+
 ### Changed
 - **An update is about a second quicker again.** The list of services to start ran the terminal's folder check twice
   (once for the terminal, once for the Code page) and asked the system's name once for each local model runtime; an
   update builds that list some 20 times. It now checks once and asks once. Setup's check of whether a port in use is
-  the stack's own now reads Docker's list of containers instead of starting Docker Compose (three times a setup, a
-  third of a second each), and each Compose call works out its configuration checksums with seven fewer processes.
-  Measured on a quiet Linux host: Update now 54 s → 53 s. The answers are the same as before: the port check was
-  compared with Compose's own on a live stack. (JON-972)
+  the stack's own now reads Docker's list of containers instead of starting Docker Compose (up to three times a setup,
+  a third of a second each), and each Compose call works out its configuration checksums with seven fewer processes.
+  Measured on Linux: Update now 54 s → 53 s on a quiet host, 72 s → 70 s with eight test runs at once; the list's own
+  shell time 2.4 s → 0.5 s. The answers are the same as before: the port check was compared with Compose's own on a
+  live stack, which also showed that Compose answers ":0" for a port a container only exposes; the new check does the
+  same. (JON-972)
 - Two unit tests no longer fail on some machines: one matched a folder name in a path, one read a file's mode the macOS
   way on Linux. (JON-972)
+
+### To get it
+Existing installs: Home › Update now.
 
 ## [0.68.10] - 2026-11-26
 
