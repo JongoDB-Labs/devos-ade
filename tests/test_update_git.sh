@@ -428,6 +428,87 @@ test_whats_new_shortens_a_long_release_subject_at_a_word() {
   assert_eq "$(releases_between "$(git -C "$STACK_DIR" rev-parse 'v0.8.0^{commit}')")" "v0.9.0 — Git panel and Run & test"
 }
 
+# JON-972: the releases an update brought are picked in one awk (_release_tags_between), not a version_newer a tag
+# (some eight programs each: 1.3 s of an update with 128 release tags). It answers as version_newer did, tag by tag.
+_rb_by_version_newer() { local t; while read -r t; do version_newer "$t" "$1" || continue; ! version_newer "$t" "$2" || continue; printf '%s\n' "$t"; done; }
+test_the_release_filter_answers_as_version_newer_did() {
+  local tags pair from cur bad=0 want got
+  tags='v10000.0.0
+v9999.9999.9999
+v2.0.0
+v0.10000.0
+v0.0.10000
+v1.2.3.4
+v1.2
+v1.2.3-rc1
+v1.2.3-4-gabcdef0
+v1.2.3x
+v1.2.
+v1..3
+v.1.2
+V1.2.3
+va.b.c
+1.2.3
+v01.2.3
+v1.0.0
+v0.68.17
+v0.68.10
+v0.68.9
+v0.10.0
+v0.9.0
+v0.0.0'
+  for pair in "v0.68.10 v0.68.17" "v0.9.0 v0.68.17-3-gabc1234" "v0.0.0 v9999.9999.9999" "v1.0.0 v0.9.0" "v0.68.17 v0.68.17" \
+    "v01.2.3 v2.0.0" "v0.9.0 v1.2.3-12-g0123456789abcdef"; do
+    from="${pair% *}"; cur="${pair#* }"
+    want="$(printf '%s\n' "$tags" | _rb_by_version_newer "$from" "$cur")"
+    got="$(printf '%s\n' "$tags" | _release_tags_between "$(_semver "$from")" "$(_semver "$cur")")"
+    [ "$got" = "$want" ] || { printf 'from %s to %s:\n--- version_newer\n%s\n--- one pass\n%s\n' "$from" "$cur" "$want" "$got" >&2; bad=1; }
+  done
+  # (the cases say something: a jump of releases, and none past the installed one)
+  assert_eq "$(printf '%s\n' "$tags" | _release_tags_between "$(_semver v0.9.0)" "$(_semver v0.68.17-3-gabc1234)" | tr '\n' ' ')" "v0.68.17 v0.68.10 v0.68.9 v0.10.0 "
+  return "$bad"
+}
+
+# The same lines as releases_between's v0.68.17 (tests/fixtures/releases_between_old.sh) on a real repository, with odd
+# tags, a lightweight one, more than ten releases and installs on and after a tag; two _semver calls whatever the tags
+test_whats_new_lists_the_releases_it_did_with_two_version_reads() {
+  local i c cur from bad=0 o n
+  . "$T_ROOT/tests/fixtures/releases_between_old.sh"
+  git init -q -b main "$TMP/origin"
+  _commit "$TMP/origin" c1; git -C "$TMP/origin" tag -a v0.1.0 -m "v0.1.0 — first"
+  _commit "$TMP/origin" c2; git -C "$TMP/origin" tag v0.2.0
+  _commit "$TMP/origin" c3; git -C "$TMP/origin" tag -a v0.2.1-rc1 -m rc
+  _commit "$TMP/origin" c4; git -C "$TMP/origin" tag v0.3
+  _commit "$TMP/origin" c5; git -C "$TMP/origin" tag v0.3.0.1
+  for i in 4 5 6 7 8 9 10 11 12 13 14 15; do _commit "$TMP/origin" "r$i"; git -C "$TMP/origin" tag -a "v0.$i.0" -m "v0.$i.0 — release $i"; done
+  _commit "$TMP/origin" c16; git -C "$TMP/origin" tag v10000.0.0
+  _commit "$TMP/origin" c17; git -C "$TMP/origin" tag -a v0.18.0 -m "the newest"
+  _commit "$TMP/origin" c18
+  git clone -q "$TMP/origin" "$TMP/stack"; STACK_DIR="$TMP/stack"
+  for cur in v0.18.0 main v0.9.0; do
+    git -C "$STACK_DIR" -c advice.detachedHead=false checkout -q "$cur"
+    for from in v0.1.0 v0.2.0 v0.2.1-rc1 v0.5.0; do
+      c="$(git -C "$STACK_DIR" rev-parse "$from^{commit}")"
+      o="$(old_releases_between "$c")"; n="$(releases_between "$c")"
+      [ "$o" = "$n" ] || { printf 'installed %s, from %s:\n--- before\n%s\n--- now\n%s\n' "$cur" "$from" "$o" "$n" >&2; bad=1; }
+    done
+  done
+  # (what they agree on: twelve releases after v0.2.0 up to the commit after v0.18.0, ten named)
+  git -C "$STACK_DIR" checkout -q main
+  n="$(releases_between "$(git -C "$STACK_DIR" rev-parse 'v0.2.0^{commit}')")"
+  assert_eq "$(printf '%s\n' "$n" | sed -n '1p;10p;11p')" "v0.18.0 — the newest
+v0.7.0 — release 7
+… and 3 older"
+  # two version reads (the release it came from, the installed one), none a tag; no version_newer
+  eval "$(declare -f _semver | sed '1s/^_semver/_rb_semver_real/')"
+  _semver() { echo s >> "$TMP/semver-calls"; _rb_semver_real "$@"; }
+  version_newer() { echo v >> "$TMP/newer-calls"; return 1; }
+  assert_eq "$(releases_between "$(git -C "$STACK_DIR" rev-parse 'v0.2.0^{commit}')")" "$n"
+  assert_eq "$(wc -l < "$TMP/semver-calls" | tr -d ' ')" 2
+  [ ! -e "$TMP/newer-calls" ] || { echo "version_newer was called" >&2; bad=1; }
+  return "$bad"
+}
+
 test_update_to_a_new_version_ends_with_whats_new_and_a_no_op_does_not() {
   printf 'X=1\n' > "$ENV_FILE"; STACK_DIR="$TMP/stack"; mkdir -p "$STACK_DIR"; _fake_stack; dc() { :; }
   update_record_write() { :; }; update_record_done() { :; }

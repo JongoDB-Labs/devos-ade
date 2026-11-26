@@ -2605,13 +2605,11 @@ _update_cleanup() { images_after_update || warn "could not clean up old images �
 # test" (each release tag's own subject line), the releases after the one FROM_COMMIT is (or follows) up to HEAD's;
 # at most 10, then "… and N older"
 releases_between() {
-  local from cur t subj n=0 more=0
+  local from cur fs cs t subj n=0 more=0
   [ -e "$STACK_DIR/.git" ] && [ -n "${1:-}" ] || return 0
   from="$(_git describe --tags --abbrev=0 "$1" 2>/dev/null || true)"; cur="$(installed_version)"
-  _semver "$from" >/dev/null 2>&1 && _semver "$cur" >/dev/null 2>&1 || return 0
-  for t in $(newest_release_tags); do
-    version_newer "$t" "$from" || continue
-    ! version_newer "$t" "$cur" || continue
+  fs="$(_semver "$from" 2>/dev/null)" && cs="$(_semver "$cur" 2>/dev/null)" || return 0
+  for t in $(newest_release_tags | _release_tags_between "$fs" "$cs"); do
     n=$((n + 1)); [ "$n" -le 10 ] || { more=$((more + 1)); continue; }
     subj="$(_git for-each-ref --format='%(objecttype) %(contents:subject)' "refs/tags/$t" 2>/dev/null | sed -n 's/^tag //p' | head -n 1 | tr -d '\000-\037')"
     # at most 120 characters, cut at a word (never inside a word, nor inside a character where bash counts bytes)
@@ -2619,6 +2617,21 @@ releases_between() {
     case "$subj" in "$t"*) printf '%s\n' "$subj" ;; '') printf '%s\n' "$t" ;; *) printf '%s — %s\n' "$t" "$subj" ;; esac
   done
   [ "$more" = 0 ] || printf '… and %s older\n' "$more"
+}
+# _release_tags_between "X Y Z" "X Y Z" — of the tags on stdin, those newer than the first version and not newer than the
+# second, in their order: version_newer's answer for each (vX.Y.Z only, each part 1 to 4 digits as _semver has it, no
+# pre-release), in one awk. (JON-972: a version_newer a tag, some eight programs, made What's new 1.3 s of an update
+# with 128 release tags.)
+_release_tags_between() {
+  awk -v f="$1" -v c="$2" '
+    function sv(t, x,   p, i) {
+      if (substr(t, 1, 1) != "v" || split(substr(t, 2), p, ".") != 3) return 0
+      for (i = 1; i <= 3; i++) { if (p[i] !~ /^[0-9]+$/ || length(p[i]) > 4) return 0; x[i] = p[i] + 0 }
+      return 1
+    }
+    function newer(x, y,   i) { for (i = 1; i <= 3; i++) { if (x[i] > y[i]) return 1; if (x[i] < y[i]) return 0 } return 0 }
+    BEGIN { split(f, a, " "); split(c, b, " "); for (i = 1; i <= 3; i++) { a[i] += 0; b[i] += 0 } }
+    index($0, "-") == 0 && sv($0, t) && newer(t, a) && !newer(t, b)'
 }
 # newest_release_tags -> every vX.Y.Z tag, newest first (pre-releases excluded; see newest_release_tag)
 newest_release_tags() { _git -c versionsort.suffix=- tag -l 'v[0-9]*' --sort=-v:refname 2>/dev/null | grep -v -- '-' || true; }

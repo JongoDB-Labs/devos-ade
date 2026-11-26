@@ -6,6 +6,10 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Changed
+- **An update's "What's new" takes a fraction of a second instead of about 1.3 s.** Picking the releases an update
+  brought compared each of the project's release tags (128 now) with a few programs each; one pass does it now. (JON-972)
+
 ## [0.68.17] - 2026-11-26
 
 ### Changed
