@@ -306,6 +306,16 @@ test_the_two_password_checks_run_side_by_side_and_decide_as_before() {
   helper_password_ok 'both stale now'
   # (no copy: none checked, one written)
   rm -f "$(helper_password_file)"; _PW_HASH_MEMO=''; ensure_portal_password_hash; helper_password_ok 'both stale now'
+  # a stale copy costs what it cost before: .env's hash checked, the copy checked once (not again before it is written), and
+  # the new copy's hash — three PBKDF2s
+  local c="$TMP/pbkdf2-count"
+  eval "$(declare -f _pbkdf2 | sed '1s/_pbkdf2/_pbkdf2_real2/')"
+  _pbkdf2() { echo x >> "$c"; _pbkdf2_real2 "$@"; }
+  printf 'pbkdf2-sha256:600000:0000000000000000:%s\n' "$z" > "$(helper_password_file)"; _PW_HASH_MEMO=''; : > "$c"
+  ensure_portal_password_hash; assert_eq "$(wc -l < "$c" | tr -d ' ')" 3; helper_password_ok 'both stale now'
+  # (whether the copy was checked is an argument: nothing in the environment makes a sync trust a copy)
+  printf 'pbkdf2-sha256:600000:0000000000000000:%s\n' "$z" > "$(helper_password_file)"
+  _HELPER_PW_OK=0 known=checked helper_password_sync; helper_password_ok 'both stale now'
 }
 
 test_setup_makes_a_secret_only_for_a_key_that_has_none() {

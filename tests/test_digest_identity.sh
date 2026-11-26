@@ -52,6 +52,26 @@ test_every_digest_is_what_it_was() {
   return "$bad"
 }
 
+test_a_dc_in_a_digest_that_writes_env_changes_no_digest() {
+  # dc writes .env itself only for the git server's header, and only when it is missing (lib/localgit.sh
+  # localgit_sso_ensure); a digest calls dc in a subshell ($( ), a pipe), where that write does not reach the digest's
+  # snapshot. No input reads that key with get_env after such a dc: every digest is the same as when each get_env read the
+  # file. (An input that does would fail here: the snapshot would miss the write.)
+  _dg_setup
+  local e s o n bad=0
+  dc() {
+    [ -n "$(get_env LOCALGIT_SSO_HEADER)" ] || set_env LOCALGIT_SSO_HEADER X-Bn-Git-0123abcd
+    case "$*" in "ps -q litellm open-webui") printf 'c1\nc2\n' ;; "ps -q code terminal") echo k1 ;; "ps -q forgejo") echo f1 ;; esac; return 0
+  }
+  e="$(_dg_envs | { IFS= read -r -d '' x; printf '%s' "$x"; })"
+  for s in $_DG_STEPS; do
+    printf '%s' "$e" > "$ENV_FILE"; o="$(RANDOM=7; old_upd_hash "$s")"
+    printf '%s' "$e" > "$ENV_FILE"; n="$(RANDOM=7; upd_hash "$s")"
+    [ "$o" = "$n" ] || { printf 'digest of %s differs with a dc that writes .env: old [%s], new [%s]\n' "$s" "$o" "$n" >&2; bad=1; }
+  done
+  return "$bad"
+}
+
 test_a_digest_reads_env_once() {
   _dg_setup
   local n="$TMP/reads"
@@ -93,6 +113,13 @@ test_the_sum_is_what_awk_gave() {
     o="$(OS_OUT="$s" OS_RC=1 old_upd_sum < "$f"; printf 'rc=%s' "$?")"; n="$(OS_OUT="$s" OS_RC=1 _upd_sum < "$f"; printf 'rc=%s' "$?")"
     [ "$o" = "$n" ] || { printf '_upd_sum of [%s], openssl failing: old [%s], new [%s]\n' "$s" "$o" "$n" >&2; bad=1; }
   done
+  # (and with pipefail off, where the pipe's status was awk's)
+  set +o pipefail
+  for s in 'SHA2-256(stdin)= 0123abcd' '' "$(printf 'a\tb')"; do
+    o="$(OS_OUT="$s" OS_RC=1 old_upd_sum < "$f"; printf 'rc=%s' "$?")"; n="$(OS_OUT="$s" OS_RC=1 _upd_sum < "$f"; printf 'rc=%s' "$?")"
+    [ "$o" = "$n" ] || { printf '_upd_sum of [%s], openssl failing, no pipefail: old [%s], new [%s]\n' "$s" "$o" "$n" >&2; bad=1; }
+  done
+  set -o pipefail
   unset -f openssl
   # (no awk for what openssl prints)
   awk() { echo x >> "$TMP/awk"; command awk "$@"; }
