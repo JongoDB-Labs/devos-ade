@@ -39,7 +39,7 @@
   function close(refocus = true) {
     if (!menu) return;
     const m = menu, f = back;
-    const held = m.contains(document.activeElement);
+    const hadFocus = m.contains(document.activeElement);
     menu = null; back = null;
     m.remove();
     for (const b of document.querySelectorAll(".ctx-more[aria-expanded=true], .cont-new-in[aria-expanded=true]")) b.setAttribute("aria-expanded", "false");
@@ -47,16 +47,16 @@
     document.removeEventListener("scroll", onScroll, true);
     window.removeEventListener("resize", onResize);
     document.removeEventListener("bn:tab", onResize);
-    if ((refocus || held) && f && f.isConnected) f.focus({ preventScroll: true });
+    if ((refocus || hadFocus) && f && f.isConnected) f.focus({ preventScroll: true });
   }
   const onOutside = (e) => { if (menu && !menu.contains(e.target)) close(false); };
-  // (a scroll closes the menu only when it moved the row the menu belongs to: focusing a row scrolls it into view, and
+  // (a scroll closes the menu only when it moved the row the menu belongs to, or the row is not rendered at all: focusing a row scrolls it into view, and
   // that scroll's event can come after the menu has opened, for a scroll that happened before it)
   let anchorAt = null;
   const rectOf = (n) => { const r = n.getBoundingClientRect(); return `${Math.round(r.left)},${Math.round(r.top)}`; };
   const onScroll = (e) => {
     if (!menu || (e.target instanceof Node && menu.contains(e.target))) return;
-    if (back && back.isConnected && anchorAt !== null && rectOf(back) === anchorAt) return;
+    if (back && back.isConnected && back.getClientRects().length > 0 && anchorAt !== null && rectOf(back) === anchorAt) return;
     close(false);
   };
   const onResize = () => close(false);

@@ -14,6 +14,7 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ### Fixed
 
+- **An update no longer checks the models again when only a comment changed in the stack's own model code.** The check that finds which Bedrock models your key can call is kept when nothing it depends on changed. Until now a comment edit in the stack's model code counted as a change, and the next update ran the check again and took about a minute and a half longer. It now looks at the code, not the comments. The update that brings this fix keeps your last check too. (JON-1429)
 - **An item menu opened from the keyboard stays open, and one that closes on its own gives the focus back.** A menu of the web app's rows (Home, Settings, Activity and the rest) closes when the page scrolls or the window changes size. It no longer closes at once when the page scrolled the row into view just before it opened (Shift+F10 or the menu key on a row low on the page). When it does close and held the focus, the focus goes back to the row it came from instead of being lost on the page.
 - **The Code page's cost meter stays calm when the spend logs are slow.** When LiteLLM's spend logs do not answer in time, the web app now says so in an ordinary answer instead of an error, so the page logs no error; the meter keeps its last figures and catches up after the next turn or a click. (JON-1400)
 

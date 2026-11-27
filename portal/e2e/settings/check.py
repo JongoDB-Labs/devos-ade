@@ -1383,6 +1383,7 @@ def check_menus(page, failures, label):
             while (n && n !== document.body && !(n.scrollHeight > n.clientHeight + 40 && /auto|scroll/.test(getComputedStyle(n).overflowY))) n = n.parentElement;
             const s = n && n !== document.body ? n : document.scrollingElement;
             const before = s.scrollTop;
+            window.__ctxScrollBack = () => { s.scrollTop = before; };   // (put back below: the test leaves the page where it was)
             s.scrollTop = before > 40 ? before - 40 : before + 40;
             return s.scrollTop !== before;
         }""")
@@ -1395,7 +1396,10 @@ def check_menus(page, failures, label):
                 failures.append(f"{label}: a scroll closed the row menu but the focus did not go back to the row")
         else:
             failures.append(f"{label}: the settings page did not scroll, so the menu's scroll rule went unchecked")
-        page.keyboard.press("Escape")
+        page.evaluate("() => { if (window.__ctxScrollBack) { window.__ctxScrollBack(); window.__ctxScrollBack = null; } }")
+        page.wait_for_timeout(700)   # (smooth scrolling)
+        if page.locator(".ctx-menu").count():
+            page.keyboard.press("Escape")
     # screenshots, light and dark, three widths
     for scheme in ("light", "dark"):
         page.emulate_media(color_scheme=scheme)
