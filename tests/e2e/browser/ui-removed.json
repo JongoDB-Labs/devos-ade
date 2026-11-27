@@ -106,5 +106,17 @@
   "control": "tab:Marketplaces",
   "why": "JON-518: the terminal's Claude Code now starts past its trust question in /workspace and, as it does in any folder you trust, adds its official plugin marketplace; the Plugins menu's tab then shows the count ('Marketplaces (1)') and Discover lists that marketplace's plugins.",
   "changelog": "v0.75.0"
+ },
+ {
+  "state": "portal-chat-*",
+  "control": "button:Controls",
+  "why": "Open WebUI 0.13 moved the chat header's Controls button beside the message box: Model controls, whose Controls item opens the same panel.",
+  "changelog": "v0.79.0"
+ },
+ {
+  "state": "portal-chat-*",
+  "control": "chat.<stack>#integration-menu-button",
+  "why": "Open WebUI 0.13 retired the message box's Integrations menu: its items (tools, skills, image generation, code interpreter) are in the message box's + menu.",
+  "changelog": "v0.79.0"
  }
 ]
