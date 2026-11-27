@@ -64,6 +64,11 @@ def home_voice(ctx):
     return f"{stt_mode()}: {text[:110]!r}"
 
 
+# The call's own End call button. (Open WebUI 0.13 opens a call as a chat tab too, and that tab's close button is also
+# named "End call": it is the one with a title, "Close · <shortcut>".)
+END_CALL = "button[aria-label='End call']:not([title])"
+
+
 @check("browser", "chat-voice-call")
 def chat_call(ctx):
     """Call with server speech-to-text: the call opens ("Listening…", End call); without it Open WebUI (v0.12.4) offers
@@ -82,10 +87,10 @@ def chat_call(ctx):
         rec.save()
         return "browser speech: no Call button"
     fl.locator("button[aria-label='Voice mode']").click()
-    fl.locator("button[aria-label='End call']").wait_for(timeout=15000)
+    fl.locator(END_CALL).wait_for(timeout=15000)
     fl.locator("text=Listening").first.wait_for(timeout=15000)
     shot(page, "10-chat-call-open")
-    fl.locator("button[aria-label='End call']").click()
+    fl.locator(END_CALL).click()
     # A blocked screen wake lock is reported by chat-voice-call-wake-lock alone; anything else counts here.
     probs = rec.problems(allow=[r"No token found in localStorage", r"Permissions policy violation: screen-wake-lock"])
     rec.save()
@@ -104,9 +109,9 @@ def chat_call_wake_lock(ctx):
     login(page)
     fl, f = chat_frame(page)
     fl.locator("button[aria-label='Voice mode']").click()
-    fl.locator("button[aria-label='End call']").wait_for(timeout=15000)
+    fl.locator(END_CALL).wait_for(timeout=15000)
     fl.locator("text=Listening").first.wait_for(timeout=15000)
-    fl.locator("button[aria-label='End call']").click()
+    fl.locator(END_CALL).click()
     blocked = [e["text"] for e in rec.events if e["t"] == "console" and "screen-wake-lock" in e["text"]]
     rec.save()
     expect(not blocked, f"{blocked[:1]} — the portal's iframe allow list lacks screen-wake-lock")
