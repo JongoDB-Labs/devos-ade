@@ -6,9 +6,14 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.75.1] - 2026-11-27
+
 ### Fixed
 
 - **Archiving a Code session right after its turn no longer shows a red "no running process" error.** A moment after each turn the page asks the session how much of its context it uses. Archive closes the session, so that question could reach a session with nothing running. The page now drops the question when it closes a session, and an answer for a session already closed is not shown. (JON-1449)
+
+### To get it
+Existing installs: Home › Update now.
 
 ## [0.75.0] - 2026-11-27
 
