@@ -4,7 +4,7 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.74.0] - 2026-11-27
 
 ### Added
 
@@ -13,6 +13,9 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 ### Fixed
 
 - **Rollback after an update that changed Open WebUI could fail and leave Chat down.** Rollback restores your data from the backup taken before the update. It restarted the new Open WebUI on that data, which converted it forward again, and the older Open WebUI then could not start on it. Rollback now puts back the previous Open WebUI, Code page and egress proxy builds before it restores the data, as it already did for the others. Found while testing the coming move to Open WebUI 0.13, which would have hit it. (JON-1444)
+
+### To get it
+Existing installs: Home › Update now.
 
 ## [0.73.4] - 2026-11-27
 
