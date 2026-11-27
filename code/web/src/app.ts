@@ -801,7 +801,7 @@ function askInfo(id: string): void {
   infoAsked.add(id);
   socket.send({ type: 'commands', session: id });
   socket.send({ type: 'models', session: id });
-  socket.send({ type: 'context', session: id });
+  socket.send({ type: 'context', session: id, req: contextReq() });
 }
 
 const spendTimers = new Map<string, ReturnType<typeof setTimeout>[]>();
@@ -881,13 +881,20 @@ const BUDGET_WORDS = /budget (has been )?exceeded|exceeded budget|ExceededBudget
 
 /** Context usage is asked for after each turn; a burst of results asks once. */
 const contextTimers = new Map<string, ReturnType<typeof setTimeout>>();
+// (asked with a request id of its own: a session closed while the question is on its way answers with an error, which
+// 'error' then leaves unsaid — the page asked it, not you — JON-1449; the usage itself comes as its 'context' message)
+let contextAsked = 0;
+const contextReq = (): string => `ctx-${++contextAsked}`;
 function requestContext(id: string, ms = 1500): void {
   clearTimeout(contextTimers.get(id));
   contextTimers.set(
     id,
     setTimeout(() => {
       contextTimers.delete(id);
-      socket.send({ type: 'context', session: id });
+      // (a session closed or ended since its turn has no process to ask: the answer would be an error toast — JON-1449)
+      const v = get().views[id];
+      if (!v || v.state === 'ended' || v.state === 'closed' || v.state === 'error') return;
+      socket.send({ type: 'context', session: id, req: contextReq() });
     }, ms),
   );
 }
@@ -1791,6 +1798,9 @@ async function openExisting(id: string, fork: boolean, before?: string, text = '
 }
 
 export async function closeSessionById(id: string): Promise<void> {
+  // (its context, asked for just after a turn, is not asked any more: the process goes — Archive right after a turn, JON-1449)
+  clearTimeout(contextTimers.get(id));
+  contextTimers.delete(id);
   try {
     await api.closeSession(id);
   } catch (e) {

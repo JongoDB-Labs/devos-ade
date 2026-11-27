@@ -4968,6 +4968,32 @@ def models_picker_local(browser):
 
 # ---------------------------------------------------------------- projects (components/Projects.tsx, src/projects.ts)
 
+@check("archive right after a turn: no error toast (the context the page asks for after a turn is not asked of a session Archive closed: JON-1449)")
+def archive_right_after_turn(browser):
+    post(NORMAL + "/__mock/reset")
+    p = Page(browser, NORMAL, "archive-after-turn", **DESKTOP)
+    page = p.open()
+    page.get_by_test_id("side-sessions").click()
+    unfold(page, "ws")
+    send(page, "Say hello")
+    row = proj(page, "ws").locator("li.sess.active[data-testid=session-row]")
+    expect(row).to_have_count(1, timeout=10_000)
+    wait_turns(page, 1)
+    # at once: the page asks for the session's context 1.5 s after its turn, and Archive closes its process before that
+    t0 = time.monotonic()
+    row.click(button="right")
+    page.get_by_test_id("session-archive").click()
+    took = time.monotonic() - t0
+    # (an Archive later than that would test nothing: the question would have reached a live session)
+    assert took < 1.2, f"Archive took {took:.2f} s after the turn: too late to test the race (the page asks at 1.5 s)"
+    expect(row).to_have_count(0, timeout=5_000)
+    page.wait_for_timeout(2_500)
+    errs = page.locator(".toast.toast-error")
+    assert errs.count() == 0, f"an error toast after Archive: {errs.all_inner_texts()}"
+    p.assert_clean()
+    p.close()
+
+
 def project_ids(base=NORMAL):
     return {x["root"]: x["id"] for x in mock_get(base, "/api/projects")["projects"]}
 

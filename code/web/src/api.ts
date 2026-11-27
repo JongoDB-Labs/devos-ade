@@ -2317,7 +2317,7 @@ export type ClientMsg =
   | { type: 'commands'; session: string }
   | { type: 'models'; session: string }
   | { type: 'mcp'; session: string }
-  | { type: 'context'; session: string }
+  | { type: 'context'; session: string; req?: string }
   | { type: 'stop_task'; session: string; task: string }
   | { type: 'reload_plugins'; session: string }
   | { type: 'mcp_reconnect'; session: string; server: string }
