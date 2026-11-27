@@ -1404,6 +1404,74 @@ def ui_queue_clear(ctx):
             f"session {new[:8]} with Haiku and {mode!r}, the old one kept; /resume opens the session list")
 
 
+def _hold_turn(page, tag):
+    """A turn Claude Code cannot finish until the page answers: Haiku is asked to run a command, which Default mode asks
+    permission for. The prompts typed meanwhile wait in Claude Code's own queue. Skip when Haiku does not run it."""
+    card = page.get_by_test_id("permission")
+    ends = page.get_by_test_id("turn-end").count()
+    ask(page, f"Use the Bash tool to run exactly this command: echo bn-e2e-hold-{tag} -- then reply with the single word: done")
+    page.wait_for_function("(n) => !!document.querySelector('[data-testid=permission]') || document.querySelectorAll('[data-testid=turn-end]').length > n", arg=ends, timeout=150000)
+    if not card.count():
+        raise Skip("Haiku answered without running the command (no permission card to hold the turn)")
+    return card
+
+
+@check("browser", "code-ui-cancel-queued")
+@saved
+def ui_cancel_queued(ctx):
+    """JON-626: a prompt typed while a turn runs waits in Claude Code's own queue; its X (and Cancel all) takes it back —
+    Claude Code drops it there (the SDK's cancelAsyncMessage), so it is never answered and never in the transcript."""
+    need_haiku()
+    page, rec = ui_page(ctx, "code-ui-cancel-queued", fresh_ws=True)
+    page.set_viewport_size({"width": 1440, "height": 900})
+    notes = []
+    # one of two cancelled with its X: the other is answered, the cancelled one never
+    _hold_turn(page, "one")
+    ask(page, "Reply with exactly the word: apricot7316")
+    ask(page, "Reply with exactly the word: walnut4821")
+    queued = page.locator("[data-testid=msg-user].queued")
+    see(queued).to_have_count(2, timeout=10000)
+    cancel = page.get_by_role("button", name="Cancel queued message")
+    see(cancel).to_have_count(2)
+    expect(page.get_by_test_id("queued-cancel-all").count() == 1, "no Cancel all with two queued")
+    cancel.first.click()   # apricot
+    see(queued).to_have_count(1, timeout=15000)
+    see(queued.first).to_contain_text("walnut4821")
+    expect(page.get_by_test_id("queued-cancel-all").count() == 0, "Cancel all with one queued")
+    page.mouse.move(0, 0)
+    shot(page, "99-code-ui-queued-cancelled-one")
+    page.get_by_test_id("perm-once").click()
+    answered(page)   # (the held turn, then walnut — as its own turn or taken into the first one)
+    see(queued).to_have_count(0, timeout=60000)
+    shown = " | ".join(t.inner_text() for t in page.get_by_test_id("msg-user").all())
+    said = " | ".join(t.inner_text() for t in page.get_by_test_id("msg-claude").all())
+    expect("apricot7316" not in shown and "apricot7316" not in said, f"the cancelled prompt reached Claude: {shown!r} / {said!r}")
+    expect("walnut4821" in said.lower(), f"the kept prompt was not answered: {said!r}")
+    sid = page.evaluate("JSON.parse(localStorage.getItem('bn.code.v1')).lastSession")
+    c = Code.on(page, rec, goto=False)
+    hist = c.api("GET", f"/api/sessions/{sid}/messages?tail=60")["json"] or {}
+    texts = [e.get("text", "") for e in hist.get("events", []) if e.get("type") in ("user", "text")]
+    expect(not any("apricot7316" in t for t in texts), f"the cancelled prompt is in the transcript: {texts!r}")
+    notes.append("two prompts queued during a held turn, the first cancelled with its X: only the other was answered (walnut4821), the cancelled one is neither shown answered nor in the transcript")
+    # Cancel all: two more queued during a new held turn, none is sent
+    ends = page.get_by_test_id("turn-end").count()
+    _hold_turn(page, "two")
+    ask(page, "Reply with exactly the word: plum2468")
+    ask(page, "Reply with exactly the word: cherry1357")
+    see(queued).to_have_count(2, timeout=10000)
+    page.get_by_test_id("queued-cancel-all").click()
+    see(queued).to_have_count(0, timeout=15000)
+    page.get_by_test_id("perm-once").click()
+    see(page.get_by_test_id("turn-end")).to_have_count(ends + 1, timeout=150000)
+    page.wait_for_timeout(3000)   # (nothing else starts)
+    expect(page.get_by_test_id("turn-end").count() == ends + 1 and not page.get_by_test_id("stop").count(), "a cancelled prompt started a turn")
+    shown = " | ".join(t.inner_text() for t in page.get_by_test_id("msg-user").all() + page.get_by_test_id("msg-claude").all())
+    expect("plum2468" not in shown and "cherry1357" not in shown, f"a cancelled prompt reached Claude: {shown!r}")
+    notes.append("Cancel all dropped two queued prompts; no further turn started")
+    csp_clean(page, rec)
+    return "; ".join(notes) + "; no CSP violations"
+
+
 @check("browser", "code-ui-plan-approval")
 @saved
 def ui_plan(ctx):
