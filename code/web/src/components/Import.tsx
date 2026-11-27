@@ -6,7 +6,7 @@
 // redacted unless you keep one, its thinking blocks taken out when it ran elsewhere than Bedrock, then copied into the
 // sandbox. Nothing is written back to the computer. And Suggested from your computer: the folders your tools kept
 // sessions for, which you add as projects on the computer (the page names no folder to it).
-// A look, a read, suggestions and a copy that keeps a possible secret need the portal password: asked of the PORTAL
+// A look, a read, suggestions and a copy that keeps a possible secret need the web app password: asked of the PORTAL
 // (POST /.bn/sessions on this host), which writes the update helper's request; the page follows it by its id only.
 // Everything a session says — titles, prompts, the transcript — is what a past session saw: shown as text (label, the
 // page's Markdown view for Claude's words), never followed.
@@ -28,7 +28,7 @@ export const TOOL_BADGE: Record<ImportTool, string> = { claude: 'CC', 'claude-be
 const SHOWN_ROWS = 500;
 // why a request to the helper did not go through, said by us (the helper says a fixed word: import-sessions.mjs)
 export const WHY: Record<string, string> = {
-  password: 'The portal password was not right (the helper checks it itself).',
+  password: 'The web app password was not right (the helper checks it itself).',
   busy: 'The computer is busy with another ./stack command: try again when it has finished.',
   limit: 'The helper asks at most once a minute (10 times a day): try again in a moment.',
   denied: 'Not allowed on the computer: nothing was read.',
@@ -86,11 +86,11 @@ export function RequestLine({ req, why = WHY, cmd = './stack sessions', testid =
   );
 }
 
-/** The portal password, asked again for a request to the helper (it checks it against its own copy). */
+/** The web app password, asked again for a request to the helper (it checks it against its own copy). */
 export function Password({ value, onInput, testid }: { value: string; onInput: (v: string) => void; testid: string }) {
   return (
     <label class="imp-pw small">
-      Portal password
+      Web app password
       <input type="password" autocomplete="current-password" value={value} maxLength={300} onInput={(e) => onInput((e.currentTarget as HTMLInputElement).value)} data-testid={testid} />
     </label>
   );
@@ -369,7 +369,7 @@ function CheckStep({ project, view, onCopied }: { project: string; view: ImportV
       )}
       {remoteOutputs && (
         <p class="small muted" data-testid="import-outputs-remote">
-          From another device the tool outputs are not shown here: they are scanned and redacted on the computer when copied, with the portal password.
+          From another device the tool outputs are not shown here: they are scanned and redacted on the computer when copied, with the web app password.
         </p>
       )}
       {view.staged.map((s) => <Staged key={`${s.id}:${s.digest ?? ''}`} project={project} id={s.id} tool={s.tool} choice={ch(s.id)} outputs={outputs && view.local} set={(v) => set(s.id, v)} />)}
@@ -381,7 +381,7 @@ function CheckStep({ project, view, onCopied }: { project: string; view: ImportV
           </p>
           {kept.length > 0 && (
             <p class="small warn-text" data-testid="import-keep-note">
-              {remoteOutputs ? 'Bringing tool outputs from another device' : 'Keeping a possible secret as it is'} needs the portal password: the update helper on the computer makes that copy ({kept.length} session{kept.length === 1 ? '' : 's'}).
+              {remoteOutputs ? 'Bringing tool outputs from another device' : 'Keeping a possible secret as it is'} needs the web app password: the update helper on the computer makes that copy ({kept.length} session{kept.length === 1 ? '' : 's'}).
             </p>
           )}
           <div class="imp-ask">

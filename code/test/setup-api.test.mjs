@@ -37,7 +37,7 @@ test('the view: on the computer or not, setup\'s requests only', async () => {
   assert.equal((await route(api, 'GET', '/api/setup', { remote: true })).body.local, false);
 });
 
-test('a preview by keys only; a copy keeps nothing — a keep needs the portal password; a drop by key', async () => {
+test('a preview by keys only; a copy keeps nothing — a keep needs the web app password; a drop by key', async () => {
   const { api, calls } = fake();
   assert.equal((await route(api, 'GET', '/api/setup/preview', { q: { keys: `${K1},${K2}`, mode: 'append', conflict: 'replace' } })).status, 200);
   assert.deepEqual(calls.at(-1), ['preview', [K1, K2], { mode: 'append', conflict: 'replace' }]);
@@ -49,8 +49,8 @@ test('a preview by keys only; a copy keeps nothing — a keep needs the portal p
   assert.deepEqual(calls.at(-1), ['copy', [{ keys: [K1], mode: 'replace', conflict: 'leave', digest: 'd'.repeat(64), keep: [] }], { remote: true }]);
   await route(api, 'POST', '/api/setup/copy', { body: { units: [{ keys: [K1], digest: 'd'.repeat(64) }] } });
   assert.deepEqual(calls.at(-1)[2], { remote: false });
-  await assert.rejects(route(api, 'POST', '/api/setup/copy', { body: { units: [{ keys: [K1], keep: ['v#0123456789abcdef'] }] } }), /portal password/);
-  await assert.rejects(route(api, 'POST', '/api/setup/copy', { body: { units: [{ keys: [K1], keep: true }] } }), /portal password/);
+  await assert.rejects(route(api, 'POST', '/api/setup/copy', { body: { units: [{ keys: [K1], keep: ['v#0123456789abcdef'] }] } }), /web app password/);
+  await assert.rejects(route(api, 'POST', '/api/setup/copy', { body: { units: [{ keys: [K1], keep: true }] } }), /web app password/);
   await assert.rejects(route(api, 'POST', '/api/setup/copy', { body: {} }), /units/);
   assert.equal((await route(api, 'DELETE', '/api/setup/staged', { q: { key: K2 } })).status, 200);
   assert.deepEqual(calls.at(-1), ['drop', K2]);

@@ -12,7 +12,7 @@
 // in a file or a setting is redacted unless kept; a secret-shaped value of an MCP server (env, a header — or its URL,
 // an argument, its command) is never copied silently: each is its own choice, left out by default — a value left out is
 // not written; a server whose URL, arguments or command would have to be changed is not copied unless it is kept.
-// Keeping one needs the portal password (the page asks the portal; the update helper makes that copy).
+// Keeping one needs the web app password (the page asks the portal; the update helper makes that copy).
 //
 // Merges keep what is the sandbox's own: settings.json's permissions and hooks get yours added (what DevOS ADE added
 // before replaced, never the sandbox's own rules), statusLine and outputStyle and every file are replaced only when they
@@ -320,7 +320,7 @@ export function shownCommand(cfg, secrets) {
 // --- plain words; front matter that is not plain is said too — what Claude Code reads of it cannot be told here ---
 const WHO = { skill: 'this skill', command: 'this command', agent: 'this agent', 'output-style': 'this output style' };
 /** grantsOf(text, kind) -> {flags, grants}: grants — what lets something act without asking (from another device such a
- *  copy needs the portal password) */
+ *  copy needs the web app password) */
 export function grantsOf(text, kind) {
   const flags = [], grants = [];
   const who = WHO[kind] ?? 'it';
@@ -417,7 +417,7 @@ const sameSource = (src, kind, loc) => {
  *  files}], choices: {mode, conflict, keep}, state, which, records, home, projects, egress} — data only (it runs in a
  *  worker). Out of it, besides the writes: every conflict, the flags, and grants — what lets something act without
  *  asking (a whole tool allowed, a front matter's grant, a hook or a status line): from another device such a copy goes
- *  through the portal password. */
+ *  through the web app password. */
 export function planUnit(job) {
   const { items, choices = {}, state = {}, which = {}, records = {}, home = null, egress = 'internet' } = job;
   const projects = Array.isArray(job.projects) ? job.projects.filter((d) => typeof d === 'string' && d.startsWith('/') && d.length > 1).slice(0, LIMITS.projects) : [];
@@ -714,7 +714,7 @@ export function planUnit(job) {
     if (out.headers) { out.headers = { ...out.headers }; for (const s of secrets) if (s.where.startsWith('header ') && !keepIt(s)) delete out.headers[s.where.slice(7)]; if (!Object.keys(out.headers).length) delete out.headers; }
     kept = secrets.filter(keepIt).length; redacted = secrets.length - kept;
     if (secrets.some((s) => s.drop === 'server' && !keepIt(s))) {
-      blocked = 'It holds a possible secret in its URL, arguments or command: it is copied only with that kept (the portal password), or add it yourself in MCP servers.';
+      blocked = 'It holds a possible secret in its URL, arguments or command: it is copied only with that kept (the web app password), or add it yourself in MCP servers.';
       needsKeep = secrets.filter((s) => s.drop === 'server').map((s) => s.id);
     }
     if (secrets.some((s) => s.drop === 'value' && !keepIt(s))) flags.push(flag('warn', 'Values left out (the default): the server may not work without them — keep one to copy it (Claude could read it in the sandbox), or add it later in MCP servers.', secrets.filter((s) => s.drop === 'value' && !keepIt(s)).map((s) => s.where)));
@@ -770,7 +770,7 @@ export function planUnit(job) {
           : 'Its marketplace\'s source is not one the sandbox can add again (a GitHub repository or an https URL): add it yourself in Plugins.';
     }
     // (a marketplace's URL with a query, a fragment, a user or anything that may be a secret: not added unless kept —
-    // the portal password — and shown masked to every device)
+    // the web app password — and shown masked to every device)
     let shownSource = src;
     if (src && s.kind !== 'github') {
       const u = urlOf(src);
@@ -780,7 +780,7 @@ export function planUnit(job) {
         secrets = [{ id, where: 'its marketplace\'s URL', label: kd ? LABELS[kd] ?? SHAPE_LABEL : 'a URL with a query, a fragment, a user or a part that looks like a secret', preview: maskUrl(src), drop: 'server' }];
         shownSource = maskUrl(src);
         if (!keepIt(secrets[0])) {
-          blocked = blocked ?? 'Its marketplace\'s URL holds what may be a secret (a query, a fragment, a user, a token): it is added only with that kept (the portal password), or add it yourself in Plugins.';
+          blocked = blocked ?? 'Its marketplace\'s URL holds what may be a secret (a query, a fragment, a user, a token): it is added only with that kept (the web app password), or add it yourself in Plugins.';
           needsKeep = [id];
         } else kept = 1;
       }

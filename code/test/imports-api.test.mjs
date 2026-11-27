@@ -141,7 +141,7 @@ test('a read done by the helper waits here; the preview never has the secret, an
   assert.deepEqual([r.json.outputs.included, r.json.outputs.left], [false, 1]);
   // (tool outputs only on the computer itself: from another device, neither shown nor copied here — the portal's way)
   const far = await req('GET', `/api/imports/preview?project=${ID}&id=${A}&outputs=1`, undefined, { remote: true });
-  assert.deepEqual([far.status, far.json.error], [403, 'From another device, tool outputs come only with the portal password (the sheet asks for it), and are not shown here.']);
+  assert.deepEqual([far.status, far.json.error], [403, 'From another device, tool outputs come only with the web app password (the sheet asks for it), and are not shown here.']);
   const farCopy = await req('POST', '/api/imports/copy', { project: ID, items: [{ id: A, outputs: true, digest: r.json.digest }] }, { remote: true });
   assert.equal(farCopy.status, 403);
   assert.ok(stored.get(A) === undefined, 'nothing copied');
@@ -155,7 +155,7 @@ test('the copy: nothing kept here (keeping needs the password: the portal), the 
   const pv = (await req('GET', `/api/imports/preview?project=${ID}&id=${A}`)).json;
   let r = await req('POST', '/api/imports/copy', { project: ID, items: [{ id: A, keep: [pv.findings[0].id], digest: pv.digest }] });
   assert.equal(r.status, 403);
-  assert.match(r.json.error, /portal password/);
+  assert.match(r.json.error, /web app password/);
   r = await req('POST', '/api/imports/copy', { project: ID, items: [{ id: A, digest: 'a'.repeat(64) }] });
   assert.deepEqual([r.json.results[0].ok, r.json.results[0].why], [false, 'that session was read again since you checked it: check it again']);
   r = await req('POST', '/api/imports/copy', { project: ID, items: [{ id: A, digest: pv.digest }] });

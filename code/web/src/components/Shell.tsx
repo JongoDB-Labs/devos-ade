@@ -407,7 +407,7 @@ function TerminalPanel({ drawer, open }: { drawer?: boolean; open: boolean }) {
       {url ? (
         <iframe class="term-frame" src={url} title="Terminal" referrerpolicy="no-referrer" allow="clipboard-read; clipboard-write" />
       ) : (
-        <div class="pane-msg">The terminal's address is not known here. Open it from the portal's Terminal tab.</div>
+        <div class="pane-msg">The terminal's address is not known here. Open it from the web app's Terminal tab.</div>
       )}
     </section>
   );

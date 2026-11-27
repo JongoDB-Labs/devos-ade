@@ -1858,7 +1858,7 @@ async function bnSessions(req, res) {
   const b = await jsonBody(req);
   const hostOf = (id) => hostMock.find((x) => x.id === id && !x.gone);
   const st = (id) => { if (!importMock.has(id)) importMock.set(id, { index: null, staged: new Map() }); return importMock.get(id); };
-  if (typeof b.password !== 'string' || b.password !== 'correct horse') return json(res, 403, { error: 'That password is not right. It is the portal password (PORTAL_PASSWORD in .env).' });
+  if (typeof b.password !== 'string' || b.password !== 'correct horse') return json(res, 403, { error: 'That password is not right. It is the web app password (PORTAL_PASSWORD in .env).' });
   if ((b.action === 'sessions-scan' || b.action === 'sessions-suggest') && remote) return json(res, 403, { error: 'Only on the computer running DevOS ADE: a look at its sessions is allowed in a dialog on its screen (or ./stack sessions in a terminal there).' });
   if (!importHelper) return json(res, 503, { error: 'The update helper is not running on the computer: in a terminal there, ./stack sessions (./stack helper install keeps it running).' });
   if (b.action === 'sessions-scan') {
@@ -1972,7 +1972,7 @@ function setupPreviewMock(items, mode, conflict) {
         writes: [{ type: 'mcp', name: 'everything', replaces: false, config: { type: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-everything'], env: { DEBUG: '1' } } }] };
     }
     if (r.name === 'fetch') return { ...base, action: 'mcp', tokens: { every: null, when: null, unknown: true }, flags: [fl('warn', 'uvx is not in the sandbox: the server will not start until it is installed there (the terminal).')], writes: [{ type: 'mcp', name: 'fetch', replaces: false, config: { type: 'stdio', command: 'uvx', args: ['mcp-server-fetch'] } }] };
-    return { ...base, action: 'none', blocked: 'It holds a possible secret in its URL, arguments or command: it is copied only with that kept (the portal password), or add it yourself in MCP servers.', needsKeep: ['v#fedcba9876543210'],
+    return { ...base, action: 'none', blocked: 'It holds a possible secret in its URL, arguments or command: it is copied only with that kept (the web app password), or add it yourself in MCP servers.', needsKeep: ['v#fedcba9876543210'],
       secrets: [{ id: 'v#fedcba9876543210', where: 'URL', label: 'a value under a secret\'s name', preview: '52 characters', drop: 'server' }], flags: [fl('warn', 'A private network\'s address: not reachable from the sandbox with Internet only (Settings › Claude Code › The sandbox\'s internet).')] };
   }
   if (r.kind === 'plugin') {
@@ -1988,7 +1988,7 @@ function setupCopyOne(u, keep, { remote: far = false } = {}) {
   const pv = setupPreviewMock(items, u.mode === 'append' ? 'append' : 'replace', u.conflict === 'replace' ? 'replace' : 'leave');
   if (u.digest !== pv.digest) return { keys: u.keys, ok: false, why: 'it changed since you checked it (on the computer, or in the sandbox): check it again', kind: pv.kind, name: pv.name };
   if (pv.blocked && !(pv.needsKeep && pv.needsKeep.every((k) => keep.includes(k)))) return { keys: u.keys, ok: false, why: pv.blocked, kind: pv.kind, name: pv.name };
-  if (far && pv.grants?.length) return { keys: u.keys, ok: false, password: true, why: 'From another device, what lets Claude act without asking is copied only with the portal password: the sheet asks for it.', kind: pv.kind, name: pv.name };
+  if (far && pv.grants?.length) return { keys: u.keys, ok: false, password: true, why: 'From another device, what lets Claude act without asking is copied only with the web app password: the sheet asks for it.', kind: pv.kind, name: pv.name };
   importLog.push(`setup-copy ${u.keys.join('+')} keep=${keep.length} mode=${u.mode} conflict=${u.conflict}`);
   if (pv.kind === 'plugin') {
     if (!plug.marketplaces.some((m) => m.name === 'acme')) plug.marketplaces.push({ name: 'acme', source: 'github', location: 'acme/claude-plugins' });
@@ -2017,7 +2017,7 @@ async function setupApi(req, res, url, p, m) {
   }
   if (p === '/api/setup/copy' && m === 'POST') {
     const b = await jsonBody(req);
-    if ((b.units || []).some((u) => Array.isArray(u.keep) && u.keep.length)) return json(res, 403, { error: 'Keeping a possible secret needs the portal password: the sheet asks for it.' });
+    if ((b.units || []).some((u) => Array.isArray(u.keep) && u.keep.length)) return json(res, 403, { error: 'Keeping a possible secret needs the web app password: the sheet asks for it.' });
     return json(res, 200, { results: (b.units || []).map((u) => setupCopyOne(u, [], { remote })) });
   }
   if (p === '/api/setup/staged' && m === 'DELETE') { setupMock.staged.delete(url.searchParams.get('key')); return json(res, 200, { ok: true }); }
@@ -2054,7 +2054,7 @@ async function importsApi(req, res, url, p, m) {
     if (!v) return json(res, 404, { error: 'that session is not waiting to be copied (read it again)' });
     const h = hostOf(url.searchParams.get('project'));
     const th = url.searchParams.get('thinking');
-    if (url.searchParams.get('outputs') === '1' && remote) return json(res, 403, { error: 'From another device, tool outputs come only with the portal password (the sheet asks for it), and are not shown here.' });
+    if (url.searchParams.get('outputs') === '1' && remote) return json(res, 403, { error: 'From another device, tool outputs come only with the web app password (the sheet asks for it), and are not shown here.' });
     const { _row, ...out } = importPreviewOf(v._row, h.root, th === 'keep' || th === 'strip' ? th : null, url.searchParams.get('outputs') === '1');
     return json(res, 200, out);
   }
@@ -2062,8 +2062,8 @@ async function importsApi(req, res, url, p, m) {
     const b = await jsonBody(req);
     const h = hostOf(b.project), x = h && st(b.project);
     if (!x) return json(res, 404, { error: 'no such project' });
-    if ((b.items || []).some((it) => Array.isArray(it.keep) && it.keep.length)) return json(res, 403, { error: 'Keeping a possible secret needs the portal password: the sheet asks for it.' });
-    if (remote && (b.items || []).some((it) => it.outputs === true)) return json(res, 403, { error: 'From another device, tool outputs come only with the portal password (the sheet asks for it), and are not shown here.' });
+    if ((b.items || []).some((it) => Array.isArray(it.keep) && it.keep.length)) return json(res, 403, { error: 'Keeping a possible secret needs the web app password: the sheet asks for it.' });
+    if (remote && (b.items || []).some((it) => it.outputs === true)) return json(res, 403, { error: 'From another device, tool outputs come only with the web app password (the sheet asks for it), and are not shown here.' });
     return json(res, 200, { results: (b.items || []).map((it) => importCopyOne(h, x, it, [])) });
   }
   if (p === '/api/imports/staged' && m === 'DELETE') {

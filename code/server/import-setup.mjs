@@ -483,7 +483,7 @@ export class Setup {
         if (!digest) throw new ImportError(400, 'check it first');
         const pl = await this.plan(keys, { mode: u.mode, conflict: u.conflict, keep: u.keep }, { kind: 'copy', digest });
         if (pl.blocked) { out.push({ ...base, ok: false, why: pl.blocked }); continue; }
-        if (remote && pl.grants?.length) { out.push({ ...base, ok: false, password: true, why: 'From another device, what lets Claude act without asking is copied only with the portal password: the sheet asks for it.' }); continue; }
+        if (remote && pl.grants?.length) { out.push({ ...base, ok: false, password: true, why: 'From another device, what lets Claude act without asking is copied only with the web app password: the sheet asks for it.' }); continue; }
         if (pl.action === 'none') {
           // (nothing to write — but what this copy wants is recorded all the same: a rule the other tool added, wanted
           // by this one too, is never taken out by the other's next copy; the item is "copied" when nothing conflicted)

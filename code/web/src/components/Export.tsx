@@ -123,7 +123,7 @@ export function ExportDialog({ id, onClose }: { id: string; onClose: () => void 
           </button>
         )}
       </div>
-      {!framed && <p class="muted small">To put it in Files, open this page from the portal's Code tab.</p>}
+      {!framed && <p class="muted small">To put it in Files, open this page from the web app's Code tab.</p>}
     </Dialog>
   );
 }

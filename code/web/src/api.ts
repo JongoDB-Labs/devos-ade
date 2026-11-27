@@ -1973,7 +1973,7 @@ export async function reportRecent(report: RecentReport): Promise<void> {
 export async function redeemHandoff(id: string): Promise<Handoff> {
   const o = await request('POST', '/.bn/handoff', { id }, { 'X-Requested-With': 'bn-code' });
   const h = takeHandoff(o);
-  if (!h) throw new ApiError(502, 'The portal gave no chat to make a project from.');
+  if (!h) throw new ApiError(502, 'The web app gave no chat to make a project from.');
   return h;
 }
 /** The address the portal gives for the terminal: open=TOOL, or TOOL:NAME for another account of it (the portal encodes the
@@ -1985,7 +1985,7 @@ export const launchUrlOk = (url: string): boolean =>
 export async function terminalLaunch(tool: string, dir: string | null, mode: 'open' | 'add' = 'open'): Promise<string> {
   const o = await request('POST', '/.bn/terminal-launch', { tool, ...(dir ? { dir } : {}), ...(mode === 'add' ? { mode } : {}) }, { 'X-Requested-With': 'bn-code' });
   const url = str(o.url);
-  if (!launchUrlOk(url)) throw new ApiError(502, 'The portal gave no address for the terminal.');
+  if (!launchUrlOk(url)) throw new ApiError(502, 'The web app gave no address for the terminal.');
   return url;
 }
 export async function getModels(): Promise<BnModels> {
@@ -2253,7 +2253,7 @@ export function previewLinkOk(v: unknown, port: number): PreviewLink | null {
 export async function getPreviewLink(port: number, path = '/'): Promise<PreviewLink> {
   const o = await request('GET', '/.bn/preview' + q({ port, path: path === '/' ? undefined : path, format: 'json' }));
   const link = previewLinkOk(o, port);
-  if (!link) throw new ApiError(502, 'The portal answered with something that is not a preview link.');
+  if (!link) throw new ApiError(502, 'The web app answered with something that is not a preview link.');
   return link;
 }
 
@@ -2276,7 +2276,7 @@ export async function getArtifactSite(): Promise<{ available: boolean; origin: s
   const reason = label(o.reason ?? o.error, 300);
   if (o.available !== true) return { available: false, origin: '', reason: reason || 'The sandboxed viewer is off here.', expires: null };
   const origin = artifactOriginOk(o.origin);
-  if (!origin) throw new ApiError(502, 'The portal answered with something that is not an artifact viewer address.');
+  if (!origin) throw new ApiError(502, 'The web app answered with something that is not an artifact viewer address.');
   const expires = typeof o.expires === 'number' && Number.isFinite(o.expires) ? o.expires * 1000 : null;
   return { available: true, origin, reason: '', expires };
 }

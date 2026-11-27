@@ -1,7 +1,7 @@
 // Bring your setup's routes (the Code page: Settings › Claude Code › Bring your setup…, a project's ⋯ › Bring your
 // setup…, the Git panel's Use yours from this computer) — over import-setup.mjs: the last look at your Claude Code setup
 // on the computer (names and sizes), the items opened (read on the computer: their contents, checked here), a preview of
-// what copying one will do, and the copy into the sandbox. What needs the portal password — a look, an open, a copy that
+// what copying one will do, and the copy into the sandbox. What needs the web app password — a look, an open, a copy that
 // keeps a possible secret — the page asks the PORTAL (POST /.bn/sessions on this host: setup-scan, setup-fetch,
 // setup-copy), which writes the update helper's request; this container never sees the password and follows the
 // request by its id (GET /api/imports/request/<nonce>). A look and an open happen only on the computer itself; from
@@ -45,8 +45,8 @@ export function makeSetupApi({ setup, imports }) {
       if (p === '/api/setup/copy' && m === 'POST') {
         const b = await readJson();
         if (!Array.isArray(b?.units)) throw new ImportError(400, 'units: what to copy');
-        // (keeping a possible secret needs the portal password: such a copy goes through the portal and the helper)
-        if (b.units.some((u) => u && (u.keep === true || (Array.isArray(u.keep) && u.keep.length)))) throw new ImportError(403, 'Keeping a possible secret needs the portal password: the sheet asks for it.');
+        // (keeping a possible secret needs the web app password: such a copy goes through the portal and the helper)
+        if (b.units.some((u) => u && (u.keep === true || (Array.isArray(u.keep) && u.keep.length)))) throw new ImportError(403, 'Keeping a possible secret needs the web app password: the sheet asks for it.');
         // (from another device, a unit that lets something act without asking is refused too: that copy needs the password)
         return send(200, { results: await setup.copy(b.units.map((u) => ({ keys: Array.isArray(u?.keys) ? u.keys : [], mode: u?.mode, conflict: u?.conflict, digest: u?.digest, keep: [] })), { remote }) });
       }

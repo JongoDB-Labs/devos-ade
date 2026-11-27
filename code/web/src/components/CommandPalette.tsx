@@ -146,7 +146,7 @@ function actions(s: AppState): Item[] {
   for (const e of ['low', 'medium', 'high', 'xhigh', 'max']) list.push(a(`effort:${e}`, `Effort: ${e}`, () => setEffort(e), 'gauge'));
   list.push(a('effort:default', "Effort: the model's default", () => setEffort(null), 'gauge'));
   if (portal) {
-    list.push(a('settings', `${PRODUCT} Settings (Code page, Bypass, terminal)…`, () => window.open(`${portal}/#settings`, '_blank', 'noopener,noreferrer'), 'external', 'opens the portal in a new tab'));
+    list.push(a('settings', `${PRODUCT} Settings (Code page, Bypass, terminal)…`, () => window.open(`${portal}/#settings`, '_blank', 'noopener,noreferrer'), 'external', 'opens the web app in a new tab'));
   }
   return list;
 }

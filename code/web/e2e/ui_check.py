@@ -5244,7 +5244,7 @@ def import_sheet(browser):
     sheet = page.get_by_test_id("import-sheet")
     expect(sheet).to_be_visible()
     expect(page.get_by_test_id("import-folder")).to_have_text("/home/you/src/tools")
-    expect(page.get_by_test_id("import-look")).to_be_disabled()   # (the portal password first)
+    expect(page.get_by_test_id("import-look")).to_be_disabled()   # (the web app password first)
     # a wrong password: the portal refuses it (it checks the password: the Code page's backend never sees it)
     page.get_by_test_id("import-password").fill("wrong")
     page.get_by_test_id("import-look").click()
@@ -5301,7 +5301,7 @@ def import_sheet(browser):
     cc.get_by_test_id("import-thinking-toggle").click()
     expect(cc.get_by_test_id("import-thinking")).to_contain_text("kept", timeout=10_000)
     expect(cc.get_by_test_id("import-thinking-left")).to_contain_text("left out whole")
-    expect(page.get_by_test_id("import-keep-note")).to_contain_text("needs the portal password")
+    expect(page.get_by_test_id("import-keep-note")).to_contain_text("needs the web app password")
     expect(page.get_by_test_id("import-copy")).to_be_disabled()
     page.get_by_test_id("import-password-3").fill("correct horse")
     page.get_by_test_id("import-copy").click()
@@ -5432,7 +5432,7 @@ def setup_sheet(browser):
     sheet = page.get_by_test_id("setup-sheet")
     expect(sheet).to_be_visible()
     expect(page.get_by_test_id("setup-step-look")).to_contain_text("Never read")
-    expect(page.get_by_test_id("setup-look")).to_be_disabled()   # (the portal password first)
+    expect(page.get_by_test_id("setup-look")).to_be_disabled()   # (the web app password first)
     page.get_by_test_id("setup-password").fill("wrong")
     page.get_by_test_id("setup-look").click()
     expect(page.get_by_test_id("setup-error")).to_contain_text("password is not right", timeout=15_000)
@@ -5481,7 +5481,7 @@ def setup_sheet(browser):
     p.shot("setup-check.png")
     # copy: the ones that keep nothing at once; lan's secret kept goes through the portal with the password
     lan.get_by_test_id("setup-secret-copy").check()
-    expect(page.get_by_test_id("setup-keep-note")).to_contain_text("needs the portal password")
+    expect(page.get_by_test_id("setup-keep-note")).to_contain_text("needs the web app password")
     expect(page.get_by_test_id("setup-copy")).to_be_disabled()
     page.get_by_test_id("setup-password-3").fill("correct horse")
     # (the list read again late: a copied unit stayed with its choices cleared, and its preview — asked again for an
@@ -5545,7 +5545,7 @@ def setup_remote_phone(browser):
     p.close()
 
 
-@check("setup: from another device, what lets Claude act without asking goes through the portal password; on the computer it is said in its own words")
+@check("setup: from another device, what lets Claude act without asking goes through the web app password; on the computer it is said in its own words")
 def setup_remote_grants(browser):
     post(NORMAL + "/__mock/reset")
     # opened on the computer: devos-claude's permissions (its whole Bash; data-tool: its internal name) and the Git name

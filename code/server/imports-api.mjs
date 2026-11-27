@@ -1,7 +1,7 @@
 // The Import sheet's routes (the Code page: a project's ⋯ › Import sessions from this computer…), the suggestions and
 // Continue in this project — over import-sessions.mjs (the lists and the sessions read on the computer, how the
 // requests to the update helper went) and import-copy.mjs (the preview, the copy into the sandbox, the fork into
-// another project). What needs the portal password — a look, a read, suggestions, a copy that keeps a possible secret —
+// another project). What needs the web app password — a look, a read, suggestions, a copy that keeps a possible secret —
 // the page asks the PORTAL (POST /.bn/sessions on this host: it checks the password, decides whether the request is
 // remote, and writes the helper's request): this container never sees the password, and only follows the request by
 // its id. Over remote access the portal refuses a look and suggestions; reading sessions of a look allowed on the
@@ -19,7 +19,7 @@
 import { ImportError } from './import-sessions.mjs';
 import { preview, copy, continueIn } from './import-copy.mjs';
 
-const OUTPUTS_REMOTE = 'From another device, tool outputs come only with the portal password (the sheet asks for it), and are not shown here.';
+const OUTPUTS_REMOTE = 'From another device, tool outputs come only with the web app password (the sheet asks for it), and are not shown here.';
 import { isUuid } from './validate.mjs';
 
 const NONCE = /^[0-9a-f]{32}$/;
@@ -65,8 +65,8 @@ export function makeImportsApi({ imports, call, projects, cwdFor, rootFor }) {
         const b = await readJson();
         project(b.project);
         if (!Array.isArray(b.items)) throw new ImportError(400, 'items: the sessions to copy');
-        // (keeping a possible secret needs the portal password: such a copy goes through the portal and the helper)
-        if (b.items.some((it) => it && (it.keep === true || (Array.isArray(it.keep) && it.keep.length)))) throw new ImportError(403, 'Keeping a possible secret needs the portal password: the sheet asks for it.');
+        // (keeping a possible secret needs the web app password: such a copy goes through the portal and the helper)
+        if (b.items.some((it) => it && (it.keep === true || (Array.isArray(it.keep) && it.keep.length)))) throw new ImportError(403, 'Keeping a possible secret needs the web app password: the sheet asks for it.');
         if (remote && b.items.some((it) => it?.outputs === true)) throw new ImportError(403, OUTPUTS_REMOTE);
         return send(200, { results: await copy(imports, call, b.project, b.items.map((it) => ({ id: it?.id, keep: [], thinking: it?.thinking, outputs: it?.outputs === true, digest: it?.digest }))) });
       }

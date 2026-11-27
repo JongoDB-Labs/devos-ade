@@ -106,7 +106,7 @@ function UnlockExpired() {
   return (
     <div class="banner warn" role="alert" data-testid="unlock-expired">
       <Icon name="alert" size={15} />
-      <span>Your Code-page unlock expired (or you signed out). Sessions keep running; reload to unlock with the portal password.</span>
+      <span>Your Code-page unlock expired (or you signed out). Sessions keep running; reload to unlock with the web app password.</span>
       <span class="banner-actions">
         <a class="btn small" href={location.pathname || '/'}>
           Reload

@@ -102,7 +102,7 @@ export function takeExportReply(data: unknown, origin: string, source: unknown, 
  *  to show when there is no portal, or no answer in time. */
 export function portalExport(blob: Blob, name: string, win: Window, portal: string | null, timeoutMs = EXPORT_TIMEOUT_MS): Promise<{ key: string; bucket: string; url: string | null }> {
   return new Promise((resolve, reject) => {
-    if (!portal || win.parent === win) return reject(new Error('This page is not open in the portal: use Download instead.'));
+    if (!portal || win.parent === win) return reject(new Error('This page is not open in the web app: use Download instead.'));
     const id = Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => b.toString(16).padStart(2, '0')).join('');
     const done = (f: () => void) => {
       clearTimeout(timer);
@@ -114,12 +114,12 @@ export function portalExport(blob: Blob, name: string, win: Window, portal: stri
       if (!r) return;
       done(() => (r.ok ? resolve({ key: r.key, bucket: r.bucket, url: r.url }) : reject(new Error(r.error))));
     };
-    const timer = setTimeout(() => done(() => reject(new Error('The portal did not answer in time: the zip may not be in Files.'))), timeoutMs);
+    const timer = setTimeout(() => done(() => reject(new Error('The web app did not answer in time: the zip may not be in Files.'))), timeoutMs);
     win.addEventListener('message', on);
     try {
       win.parent.postMessage(exportMessage(id, name, blob), originOf(portal) ?? portal);
     } catch {
-      done(() => reject(new Error('The portal could not be reached from this page.')));
+      done(() => reject(new Error('The web app could not be reached from this page.')));
     }
   });
 }

@@ -815,7 +815,7 @@ function ComputerFolder({ portal }: { portal: string | null }) {
         folder (git hooks, .envrc, VS Code tasks, npm scripts). Read-only for Claude is offered (--read-only).
       </span>
       <span class="muted small">
-        The sandbox restarts to see it (~15 s): open sessions resume with your next prompt.{portal ? '' : ` (Settings is on the ${PRODUCT} portal.)`}
+        The sandbox restarts to see it (~15 s): open sessions resume with your next prompt.{portal ? '' : ` (Settings is on the ${PRODUCT} web app.)`}
       </span>
     </span>
   );

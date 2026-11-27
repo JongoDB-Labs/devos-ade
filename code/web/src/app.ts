@@ -3004,7 +3004,7 @@ export async function loadPreviewInfo(force = false): Promise<PreviewInfo | null
     set((s) => ({ ...s, preview: info }));
     return info;
   } catch (e) {
-    const info: PreviewInfo = { available: false, reason: `Could not ask the portal: ${errText(e)}`, routing: 'host', setup: '' };
+    const info: PreviewInfo = { available: false, reason: `Could not ask the web app: ${errText(e)}`, routing: 'host', setup: '' };
     set((s) => ({ ...s, preview: info }));
     return null;
   }

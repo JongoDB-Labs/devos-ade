@@ -5,7 +5,7 @@
 // dialog on its screen, then lists names and sizes only; never asked over remote access. 2 Pick and open — the items
 // you tick are read in whole (on the computer too). 3 Check and copy — each one as it will be: what it costs in every
 // request, the programs, paths and rules it brings, its possible secrets (redacted, or left out, unless you keep one:
-// the portal password), whether the sandbox has one of its own (left as it is unless you choose), the exact text it
+// the web app password), whether the sandbox has one of its own (left as it is unless you choose), the exact text it
 // writes. Nothing is written back to the computer; logins, credentials and env are never read.
 // Everything shown is what your setup held — untrusted text (a skill can say anything): shown as text only; what the
 // sandbox has now is its own words, shown apart.
@@ -310,7 +310,7 @@ function CheckStep({ view, local, onChanged }: { view: SetupView; local: boolean
       if (plain.length) out.push(...await api.setupCopy(plain.map((k) => ({ keys: k, mode: ch(k).mode, conflict: ch(k).conflict, digest: previews[idOf(k)]?.digest ?? '' }))));
       for (const k of kept) {
         const pv = previews[idOf(k)];
-        setPhase(ch(k).keep.length ? 'Copying on the computer, with what you chose to keep…' : 'Copying on the computer, with the portal password…');
+        setPhase(ch(k).keep.length ? 'Copying on the computer, with what you chose to keep…' : 'Copying on the computer, with the web app password…');
         try {
           const req = await api.setupCopyKept({ keys: k, mode: ch(k).mode, conflict: ch(k).conflict, digest: pv?.digest ?? '', keep: ch(k).keep }, pw);
           const r = await follow(req);
@@ -368,8 +368,8 @@ function CheckStep({ view, local, onChanged }: { view: SetupView; local: boolean
         <>
           {kept.length > 0 && (
             <p class="small warn-text" data-testid="setup-keep-note">
-              {todo.some(granted) ? 'From another device, what lets Claude act without asking (and keeping a possible secret) needs the portal password'
-                : 'Keeping a possible secret needs the portal password'}: the update helper on the computer makes that copy ({kept.length} item{kept.length === 1 ? '' : 's'}).
+              {todo.some(granted) ? 'From another device, what lets Claude act without asking (and keeping a possible secret) needs the web app password'
+                : 'Keeping a possible secret needs the web app password'}: the update helper on the computer makes that copy ({kept.length} item{kept.length === 1 ? '' : 's'}).
             </p>
           )}
           <div class="imp-ask">
@@ -443,7 +443,7 @@ function Unit({ keys, staged, choice, set, onPreview, onDropped }: { keys: strin
         <div class="imp-checks">
           {pv.blocked && (
             <div class={`small ${keyable ? 'muted' : 'plg-err'}`} data-testid="setup-blocked">
-              <Icon name="alert" size={13} /> {keyable ? 'Copied with the secret you keep (the portal password).' : pv.blocked}
+              <Icon name="alert" size={13} /> {keyable ? 'Copied with the secret you keep (the web app password).' : pv.blocked}
             </div>
           )}
           {first.kind === 'memory' && (

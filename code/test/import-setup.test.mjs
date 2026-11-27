@@ -395,7 +395,7 @@ test('M1: grants in front matter said in plain words — allowed-tools, a permis
   // L1: from another device a copy with grants is refused (the password, through the portal); one without is copied
   const r = (await setup.copy([{ keys: [keyOf(row('skill', 'shell'))], digest: shell.digest }, { keys: [keyOf(row('skill', 'notes'))], digest: (await pv('skill', 'notes')).digest }], { remote: true }));
   assert.deepEqual(r.map((x) => [x.name, x.ok, x.password === true]), [['shell', false, true], ['notes', true, false]]);
-  assert.match(r[0].why, /portal password/);
+  assert.match(r[0].why, /web app password/);
   assert.ok(!fs.existsSync(path.join(CONF, 'skills', 'shell')));
   // on this computer: copied (the warning was the page's)
   assert.equal((await setup.copy([{ keys: [keyOf(row('skill', 'shell'))], digest: shell.digest }]))[0].ok, true);
