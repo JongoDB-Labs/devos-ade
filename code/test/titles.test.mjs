@@ -249,14 +249,30 @@ test('the titler: at most 20 wait; past that the oldest keeps its first prompt (
   assert.ok(!made.includes('p2'), 'the dropped one was not');
 });
 
+test('the titler: one that waits and is no longer asked for frees its place for the next at once', async () => {
+  const done = new Map();   // prompt -> its release
+  const made = [], saved = new Map();
+  const t = new Titler({ make: (p) => { made.push(p); return new Promise((r) => done.set(p, () => r('T'))); },
+    has: (id) => saved.has(id), save: (id, x) => saved.set(id, x), log: () => {} });
+  const ss = [sess(uuid()), sess(uuid()), sess(uuid()), sess(uuid())];
+  ss.forEach((s, i) => turn(t, s, `p${i}`, ['a']));
+  await tick();
+  assert.deepEqual(made, ['p0', 'p1']);
+  saved.set(ss[2].id, 'Titled elsewhere');   // (p2 waits, and needs no title now)
+  done.get('p0')();                          // (only one of the two is done; p1 still runs)
+  await tick(); await tick();
+  assert.deepEqual(made, ['p0', 'p1', 'p3'], 'p3 asked for, not stalled behind p2');
+  done.get('p1')(); done.get('p3')();
+});
+
 test('who is titled: a session begun here, on Bedrock, on a Claude model or the default', () => {
   assert.equal(notTitled(sess('a')), false, 'the default model');
-  for (const model of ['claude-haiku-5-5', 'claude-sonnet-5-5', 'haiku', 'sonnet[1m]']) assert.equal(notTitled(sess('a', { model })), false, model);
+  for (const model of ['claude-haiku-5-5', 'claude-sonnet-5-5', 'haiku', 'sonnet[1m]', 'anthropic.claude-haiku-5-5', 'us.anthropic.claude-haiku-5-5']) assert.equal(notTitled(sess('a', { model })), false, model);
   assert.equal(notTitled(sess('a', { begunHere: false })), true, 'a resumed or forked session: its prompt here is a later one');
   assert.equal(notTitled(sess('a', { harness: 'claude' })), true, 'your plan: no Bedrock spend behind it');
   assert.equal(notTitled(sess('a', { harness: 'codex' })), true, 'an agent');
   assert.equal(notTitled(sess('a', { harness: undefined })), true);
-  for (const model of ['or/meta-llama/llama-4:free', 'xl/some-model', 'deepseek.r1', 'gpt-5']) assert.equal(notTitled(sess('a', { model })), true, model);
+  for (const model of ['or/meta-llama/llama-4:free', 'or/anthropic/claude-haiku-5', 'xl/some-model', 'deepseek.r1', 'gpt-5']) assert.equal(notTitled(sess('a', { model })), true, model);
   assert.equal(notTitled(null), true);
 });
 

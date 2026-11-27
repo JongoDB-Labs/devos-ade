@@ -86,7 +86,8 @@ export function makeTitleMaker({ query, spawn, log = () => {}, run = runDraft, t
 export function notTitled(s) {
   if (!s || s.begunHere !== true || s.harness !== 'bedrock') return true;
   const m = s.model;
-  return !(m === null || m === undefined || m === '' || (typeof m === 'string' && (/^claude-/i.test(m) || MODEL_ALIAS.test(m))));
+  // (Bedrock's own ids too: anthropic.claude-…, us.anthropic.claude-…)
+  return !(m === null || m === undefined || m === '' || (typeof m === 'string' && (/^([a-z]{2,4}\.)?(anthropic\.)?claude-/i.test(m) || MODEL_ALIAS.test(m))));
 }
 
 const SEEN_MAX = 200, TRIED_MAX = 5000, ACTIVE_MAX = 2, WAITING_MAX = 20;
@@ -150,12 +151,13 @@ export class Titler {
       this.log(`session title ${id.slice(0, 8)}: ${String(err?.message || err).slice(0, 200)}`);
     }
   }
-  // the first one waiting, now that one of the two is done
+  // the ones waiting, in turn, while fewer than two are being made (one no longer asked for — renamed, titled, its
+  // model changed — frees its place for the next at once; ask() starts its request before its first await)
   next() {
-    const first = this.waiting.entries().next();
-    if (first.done) return;
-    const [id, [s, e]] = first.value;
-    this.waiting.delete(id);
-    void this.ask(s, e);
+    while (this.active < ACTIVE_MAX && this.waiting.size) {
+      const [id, [s, e]] = this.waiting.entries().next().value;
+      this.waiting.delete(id);
+      void this.ask(s, e);
+    }
   }
 }
