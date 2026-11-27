@@ -4,11 +4,14 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.73.1] - 2026-11-27
 
 ### Fixed
 
 - **An update no longer checks the models again when only a comment changed in the stack's own model code.** The check that finds which Bedrock models your key can call is kept when nothing it depends on changed. Until now a comment edit in the stack's model code counted as a change, and the next update ran the check again and took about a minute and a half longer. It now looks at the code, not the comments. The update that brings this fix keeps your last check too. (JON-1429)
+
+### To get it
+Existing installs: Home › Update now.
 
 ## [0.73.0] - 2026-11-27
 
