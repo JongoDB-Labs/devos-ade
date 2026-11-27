@@ -866,8 +866,7 @@ def _host(i="p_aaaa0001", name="src", path="/Volumes/me/src", ok=True, pending=N
 def test_session_projects_lists_the_workspace_its_projects_then_this_computers_folders(cs):
     _summary(cs, [_row("ws", "Workspace", ""), _row(), _row("p_00000001", "Old", "old", gone=True), _row("p_00000002", "Lost", "lost", folder="missing"),
                   _row("p_89abcdef", "src", "/projects/src", host=True, path="/projects/src")])
-    _host_folders(cs, [_host(), _host("p_aaaa0002", "later", "/Volumes/me/later", pending="add"), _host("p_aaaa0003", "broken", "/Volumes/me/b", ok=False),
-                       _host("p_0123abcd", "clash", "/Volumes/me/clash")])
+    _host_folders(cs, [_host(), _host("p_aaaa0002", "later", "/Volumes/me/later", pending="add"), _host("p_aaaa0003", "broken", "/Volumes/me/b", ok=False)])
     d = answers.session_projects(cs, False)
     assert d["listed"] is True
     assert [(p["id"], p["where"], p["ok"]) for p in d["projects"]] == [
@@ -876,8 +875,17 @@ def test_session_projects_lists_the_workspace_its_projects_then_this_computers_f
     assert d["projects"][0] == {"id": "ws", "name": "Workspace", "path": "/workspace", "where": "workspace", "ok": True, "why": ""}
     assert d["projects"][2]["why"] == "its folder is not there"
     assert d["projects"][4]["why"] == "the sandbox sees it once it restarts"
-    # (a gone project, a folder ./stack says is broken, a host row of the summary and a repeated id: not listed)
-    assert "Old" not in json.dumps(d) and "broken" not in json.dumps(d) and "clash" not in json.dumps(d)
+    # (a gone project, a folder ./stack says is broken and a host row of the summary: not listed)
+    assert "Old" not in json.dumps(d) and "broken" not in json.dumps(d)
+
+
+def test_session_projects_a_summary_row_never_takes_one_of_this_computers_folders(cs):
+    # (the code container's file is untrusted: a row with the id of a folder ./stack lists is left out; ./stack's row stays)
+    _summary(cs, [_row("p_aaaa0001", "Spoof", "spoof")])
+    _host_folders(cs, [_host()])
+    d = answers.session_projects(cs, False)
+    assert [(p["id"], p["where"], p["name"], p["path"]) for p in d["projects"]] == [
+        ("ws", "workspace", "Workspace", "/workspace"), ("p_aaaa0001", "computer", "src", "/Volumes/me/src")]
 
 
 def test_session_projects_without_a_list_from_code_is_the_workspace_and_this_computers_folders(cs):

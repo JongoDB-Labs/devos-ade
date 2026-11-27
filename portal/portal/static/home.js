@@ -248,12 +248,13 @@
       // not only the one it shows now (JON-1158)
       const list = cont && cont.code && cont.code.projects && Array.isArray(cont.code.projects.projects) ? cont.code.projects.projects : [];
       if (list.length > 1) {
-        const pick = el("button", { type: "button", class: "action cont-new-in", "aria-haspopup": "menu", "aria-label": "New session in a project…", title: "New session in a project…" },
+        const pick = el("button", { type: "button", class: "action cont-new-in", "aria-haspopup": "menu", "aria-expanded": "false", "aria-label": "New session in a project…", title: "New session in a project…" },
           icon(CHEVRON));
         pick.dataset.k = "new-session-in";
         pick.addEventListener("click", () => {
+          if (bnMenu.current() && pick.getAttribute("aria-expanded") === "true") { bnMenu.close(); return; }
           const r = pick.getBoundingClientRect();
-          bnMenu.open(r.left, r.bottom + 4, projectActions(list, project ? project.id : ""), pick, "a new session");
+          if (bnMenu.open(r.left, r.bottom + 4, projectActions(list, project ? project.id : ""), pick, "a new session")) pick.setAttribute("aria-expanded", "true");
         });
         acts.append(pick);
       }

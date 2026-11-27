@@ -1881,7 +1881,7 @@
       for (const p of mine) {
         const li = el("li", { class: "set-project", "data-project": p.id },
           el("span", { class: "set-project-name", text: p.name }), " ", el("span", { class: "note", text: p.path }));
-        if (!p.ok) li.append(el("p", { class: "error", text: `Not there: ${p.why}.` }));
+        if (!p.ok) li.append(el("p", { class: "error", text: `No new session here: ${p.why}.` }));
         const go = el("button", { type: "button", class: "action", text: "New session", "data-act": "project-new-session" });
         go.disabled = !p.ok;
         go.addEventListener("click", () => { if (window.bnCode && window.bnCode.newSession) window.bnCode.newSession(p.id); else showTab("code"); });

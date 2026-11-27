@@ -3485,6 +3485,8 @@ def home_new_session_in(ctx):
         see(frame.get_by_test_id("project-chip-name")).to_have_text(NEWIN_NAME, timeout=60000)
         shot(home, "home-new-in-2-code")
         # Settings › Claude Code › Project folders: the workspace's projects beside this computer's folders, each with New session
+        # (the Code tab sent elsewhere first, so what Settings' button opens is its own doing)
+        home.evaluate("() => { document.querySelector('iframe[data-app=code]').src = 'about:blank'; }")
         open_settings(home, "code")
         row = home.locator(f"#set-code-projects [data-project='{pid}']")
         see(row).to_contain_text(NEWIN_NAME, timeout=30000)
@@ -3494,13 +3496,15 @@ def home_new_session_in(ctx):
         row.locator("[data-act=project-new-session]").click()
         home.wait_for_selector("iframe[data-app=code]:not([hidden])", timeout=10000)
         src2 = home.get_attribute("iframe[data-app=code]", "src") or ""
-        expect(f"project={pid}" in src2, f"Settings' New session opened {src2}")
+        expect("new=1" in src2 and f"project={pid}" in src2, f"Settings' New session opened {src2}")
+        see(frame.get_by_test_id("project-chip-name")).to_have_text(NEWIN_NAME, timeout=60000)
         probs = c.rec.problems(allow=LOCKED_OK) + hrec.problems(allow=LOCKED_OK + [r"^401 GET " + re.escape(CODE) + r"/\?(new|project)="])
         c.rec.save(); hrec.save()
         expect(not probs, f"errors: {probs[:6]}")
     finally:
         _drop_projects(c, (NEWIN_ROOT,))
-        c.api("DELETE", f"/api/fs?path={NEWIN_ROOT}")
+        if NEWIN_ROOT in {e["name"] for e in (c.api("GET", "/api/fs?path=.")["json"] or {}).get("entries", [])}:
+            c.api("DELETE", f"/api/fs?path={NEWIN_ROOT}")
     return (f"{NEWIN_NAME} ({pid}) in /api/continue's list after the workspace; Home's New session in… → the Code tab, a new session in it "
             "(the project chip); Settings › Project folders lists it under the workspace's projects, its New session → the Code tab at it")
 

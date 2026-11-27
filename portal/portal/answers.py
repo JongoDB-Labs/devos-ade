@@ -237,14 +237,17 @@ def session_projects(s, remote: bool = False) -> dict | None:
     if not s.code_on(remote):
         return None
     d = st.code_projects(s.code_projects_dir)
+    hosts = folders(s.status_dir)
+    # (./stack's ids are its own: a row of the code container's file that takes one is not listed — the file is untrusted)
+    host_ids = {f["id"] for f in hosts}
     out = [{"id": "ws", "name": "Workspace", "path": "/workspace", "where": "workspace", "ok": True, "why": ""}]
     for p in d["projects"]:
-        if p["id"] == "ws" or p["gone"]:
+        if p["id"] == "ws" or p["gone"] or p["id"] in host_ids:
             continue
         missing = p["folder"] == "missing"
         out.append({"id": p["id"], "name": p["name"], "path": p["path"], "where": "workspace", "ok": not missing,
                     "why": "its folder is not there" if missing else ""})
-    for f in folders(s.status_dir):
+    for f in hosts:
         if any(x["id"] == f["id"] for x in out):
             continue
         later = f["pending"] == "add"

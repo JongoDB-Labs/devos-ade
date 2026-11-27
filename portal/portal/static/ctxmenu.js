@@ -39,7 +39,7 @@
     const m = menu, f = back;
     menu = null; back = null;
     m.remove();
-    for (const b of document.querySelectorAll(".ctx-more[aria-expanded=true]")) b.setAttribute("aria-expanded", "false");
+    for (const b of document.querySelectorAll(".ctx-more[aria-expanded=true], .cont-new-in[aria-expanded=true]")) b.setAttribute("aria-expanded", "false");
     document.removeEventListener("pointerdown", onOutside, true);
     document.removeEventListener("scroll", onScroll, true);
     window.removeEventListener("resize", onResize);
