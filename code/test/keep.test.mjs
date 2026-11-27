@@ -30,7 +30,7 @@ function sandbox() {
   const repos = new Map();
   const log = [];
   const server = new Map();   // "remote url" -> Map(branch -> commit)
-  let busy = 0, maxBusy = 0, delay = 0, refuse = new Set(), afterLook = null;
+  let busy = 0, maxBusy = 0, delay = 0, refuse = new Set(), afterLook = null, down = false;
   let headsBusy = 0, maxHeadsBusy = 0, headsDelay = 0, headsFail = null;   // (git.heads: the cheap look, JON-1430)
   const repo = (r) => {
     if (!repos.has(r)) throw new SandboxError('not a git repository', 'refused');
@@ -70,12 +70,13 @@ function sandbox() {
       try {
         if (delay) await tick(delay);
         if (refuse.has(req.branch)) throw new SandboxError(`the remote's ${req.dst} has commits this branch does not have: pull first`, 'refused');
+        if (down) throw new Error('could not reach the local git server');
         return { result: { ok: true, action: req.action, sha: g.branches[req.branch], upToDate: false, created: true, upstream: true } };
       } finally { busy--; }
     }
     throw new Error(`unexpected ${req.op}`);
   };
-  return { call, log, repos, server, get maxBusy() { return maxBusy; }, set delay(v) { delay = v; }, get maxHeadsBusy() { return maxHeadsBusy; }, set headsDelay(v) { headsDelay = v; }, set headsFail(v) { headsFail = v; },
+  return { call, log, repos, server, get maxBusy() { return maxBusy; }, set delay(v) { delay = v; }, set down(v) { down = v; }, get maxHeadsBusy() { return maxHeadsBusy; }, set headsDelay(v) { headsDelay = v; }, set headsFail(v) { headsFail = v; },
     asks: (op) => log.filter((r) => r.op === op), refuse, after: (f) => { afterLook = f; },
     nets: () => log.filter((r) => r.op === 'git.net'),
     make: (r, over = {}) => repos.set(r, { branch: 'main', branches: { main: sha('a') }, remotes: {}, ...over }) };
@@ -755,4 +756,38 @@ test('the look: never overlaps itself; without the option there is no look; star
   const after1 = s.sb.asks('git.heads').length;
   await tick(100);
   assert.equal(s.sb.asks('git.heads').length, after1, 'closed: no more looks');
+});
+
+test('the look: a push it started that failed is not tried again every look (the sweep does); keeping the project again forgets that', async () => {
+  const s = setup();
+  const id = project(s, 'Flaky', 'flaky');
+  await s.keep.keep(id, {});
+  assert.equal(s.projects.localgit(id).heads.main, sha('a'));
+  s.sb.down = true;
+  s.sb.repos.get('flaky').branches.main = sha('b');
+  await s.keep.look();
+  await sleepUntil(() => s.sb.nets().length === 2);
+  await tick(30);
+  assert.equal(s.projects.localgit(id).heads.main, sha('a'), 'the push failed');
+  s.sb.down = false;
+  const nets = s.sb.nets().length;
+  await s.keep.look();
+  await tick(30);
+  assert.equal(s.sb.nets().length, nets, 'the same commit is not tried again by the look');
+  await s.keep.sweep();
+  assert.equal(s.projects.localgit(id).heads.main, sha('b'), 'the sweep pushes it');
+  // (kept again after Stop keeping it here, its own first push failing: the look pushes that commit, not only the sweep)
+  s.sb.repos.get('flaky').branches.main = sha('c');
+  s.sb.down = true;
+  await s.keep.look();
+  await sleepUntil(() => s.sb.nets().length === nets + 2);
+  await tick(30);
+  await s.keep.stop(id);
+  await s.keep.keep(id, { name: 'flaky-again' });
+  await tick(30);
+  assert.notEqual(s.projects.localgit(id).heads.main, sha('c'), 'the keep\'s own push failed');
+  s.sb.down = false;
+  await s.keep.look();
+  await sleepUntil(() => s.projects.localgit(id).heads.main === sha('c'));
+  assert.equal(s.projects.localgit(id).heads.main, sha('c'), 'the look pushed it after the new keep');
 });

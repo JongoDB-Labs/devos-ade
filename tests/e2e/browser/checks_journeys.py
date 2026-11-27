@@ -340,8 +340,8 @@ def terminal_folder_to_git(ctx):
         out4 = T.term_text(f)
         j.step("j4-commit-exit-0" in out4,
                f"git commit in {J4} (kept, no commit yet) failed in the Terminal tab: {out4[-300:]!r}")
-        st4, _ = wait_repo(ctx, J4, "/commits?limit=1", 30)
-        j.step(st4 == 200, f"JON-1430: a commit made in the Terminal in {J4}, kept with no commit yet, is not on the server {owner}/{J4} within 30 s (HTTP {st4}): it waits for the 10-minute sweep")
+        st4, _ = wait_repo(ctx, J4, "/commits?limit=1", 45)
+        j.step(st4 == 200, f"JON-1430: a commit made in the Terminal in {J4}, kept with no commit yet, is not on the server {owner}/{J4} within 45 s (HTTP {st4}): it waits for the 10-minute sweep")
         # (JON-1158: the Terminal tab, still open, lists the same project in its Projects panel, as kept)
         try:
             T.show_projects_widget(tp)

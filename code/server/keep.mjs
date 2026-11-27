@@ -121,6 +121,7 @@ export function makeKeep({ store, remote, mirrors, git = null, heads = null, now
   // the same project at once — the second waits for the first, then finds it kept: 409 "keeps this project already")
   const keeping = new Map();   // project id -> the keep in progress
   function keep(id, b = {}) {
+    tried.delete(id);   // (the look's memory of a push that did not go: a new keep starts afresh)
     const run = (keeping.get(id) || Promise.resolve()).catch(() => {}).then(() => keepOnce(id, b));
     keeping.set(id, run);
     run.finally(() => { if (keeping.get(id) === run) keeping.delete(id); }).catch(() => {});
@@ -279,6 +280,7 @@ export function makeKeep({ store, remote, mirrors, git = null, heads = null, now
   // stop(id) -> {ok, repo, removed}: the remote goes from the project's repository (when it is still the one made here) and the
   // project is not kept any more — and not asked about again. The repository stays on the server, with everything pushed.
   async function stop(id) {
+    tried.delete(id);
     const rec = store().localgit(id);
     if (rec?.state !== 'kept') throw err(409, 'this project is not kept on the local git server');
     await running.get(id)?.catch(() => {});
@@ -386,13 +388,16 @@ export function makeKeep({ store, remote, mirrors, git = null, heads = null, now
           const h = out?.heads?.[k];
           if (!h || h.error || typeof h.branch !== 'string' || !HEX.test(h.head ?? '')) return;
           const rec = store().localgit(a.id);
-          if (rec?.state !== 'kept' || !rec.auto || rec.heads[h.branch] === h.head || rec.rejected[h.branch] === h.head) return;
+          if (rec?.state !== 'kept' || !rec.auto) return;
+          // (pushed, or refused: nothing to do — and a later move back to this same commit is a new one to push)
+          if (rec.heads[h.branch] === h.head || rec.rejected[h.branch] === h.head) { tried.delete(a.id); return; }
           const mark = `${h.branch}@${h.head}`;
           if (tried.get(a.id) === mark && !running.has(a.id)) return;
           tried.set(a.id, mark);
           trigger(a.id);
         });
       }
+      lookSaid.clear();   // (answered: a failure after this is said again)
     } catch (e) {
       const text = short(e?.message || String(e), 200);
       if (/unknown op/i.test(text)) {

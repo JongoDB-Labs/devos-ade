@@ -2728,13 +2728,17 @@ function noLinksTo(abs, top) {
   }
   return true;
 }
-// smallFile(abs, cap) -> the text of a regular file (not a link) of at most cap bytes, or null
+// smallFile(abs, cap) -> the text of a regular file (not a link) of at most cap bytes, or null. Opened O_NOFOLLOW|O_NONBLOCK and
+// checked on the open file (fstat), as the other reads here: a file swapped for a link, a FIFO or a device after a look at it
+// is never followed, waited on or read without end (the look runs every few seconds on this daemon's one thread)
 function smallFile(abs, cap) {
+  let fd;
+  try { fd = fs.openSync(abs, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK); } catch { return null; }
   try {
-    const st = fs.lstatSync(abs);
+    const st = fs.fstatSync(fd);
     if (!st.isFile() || st.size > cap) return null;
-    return fs.readFileSync(abs, 'utf8');
-  } catch { return null; }
+    return readSlice(fd, 0, st.size).toString('utf8');
+  } catch { return null; } finally { try { fs.closeSync(fd); } catch { /* closed */ } }
 }
 const headBranchOk = (b) => typeof b === 'string' && b.length > 0 && b.length <= 255 && !/[\0-\x1f\x7f\\]/.test(b) && b.split('/').every((s) => s && s !== '.' && s !== '..');
 function headsOf(repo) {
@@ -2775,7 +2779,7 @@ function headsOf(repo) {
     if (loose !== null) { const t = loose.trim(); if (SHA.test(t)) head = t; }
     else {
       const packed = smallFile(path.join(common, 'packed-refs'), HEADS_PACKED_MAX);
-      if (packed !== null) for (const l of packed.split('\n')) {
+      if (packed !== null && packed.includes(` refs/heads/${b}`)) for (const l of packed.split('\n')) {
         const mm = /^([0-9a-f]{40}(?:[0-9a-f]{24})?) (.+)$/.exec(l.trim());
         if (mm && mm[2] === `refs/heads/${b}`) { head = mm[1]; break; }
       }

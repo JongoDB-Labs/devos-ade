@@ -138,3 +138,38 @@ test('the answer holds nothing but repo, branch, head and error; a head is 40 or
   assert.ok(!JSON.stringify(r).includes('rm -rf'));
   assert.equal(r[0].head, git(d, 'rev-parse', 'HEAD'));
 });
+
+test('a FIFO or a device where HEAD, a ref or packed-refs is: an answer at once, never a wait or an endless read', async () => {
+  // (the files are opened O_NOFOLLOW|O_NONBLOCK and checked on the open file: a FIFO with no writer would block the daemon's one
+  // thread if opened plainly, and a link to /dev/zero would be read without end)
+  const d = repo('fifohead');
+  fs.rmSync(path.join(d, '.git/HEAD'));
+  execFileSync('mkfifo', [path.join(d, '.git/HEAD')]);
+  const d2 = repo('fiforef');
+  fs.rmSync(path.join(d2, '.git/refs/heads/main'));
+  execFileSync('mkfifo', [path.join(d2, '.git/refs/heads/main')]);
+  const d3 = repo('zeropacked');
+  fs.rmSync(path.join(d3, '.git/refs/heads/main'));
+  fs.symlinkSync('/dev/zero', path.join(d3, '.git/packed-refs'));
+  const t0 = Date.now();
+  const [a, b, c] = await heads(['fifohead', 'fiforef', 'zeropacked']);
+  assert.ok(Date.now() - t0 < 5000, 'answered at once');
+  assert.equal(a.repo, 'fifohead'); assert.ok(a.error, 'a FIFO HEAD: an error');
+  assert.deepEqual(b, { repo: 'fiforef', branch: 'main', head: null });
+  assert.deepEqual(c, { repo: 'zeropacked', branch: 'main', head: null });
+});
+
+test('a packed-refs over 1 MiB is not read; a commondir or a branch name that leads out: an error', async () => {
+  const d = repo('bigpacked');
+  const sha = git(d, 'rev-parse', 'HEAD');
+  fs.rmSync(path.join(d, '.git/refs/heads/main'));
+  fs.writeFileSync(path.join(d, '.git/packed-refs'), `${'#'.repeat((1 << 20) + 10)}\n${sha} refs/heads/main\n`);
+  assert.deepEqual((await heads(['bigpacked']))[0], { repo: 'bigpacked', branch: 'main', head: null });
+  const e = repo('commonout');
+  fs.writeFileSync(path.join(e, '.git/commondir'), '../../../outside\n');
+  assert.ok((await heads(['commonout']))[0].error, 'a commondir outside the root: an error');
+  const f = repo('branchout');
+  fs.writeFileSync(path.join(f, '.git/HEAD'), 'ref: refs/heads/../../../../outside/x\n');
+  const r = (await heads(['branchout']))[0];
+  assert.ok(r.error && r.head === undefined, `a branch name with .. is not read: ${JSON.stringify(r)}`);
+});
