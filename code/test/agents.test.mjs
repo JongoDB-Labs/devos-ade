@@ -448,5 +448,5 @@ test('the page\'s card names and inputs; diffs; ids; plans; limits; the harness 
   for (const bad of ['plan-codex--', 'plan-codex--a~5B', 'plan-codex--a~5', 'plan-codex--a~zz', 'plan-codex--a/b', 'plan-codex--%41', 'plan-codex--~41', 'plan-gemini--x', 'plan-cursor--x', 'plan--x', 'plan-codex--x\n', 42, null]) {
     assert.equal(parseChatModel(bad), null, String(bad));
   }
-  assert.ok(harnessOk('bedrock') && harnessOk('claude') && !harnessOk('gemini'));
+  assert.ok(harnessOk('bedrock') && harnessOk('claude') && harnessOk('gemini') && !harnessOk('gem'));
 });

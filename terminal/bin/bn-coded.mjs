@@ -159,6 +159,8 @@ export const AGENTS = Object.freeze({
     chat: ['--acp', '--stdio', '--disable-builtin-mcps', '--no-custom-instructions', '--no-ask-user', '--disallow-temp-dir', '--available-tools=',
       '--deny-tool=shell', '--deny-tool=write', '--deny-tool=url'] },
   cursor: { bin: 'cursor-agent', code: ['acp'], chat: null },
+  // Gemini CLI: ACP, starting in its asking mode; not in Chat yet (JON-1424). Its two variables are set in agentEnv.
+  gemini: { bin: 'gemini', code: ['--acp', '--approval-mode', 'default'], chat: null },
   grok: { bin: 'grok', code: ['agent', '--no-leader', 'stdio'], chat: ['--tools=', '--disable-web-search', '--no-subagents', 'agent', '--no-leader', 'stdio'] },
 });
 // This spawn server's role: the terminal's (everything here: the Code page's sessions in the workspace) or Chat's
@@ -451,9 +453,15 @@ export function planEnv(extra, base = process.env, account = null, root = SUBS_R
   env.DISABLE_AUTOUPDATER = '1';
   return env;
 }
+// Gemini CLI's system settings for a Code page session (terminal/tools/gemini-code-settings.json): they outrank the
+// project's and yours — no YOLO mode, and .env files read only from the home folder
+export const GEMINI_CODE_SETTINGS = '/etc/gemini-cli/code-settings.json';
 // agentEnv(base) -> a subscription agent's environment (Codex, Copilot, Cursor, Grok): this container's without the
-// stack's variables; nothing added (each launcher sets its tool's own folder and switches)
-export function agentEnv(base = process.env, account = null, tool = null, root = SUBS_ROOT) {
+// stack's variables; nothing added (each launcher sets its tool's own folder and switches). Gemini CLI's Code page
+// session gets two more, from here and never from the project: its system settings file, and whether it trusts the
+// folder (GEMINI_CLI_TRUST_WORKSPACE decides that outright: untrusted, it ignores the project's .gemini/settings.json) —
+// trust only when the code container said the folder's own settings are trusted.
+export function agentEnv(base = process.env, account = null, tool = null, root = SUBS_ROOT, { code = false, trust = false } = {}) {
   const env = {};
   for (const [k, v] of Object.entries(base)) if (!STACK_VAR.test(k) && !/^(CLAUDECODE|CLAUDE_CODE_[A-Z0-9_]*|CLAUDE_AGENT_SDK_VERSION)$/.test(k)) env[k] = v;
   // another account of the tool: its launcher takes BN_SUB_ACCOUNT (checked there too); only a name that is a folder here
@@ -461,6 +469,10 @@ export function agentEnv(base = process.env, account = null, tool = null, root =
   if (account) {
     if (!accountDir(tool, account, root)) throw new Error('no such account');
     env.BN_SUB_ACCOUNT = account;
+  }
+  if (tool === 'gemini' && code) {
+    env.GEMINI_CLI_SYSTEM_SETTINGS_PATH = GEMINI_CODE_SETTINGS;
+    env.GEMINI_CLI_TRUST_WORKSPACE = trust === true ? 'true' : 'false';
   }
   return env;
 }
@@ -6067,7 +6079,8 @@ export function serve(sock) {
       if (!fs.existsSync(bin)) return fail('that tool is not in this sandbox');
       const acct = req.account === undefined || req.account === null ? null : String(req.account);
       if (acct !== null && (req.mode !== 'code' || !ACCOUNT_NAME.test(acct) || !accountDir(req.tool, acct))) return fail('no such account');
-      return startProcess([...a[req.mode]], cwd, agentEnv(process.env, acct, req.tool), { kind: 'agent', bin });
+      if (req.trust !== undefined && typeof req.trust !== 'boolean') return fail('trust: true or false');
+      return startProcess([...a[req.mode]], cwd, agentEnv(process.env, acct, req.tool, SUBS_ROOT, { code: req.mode === 'code', trust: req.trust === true }), { kind: 'agent', bin });
     }
     if (req.op === 'cli') {
       const why = checkCliArgs(req.args);

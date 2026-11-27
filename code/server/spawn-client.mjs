@@ -130,8 +130,10 @@ export function sandboxProcess(opts, { litellmSession, onStderr, sock = SOCK, pl
 /** A tool of your subscriptions in the sandbox (bn-coded's agent op): {tool: codex|copilot|cursor|grok, mode: code
  *  (cwd: a folder of the workspace) | chat (chat: the conversation's 32-hex id: its own empty folder)} -> a process
  *  (stdin, stdout, kill, exit) speaking the tool's interface for other apps. */
-export function sandboxAgent({ tool, mode, cwd, chat, account }, { onStderr, sock = SOCK } = {}) {
-  const open = mode === 'chat' ? { op: 'agent', tool, mode, chat } : { op: 'agent', tool, mode: 'code', cwd: cwd || '/workspace', ...(account ? { account } : {}) };
+export function sandboxAgent({ tool, mode, cwd, chat, account, trust }, { onStderr, sock = SOCK } = {}) {
+  // (trust: the folder's own settings are trusted — only Gemini CLI's folder trust follows it; bn-coded checks it is a boolean)
+  const open = mode === 'chat' ? { op: 'agent', tool, mode, chat }
+    : { op: 'agent', tool, mode: 'code', cwd: cwd || '/workspace', ...(account ? { account } : {}), ...(trust === true ? { trust: true } : {}) };
   return sandboxProcess({}, { onStderr, sock, open });
 }
 

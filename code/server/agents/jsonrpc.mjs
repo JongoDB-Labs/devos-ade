@@ -21,8 +21,8 @@ export const said = (v, n = 300) => String(v ?? '').replace(/[\x00-\x1f\x7f-\x9f
 
 export class Peer {
   /** proc: {stdin, stdout, on('exit'), kill()} (spawn-client's sandboxAgent). jsonrpc: send the "jsonrpc" member. */
-  constructor(proc, { jsonrpc = true, onNotify = () => {}, onRequest = null, log = () => {}, maxLine = MAX_LINE } = {}) {
-    Object.assign(this, { proc, jsonrpc, onNotify, onRequest, log, maxLine });
+  constructor(proc, { jsonrpc = true, onNotify = () => {}, onRequest = null, log = () => {}, maxLine = MAX_LINE, onTerminal = null } = {}) {
+    Object.assign(this, { proc, jsonrpc, onNotify, onRequest, log, maxLine, onTerminal });
     this.next = 1;
     this.pending = new Map();   // id -> {resolve, reject, timer, method}
     this.theirs = 0;
@@ -40,6 +40,14 @@ export class Peer {
 
   data(s) {
     if (this.done) return;
+    // onTerminal: the tool wrote terminal escape codes where only JSON may be (a raw ESC byte: JSON escapes every control
+    // character, so a message never holds one) — it has taken the screen for its own sign-in screen. Called once, on the
+    // chunk itself: a line that has no end yet counts.
+    if (this.onTerminal && !this.terminalSeen && s.includes('\x1b')) {
+      this.terminalSeen = true;
+      try { this.onTerminal(); } catch (e) { this.log(`onTerminal: ${said(e?.message || e)}`); }
+      if (this.done) return;
+    }
     this.buf += s;
     let i;
     while ((i = this.buf.indexOf('\n')) >= 0) {

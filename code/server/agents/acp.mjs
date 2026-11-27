@@ -30,6 +30,8 @@ export const MODE_NEVER = /yolo|autopilot|bypass|full.?access|always|dangerous|a
 // (anything else, a mode added later included, is never used: the session is moved to one of these, or ends):
 //   cursor   Cursor CLI 2026.10.22's ACP modes: agent, plan, ask (its own list, buildModesStateFromCliMode)
 //   copilot  Copilot CLI 1.0.103's: the protocol's #agent and #plan (#autopilot turns allow-all on)
+//   gemini   Gemini CLI 0.65.0's: default (asks) and plan (when enabled) — its autoEdit writes without asking (Accept edits
+//            is this side's, per path: never handed to the tool) and yolo never; the page's modes are set by session/set_mode
 //   grok     Grok Build 1.0.67's documented modes that ask: default (ask) and plan — its acceptEdits writes without
 //            asking (this side's Accept edits checks each path: never handed to the tool), auto, dontAsk and
 //            bypassPermissions never; its ACP ids are not confirmed without a sign-in: an id not here ends the session
@@ -38,7 +40,11 @@ export const SAFE_MODES = Object.freeze({
   cursor: Object.freeze(['agent', 'plan', 'ask']),
   copilot: Object.freeze([`${ACP_MODE}agent`, `${ACP_MODE}plan`]),
   grok: Object.freeze(['default', 'ask', 'plan']),
+  gemini: Object.freeze(['default', 'plan']),
 });
+// the tools whose mode is taken on the answer of session/set_mode alone: Gemini CLI 0.65.0 applies it before it answers
+// (it throws for an id it does not know) and never sends a current_mode_update. Every other tool must report it.
+const MODE_BY_ANSWER = Object.freeze(new Set(['gemini']));
 // the config options known to be about something else than permissions (an allowlist): the model's (Cursor's
 // model_config: its parameters) and the thinking level — the mode's is checked as a mode. Any other option (an
 // "Auto-run" switch, one a later version adds, whatever its name) must say one of PERM_SAFE's values, or the session is
@@ -51,6 +57,8 @@ const UNCONFIRMED = '\0unconfirmed';
 // the agent's own login, used where the agent asks a client to name it: Cursor's (after `agent login` in the terminal)
 // and the one an agent names as its default (Grok, once signed in) — never a method that starts a sign-in here
 const EXISTING_LOGIN = new Set(['cursor_login']);
+// a refusal for a missing login that does not say "auth" (Gemini CLI: "Gemini API key is missing or not configured.")
+const NO_LOGIN = /auth|api key is missing/i;
 
 export class AcpAgent {
   // proc: sandboxAgent's process. onEvent(ev): the page's events. onPermission({tool, input, kind}) -> 'once' |
@@ -59,7 +67,11 @@ export class AcpAgent {
   constructor(proc, { tool, onEvent = () => {}, onPermission = async () => 'deny', log = () => {}, chat = false, clientVersion = '0', plainEdit = async () => false,
     toolStopMs = TOOL_STOP_MS }) {
     Object.assign(this, { tool, onEvent, onPermission, log, chat, clientVersion, plainEdit, toolStopMs });
-    this.peer = new Peer(proc, { jsonrpc: true, log, onNotify: (m, p) => this.notified(m, p), onRequest: (m, p) => this.requested(m, p) });
+    // Gemini CLI with a stale or revoked login starts its own sign-in screen on stdout (escape codes) and waits for a code on
+    // stdin: this side never types one — the process is stopped, and the session that waits for it is "not signed in"
+    this.wantsLogin = false;
+    this.peer = new Peer(proc, { jsonrpc: true, log, onNotify: (m, p) => this.notified(m, p), onRequest: (m, p) => this.requested(m, p),
+      ...(tool === 'gemini' ? { onTerminal: () => this.sawTerminal() } : {}) });
     this.sessionId = null; this.caps = {}; this.authMethods = []; this.defaultAuth = null;
     this.modes = []; this.mode = null; this.models = []; this.model = null; this.commands = [];
     this.modesFromSession = false; this.modeConfig = null; this.modeOpt = null; this.permOpts = new Map();
@@ -145,11 +157,19 @@ export class AcpAgent {
     if (current) this.model = short(current, 200);
   }
 
+  sawTerminal() {
+    this.wantsLogin = true;
+    this.log(`${this.tool}: wrote a terminal screen (its sign-in) where only JSON-RPC may be: stopped`);
+    this.peer.kill('SIGKILL');
+    this.peer.drop();
+  }
+
   async withLogin(fn) {
     try { return await fn(); } catch (e) {
-      if (!(e instanceof RpcError) || !/auth/i.test(`${e.message} ${JSON.stringify(e.data ?? '')}`)) throw e;
+      if (this.wantsLogin) throw new NotSignedIn(`${HARNESSES[this.tool]?.name ?? this.tool} wants its Google sign-in again: open a terminal, run gemini there and sign in`);
+      if (!(e instanceof RpcError) || !NO_LOGIN.test(`${e.message} ${JSON.stringify(e.data ?? '')}`)) throw e;
       const method = this.authMethods.find((m) => EXISTING_LOGIN.has(m)) ?? this.defaultAuth;
-      if (!method) throw new NotSignedIn(said(e.message, 200));
+      if (!method) throw new NotSignedIn(this.tool === 'gemini' ? 'sign in to Gemini CLI in the Terminal (run gemini there)' : said(e.message, 200));
       try { await this.peer.request('authenticate', { methodId: method }, { timeoutMs: 60000 }); } catch (e2) { throw new NotSignedIn(said(e2.message, 200)); }
       try { return await fn(); } catch (e3) {
         if (e3 instanceof RpcError && /auth/i.test(e3.message)) throw new NotSignedIn(said(e3.message, 200));
@@ -220,6 +240,7 @@ export class AcpAgent {
         t.unref?.();
       });
       await this.peer.request('session/set_mode', { sessionId: this.sessionId, modeId: id }, { timeoutMs: 30000 });
+      if (MODE_BY_ANSWER.has(this.tool)) { this.mode = short(id, 100); this.modeWait?.resolve(this.safe(id)); }
       const ok = await reported;
       if (!ok) this.log(`${this.tool}: mode ${short(id, 40)} asked for, not reported as such: not taken`);
       return ok;

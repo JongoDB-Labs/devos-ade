@@ -1003,12 +1003,13 @@ export class SessionManager {
   // agentSettingsCheck(cwd, name) — an agent of your subscriptions starts in a project's folder only while its own
   // settings apply (trusted, or none): it reads them as they are — Claude Code's and the other tools' (.codex/,
   // .cursor/, .github/hooks/ …: trust.mjs) — with no switch of ours to leave them out. Asked anew at every start.
+  // -> whether the folder's settings are trusted (not just none, or the workspace itself): Gemini CLI's folder trust
   async agentSettingsCheck(cwd, name) {
-    if (cwd === WS || !this.decideSettings) return;
+    if (cwd === WS || !this.decideSettings) return false;
     const d = await this.decideSettings(cwd);
     // (both parts: Claude Code's and the other tools' — d.agents; a decision without it (none made): not applied)
     const a = d.agents ?? { state: 'unchecked', part: 'claude' };
-    if (APPLIED_STATES.includes(a.state)) return;
+    if (APPLIED_STATES.includes(a.state)) return a.state === 'trusted';
     const what = a.part === 'agents' ? 'this project\'s settings for the other tools (.codex/, .cursor/, .grok/, .github/ …)'
       : 'this project\'s own settings (Claude Code\'s, and with them the other tools\': .codex/, .cursor/, .grok/, .github/ …)';
     const why = a.state === 'changed' ? `${what} changed since you trusted them`
@@ -1051,7 +1052,7 @@ export class SessionManager {
     if (cwd !== undefined && cwd !== null && !cwdOk(cwd)) throw new SessionError('bad folder: /workspace or a folder of it, or a folder of this computer the sandbox sees (one no longer added is read only)');
     // who answers: Claude Code on Bedrock (as always), Claude on your plan (the switch), or a subscription's agent
     const h = harness === undefined || harness === null ? (isUuid(resume) && this.sessions.get(resume)?.harness) || 'bedrock' : harness;
-    if (!harnessOk(h)) throw new SessionError('bad harness: bedrock, claude, codex, copilot, cursor or grok');
+    if (!harnessOk(h)) throw new SessionError('bad harness: bedrock, claude, codex, copilot, cursor, grok or gemini');
     if (preface !== undefined && preface !== null && (typeof preface !== 'string' || preface.length > LIMITS.maxPromptChars)) throw new SessionError('bad preface');
     if (account !== undefined && account !== null && (typeof account !== 'string' || !ACCOUNT_RE.test(account))) throw new SessionError('bad account');
     if (account && h !== 'claude' && !AGENT_TOOLS.includes(h)) throw new SessionError('Claude Code on Bedrock has no accounts');

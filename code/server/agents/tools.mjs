@@ -2,11 +2,14 @@
 // catalog/ai-tools.tsv name the same ids): who answers, on whose plan, through which of the tool's own interfaces —
 //   sdk    Claude Code through the Agent SDK (Anthropic allows the SDK on a subscription), claude-sub's folder
 //   codex  Codex's app server (codex app-server: the interface the Codex extensions use)
-//   acp    the Agent Client Protocol (Copilot CLI --acp, Cursor CLI acp, Grok Build agent stdio)
-// Gemini CLI is not here: Google's plans stopped working in it (2026-06-18); a Gemini API key of yours is Chat's way.
+//   acp    the Agent Client Protocol (Copilot CLI --acp, Cursor CLI acp, Grok Build agent stdio, Gemini CLI --acp)
+// Gemini CLI is a Code page harness on the sign-in Gemini CLI holds itself (an organisation's Code Assist login, or an API
+// key): Google's personal plans no longer work in it (since 2026-06-18). It is not in Chat (JON-1424).
 export const HARNESSES = Object.freeze({
   claude: { id: 'claude', name: 'Claude', provider: 'Anthropic', plan: 'your Claude plan', kind: 'sdk' },
   codex: { id: 'codex', name: 'Codex', provider: 'OpenAI', plan: 'your ChatGPT plan', kind: 'codex' },
+  // (not a Chat model yet: JON-1424)
+  gemini: { id: 'gemini', name: 'Gemini CLI', provider: 'Google', plan: 'your Gemini CLI sign-in', kind: 'acp', noChat: true },
   copilot: { id: 'copilot', name: 'GitHub Copilot', provider: 'GitHub', plan: 'your Copilot plan', kind: 'acp' },
   // (not a Chat model: Cursor CLI has no switch that turns its tools off — its Ask mode is a mode, which it can leave)
   cursor: { id: 'cursor', name: 'Cursor', provider: 'Cursor', plan: 'your Cursor plan', kind: 'acp', noChat: true },

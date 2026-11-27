@@ -97,9 +97,11 @@ RUN cd /opt/claude-code && npm ci --no-audit --no-fund --loglevel=error --fetch-
 # The AI tools of the stage above, read-only like everything here; their commands on PATH are the launchers in bin/
 # (claude-sub, codex, gemini, copilot, cursor-agent, grok), which only choose each one's config folder, leave the
 # stack's own variables out and keep its self-updates off (the image pins it). Gemini CLI's system settings (they
-# outrank yours) only turn its auto-update off.
+# outrank yours) only turn its auto-update off; the Code page's sessions get a second file (gemini-code-settings.json,
+# named by GEMINI_CLI_SYSTEM_SETTINGS_PATH in bn-coded) that also turns its YOLO mode and project .env files off.
 COPY --from=ai-tools --chown=0:0 /out/ /usr/local/lib/bn-tools/
 COPY tools/gemini-settings.json /etc/gemini-cli/settings.json
+COPY tools/gemini-code-settings.json /etc/gemini-cli/code-settings.json
 
 # The Code page's spawn server (bin/bn-coded.mjs: Node built-ins only) listens in /run/bn-code — the code-socket volume
 # (compose.terminal.yaml), shared with the code container alone while ./stack code is on; bn-terminal always starts it.

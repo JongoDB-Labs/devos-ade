@@ -416,7 +416,7 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
       const b = await readJson(req);
       const base = { model: b.model ?? undefined, mode: b.mode ?? undefined, effort: b.effort ?? undefined, taskStop: b.taskStop === true, budget: b.budget ?? undefined };
       // who answers: a resumed session as it ran (its own harness), a new one as asked (bedrock when not said)
-      if (b.harness !== undefined && b.harness !== null && !harnessOk(b.harness)) throw new HttpError(400, 'bad harness: bedrock, claude, codex, copilot, cursor or grok');
+      if (b.harness !== undefined && b.harness !== null && !harnessOk(b.harness)) throw new HttpError(400, 'bad harness: bedrock, claude, codex, copilot, cursor, grok or gemini');
       base.harness = isUuid(b.resume) ? api.harnessOf(b.resume) : (b.harness ?? 'bedrock');
       // a resumed session runs on the account it ran on (where its transcript is found); one the page names that disagrees
       // with it is refused — never a pick between them

@@ -15,14 +15,14 @@ for (const d of [WS, HOME, BIN, path.join(WS, 'app')]) fs.mkdirSync(d, { recursi
 // a stand-in for Claude Code and for each agent's launcher: its arguments, cwd and the variables that matter
 const SAY = `#!/usr/bin/env node
 const pick = ['ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_CUSTOM_HEADERS', 'CLAUDE_CONFIG_DIR', 'CLAUDE_CODE_USE_BEDROCK', 'SHARED_MCP_TOKEN',
-  'BN_MCP_URL', 'AWS_SECRET_ACCESS_KEY', 'DISABLE_AUTOUPDATER', 'HTTPS_PROXY', 'CLAUDE_CODE_ENTRYPOINT', 'BN_CODE_WORKSPACE', 'CLAUDE_CODE_DISABLE_ATTACHMENTS',
+  'BN_MCP_URL', 'AWS_SECRET_ACCESS_KEY', 'GEMINI_CLI_SYSTEM_SETTINGS_PATH', 'GEMINI_CLI_TRUST_WORKSPACE', 'DISABLE_AUTOUPDATER', 'HTTPS_PROXY', 'CLAUDE_CODE_ENTRYPOINT', 'BN_CODE_WORKSPACE', 'CLAUDE_CODE_DISABLE_ATTACHMENTS',
   'DISABLE_LOGIN_COMMAND', 'ENABLE_CLAUDEAI_MCP_SERVERS'];
 process.stdout.write(JSON.stringify({ bin: require('path').basename(process.argv[1]), args: process.argv.slice(2), cwd: process.cwd(),
   env: Object.fromEntries(pick.filter((k) => k in process.env).map((k) => [k, process.env[k]])) }) + '\\n');
 process.stdin.on('data', () => {}); process.stdin.on('end', () => process.exit(0));
 `;
 const CLAUDE = path.join(ROOT, 'claude');
-for (const b of ['codex', 'copilot', 'cursor-agent', 'grok']) fs.writeFileSync(path.join(BIN, b), SAY, { mode: 0o755 });
+for (const b of ['codex', 'copilot', 'cursor-agent', 'grok', 'gemini']) fs.writeFileSync(path.join(BIN, b), SAY, { mode: 0o755 });
 fs.writeFileSync(CLAUDE, SAY, { mode: 0o755 });
 // subscriptions status --tsv: a stand-in printing what the test sets (and a line that must not pass)
 const SUBS = path.join(ROOT, 'subscriptions');
@@ -111,13 +111,22 @@ test('two sandboxes: Chat\'s runs Chat\'s conversations only, the workspace\'s n
 });
 
 test('an agent: its launcher with fixed arguments, in a folder of the workspace or its conversation\'s, without the stack\'s variables', async () => {
-  const want = { codex: ['codex', ['app-server']], copilot: ['copilot', ['--acp', '--stdio']], cursor: ['cursor-agent', ['acp']], grok: ['grok', ['agent', '--no-leader', 'stdio']] };
+  const want = { codex: ['codex', ['app-server']], copilot: ['copilot', ['--acp', '--stdio']], cursor: ['cursor-agent', ['acp']], grok: ['grok', ['agent', '--no-leader', 'stdio']], gemini: ['gemini', ['--acp', '--approval-mode', 'default']] };
+  const GEM = { GEMINI_CLI_SYSTEM_SETTINGS_PATH: '/etc/gemini-cli/code-settings.json', GEMINI_CLI_TRUST_WORKSPACE: 'false' };
   for (const [tool, [bin, args]] of Object.entries(want)) {
     const s = said(await run({ op: 'agent', tool, mode: 'code', cwd: path.join(WS, 'app'), args: ['--yolo'] }));
     assert.equal(s.bin, bin); assert.deepEqual(s.args, args, tool);
     assert.equal(s.cwd, fs.realpathSync(path.join(WS, 'app')));
-    assert.deepEqual(s.env, { HTTPS_PROXY: 'http://egress:3128' }, tool);
+    assert.deepEqual(s.env, { HTTPS_PROXY: 'http://egress:3128', ...(tool === 'gemini' ? GEM : {}) }, tool);
   }
+  // Gemini CLI's folder trust follows the code container's word (a boolean), the settings file never changes; the project cannot set either
+  for (const [trust, want] of [[true, 'true'], [false, 'false']]) {
+    const g = said(await run({ op: 'agent', tool: 'gemini', mode: 'code', cwd: path.join(WS, 'app'), trust, env: { GEMINI_CLI_TRUST_WORKSPACE: 'true', GEMINI_CLI_SYSTEM_SETTINGS_PATH: '/x' } }));
+    assert.deepEqual(g.env, { HTTPS_PROXY: 'http://egress:3128', ...GEM, GEMINI_CLI_TRUST_WORKSPACE: want });
+  }
+  // (not a boolean: refused; a tool that is not Gemini gets neither variable, whatever trust says)
+  for (const trust of ['true', 1, null]) assert.match(result(await run({ op: 'agent', tool: 'gemini', mode: 'code', trust })).error, /trust: true or false/);
+  assert.deepEqual(said(await run({ op: 'agent', tool: 'grok', mode: 'code', trust: true })).env, { HTTPS_PROXY: 'http://egress:3128' });
   // Chat's: every switch the tool has that turns its tools off, in the conversation's own folder (Chat's sandbox)
   const chatWant = {
     codex: ['app-server', '--disable', 'shell_tool', '--disable', 'unified_exec', '--disable', 'shell_snapshot', '--disable', 'apps', '--disable', 'plugins',
@@ -135,10 +144,12 @@ test('an agent: its launcher with fixed arguments, in a folder of the workspace 
       assert.deepEqual(c.env, { HTTPS_PROXY: 'http://egress:3128' }, tool);
     }
     assert.match(result(await run({ op: 'agent', tool: 'codex', mode: 'chat', chat: 'x' })).error, /bad conversation id/);
+    // Gemini CLI: not in Chat yet (JON-1424)
+    assert.match(result(await run({ op: 'agent', tool: 'gemini', mode: 'chat', chat: 'cd'.repeat(16) })).error, /not in Chat/);
     // Cursor: no switch that turns its tools off — not in Chat
     assert.match(result(await run({ op: 'agent', tool: 'cursor', mode: 'chat', chat: 'cd'.repeat(16) })).error, /not in Chat: it has no switch that turns its tools off/);
   });
-  for (const [req, why] of [[{ op: 'agent', tool: 'gemini', mode: 'code' }, /no such tool/], [{ op: 'agent', tool: 'toString', mode: 'code' }, /no such tool/],
+  for (const [req, why] of [[{ op: 'agent', tool: 'gemma', mode: 'code' }, /no such tool/], [{ op: 'agent', tool: 'toString', mode: 'code' }, /no such tool/],
     [{ op: 'agent', tool: 'codex', mode: 'yolo' }, /mode: code or chat/], [{ op: 'agent', tool: 'codex', mode: 'code', cwd: '/etc' }, /must be in \/workspace/]]) {
     assert.match(result(await run(req)).error, why);
   }

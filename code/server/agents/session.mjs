@@ -101,8 +101,8 @@ export class AgentSession {
       let agent = null;
       try {
         // (its folder's own settings, Claude Code's and the other tools': trusted or none — asked anew at every start)
-        await this.mgr.agentSettingsCheck?.(this.cwd, this.name);
-        const proc = this.mgr.spawnAgent({ tool: this.harness, mode: 'code', cwd: this.cwd, ...(this.account ? { account: this.account } : {}) },
+        const trust = (await this.mgr.agentSettingsCheck?.(this.cwd, this.name)) === true;
+        const proc = this.mgr.spawnAgent({ tool: this.harness, mode: 'code', cwd: this.cwd, ...(trust ? { trust } : {}), ...(this.account ? { account: this.account } : {}) },
           { onStderr: (s) => this.mgr.logStderr(this.id, `${this.harness} ${this.id.slice(0, 8)} stderr: ${short(s, 300)}`) });
         const opts = { tool: this.harness, log: (m) => this.mgr.log(`${this.harness} ${this.id.slice(0, 8)}: ${m}`), clientVersion: this.mgr.versions?.server ?? '0',
           onEvent: (ev) => this.fromAgent(agent, ev), onPermission: (p) => this.ask(p), plainEdit: (paths) => this.plainEdit(paths) };

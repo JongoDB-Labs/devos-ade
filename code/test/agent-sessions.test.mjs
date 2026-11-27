@@ -48,7 +48,7 @@ test('Claude on your plan: only with the switch; its process on the plan, no spe
   assert.throws(() => off.mgr.open({ harness: 'claude' }), (e) => e.message === PLAN_OFF && e.status === 409);
   off.mgr.closeAll();
   const { mgr, queries, spawns } = manager({ plan: true });
-  assert.throws(() => mgr.open({ harness: 'gemini' }), /bad harness/);
+  assert.throws(() => mgr.open({ harness: 'gem' }), /bad harness/);
   const { id } = mgr.open({ harness: 'claude', model: 'opus', budget: { usd: 5, hard: true } });
   const s = mgr.get(id);
   assert.equal(s.harness, 'claude');
@@ -521,6 +521,29 @@ test('an agent\'s folder settings changed while it started (what it read then): 
     assert.equal(agents.length, 1, 'it started (and read them)');
     assert.ok(events.some(([sid, e]) => sid === id && e.type === 'error' && /changed since you trusted them/.test(e.text)), JSON.stringify(events.map(([, e]) => e.type)));
     assert.ok(!events.some(([sid, e]) => sid === id && e.type === 'text'), 'no turn ran');
+  } finally { mgr.closeAll(); }
+});
+
+test('a Gemini CLI session: the sandbox is told the folder is trusted only when its own settings are (trust), never otherwise', async () => {
+  for (const [state, want] of [['trusted', true], ['none', false]]) {
+    const decideSettings = async () => ({ state, agents: { state, part: null } });
+    const { mgr, agents, events } = manager({ scenario: 'ok', more: { decideSettings } });
+    try {
+      const { id } = mgr.open({ harness: 'gemini', cwd: '/workspace/proj' });
+      mgr.get(id).prompt({ text: 'hi' });
+      await wait(() => events.some(([sid, e]) => sid === id && e.type === 'result'));
+      assert.equal(agents.length, 1, state);
+      assert.equal(agents[0].tool, 'gemini');
+      assert.equal(agents[0].trust === true, want, state);
+    } finally { mgr.closeAll(); }
+  }
+  // the Workspace itself: nothing trusted there
+  const { mgr, agents, events } = manager({ scenario: 'ok' });
+  try {
+    const { id } = mgr.open({ harness: 'gemini', cwd: '/workspace' });
+    mgr.get(id).prompt({ text: 'hi' });
+    await wait(() => events.some(([sid, e]) => sid === id && e.type === 'result'));
+    assert.equal(agents[0].trust === true, false);
   } finally { mgr.closeAll(); }
 });
 
