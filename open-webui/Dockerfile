@@ -3,7 +3,7 @@
 # chat_runtime) loads these wheels from /pyodide/ here, never from the CDN its lock names. Built locally (compose.yaml:
 # <project>/open-webui:local, pull_policy never — no registry image can take its name), never pushed; ./stack setup,
 # update and up build it. The pin: compose.yaml passes `image` (the same as this default; tests/test_openwebui.sh).
-ARG image=ghcr.io/open-webui/open-webui:v0.12.4-slim@sha256:41812075aede8ada8497cb2b71c76412978633eee72775bb77796f593d03b677
+ARG image=ghcr.io/open-webui/open-webui:v0.13.4-slim@sha256:0c4439e78c24c85e3e7a41936771d3b02f0df38daf28a086cd83ca74804f7676
 FROM ${image}
 # (what ./stack update checks: the container runs a build on the base image this release pins — lib/versions.sh)
 ARG image

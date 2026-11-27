@@ -4,7 +4,7 @@
 #
 # id (compose service)  name  newest_upstream  released (date)  notes_url  checked (date)
 litellm	LiteLLM	1.106.5	2026-10-27	https://github.com/BerriAI/litellm/releases/tag/v1.106.5	2026-10-27
-open-webui	Open WebUI	0.12.4	2026-10-25	https://github.com/open-webui/open-webui/releases/tag/v0.12.4	2026-10-27
+open-webui	Open WebUI	0.13.5	2026-11-25	https://github.com/open-webui/open-webui/releases/tag/v0.13.5	2026-11-27
 rustfs	RustFS	1.0.4	2026-10-25	https://github.com/rustfs/rustfs/releases/tag/1.0.4	2026-10-27
 caddy	Caddy	2.11.9	2026-11-05	https://github.com/caddyserver/caddy/releases/tag/v2.11.9	2026-11-24
 postgres	PostgreSQL (pgvector)	0.8.7	2026-10-01	https://hub.docker.com/r/pgvector/pgvector/tags	2026-10-27
