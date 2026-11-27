@@ -1805,7 +1805,9 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
         rem = remote(request)
         here = settings.code_on(rem)
         code = {"enabled": settings.code, "here": here,
-                "report": reports.get(session_login(request.headers, settings)) if here else None}
+                "report": reports.get(session_login(request.headers, settings)) if here else None,
+                # where a new session can start (Home's New session in…): the Code page's own list (JON-1158)
+                "projects": answers.session_projects(settings, rem)}
         return _no_store(JSONResponse({"code": code, "chats": await recent_chats.get(request.app.state.http),
                                        "now": int(time.time())}))
 

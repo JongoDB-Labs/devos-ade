@@ -432,6 +432,9 @@ a.install-btn, .install-actions a.action { text-decoration: none; cursor: pointe
 .cont-actions a.action { text-decoration: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* (links that look like buttons: their words in the middle when a touch screen makes them 44 px tall) */
 .cont-actions a.action, .gs-acts a.action { display: inline-flex; align-items: center; justify-content: center; }
+/* (New session in…: the menu of every project, beside New session) */
+.cont-actions .cont-new-in { display: inline-flex; align-items: center; justify-content: center; min-width: 36px; padding: 5px 9px; }
+.cont-new-in svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .cont-group { margin: 14px 0 4px; font: 600 11.5px/1.4 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .cont-group.waiting { color: var(--warn); }
 .cont-list { list-style: none; margin: 0; padding: 0; display: grid; }

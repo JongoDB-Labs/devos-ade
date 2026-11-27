@@ -227,6 +227,32 @@ def code_projects(s, remote: bool = False) -> list[dict] | None:
     return d["projects"] if d["present"] else None
 
 
+def session_projects(s, remote: bool = False) -> dict | None:
+    """Where a new Code session can start (Home's New session in…, Settings' Project folders): the Code page's own list —
+    the workspace, its projects there (code_projects) and the folders of this computer the sandbox sees (folders) — as
+    {"listed": the code container has written its list, "projects": [{id, name, path, where: workspace|computer, ok, why}]},
+    or None while Code is off here. Not there any more (gone): left out; a folder that is missing, or one the sandbox
+    sees once it restarts: listed, off, with why."""
+    from . import settings as st
+    if not s.code_on(remote):
+        return None
+    d = st.code_projects(s.code_projects_dir)
+    out = [{"id": "ws", "name": "Workspace", "path": "/workspace", "where": "workspace", "ok": True, "why": ""}]
+    for p in d["projects"]:
+        if p["id"] == "ws" or p["gone"]:
+            continue
+        missing = p["folder"] == "missing"
+        out.append({"id": p["id"], "name": p["name"], "path": p["path"], "where": "workspace", "ok": not missing,
+                    "why": "its folder is not there" if missing else ""})
+    for f in folders(s.status_dir):
+        if any(x["id"] == f["id"] for x in out):
+            continue
+        later = f["pending"] == "add"
+        out.append({"id": f["id"], "name": f["name"], "path": f["path"], "where": "computer", "ok": not later,
+                    "why": "the sandbox sees it once it restarts" if later else ""})
+    return {"listed": d["present"], "projects": out[:1 + 64 + 16]}
+
+
 def plan_models(s, remote: bool, rows: list[dict], links: dict | None = None, egress: str | None = None) -> list[dict]:
     """Your subscriptions as Chat models (the code container's connection in Open WebUI: plan-<id>): {id, tool, label,
     ok, why, reason, signin} for each tool the catalog offers as one — ok while the Code page runs here, the sandbox has a way

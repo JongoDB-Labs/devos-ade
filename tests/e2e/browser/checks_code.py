@@ -3436,6 +3436,75 @@ def home_continue(ctx):
             f"(→ Chat at /c/{cid[:8]}); New session → ?new=1")
 
 
+NEWIN_ROOT, NEWIN_NAME = "e2e-home-new-in", "E2E Home New In"
+
+
+@check("browser", "home-new-session-in-a-project")
+def home_new_session_in(ctx):
+    """JON-1158 (G2): Home and Settings read the Code page's own project list (the code container's summary: answers.session_projects).
+    A project made on the Code page is a choice of Home's New session in… menu (beside New session) and a row of Settings › Claude Code ›
+    Project folders under the workspace's projects; either opens the Code tab with a new session in that project."""
+    need_on()
+    from playwright.sync_api import expect as see
+    c = Code(ctx, "home-new-in-code")
+    _drop_projects(c, (NEWIN_ROOT,))
+    if NEWIN_ROOT in {e["name"] for e in (c.api("GET", "/api/fs?path=.")["json"] or {}).get("entries", [])}:
+        c.api("DELETE", f"/api/fs?path={NEWIN_ROOT}")   # (left by an earlier run; asked only when there: a 404 is a page error)
+    r = c.api("POST", "/api/projects", {"kind": "new", "folder": NEWIN_ROOT, "name": NEWIN_NAME, "git": False})
+    expect(r["status"] == 200, f"the Code project: {r['status']} {r['text'][:200]}")
+    pid = r["json"]["project"]["id"]
+    hrec = Recorder("home-new-in-home")
+    home = hrec.attach(c.page.context.new_page())
+    home.set_default_timeout(30000)
+    try:
+        # the portal reads the list the code container wrote on the change
+        t0, ids = time.time(), []
+        while time.time() - t0 < 30 and pid not in ids:
+            home.goto(origin() + "/")
+            home.wait_for_selector("#home:not([hidden])", timeout=20000)
+            d = home.evaluate("() => fetch('/api/continue', {headers: {'X-Requested-With': 'devos-ade'}}).then(r => r.json())")
+            ids = [x["id"] for x in (((d.get("code") or {}).get("projects") or {}).get("projects") or [])]
+            if pid not in ids:
+                home.wait_for_timeout(2000)
+        expect(pid in ids and ids[0] == "ws", f"/api/continue's projects: {ids}")
+        # Home: New session in… lists it (the workspace first); choosing it opens the Code tab with a new session there
+        pick = home.locator("#continue [data-k=new-session-in]")
+        see(pick).to_be_visible(timeout=30000)
+        pick.click()
+        menu = home.locator(".ctx-menu")
+        see(menu).to_be_visible(timeout=10000)
+        see(menu.locator("[data-act=in-ws]")).to_contain_text("Workspace")
+        item = menu.locator(f"[data-act=in-{pid}]")
+        see(item).to_contain_text(NEWIN_NAME)
+        shot(home, "home-new-in-1-menu")
+        item.click()
+        home.wait_for_selector("iframe[data-app=code]:not([hidden])", timeout=10000)
+        src = home.get_attribute("iframe[data-app=code]", "src") or ""
+        expect("new=1" in src and f"project={pid}" in src, f"the Code tab opened {src}")
+        frame = home.frame_locator("iframe[data-app=code]")
+        see(frame.get_by_test_id("project-chip-name")).to_have_text(NEWIN_NAME, timeout=60000)
+        shot(home, "home-new-in-2-code")
+        # Settings › Claude Code › Project folders: the workspace's projects beside this computer's folders, each with New session
+        open_settings(home, "code")
+        row = home.locator(f"#set-code-projects [data-project='{pid}']")
+        see(row).to_contain_text(NEWIN_NAME, timeout=30000)
+        see(row).to_contain_text(f"/workspace/{NEWIN_ROOT}")
+        row.scroll_into_view_if_needed()
+        shot(home, "home-new-in-3-settings")
+        row.locator("[data-act=project-new-session]").click()
+        home.wait_for_selector("iframe[data-app=code]:not([hidden])", timeout=10000)
+        src2 = home.get_attribute("iframe[data-app=code]", "src") or ""
+        expect(f"project={pid}" in src2, f"Settings' New session opened {src2}")
+        probs = c.rec.problems(allow=LOCKED_OK) + hrec.problems(allow=LOCKED_OK + [r"^401 GET " + re.escape(CODE) + r"/\?(new|project)="])
+        c.rec.save(); hrec.save()
+        expect(not probs, f"errors: {probs[:6]}")
+    finally:
+        _drop_projects(c, (NEWIN_ROOT,))
+        c.api("DELETE", f"/api/fs?path={NEWIN_ROOT}")
+    return (f"{NEWIN_NAME} ({pid}) in /api/continue's list after the workspace; Home's New session in… → the Code tab, a new session in it "
+            "(the project chip); Settings › Project folders lists it under the workspace's projects, its New session → the Code tab at it")
+
+
 @check("browser", "code-settings-row")
 def settings_row(ctx):
     need_on()

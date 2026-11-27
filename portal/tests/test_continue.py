@@ -188,7 +188,7 @@ def test_no_code_sessions_where_the_code_page_is_off(settings):
         tok = _cookie(r, COOKIE).split(";", 1)[0].split("=", 1)[1]
         c.cookies.clear()
         d = home(c, tok).json()
-        assert d["code"] == {"enabled": False, "here": False, "report": None}
+        assert d["code"] == {"enabled": False, "here": False, "report": None, "projects": None}
         assert c.post("/auth/code-recent", content=json.dumps(GOOD), headers={"Host": CODE_HOST, "Origin": CODE, **OWN}).status_code == 404
 
 

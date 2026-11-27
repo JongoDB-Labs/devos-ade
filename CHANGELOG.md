@@ -6,6 +6,10 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Added
+
+- **Home and Settings know every project the Code page has.** Beside Home's New session, a new menu starts a session in any project: the workspace, the projects you made on the Code page, and this computer's folders. Settings › Claude Code › Project folders now lists the Code page's projects in the workspace too, each with New session. Both read the Code page's own list, so a project made, renamed or removed there shows the same way everywhere. (JON-1158)
+
 ## [0.68.20] - 2026-11-26
 
 ### Fixed

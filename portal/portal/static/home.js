@@ -1,6 +1,6 @@
 // Home's first cards: Get started — five steps for a first run, each ticked by what the portal can see — and Continue:
 // what to pick up again, each one tap away — the Code sessions that need you, the recent ones and Chat's newest
-// conversations — with New session and New chat. Loaded after app.js, mobile.js and code.js (deferred: their $, el,
+// conversations — with New session (beside it New session in… any project of the Code page's list) and New chat. Loaded after app.js, mobile.js and code.js (deferred: their $, el,
 // api, showTab, appUrl, appFrame, usd, lastSummary and window.bnCode) and before tour.js, whose first visit leaves the
 // walkthrough closed: Get started is the first run now, the walkthrough the full tour beside it.
 // Data: GET /api/continue (portal/recent.py: what the Code page last reported of its sessions, and Chat's newest
@@ -35,6 +35,7 @@
     return s;
   };
   const BRACKETS = "M7.5 5.5 3 10l4.5 4.5M12.5 5.5 17 10l-4.5 4.5M11 4l-2 12";
+  const CHEVRON = "M6 8l4 4 4-4";
   const BUBBLE = "M4 4h12a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H9l-4 3v-3H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z";
   const INVISIBLE = /[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2060-\u2064\u2066-\u2069\ufeff\u{e0000}-\u{e007f}]/gu;
   const shown = (t, n = 120) => (typeof t !== "string" ? "" : Array.from(t.slice(0, n * 2)).slice(0, n).join("").replace(/[\t\n\r]/g, " ")
@@ -132,6 +133,18 @@
     return out;
   }
   const STATE_WORDS = { waiting: "needs you", working: "working", idle: "open", closed: "" };
+  // the menu of New session in…: each project a choice, by its name (the one the Code page shows now marked), this
+  // computer's folders after a divider; one that cannot start a session yet greyed with why
+  function projectActions(list, current) {
+    let computer = false;
+    return list.filter((p) => p && PROJECT.test(p.id)).map((p) => {
+      const sep = p.where === "computer" && !computer;
+      if (sep) computer = true;
+      const name = p.id === "ws" ? "Workspace" : shown(p.name, 60) || p.id;
+      return { id: `in-${p.id}`, label: `${name}${p.id === current ? " (shown now)" : ""}${p.where === "computer" ? " · this computer" : ""}`,
+        sep, disabled: !p.ok, reason: p.ok ? "" : shown(p.why, 80), run: () => newSession(p.id) };
+    });
+  }
   function row(kind, item, now) {
     const code = kind === "code";
     const words = code ? (item.state === "waiting" ? "needs you" : item.state === "working" ? "working" : ago(item.at, now) || STATE_WORDS[item.state])
@@ -231,6 +244,19 @@
         () => newSession(project ? project.id : ""));
       b.dataset.k = "new-session";
       acts.append(b);
+      // New session in… any of the Code page's projects (its own list: the workspace's and this computer's folders),
+      // not only the one it shows now (JON-1158)
+      const list = cont && cont.code && cont.code.projects && Array.isArray(cont.code.projects.projects) ? cont.code.projects.projects : [];
+      if (list.length > 1) {
+        const pick = el("button", { type: "button", class: "action cont-new-in", "aria-haspopup": "menu", "aria-label": "New session in a project…", title: "New session in a project…" },
+          icon(CHEVRON));
+        pick.dataset.k = "new-session-in";
+        pick.addEventListener("click", () => {
+          const r = pick.getBoundingClientRect();
+          bnMenu.open(r.left, r.bottom + 4, projectActions(list, project ? project.id : ""), pick, "a new session");
+        });
+        acts.append(pick);
+      }
     }
     const nc = actLink("action cont-chat", chatLink(""), "New chat", () => openChat(""));
     nc.dataset.k = "new-chat";

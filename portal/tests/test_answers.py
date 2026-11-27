@@ -850,3 +850,61 @@ def test_a_code_project_with_an_odd_name_still_passes_folder_ok(cs):
     _summary(cs, [_row("p_0123abcd", "My App é 日本", "my app é 日本"), _row("p_00000001", "Deep", "a/b/c/d")])
     for p in st.code_projects(cs.code_projects_dir)["projects"]:
         assert answers.folder_ok(p["path"]), p
+
+
+# --- where a new Code session can start, for Home's New session in… and Settings' Project folders (JON-1158 G2) ---
+
+def _host_folders(s, rows):
+    (s.status_dir / "projects.json").write_text(json.dumps({"version": 1, "written_at": 1, "max": 16, "folders": rows}))
+
+
+def _host(i="p_aaaa0001", name="src", path="/Volumes/me/src", ok=True, pending=None):
+    return {"id": i, "name": name, "host": path, "path": path, "mode": "rw", "hidden": False, "added": 1, "ok": ok, "why": "" if ok else "gone",
+            **({"pending": pending} if pending else {})}
+
+
+def test_session_projects_lists_the_workspace_its_projects_then_this_computers_folders(cs):
+    _summary(cs, [_row("ws", "Workspace", ""), _row(), _row("p_00000001", "Old", "old", gone=True), _row("p_00000002", "Lost", "lost", folder="missing"),
+                  _row("p_89abcdef", "src", "/projects/src", host=True, path="/projects/src")])
+    _host_folders(cs, [_host(), _host("p_aaaa0002", "later", "/Volumes/me/later", pending="add"), _host("p_aaaa0003", "broken", "/Volumes/me/b", ok=False),
+                       _host("p_0123abcd", "clash", "/Volumes/me/clash")])
+    d = answers.session_projects(cs, False)
+    assert d["listed"] is True
+    assert [(p["id"], p["where"], p["ok"]) for p in d["projects"]] == [
+        ("ws", "workspace", True), ("p_0123abcd", "workspace", True), ("p_00000002", "workspace", False),
+        ("p_aaaa0001", "computer", True), ("p_aaaa0002", "computer", False)]
+    assert d["projects"][0] == {"id": "ws", "name": "Workspace", "path": "/workspace", "where": "workspace", "ok": True, "why": ""}
+    assert d["projects"][2]["why"] == "its folder is not there"
+    assert d["projects"][4]["why"] == "the sandbox sees it once it restarts"
+    # (a gone project, a folder ./stack says is broken, a host row of the summary and a repeated id: not listed)
+    assert "Old" not in json.dumps(d) and "broken" not in json.dumps(d) and "clash" not in json.dumps(d)
+
+
+def test_session_projects_without_a_list_from_code_is_the_workspace_and_this_computers_folders(cs):
+    _host_folders(cs, [_host()])
+    d = answers.session_projects(cs, False)
+    assert d["listed"] is False
+    assert [p["id"] for p in d["projects"]] == ["ws", "p_aaaa0001"]
+    _summary(cs, [], raw="{broken")
+    assert answers.session_projects(cs, False)["listed"] is False
+
+
+def test_session_projects_is_none_while_code_is_off_here(cs):
+    _summary(cs, [_row()])
+    assert answers.session_projects(replace(cs, code=False), False) is None
+    assert answers.session_projects(replace(cs, terminal=False), False) is None
+    assert answers.session_projects(cs, True) is None   # (remotely: the terminal is not allowed there by default)
+
+
+def test_continue_and_settings_carry_the_session_projects(cs):
+    _summary(cs, [_row()])
+    h = {"X-Requested-With": "devos-ade"}
+    with _client(cs) as c:
+        session(c)
+        d = c.get("/api/continue", headers=h).json()
+        assert [p["id"] for p in d["code"]["projects"]["projects"]] == ["ws", "p_0123abcd"]
+        assert [p["name"] for p in c.get("/api/settings", headers=h).json()["code_projects"]["projects"]] == ["Workspace", "App"]
+    with _client(replace(cs, code=False)) as off:
+        session(off)
+        assert off.get("/api/continue", headers=h).json()["code"]["projects"] is None
+        assert off.get("/api/settings", headers=h).json()["code_projects"] is None
