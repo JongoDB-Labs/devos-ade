@@ -4017,6 +4017,25 @@ def git_signin(browser):
     p.close()
 
 
+@check("git sign-in: a hosts' view that arrives late and stale never undoes what a newer one showed (JON-1431): Sign in stays while the form is open")
+def git_signin_stale_view(browser):
+    post(NORMAL + "/__mock/reset")
+    post(NORMAL + "/__mock/git-signin?app=0")
+    post(NORMAL + "/__mock/git-hosts-hold?ms=4000")   # (the page's first look at the hosts: read with no app set, answered late)
+    p = Page(browser, NORMAL, "git-signin-stale", viewport={"width": 390, "height": 844}, device_scale_factor=2, is_mobile=True, has_touch=True, color_scheme="light")
+    page = p.open()
+    post(NORMAL + "/__mock/git-signin?app=1")
+    page.get_by_test_id("welcome-hosts").tap()
+    page.get_by_test_id("git-host-add").tap()
+    expect(page.get_by_test_id("git-host-signin")).to_be_visible(timeout=10_000)
+    expect(page.get_by_test_id("git-host-auth-oauth")).to_be_checked()
+    page.wait_for_timeout(5_000)   # (the late, stale answer has come by now)
+    expect(page.get_by_test_id("git-host-signin")).to_be_visible()
+    expect(page.get_by_test_id("git-host-auth-oauth")).to_be_checked()
+    p.assert_clean()
+    p.close()
+
+
 @check("git hosts findable: a new session's welcome offers Clone a repository and Connect a git host; desktop and phone")
 def git_welcome(browser):
     post(NORMAL + "/__mock/reset")

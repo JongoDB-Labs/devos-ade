@@ -38,6 +38,7 @@
 // dialog's sign-in in progress: approved (as account), declined, expired; end: a signed-in host's sign-in ended (Sign in
 // again); /__mock/git-signin?app=0 is a stack with no GitHub App set up (DevOS ADE's own is the default, as in
 // oauth.mjs: this plays a Settings value that is not one, or a build without it).
+// /__mock/git-hosts-hold?ms= makes the next Git hosts' view (read now) arrive that much later: a slow network.
 // /__mock/git-said?text= is a hostile sandbox: push, pull, fetch, clone, Test connection, stage and commit fail in its
 // words (as main.mjs answers them: a fixed sentence of ours, its words apart — said); /__mock/git-said ends it.
 // Projects (projects.mjs as the backend has them): the Workspace, and folders of the workspace made projects (New project
@@ -304,6 +305,7 @@ const mockHost = (scheme) => gitHostsMock.find((h) => h.host === 'github.com' &&
 // Sign in with GitHub / GitLab: the flows (the device code never leaves the "code container"), and whether an app is set
 const signInFlows = new Map();
 let signInApp = true;
+let gitHostsHold = 0;   // /__mock/git-hosts-hold?ms=: the next hosts' view answers this much later
 const signInConfig = () => ({ github: { host: 'github.com', clientId: signInApp ? 'Iv23li9eDUUgicar7aTx' : null, appSlug: signInApp ? 'devos-ade' : null, configured: signInApp },
   gitlab: { host: 'gitlab.com', clientId: null, configured: false } });
 const flowView = (f) => ({ flowId: f.id, provider: f.provider, host: f.host, port: null, label: f.label, state: f.state, userCode: f.state === 'pending' ? f.userCode : null,
@@ -319,6 +321,7 @@ function resetGitRemote() {
   gitHostsMock = [];
   signInFlows.clear();
   signInApp = true;
+  gitHostsHold = 0;
   gitEventsMock.length = 0;
   gitRemoteBranches = ['main'];
   gitBranchesMock = [{ name: 'main', upstream: { remote: 'origin', branch: 'main' } }];
@@ -350,7 +353,14 @@ async function gitRemotePanel(p, m, url, req) {
   }
   if (p === '/api/git/mirrors' && m === 'GET') return [200, { available: true, mirrors: [{ direction: 'push', repo: 'devos/app', remote: 'https://github.com/you/app.git', interval: '8h0m0s', syncOnCommit: true, lastSync: '2026-10-28T03:00:00Z', lastError: null },
     { direction: 'pull', repo: 'devos/up', remote: 'https://gitlab.com/g/up.git', interval: '1h0m0s', syncOnCommit: false, lastSync: null, lastError: 'authentication failed' }] }];
-  if (p === '/api/git/hosts' && m === 'GET') return [200, { hosts: gitHostsMock.map(hostView), events: gitEventsMock.slice(0, 50), local: true, signIn: signInConfig() }];
+  if (p === '/api/git/hosts' && m === 'GET') {
+    // (/__mock/git-hosts-hold?ms=: the NEXT hosts' view is read now and answered that much later — a slow network, a
+    // response that arrives after a newer one)
+    const body = { hosts: gitHostsMock.map(hostView), events: gitEventsMock.slice(0, 50), local: true, signIn: signInConfig() };
+    const hold = gitHostsHold; gitHostsHold = 0;
+    if (hold) await new Promise((r) => setTimeout(r, hold));   // (not sleep: --fast would cut it)
+    return [200, body];
+  }
   if (p === '/api/git/oauth' && m === 'POST') {
     const b = await jsonBody(req);
     if (b.provider !== 'github' && b.provider !== 'gitlab') return [400, { error: 'provider: github or gitlab' }];
@@ -3076,6 +3086,10 @@ const server = http.createServer(async (req, res) => {
             expiresAt: source === 'glab' ? Date.now() + 90 * 86400000 : null, importedAt: Date.now() } };
         gitHostsMock.push(h);
         gitEvent({ action: 'host', host: h.label, target: host, text: `connected with ${source}'s login as ${account} (./stack git-host import)` });
+        return json(res, 200, { ok: true });
+      }
+      if (url.pathname === '/__mock/git-hosts-hold') {
+        gitHostsHold = Number(url.searchParams.get('ms')) || 0;
         return json(res, 200, { ok: true });
       }
       if (url.pathname === '/__mock/git-signin') {
