@@ -116,7 +116,7 @@ body.resizing-x iframe, body.resizing-y iframe { pointer-events: none; }
 .tb-right { flex: 1 1 0; justify-content: flex-end; gap: 6px; min-width: max-content; }
 .tb-right > *, .tb-mid > * { flex: none; }
 .tb-left > .icon-btn, .tb-left > .brand { flex: none; }
-.tb-left > .sess-switch { flex: 0 1 auto; }
+.tb-left > .sess-switch { flex: 0 8 auto; }
 .brand { display: flex; align-items: center; gap: 7px; padding: 0 6px 0 4px; font: 600 15px/1.2 var(--font-display); letter-spacing: -0.01em; white-space: nowrap; }
 .brand-mark { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; background: var(--accent); color: var(--accent-ink); }
 .brand-mark .ic { stroke-width: 2; }

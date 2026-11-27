@@ -36,7 +36,7 @@
 /* (the top bar: the chip keeps its project's name — at most about a quarter of the bar, then an ellipsis — while the
    session's title gives way first: app.css .tb-left) */
 .proj-chip-dd { min-width: 0; }
-.tb-left > .proj-chip-dd { flex: none; }
+.tb-left > .proj-chip-dd { flex: 0 1 auto; }   /* (it may shrink to what the bar leaves, its text cut short; the session's title shrinks 8 times as fast) */
 .proj-chip { max-width: min(360px, 26cqi); border-color: var(--line) !important; background: var(--surface); }
 .proj-chip .ic { flex: none; color: var(--muted); }
 .proj-chip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
