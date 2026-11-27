@@ -2009,8 +2009,8 @@
   // again (one for each sandbox, under the cards) asks that sandbox again, both through the update helper with the
   // password (narrowing: wherever Settings actions are).
   const SUBS_CHAT_SIGNOUT = ["claude", "codex", "grok"];   // (settings.py SUBS_SIGNOUT_CHAT_TOOLS)
-  // the tools the Code page's Who answers offers (code/web/src/types.ts HARNESS_IDS; Gemini CLI is not one of them)
-  const SUBS_CODE_AGENTS = ["claude", "codex", "copilot", "cursor", "grok"];
+  // the tools the Code page's Who answers offers (code/web/src/types.ts HARNESS_IDS; Gemini CLI is one, though not in Chat yet: JON-1424)
+  const SUBS_CODE_AGENTS = ["claude", "codex", "gemini", "copilot", "cursor", "grok"];
   const andList = (xs) => (xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}` : xs[0] || "");
   // Local models (localmodels.js): models downloaded from Hugging Face and run on this computer; it fills the row's frame
   function localModelsRow(r) {

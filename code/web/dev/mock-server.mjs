@@ -2144,11 +2144,11 @@ async function api(req, res, url) {
     return json(res, 200, { prefs: userPrefs });
   }
   if (p === '/api/harnesses') {
-    // who may answer a new session (the backend's /api/harnesses): Codex signed in, Copilot cannot say, Cursor not
+    // who may answer a new session (the backend's /api/harnesses): Codex signed in, Copilot cannot say, Cursor and Gemini CLI not
     // signed in, Grok not in the sandbox, Claude on your plan off
     const h = (id, name, plan, installed, signed, allowed = true) => ({ id, name, provider: name, plan, installed, signed, allowed });
     return json(res, 200, { harnesses: [h('claude', 'Claude', 'your Claude plan', true, 'yes', false), h('codex', 'Codex', 'your ChatGPT plan', true, 'yes'),
-      h('copilot', 'GitHub Copilot', 'your Copilot plan', true, 'unknown'), h('cursor', 'Cursor', 'your Cursor plan', true, 'no'), h('grok', 'Grok', 'your SuperGrok or X plan', false, 'unknown')], checked: Date.now() });
+      h('copilot', 'GitHub Copilot', 'your Copilot plan', true, 'unknown'), h('cursor', 'Cursor', 'your Cursor plan', true, 'no'), h('grok', 'Grok', 'your SuperGrok or X plan', false, 'unknown'), h('gemini', 'Gemini CLI', 'your Gemini CLI sign-in', true, 'no')], checked: Date.now() });
   }
   if (p === '/api/sessions' && m === 'GET') {
     const q = (url.searchParams.get('q') || '').toLowerCase();

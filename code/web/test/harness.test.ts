@@ -9,8 +9,8 @@ import { applyEvent, newView } from '../src/session';
 const S = '3f2a7c1e-9b4d-4e8a-a1c2-0d9e8f7a6b5c';
 
 test('who answers: only the known harnesses (anything else is Claude Code on Bedrock)', () => {
-  for (const h of ['bedrock', 'claude', 'codex', 'copilot', 'cursor', 'grok']) assert.equal(harnessOf(h), h);
-  for (const h of ['gemini', 'toString', '<b>', null, 3]) assert.equal(harnessOf(h), 'bedrock');
+  for (const h of ['bedrock', 'claude', 'codex', 'copilot', 'cursor', 'grok', 'gemini']) assert.equal(harnessOf(h), h);
+  for (const h of ['gem', 'toString', '<b>', null, 3]) assert.equal(harnessOf(h), 'bedrock');
 });
 
 test('a plan\'s usage: tokens and turns only, its limits checked; never a dollar figure', () => {
@@ -49,13 +49,13 @@ test('the picker: a subscription that can start, and why one cannot', () => {
 });
 
 test('the picker: the subscriptions you can use shown, the ones to sign in to folded under one row (UX-06)', () => {
-  const h = (id: 'claude' | 'codex' | 'copilot' | 'cursor' | 'grok', signed: 'yes' | 'no' | 'unknown', more: { installed?: boolean; allowed?: boolean } = {}) =>
+  const h = (id: 'claude' | 'codex' | 'copilot' | 'cursor' | 'grok' | 'gemini', signed: 'yes' | 'no' | 'unknown', more: { installed?: boolean; allowed?: boolean } = {}) =>
     ({ id, name: id, provider: id, plan: `your ${id} plan`, installed: more.installed ?? true, signed, allowed: more.allowed ?? true, accounts: [] });
   // the audit's stack: none signed in, Copilot's sign-in not known, Claude on your plan off
-  const list = [h('claude', 'yes', { allowed: false }), h('codex', 'no'), h('copilot', 'unknown'), h('cursor', 'no'), h('grok', 'no', { installed: false })];
+  const list = [h('claude', 'yes', { allowed: false }), h('codex', 'no'), h('copilot', 'unknown'), h('cursor', 'no'), h('grok', 'no', { installed: false }), h('gemini', 'no')];
   const a = answerers(list, 'bedrock');
   assert.deepEqual(a.ready.map((x) => x.id), ['copilot']);
-  assert.deepEqual(a.signIn.map((x) => x.id), ['claude', 'codex', 'cursor', 'grok']);
+  assert.deepEqual(a.signIn.map((x) => x.id), ['claude', 'codex', 'cursor', 'grok', 'gemini']);
   // the one answering now is always shown; one signed in is shown
   assert.deepEqual(answerers(list, 'codex').ready.map((x) => x.id), ['codex', 'copilot']);
   assert.deepEqual(answerers([h('codex', 'yes'), h('cursor', 'no')], 'bedrock'), { ready: [h('codex', 'yes')], signIn: [h('cursor', 'no')] });

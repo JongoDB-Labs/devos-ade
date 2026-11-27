@@ -46,8 +46,8 @@ export interface InitInfo {
 
 /** Who answers in a session: Claude Code on Bedrock (as the Code page always ran it), Claude on your plan (Settings'
  *  switch), or one of your subscriptions' agents through its own interface for other apps. */
-export type Harness = 'bedrock' | 'claude' | 'codex' | 'copilot' | 'cursor' | 'grok';
-export const HARNESS_IDS: readonly Harness[] = ['bedrock', 'claude', 'codex', 'copilot', 'cursor', 'grok'];
+export type Harness = 'bedrock' | 'claude' | 'codex' | 'copilot' | 'cursor' | 'grok' | 'gemini';
+export const HARNESS_IDS: readonly Harness[] = ['bedrock', 'claude', 'codex', 'gemini', 'copilot', 'cursor', 'grok'];
 /** One of your subscriptions as the picker offers it (GET /api/harnesses): there, signed in, allowed here */
 export interface HarnessInfo {
   id: Exclude<Harness, 'bedrock'>;
@@ -520,7 +520,7 @@ export interface ServerState {
   workspace: string | null;
   /** this page came over remote access (Caddy's remote sites tell the code container; never from the browser) */
   remote: boolean;
-  /** your subscriptions' agents run here (Codex, Copilot, Cursor, Grok), and Claude on your plan may (Settings' switch) */
+  /** your subscriptions' agents run here (Codex, Copilot, Cursor, Grok, Gemini CLI), and Claude on your plan may (Settings' switch) */
   agents: boolean;
   planAllowed: boolean;
   /** your choices for new sessions, kept for your sign-in (the code container's, not this browser's); null: an older
@@ -927,7 +927,7 @@ export interface GitEvent {
  *  never as a sentence of ours. by: whose words — git's, Claude Code's, or the sandbox's (bn-coded's). */
 export interface SandboxWords {
   said: string;
-  /** agent: one of your subscriptions' agents (Codex, Copilot, Cursor, Grok) — its words, such as a tool's title */
+  /** agent: one of your subscriptions' agents (Codex, Copilot, Cursor, Grok, Gemini CLI) — its words, such as a tool's title */
   by: 'git' | 'claude' | 'sandbox' | 'agent';
 }
 export interface GitHostRef {

@@ -205,7 +205,7 @@ test('a project\'s own Claude Code settings: its state in the list, a session\'s
   assert.equal(settingsStateFor(carried), 'trusted');
   assert.equal(settingsStateFor(carried, 'bedrock'), 'trusted');
   assert.equal(settingsStateFor(carried, 'claude'), 'trusted');
-  for (const h of ['codex', 'copilot', 'cursor', 'grok']) assert.equal(settingsApplied(settingsStateFor(carried, h)), false, h);
+  for (const h of ['codex', 'copilot', 'cursor', 'grok', 'gemini']) assert.equal(settingsApplied(settingsStateFor(carried, h)), false, h);
   const githubOnly = { state: 'none' as const, planState: 'none' as const, agentState: 'untrusted' as const };
   assert.equal(settingsApplied(settingsStateFor(githubOnly, 'bedrock')), true);
   assert.equal(settingsApplied(settingsStateFor(githubOnly, 'codex')), false);

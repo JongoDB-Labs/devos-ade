@@ -85,7 +85,7 @@ function StateDot({ v }: { v: SessionView | undefined }) {
 }
 
 // who answered in a session, as its row says it (Claude Code on Bedrock: nothing)
-export const HARNESS_BADGE: Record<Harness, string> = { bedrock: '', claude: 'Plan', codex: 'Codex', copilot: 'Copilot', cursor: 'Cursor', grok: 'Grok' };
+export const HARNESS_BADGE: Record<Harness, string> = { bedrock: '', claude: 'Plan', codex: 'Codex', copilot: 'Copilot', cursor: 'Cursor', grok: 'Grok', gemini: 'Gemini' };
 
 function Row(props: { id: string; title: string; sub: string; view?: SessionView; active: boolean; picking: boolean; picked: boolean; onPick: (on: boolean) => void;
   gone?: boolean; imported?: ImportedFrom | null; continueTo?: { id: string; name: string } | null; harness?: Harness; archived?: boolean }) {
@@ -1047,11 +1047,11 @@ function SettingsDialog({ id, start, onClose }: { id: string; start?: NewSession
     : 'Claude on your plan: not applied in its sessions until you trust them.';
   // (when Trust covers Claude Code's part alone it is said whatever the states, before you click)
   const agentLine = !v || v.state === 'workspace' ? null
-    : !v.summary.agentsComplete ? `The other tools' settings (Codex, Copilot, Cursor, Grok) cannot all be checked or shown here (${label(v.summary.agentsMissing.join('; ') || 'not said', 400)}): trusting covers Claude Code's alone, and your subscriptions' agents do not start in this folder.`
+    : !v.summary.agentsComplete ? `The other tools' settings (Codex, Copilot, Cursor, Grok, Gemini CLI) cannot all be checked or shown here (${label(v.summary.agentsMissing.join('; ') || 'not said', 400)}): trusting covers Claude Code's alone, and your subscriptions' agents do not start in this folder.`
     : v.agentState === v.state ? null
     : v.agentState === 'changed' ? 'The other tools\' settings changed since you trusted them: your subscriptions\' agents do not start in this folder until you trust them again.'
     : settingsApplied(v.agentState) ? null
-    : 'The other tools\' settings (Codex, Copilot, Cursor, Grok) are not trusted: your subscriptions\' agents do not start in this folder until they are. Claude Code on Bedrock does not read them.';
+    : 'The other tools\' settings (Codex, Copilot, Cursor, Grok, Gemini CLI) are not trusted: your subscriptions\' agents do not start in this folder until they are. Claude Code on Bedrock does not read them.';
   // the state the session about to start goes by: Claude Code on Bedrock's (Claude Code's part), Claude on your plan's,
   // or an agent's (both parts)
   const vendor = !!start?.harness && start.harness !== 'bedrock' && start.harness !== 'claude';
@@ -1079,7 +1079,7 @@ function SettingsDialog({ id, start, onClose }: { id: string; start?: NewSession
     ['Other settings', sm.other.map((o) => ({ text: `${o.key}: ${o.value}` })), 'settings-other'],
     ['Skills, commands, agents … — this folder\'s .claude/ and the folders\' above it to the git root: what their front matter grants, and the shell commands they run when used', sm.files.flatMap((f) => (f.grants.length
       ? f.grants.map((g) => ({ text: `${f.name}: ${g.key}: ${g.value}` })) : [{ text: `${f.name}: grants nothing in its front matter, runs no shell command` }])), 'settings-tree'],
-    ['Other tools\' settings — read as they are by your subscriptions\' agents (Codex, Copilot, Cursor, Grok) when they start here: their hooks, MCP servers and rules',
+    ['Other tools\' settings — read as they are by your subscriptions\' agents (Codex, Copilot, Cursor, Grok, Gemini CLI) when they start here: their hooks, MCP servers and rules',
       sm.tools.map((t) => ({ text: `${t.file} (${t.tool}):\n${t.text}`, careful: t.careful, block: true })), 'settings-tools'],
     ['Notes', sm.notes.map((n) => ({ text: `${n.file}: ${n.note}` })), 'settings-notes'],
   ] : [];
