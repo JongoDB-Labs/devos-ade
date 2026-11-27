@@ -1405,11 +1405,13 @@ def ui_queue_clear(ctx):
 
 
 def _hold_turn(page, tag):
-    """A turn Claude Code cannot finish until the page answers: Haiku is asked to run a command, which Default mode asks
-    permission for. The prompts typed meanwhile wait in Claude Code's own queue. Skip when Haiku does not run it."""
+    """A turn Claude Code cannot finish until the page answers: Haiku is asked to run a command that writes a file (in the
+    session's folder), which Default mode asks permission for — a plain echo it runs without asking. The prompts typed
+    meanwhile wait in Claude Code's own queue. Skip when Haiku does not run it."""
     card = page.get_by_test_id("permission")
     ends = page.get_by_test_id("turn-end").count()
-    ask(page, f"Use the Bash tool to run exactly this command: echo bn-e2e-hold-{tag} -- then reply with the single word: done")
+    ask(page, f"Use the Bash tool to run exactly this command: echo bn-e2e-hold-{tag} > bn-e2e-hold-{tag}.txt -- then reply with "
+        "the single word: done")
     page.wait_for_function("(n) => !!document.querySelector('[data-testid=permission]') || document.querySelectorAll('[data-testid=turn-end]').length > n", arg=ends, timeout=150000)
     if not card.count():
         raise Skip("Haiku answered without running the command (no permission card to hold the turn)")
@@ -1455,7 +1457,12 @@ def ui_cancel_queued(ctx):
     notes.append("two prompts queued during a held turn, the first cancelled with its X: only the other was answered (walnut4821), the cancelled one is neither shown answered nor in the transcript")
     # Cancel all: two more queued during a new held turn, none is sent
     ends = page.get_by_test_id("turn-end").count()
-    _hold_turn(page, "two")
+    try:
+        _hold_turn(page, "two")
+    except Skip:
+        notes.append("Cancel all not tried: Haiku answered the second time without running the command")
+        csp_clean(page, rec)
+        return "; ".join(notes) + "; no CSP violations"
     ask(page, "Reply with exactly the word: plum2468")
     ask(page, "Reply with exactly the word: cherry1357")
     see(queued).to_have_count(2, timeout=10000)
