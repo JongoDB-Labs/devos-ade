@@ -2749,7 +2749,7 @@ function headsOf(repo) {
   try { st = fs.lstatSync(dot); } catch { return { error: GIT_REASONS.notRepo }; }
   let gitdir = dot;
   if (st.isFile()) {
-    const m = /^gitdir: ([^\n\0]{1,1024})\n?$/.exec(smallFile(dot, HEADS_FILE_MAX) ?? '');
+    const m = (smallFile(dot, HEADS_FILE_MAX) ?? '').match(/^gitdir: ([^\n\0]{1,1024})\n?$/);
     if (!m) return { error: 'its .git file is not a git folder link' };
     gitdir = path.resolve(root.abs, m[1]);
     if (!noLinksTo(gitdir, root.top)) return { error: 'its git folder is not inside the project folders (or a link is on the way)' };
@@ -2764,9 +2764,9 @@ function headsOf(repo) {
   const headText = smallFile(path.join(gitdir, 'HEAD'), HEADS_FILE_MAX);
   if (headText === null) return { error: 'its HEAD cannot be read' };
   const line = headText.split('\n')[0].trim();
-  const ref = /^ref: (.+)$/.exec(line);
+  const ref = line.match(/^ref: (.+)$/);
   if (!ref) return SHA.test(line) ? { branch: null, head: null } : { error: 'its HEAD is not understood' };
-  const b = /^refs\/heads\/(.+)$/.exec(ref[1])?.[1];
+  const b = ref[1].match(/^refs\/heads\/(.+)$/)?.[1];
   if (!b) return { branch: null, head: null };
   if (!headBranchOk(b)) return { error: 'its branch name is not one read here' };
   let head = null;
@@ -2780,7 +2780,7 @@ function headsOf(repo) {
     else {
       const packed = smallFile(path.join(common, 'packed-refs'), HEADS_PACKED_MAX);
       if (packed !== null && packed.includes(` refs/heads/${b}`)) for (const l of packed.split('\n')) {
-        const mm = /^([0-9a-f]{40}(?:[0-9a-f]{24})?) (.+)$/.exec(l.trim());
+        const mm = l.trim().match(/^([0-9a-f]{40}(?:[0-9a-f]{24})?) (.+)$/);
         if (mm && mm[2] === `refs/heads/${b}`) { head = mm[1]; break; }
       }
     }
