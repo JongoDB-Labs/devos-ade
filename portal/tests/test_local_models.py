@@ -936,3 +936,14 @@ def test_a_status_row_with_no_kind_is_judged_by_its_address_a_public_one_is_remo
     (tmp_path / "local-models.json").write_text(json.dumps(d))
     got = {x["name"]: x["kind"] for x in lm.read_status(tmp_path)["servers"]}
     assert got == {"pub": "hosted", "ip": "hosted", "lan": "self", "loop": "self", "tail": "self", "evil": "hosted", "v6": "self", "dotless": "self"}
+
+
+def test_a_status_row_with_no_kind_and_a_scheme_in_capitals_is_judged_by_its_host_not_the_scheme(tmp_path):
+    # (HTTP://8.8.8.8 once kept its scheme and read as the dotless name "http": self-hosted, booked free)
+    _status(tmp_path)
+    d = json.loads((tmp_path / "local-models.json").read_text())
+    rows = [("caps", "HTTP://8.8.8.8:8000"), ("caps2", "Https://API.groq.com/v1"), ("capslan", "HTTP://192.168.1.4:8000")]
+    d["servers"] = [{"name": n, "url": u, "status": "ok", "detail": "a|0", "enabled": "*"} for n, u in rows]
+    (tmp_path / "local-models.json").write_text(json.dumps(d))
+    got = {x["name"]: x["kind"] for x in lm.read_status(tmp_path)["servers"]}
+    assert got == {"caps": "hosted", "caps2": "hosted", "capslan": "self"}

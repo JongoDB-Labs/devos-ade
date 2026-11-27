@@ -1074,14 +1074,15 @@ msrv_apply_op() {
       valid_msrv_models "$(_msrv_models_for "$n" "$models")" || die "unusable model list"
       if [ -z "$addr" ]; then die "that address could not be checked"; fi
       # (what it is billed as: the one asked for; else the one it had while the address is the same; else the default for its
-      # address — the checked one. A server moved to another address is judged afresh: it keeps its prices only if it stays hosted.)
+      # address — the checked one. A server moved to another address is judged afresh, and its prices go unless the request
+      # brings new ones: another address is another provider, with other prices; until they are set it is "price unknown".)
       # Everything is checked here, before anything is written.
       local oldkind='' clearp=0
       case "$kind" in self | hosted) ;; *) kind='' ;; esac
       if [ -z "$kind" ] && [ -n "$old" ] && [ "$u" = "$old" ]; then oldkind="$(_msrv_items MODEL_SERVER_KINDS | awk -F= -v n="$n" '$1 == n && !d++ { print $2 }')"; kind="$oldkind"; fi
       [ -n "$kind" ] || kind="$(msrv_default_kind "$u" "$addr")"
       if [ "$prices" = none ]; then prices=''; clearp=1; fi
-      if [ -n "$old" ] && [ "$u" != "$old" ] && [ -z "$prices" ] && [ "$kind" != hosted ]; then clearp=1; fi
+      if [ -n "$old" ] && [ "$u" != "$old" ] && [ -z "$prices" ]; then clearp=1; fi
       valid_msrv_prices "$(_msrv_prices_for "$n" "$prices")" || die "unusable price list"
       [ "$u" = "$old" ] || [ -z "$old" ] || keyout="$keyout; billed as $kind now that the address changed"
       mkdir -p "$(local_dir)"                                                # (its checked address is known before it registers: models need it)

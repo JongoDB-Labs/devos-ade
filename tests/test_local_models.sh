@@ -1482,8 +1482,13 @@ test_moving_a_server_to_another_address_without_a_kind_judges_it_afresh_and_a_fa
   msrv_apply_op save lab http://192.168.1.4:8000 0 '' '*' '' '' >/dev/null 2>&1       # (back to a private address: free again, prices dropped)
   assert_eq "$(msrv_kind lab)" self; assert_eq "$(get_env MODEL_SERVER_PRICES)" ""
   msrv_apply_op billing lab '' 0 '' '' hosted '*=1;2' >/dev/null 2>&1
-  msrv_apply_op save lab https://gpu.example.org 0 '' '*' '' '' >/dev/null 2>&1       # (private to public: hosted; the prices from before are kept for it)
-  assert_eq "$(msrv_kind lab)" hosted
+  msrv_apply_op save lab https://gpu.example.org 0 '' '*' '' '' >/dev/null 2>&1       # (private to public: hosted, price unknown)
+  assert_eq "$(msrv_kind lab)" hosted; assert_eq "$(get_env MODEL_SERVER_PRICES)" ""
+  msrv_apply_op billing lab '' 0 '' '' hosted '*=1;2' >/dev/null 2>&1
+  msrv_apply_op save lab https://lab.example.org 0 '' '*' '' '' >/dev/null 2>&1        # (one hosted provider to another: the old prices go)
+  assert_eq "$(msrv_kind lab)" hosted; assert_eq "$(get_env MODEL_SERVER_PRICES)" ""
+  msrv_apply_op save lab https://gpu.example.org 0 '' '*' '' '*=1;2' >/dev/null 2>&1   # (a move that brings its prices keeps them)
+  assert_eq "$(get_env MODEL_SERVER_PRICES)" 'lab:*=1;2'
   # the same address and no kind: what it had stays, prices too
   msrv_apply_op save lab https://gpu.example.org 0 '' '*' '' '' >/dev/null 2>&1
   assert_eq "$(msrv_kind lab)" hosted; assert_eq "$(get_env MODEL_SERVER_PRICES)" 'lab:*=1;2'

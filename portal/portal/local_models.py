@@ -344,7 +344,7 @@ def default_kind(url) -> str:
     """lib/local_models.sh msrv_default_kind from the address as typed (no DNS here): loopback, private, link-local, tailnet and
     *.local-style names, or a name with no dot, are "self"; anything else "hosted" (the safe direction: never booked free)."""
     import ipaddress
-    host = re.sub(r"^[a-z]+://", "", _text(url, 200) or "").split("/")[0].lower()
+    host = re.sub(r"^[a-z][a-z0-9+.-]*://", "", (_text(url, 200) or "").lower()).split("/")[0]   # (lower case first: HTTP://8.8.8.8 is hosted)
     host = host[1:host.index("]")] if host.startswith("[") and "]" in host else host.split(":")[0]
     if not host:
         return "hosted"
