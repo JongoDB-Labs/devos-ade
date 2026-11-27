@@ -5827,7 +5827,7 @@ def bulk_sessions_flow(browser, name, phone):
         page.get_by_test_id("side-sessions").click()
         root = page
     ws = proj(root, "ws")
-    rows = ws.get_by_test_id("session-row")
+    rows = ws.locator("[data-testid=session-row]:not([data-testid=archived-list] *)")   # (the list, not the Archived fold's)
     expect(rows).to_have_count(4, timeout=10_000)
     A, B, C, D = "Add jitter", "Why does CI fail", "Refactor the HTTP", "Write a latency"
 
