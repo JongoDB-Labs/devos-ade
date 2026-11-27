@@ -25,7 +25,8 @@ fi
 # repository chooses: Claude Code (2.1.309) looks for the trust record at the folder, and for a folder inside a git
 # repository only from there up to the repository's root, never above it — so a repository cloned or made under
 # /workspace (project new, git clone) is asked about again, before its .claude/settings.json hooks and MCP servers
-# run. A folder of /workspace outside any repository inherits this record: it holds no repository's settings.
+# run. A folder of /workspace outside any repository (an unpacked download, say) inherits this record, settings and all:
+# that is the owner's "trust it, but ask for clones" — keep a repository's files in a repository to be asked.
 # Merged into what is there (other keys kept), written only when the record is not yet there, left alone when the
 # file is not JSON that jq reads.
 # trust:begin
