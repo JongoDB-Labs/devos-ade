@@ -4,12 +4,15 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.69.0] - 2026-11-26
 
 ### Added
 
 - **Home and Settings know every project the Code page has.** Beside Home's New session, a new menu starts a session in any project: the workspace, the projects you made on the Code page, and this computer's folders. Settings › Claude Code › Project folders now lists the Code page's projects in the workspace too, each with New session. Both read the Code page's own list, so a project made, renamed or removed there shows the same way everywhere. (JON-1158)
-- **A project you make in the Terminal shows up with the Code page closed.** A repository or project folder made in the workspace (an agent's `git init`, a clone) became a Code project only while a Code page was open. The workspace is now also looked at every 2 minutes while no Code page is open, so Home, Settings and the Terminal's Projects panel list it anyway. (JON-1158)
+- **A project you make in the Terminal shows up with the Code page closed.** A repository or project folder made in the workspace (an agent's `git init`, a clone) became a Code project only while a Code page was open. The workspace is now also looked at every 2 minutes while no Code page is open, so Home, Settings and the Terminal's Projects panel list it anyway. If you keep projects on the local git server, such a project is kept and pushed the same way it was with a page open, now also when none is. (JON-1158)
+
+### To get it
+Existing installs: Home › Update now.
 
 ## [0.68.20] - 2026-11-26
 
