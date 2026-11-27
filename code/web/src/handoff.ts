@@ -4,6 +4,7 @@
 // the project's name from the chat's title, the conversation as the page shows it, and the first prompt of the session that
 // carries on — the conversation quoted as text FROM THE CHAT, never as words of the person at the keyboard.
 import { visible } from './text';
+import type { Project } from './projects';
 
 /** An id the portal made (32 URL-safe characters). */
 export const HANDOFF_ID = /^[A-Za-z0-9_-]{32}$/;
@@ -95,4 +96,10 @@ export function handoffPrompt(h: Handoff, m?: string): string {
     `End of the conversation from the chat (${id}). In two or three sentences, say what you understand this project to be and what you would do first, `
       + 'then wait for me to tell you what to do. The files you write go in this project\'s folder, which is kept on the local git server.',
   ].join('\n');
+}
+
+/** The projects a chat can continue in (the dialog's Continue it in: A project you have, JON-1158): where a session can start now —
+ *  not one no longer added or leaving, not one the sandbox does not have yet, not one whose folder is not there. */
+export function handoffTargets(projects: Project[]): Project[] {
+  return projects.filter((p) => !p.gone && !p.leaving && p.pending !== 'add' && p.folder !== 'missing' && p.folder !== 'unmounted');
 }

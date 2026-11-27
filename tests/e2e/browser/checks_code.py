@@ -3509,6 +3509,78 @@ def home_new_session_in(ctx):
             "(the project chip); Settings › Project folders lists it under the workspace's projects, its New session → the Code tab at it")
 
 
+HOFF_ROOT, HOFF_NAME = "e2e-handoff-into", "E2E Handoff Into"
+
+
+@check("browser", "code-handoff-into-a-project-you-have")
+def handoff_into_existing(ctx):
+    """JON-1158 (G6): a chat handed over from Chat (the portal's own deposit, as its page makes it: POST /api/chat-handoff) can continue in a
+    project you have, not only a new one: the dialog's Continue it in › A project you have, the project chosen, Continue there — nothing is
+    made; the project is shown and a Haiku session there reads the conversation (its first message, quoted)."""
+    need_on()
+    need_haiku()
+    from playwright.sync_api import expect as see
+    c = Code(ctx, "handoff-into-code")
+    page = c.page
+    _drop_projects(c, (HOFF_ROOT,))
+    if HOFF_ROOT in {e["name"] for e in (c.api("GET", "/api/fs?path=.")["json"] or {}).get("entries", [])}:
+        c.api("DELETE", f"/api/fs?path={HOFF_ROOT}")   # (left by an earlier run; asked only when there: a 404 is a page error)
+    r = c.api("POST", "/api/projects", {"kind": "new", "folder": HOFF_ROOT, "name": HOFF_NAME, "git": False})
+    expect(r["status"] == 200, f"the Code project: {r['status']} {r['text'][:200]}")
+    pid = r["json"]["project"]["id"]
+    sid = None
+    hrec = Recorder("handoff-into-home")
+    home = hrec.attach(page.context.new_page())
+    home.set_default_timeout(30000)
+    try:
+        # (the page's model for new sessions: Haiku)
+        page.goto(page.url)
+        Code.on(page, c.rec, goto=False)
+        page.get_by_test_id("model-picker").click()
+        page.get_by_test_id("model-haiku").click()
+        # the portal keeps a chat for the Code page, as its own page does when Chat's Make it a project asks it
+        home.goto(origin() + "/")
+        home.wait_for_selector("#home:not([hidden])", timeout=20000)
+        marker = f"bn-e2e-handoff-{int(time.time())}"
+        d = home.evaluate("""(b) => fetch('/api/chat-handoff', {method: 'POST', headers: {'X-Requested-With': 'devos-ade', 'Content-Type': 'application/json'},
+            body: JSON.stringify(b)}).then(r => r.json())""", {"title": "E2E hand-off", "text": f"You: Remember the word {marker}. Reply with one word.\n\nAssistant: Noted."})
+        hid = d.get("id") if isinstance(d, dict) else None
+        expect(isinstance(hid, str) and len(hid) >= 20, f"the hand-off: {d}")
+        before = {x["id"] for x in c.api("GET", "/api/projects")["json"]["projects"]}
+        page.goto(CODE + f"/?handoff={hid}")
+        dlg = page.get_by_test_id("handoff-dialog")
+        see(dlg).to_be_visible(timeout=60000)
+        see(page.get_by_test_id("handoff-text")).to_contain_text(marker)
+        page.get_by_test_id("handoff-where-existing").check()
+        page.get_by_test_id("handoff-project").select_option(pid)
+        see(page.get_by_test_id("handoff-create")).to_have_text(re.compile(r"Continue there"))
+        see(page.get_by_test_id("handoff-name")).to_have_count(0)
+        shot(page, "handoff-into-1-dialog")
+        page.get_by_test_id("handoff-create").click()
+        see(dlg).to_have_count(0, timeout=60000)
+        see(page.get_by_test_id("project-chip-name")).to_have_text(HOFF_NAME, timeout=30000)
+        see(page.get_by_test_id("msg-user").filter(has_text=marker)).to_have_count(1, timeout=60000)
+        see(page.get_by_test_id("turn-end")).to_have_count(1, timeout=150000)
+        sid = page.evaluate("JSON.parse(localStorage.getItem('bn.code.v1')).lastSession")
+        st = state_of(c, sid)
+        expect(st.get("project") == pid and st.get("cwd") == f"/workspace/{HOFF_ROOT}" and st.get("model") == HAIKU,
+               f"the session that carries on: {({k: st.get(k) for k in ('project', 'cwd', 'model')})}")
+        after = {x["id"] for x in c.api("GET", "/api/projects")["json"]["projects"]}
+        expect(after == before, f"a project was made: {sorted(after - before)}")
+        shot(page, "handoff-into-2-session")
+        probs = c.rec.problems(allow=LOCKED_OK + [r"^401 GET " + re.escape(CODE) + r"/\?handoff="]) + hrec.problems(allow=LOCKED_OK)
+        c.rec.save(); hrec.save()
+        expect(not probs, f"errors: {probs[:6]}")
+    finally:
+        if sid:
+            c.api("DELETE", f"/api/sessions/{sid}")
+        _drop_projects(c, (HOFF_ROOT,))
+        if HOFF_ROOT in {e["name"] for e in (c.api("GET", "/api/fs?path=.")["json"] or {}).get("entries", [])}:
+            c.api("DELETE", f"/api/fs?path={HOFF_ROOT}")
+    return (f"a hand-off ({marker}) continued in {HOFF_NAME} ({pid}): no project made; the project shown; a Haiku session there read the "
+            "conversation (its first message) and answered")
+
+
 @check("browser", "code-settings-row")
 def settings_row(ctx):
     need_on()

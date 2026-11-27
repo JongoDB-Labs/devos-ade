@@ -4,6 +4,12 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **A chat can continue in a project you already have.** Chat's *Make it a project* opens the Code page's dialog as before; it now asks where to continue: a new project, or one you have (the workspace, a project of it, or a folder of this computer). With one you have, nothing is made: the project is shown and a new session there reads the conversation. (JON-1158)
+
 ## [0.69.0] - 2026-11-26
 
 ### Added

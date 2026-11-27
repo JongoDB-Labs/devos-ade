@@ -4,13 +4,15 @@
 // and kept like any New project, and (ticked) a new session starts in it with the conversation as its first message — quoted as text
 // from the chat, not as instructions from you; the session's model and everything else are what a new session starts with, and its
 // mode is Manual (every command and file change waits for your OK), since the conversation is not yours to vouch for. The session
-// writes the files; the kept project pushes them.
+// writes the files; the kept project pushes them. Or (JON-1158) a project you have instead of a new one: no project is made, and the
+// session that carries on from the chat starts in the one you chose (its folder, its trust as it is) — the workspace, a project of it
+// or a folder of this computer; a project that cannot start a session (its folder not there, not in the sandbox yet) is not offered.
 import { useEffect, useState } from 'preact/hooks';
 import { useSel } from '../store';
-import { store, createProject, newSession, renameSessionById, sendToSession, toast, type Problem } from '../app';
+import { store, createProject, newSession, renameSessionById, sendToSession, setProject, toast, type Problem } from '../app';
 import * as api from '../api';
 import { boxShown, newProjectBody } from '../keep';
-import { handoffName, handoffPrompt, type Handoff } from '../handoff';
+import { handoffName, handoffPrompt, handoffTargets, type Handoff } from '../handoff';
 import { rootOk, WORKSPACE_ID } from '../projects';
 import { label } from '../text';
 import { Spinner } from './icons';
@@ -48,6 +50,14 @@ export function HandoffDialog({ chat, note, onClose }: { chat: Handoff | null; n
 function HandoffForm({ chat, onClose }: { chat: Handoff; onClose: () => void }) {
   const projects = useSel(store, (s) => s.projects);
   const taken = new Set(projects.map((p) => p.root));
+  // where it continues: a new project made from the chat, or one you have (the one shown first, else the workspace)
+  const targets = handoffTargets(projects);
+  const [where, setWhere] = useState<'new' | 'existing'>('new');
+  const [pick, setPick] = useState(() => {
+    const shown = store.get().project;
+    return targets.some((p) => p.id === shown) ? shown : WORKSPACE_ID;
+  });
+  const chosen = targets.find((p) => p.id === pick) ?? null;
   const [name, setName] = useState(() => handoffName(chat.title, taken));
   // "Keep it on your local git server": when the built-in server is there (null: not known yet); on by default
   const [available, setAvailable] = useState<boolean | null>(null);
@@ -63,11 +73,23 @@ function HandoffForm({ chat, onClose }: { chat: Handoff; onClose: () => void }) 
     };
   }, []);
   const target = name.trim();
-  const valid = rootOk(target) && !taken.has(target);
+  const valid = where === 'existing' ? chosen !== null : rootOk(target) && !taken.has(target);
   const go = async () => {
     if (!valid || busy) return;
     setErr(null);
     setBusy(true);
+    if (where === 'existing' && chosen) {
+      // (nothing made: the chosen project shown, and the session that carries on from the chat started there)
+      setProject(chosen.id);
+      const ok = store.get().project === chosen.id && (await startHandoffSession(chat));
+      setBusy(false);
+      if (!ok) {
+        setErr({ text: `The session did not start in ${chosen.name}: start one there, and paste the chat if you need it.`, said: null });
+        return;
+      }
+      onClose();
+      return;
+    }
     const e = await createProject(newProjectBody('empty', target, { git: true, keep: boxShown(available, 'empty') && keep }));
     if (e) {
       setBusy(false);
@@ -81,8 +103,38 @@ function HandoffForm({ chat, onClose }: { chat: Handoff; onClose: () => void }) 
   return (
     <Dialog title="Make it a project" onClose={onClose} wide testid="handoff-dialog">
       <p class="small" data-testid="handoff-intro">
-        Chat handed this conversation over{chat.title ? <> ({label(chat.title, 120)})</> : null}. Nothing is created until you press Create.
+        Chat handed this conversation over{chat.title ? <> ({label(chat.title, 120)})</> : null}.{' '}
+        {where === 'existing' ? 'Nothing starts until you press Continue there.' : 'Nothing is created until you press Create.'}
       </p>
+      <fieldset class="ho-where" data-testid="handoff-where">
+        <legend class="small">Continue it in</legend>
+        <label class="gitr-check">
+          <input type="radio" name="ho-where" checked={where === 'new'} onChange={() => setWhere('new')} data-testid="handoff-where-new" />
+          <span>A new project</span>
+        </label>
+        <label class="gitr-check">
+          <input type="radio" name="ho-where" checked={where === 'existing'} disabled={!targets.length} onChange={() => setWhere('existing')}
+            data-testid="handoff-where-existing" />
+          <span>A project you have</span>
+        </label>
+      </fieldset>
+      {where === 'existing' ? (
+        <div class="gitr-form np-fields">
+          <label class="wide">
+            The project (a new Claude session starts there with the conversation below as its context — text from the chat, not instructions
+            from you; each change waits for your OK)
+            <select value={pick} onChange={(e) => setPick((e.currentTarget as HTMLSelectElement).value)} data-testid="handoff-project">
+              {targets.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {label(p.name, 80)} — {label(p.path, 120)}
+                  {p.readOnly ? ' (read-only)' : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      ) : (
+      <>
       <div class="gitr-form np-fields">
         <label class="wide">
           The project&apos;s name (a new, empty folder of the workspace, started as a git repository)
@@ -110,6 +162,8 @@ function HandoffForm({ chat, onClose }: { chat: Handoff; onClose: () => void }) 
           </span>
         </span>
       </label>
+      </>
+      )}
       <p class="muted small" id="handoff-chat-label">
         The conversation, read only ({chat.text.length.toLocaleString('en-US')} characters):
       </p>
@@ -127,7 +181,7 @@ function HandoffForm({ chat, onClose }: { chat: Handoff; onClose: () => void }) 
           Cancel
         </button>
         <button type="button" class="btn primary" disabled={!valid || busy} onClick={() => void go()} data-testid="handoff-create">
-          {busy ? <Spinner size={12} /> : null} Create
+          {busy ? <Spinner size={12} /> : null} {where === 'existing' ? 'Continue there' : 'Create'}
         </button>
       </div>
     </Dialog>

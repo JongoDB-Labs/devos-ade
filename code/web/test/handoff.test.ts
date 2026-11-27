@@ -3,7 +3,7 @@
 // the conversation quoted as text from the chat, its tags and @-mentions defanged.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { defang, handoffName, handoffPrompt, HANDOFF_MAX, takeHandoff } from '../src/handoff';
+import { defang, handoffName, handoffPrompt, handoffTargets, HANDOFF_MAX, takeHandoff } from '../src/handoff';
 import { parseDeepLink, withoutDeepLink } from '../src/deeplink';
 import { rootOk } from '../src/projects';
 import { redeemHandoff } from '../src/api';
@@ -110,4 +110,15 @@ test("the dialog: the conversation when it is redeemed; the portal's words, or t
   await openHandoff({ note: 'failed' });
   assert.ok(/could not be handed over/.test((store.get().projectDialog as { note: string }).note));
   assert.equal(sent.filter((s) => s.method === 'POST' && s.url !== '/.bn/handoff').length, 0, 'no project, session or file call');
+});
+
+// --- Continue it in: A project you have (JON-1158): the projects a session can start in now ---
+test('handoffTargets keeps the projects a session can start in and leaves out the rest', () => {
+  const p = (id: string, o: Record<string, unknown> = {}) => ({ id, name: id, root: id, path: `/workspace/${id}`, created: null, workspace: false,
+    folder: 'dir', git: null, settings: null, ...o }) as Parameters<typeof handoffTargets>[0][number];
+  const list = [p('ws', { workspace: true, root: '', path: '/workspace' }), p('p_00000001'), p('p_00000002', { gone: true }), p('p_00000003', { leaving: true }),
+    p('p_00000004', { pending: 'add' }), p('p_00000005', { folder: 'missing' }), p('p_00000006', { folder: 'unmounted' }),
+    p('p_00000007', { host: true, readOnly: true, pending: 'ro' }), p('p_00000008', { folder: null })];
+  assert.deepEqual(handoffTargets(list).map((x) => x.id), ['ws', 'p_00000001', 'p_00000007', 'p_00000008']);
+  assert.deepEqual(handoffTargets([]), []);
 });
