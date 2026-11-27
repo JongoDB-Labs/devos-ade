@@ -6,6 +6,15 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Added
+
+- **Short session titles on the Code page.** After a session's first turn, Claude Haiku names it in 3 to 7 words, so the Projects list, the session switch and the phone's header show a short title instead of a long first prompt cut short. Your Rename always wins, and Claude Code's own title comes before the short one. Each session is titled once, from its first prompt and the start of the answer, by a helper with no tools. A session on your Claude plan, on a model that is not Claude's, or of another agent (Codex and others) keeps its first prompt as its title: the short title is made on the stack's Bedrock Haiku, a cost such a session is there to avoid. Older sessions are not titled. (JON-517)
+- **Search sessions by what was said in them.** The Projects search also finds a session by words in its conversation, your prompts and Claude's answers (plain text, 2 characters or more). It looks through the newest 80 conversations, up to 256 KiB of each (the start and the end of a longer one). (JON-517)
+
+### Fixed
+
+- **A new install's first Update now no longer runs every setup step again.** The first setup turns the Code page on near its end. The steps before it counted those new settings as a change, though they don't read them, so the first update ran each of them again. They now leave those settings out, and an update runs only the steps whose own inputs changed. This helps installs set up from this release on. (JON-1419)
+
 ## [0.75.1] - 2026-11-27
 
 ### Fixed
