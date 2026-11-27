@@ -17,6 +17,11 @@ import { frame, T } from '../server/frames.mjs';
 const ROOT = tmp('bnpj');
 const WS = path.join(ROOT, 'ws'), HOME = path.join(ROOT, 'home'), SOCKDIR = path.join(ROOT, 'sock'), OUT = path.join(ROOT, 'outside');
 const CONF = path.join(HOME, '.claude'), LOG = path.join(ROOT, 'tmux.log');
+// the sandbox's processes, as /proc lists them (BN_PROC_DIR): N/cwd, a link to its working folder
+const PROC = path.join(ROOT, 'proc');
+fs.mkdirSync(PROC, { recursive: true });
+const proc = (pid, cwd) => { fs.mkdirSync(path.join(PROC, String(pid)), { recursive: true }); fs.symlinkSync(cwd, path.join(PROC, String(pid), 'cwd')); };
+const unproc = (pid) => fs.rmSync(path.join(PROC, String(pid)), { recursive: true, force: true });
 // a folder of this computer mounted beside the workspace (./stack project: BN_CODE_ROOTS), and one listed but not here
 const HOST = path.join(ROOT, 'host'), UNMOUNTED = path.join(ROOT, 'not-mounted');
 for (const d of [WS, HOME, OUT, CONF, HOST]) fs.mkdirSync(d, { recursive: true });
@@ -29,7 +34,7 @@ case "$1" in has-session) [ -e ${JSON.stringify(path.join(ROOT, 'session'))} ] |
   new-window) case "$*" in *pane_id*) echo '%17' ;; *) echo '@9' ;; esac ;; esac
 exit 0
 `, { mode: 0o755 });
-Object.assign(process.env, { BN_CODE_WORKSPACE: WS, BN_CODE_SOCK_DIR: SOCKDIR, BN_CODE_CHILDREN: path.join(ROOT, 'children'), BN_TMUX_BIN: TMUX,
+Object.assign(process.env, { BN_CODE_WORKSPACE: WS, BN_CODE_SOCK_DIR: SOCKDIR, BN_CODE_CHILDREN: path.join(ROOT, 'children'), BN_TMUX_BIN: TMUX, BN_PROC_DIR: PROC,
   HOME, CLAUDE_CONFIG_DIR: CONF, BN_CODE_ROOTS: JSON.stringify([HOST, UNMOUNTED, WS, `${WS}/p1`, ROOT, 'relative', `${HOST}/`]) });
 const coded = await import(path.join(TERMINAL_DIR, 'bin/bn-coded.mjs'));
 const which = (n) => ['/usr/bin', '/usr/local/bin', '/bin', '/opt/homebrew/bin'].map((d) => path.join(d, n)).find((f) => fs.existsSync(f));
@@ -291,6 +296,27 @@ test('project.create: a new folder of the workspace, git init without a template
     assert.ok((await call({ op: 'project.trash', root })).error, root);
   }
   assert.ok(fs.existsSync(P2) && fs.existsSync(path.join(OUT, 'secret.txt')) && fs.existsSync(path.join(WS, 'doomed/inner')), 'nothing moved through a link');
+  // while a program of the sandbox works in it — a shell in it or in a folder below it, one that went there in another
+  // case (a macOS workspace) — it stays, in a fixed text; one working in a sibling whose name only starts the same, or in
+  // the workspace, or a process that has ended, does not hold it (JON-1158)
+  const BUSY = "a program in the terminal works in the project's folder: close it, or leave the folder, first";
+  proc(10, '/'); proc(11, WS); proc(12, `${WS}/doomed2`); proc(13, `${WS}/doomedx/y`);
+  fs.mkdirSync(path.join(PROC, '14'));   // (ended: no cwd any more)
+  for (const [pid, cwd] of [[20, `${WS}/doomed`], [20, `${WS}/doomed/inner`], [20, `${WS}/DOOMED/inner`], [20, `${WS}/Doomed`]]) {
+    proc(pid, cwd);
+    assert.equal((await call({ op: 'project.trash', root: `${WS}/doomed` })).error, BUSY, cwd);
+    assert.ok(fs.existsSync(path.join(WS, 'doomed/inner')), cwd);
+    unproc(pid);
+  }
+  // cannot be told — the process list not there, or a working folder that cannot be read: refused, in its fixed text
+  const UNKNOWN = "cannot tell whether a program in the terminal works in the project's folder: nothing was moved";
+  assert.throws(() => coded.projectTrash({ root: `${WS}/doomed` }, { procDir: path.join(ROOT, 'no-proc') }), { message: UNKNOWN });
+  fs.mkdirSync(path.join(PROC, '30')); fs.chmodSync(path.join(PROC, '30'), 0);
+  if (process.getuid?.() !== 0) assert.equal((await call({ op: 'project.trash', root: `${WS}/doomed` })).error, UNKNOWN);
+  fs.chmodSync(path.join(PROC, '30'), 0o755); fs.rmSync(path.join(PROC, '30'), { recursive: true });
+  assert.ok(fs.existsSync(path.join(WS, 'doomed/inner')));
+  // this bn-coded's own working folder never holds it (here bn-coded runs in the test's process)
+  proc(process.pid, `${WS}/doomed`);
   const tr = await call({ op: 'project.trash', root: `${WS}/doomed` });
   assert.match(tr.trash, /^\.devos-ade-trash\/[^/]+\/doomed$/);
   assert.ok(!fs.existsSync(path.join(WS, 'doomed')) && fs.existsSync(path.join(WS, tr.trash, 'inner')));

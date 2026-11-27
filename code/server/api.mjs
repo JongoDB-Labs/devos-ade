@@ -940,6 +940,9 @@ export function makeApi({ call, sessions, projects = null, reloadPollMs = 1000, 
         ({ result } = await call({ op: 'project.trash', root: at }));
       } catch (e) {
         if (unknownOp(e)) throw new HttpError(501, 'the sandbox is older than this Code page: ./stack up restarts it');
+        // (a program of the terminal works in it — a shell of a window, a dev server — or that cannot be told: as an open
+        // session, 409, the folder not moved; JON-1158)
+        if (e instanceof SandboxError && e.kind === 'refused' && /works in the project's folder/.test(e.message)) throw refused(409, e, HttpError);
         throw e;
       }
       moved = okPath(result?.trash);

@@ -31,6 +31,8 @@ export const GIT_REFUSALS = Object.freeze([
   'not a project folder of the workspace',
   "the project's folder is not there",
   "the project's folder is a link or not a folder: nothing was moved",
+  "cannot tell whether a program in the terminal works in the project's folder: nothing was moved",
+  "a program in the terminal works in the project's folder: close it, or leave the folder, first",
   'it is a git repository already',
   'all or paths, not both',
   'too many path bytes at once',

@@ -21,7 +21,7 @@ const SECRET = 'ef'.repeat(16);
 const calls = [];
 const S = { app: crypto.randomUUID(), ws: crypto.randomUUID(), nested: crypto.randomUUID(), etc: crypto.randomUUID(), up: crypto.randomUUID(), rel: crypto.randomUUID(),
   ssh: crypto.randomUUID(), old: crypto.randomUUID() };
-const state = { folders: {}, real: {}, check: 'ok', sessions: null, settings: {} };
+const state = { folders: {}, real: {}, check: 'ok', sessions: null, settings: {}, trash: null };
 const row = (id, cwd, extra = {}) => ({ id, mtimeMs: 1_700_000_000_000, size: 10, firstPrompt: `in ${cwd}`, ...(cwd === undefined ? {} : { cwd }), ...extra });
 // a folder's own settings as the sandbox reports them: state.settings[folder] is a fixture, or a list of them (each
 // call takes the next: what a sandbox changes between two looks)
@@ -55,7 +55,7 @@ const answers = {
     : { result: { roots: req.roots.map((r) => ({ root: r, type: state.folders[r] ?? 'dir', git: r.endsWith('/app'),
       real: state.real[r] ?? ((state.folders[r] ?? 'dir') === 'dir' ? r : null), settings: settingsOf(r).hash ?? null, settingsVerifiable: settingsOf(r).verifiable ?? null })) } }),
   'project.settings': (req) => ({ result: settingsOf(req.root ?? '/workspace', true) }),
-  'project.trash': (req) => ({ result: { trash: `.devos-ade-trash/t/${path.basename(req.root)}` } }),
+  'project.trash': (req) => (state.trash ? Promise.reject(new SandboxError(state.trash, 'refused')) : { result: { trash: `.devos-ade-trash/t/${path.basename(req.root)}` } }),
   'project.create': (req) => ({ result: { ok: true, root: req.root.slice('/workspace/'.length), git: req.git === true } }),
   'fs.delete': (req) => ({ result: { trash: `.devos-ade-trash/t/${path.basename(req.path)}` } }),
   'fs.find': () => ({ result: { paths: ['src/a.ts', 'src/', '../escape', '/workspace/other/x', 'a\nb'], truncated: false } }),
@@ -663,6 +663,22 @@ test('a project\'s terminal, git init; removal: the record only, its folder into
   assert.equal(r.status, 409, 'a session open through a link');
   assert.equal(moves(), deletes);
   srv.mgr.closeAll();
+  // a program of the terminal works in it (a shell of a window, a dev server), or the sandbox cannot tell: refused as an
+  // open session is, in bn-coded's fixed words (read plainly), the record kept (JON-1158); its other refusals as before
+  const n = calls.filter((c) => c.op === 'project.trash').length;
+  for (const why of ["a program in the terminal works in the project's folder: close it, or leave the folder, first",
+    "cannot tell whether a program in the terminal works in the project's folder: nothing was moved"]) {
+    state.trash = why;
+    r = await req('DELETE', `/api/projects/${app.id}?trash=1&confirm=app`);
+    assert.equal(r.status, 409, why);
+    assert.equal(r.json.error, why);
+    assert.equal(r.json.said, undefined, 'bn-coded\'s own fixed text: not shown as the sandbox\'s words');
+  }
+  state.trash = "the project's folder is not there";
+  assert.equal((await req('DELETE', `/api/projects/${app.id}?trash=1&confirm=app`)).status, 400);
+  state.trash = null;
+  assert.equal(calls.filter((c) => c.op === 'project.trash').length, n + 3, 'each one asked the sandbox');
+  assert.ok((await req('GET', '/api/projects')).json.projects.some((p) => p.id === app.id), 'the record stays');
   r = await req('DELETE', `/api/projects/${app.id}?trash=1&confirm=app`);
   assert.equal(r.status, 200, JSON.stringify(r.json));
   assert.deepEqual(last('project.trash'), { op: 'project.trash', root: '/workspace/app' }, 'the folder itself, into the workspace\'s trash');

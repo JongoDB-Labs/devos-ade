@@ -27,6 +27,8 @@ PROJ_PATH = f"/workspace/{PROJ_ROOT}"
 # (the follow-the-Code-page check has its own: the two run in one shard, and names are unique)
 FOLLOW_ROOT, FOLLOW_NAME = "e2e-term-follow", "E2E Term Follow"
 FOLLOW_PATH = f"/workspace/{FOLLOW_ROOT}"
+TRASH_ROOT, TRASH_NAME = "e2e-term-trash", "E2E Term Trash"
+TRASH_BUSY = "a program in the terminal works in the project's folder: close it, or leave the folder, first"
 CLAUDE = os.environ.get("E2E_TERMINAL_CLAUDE") == "1"
 HOSTILE = os.environ.get("E2E_TERMINAL_HOSTILE") == "1"
 # What the main Caddy takes away from whatever answers on ttyd's socket (caddy/Caddyfile, terminal_page)
@@ -1099,6 +1101,79 @@ def projects_follow_code(ctx):
         except Exception:  # noqa: BLE001 — tidying never hides the failure
             pass
     return "Terminal Projects widget: every Code page project is a row (named as there); a rename shows with the same folder; a removed record's row goes; with no list from Code it falls back to the workspace and the computer's folders with a note that says so, no JS error"
+
+
+@check("browser", "terminal-trash-waits-for-a-shell-in-the-folder")
+def trash_waits_for_terminal(ctx):
+    """JON-1158 (G4): Remove from Code with its folder is refused while a shell of the terminal works in that folder (it would be left working in
+    the trash), said in the dialog plainly, the folder and the record kept; once the shell has left, the same click moves the folder to the
+    workspace's trash. A person with both tabs open: the Code page in one browser, the Terminal tab in another."""
+    need_on()
+    from checks_code import Code, _drop_projects, csp_clean
+    from checks_journeys import extra_page
+    from playwright.sync_api import expect as see
+    c = Code(ctx, "terminal-trash-waits-code")
+    _drop_projects(c, (TRASH_ROOT,))
+    c.api("DELETE", f"/api/fs?path={TRASH_ROOT}")   # (a folder left by an earlier run: into the trash)
+    r = c.api("POST", "/api/projects", {"kind": "new", "folder": TRASH_ROOT, "name": TRASH_NAME, "git": False})
+    expect(r["status"] == 200, f"the Code project: {r['status']} {r['text'][:200]}")
+    pid = r["json"]["project"]["id"]
+    page = c.page
+    page.goto(page.url)   # (the new project shown: the page reads the list as it loads)
+    Code.on(page, c.rec, goto=False)
+    tp, trec = extra_page(ctx, "terminal-trash-waits-term")
+    login(tp)
+    tp.click(".tab[data-tab=terminal]")
+    f = terminal_frame(tp)
+    if f.locator("h1", has_text="Unlock the terminal").count() or f.locator("#password").count():
+        unlock_in(f, ENV["PORTAL_PASSWORD"])
+    folder_there = lambda: TRASH_ROOT in {e["name"] for e in (c.api("GET", "/api/fs?path=.")["json"] or {}).get("entries", [])}
+    try:
+        # a shell of the terminal goes into the project's folder (as a person would: cd)
+        wait_text(f, r"\$ ?$")
+        type_line(tp, f, f"cd /workspace/{TRASH_ROOT} && echo in-$((6*7))-$(basename \"$PWD\")")
+        wait_text(f, rf"^in-42-{TRASH_ROOT}$")
+        # Remove from Code, with its folder: refused in the dialog, in bn-coded's fixed words (no "the sandbox refused" box)
+        page.get_by_test_id("side-sessions").click()
+        row = page.locator(f"[data-testid=project][data-project='{pid}']")
+        see(row).to_have_count(1, timeout=30000)
+        row.get_by_test_id("project-menu").click()
+        page.get_by_test_id("project-menu-remove").click()
+        dlg = page.get_by_test_id("remove-project-dialog")
+        see(dlg).to_be_visible(timeout=10000)
+        page.get_by_test_id("remove-project-trash").check()
+        page.get_by_test_id("remove-project-confirm").fill(TRASH_ROOT)
+        page.get_by_test_id("remove-project-go").click()
+        alert = dlg.get_by_role("alert")
+        see(alert).to_be_visible(timeout=20000)
+        see(alert).to_contain_text(TRASH_BUSY)
+        expect(not dlg.locator(".sbx-said, [data-testid=sandbox-said]").count(), "the refusal is shown as the sandbox's words, not plainly")
+        shot(page, "terminal-trash-waits-1-refused")
+        expect(folder_there(), "the folder went to the trash while a shell worked in it")
+        expect(any(x["id"] == pid for x in c.api("GET", "/api/projects")["json"]["projects"]), "the record went though the folder stayed")
+        # the shell leaves the folder: the same click goes through, the folder into the workspace's trash
+        type_line(tp, f, "cd /workspace && echo out-$((6*7))")
+        wait_text(f, r"^out-42$")
+        page.get_by_test_id("remove-project-go").click()
+        see(dlg).to_have_count(0, timeout=20000)
+        see(row).to_have_count(0, timeout=20000)
+        see(page.get_by_text(f"Removed {TRASH_NAME}; its folder is in the workspace trash")).to_be_visible(timeout=10000)
+        shot(page, "terminal-trash-waits-2-trashed")
+        expect(not folder_there(), "the folder is still in the workspace after Remove with its folder")
+        csp_clean(page, c.rec, [r"^409 DELETE .*/api/projects/", r"console.error Failed to load resource.*409"])
+        problems = [x for x in trec.problems(allow=LOCKED_OK + PANEL_ALLOW) if x.startswith("pageerror") or x.startswith("console.error")]
+        trec.save()
+        expect(not problems, f"errors on the Terminal page: {problems[:5]}")
+    finally:
+        try:
+            type_line(tp, f, "cd /workspace")
+            _drop_projects(c, (TRASH_ROOT,))
+            c.api("DELETE", f"/api/fs?path={TRASH_ROOT}")
+        except Exception:  # noqa: BLE001 — tidying never hides the failure
+            pass
+    return (f"a shell of the terminal in /workspace/{TRASH_ROOT}: Remove from Code with its folder refused in the dialog, plainly "
+            "(\"a program in the terminal works in the project's folder\"), folder and record kept; the shell left: the same click moved the "
+            "folder to the workspace trash, the project gone, said in a toast; no CSP violation or JS error")
 
 
 def _answers_without_projects(route):

@@ -6,6 +6,12 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Fixed
+- **Remove from Code with its folder no longer moves the folder out from under the Terminal.** While a shell of the
+  Terminal, or a program started there such as a dev server, works in the project's folder, the removal is refused and
+  the dialog says why; the folder and the project stay. Once nothing works there, the folder goes to the workspace trash
+  as before. Open Code sessions were already checked. (JON-1158)
+
 ## [0.68.19] - 2026-11-26
 
 ### Changed

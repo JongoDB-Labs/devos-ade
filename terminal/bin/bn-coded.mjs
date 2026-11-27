@@ -3608,17 +3608,44 @@ export function pathsPlain(req, { now = Date.now } = {}) {
 }
 // project.trash {root} -> {trash}: Remove from Code with its folder — the project's folder itself (a real folder of
 // the workspace, every part of its path too: never through a link, never the workspace) moved to the workspace's trash
-// (/workspace/.devos-ade-trash/<time>-<random>/<name>). The entry is moved, not what a link points to.
-export function projectTrash(req) {
+// (/workspace/.devos-ade-trash/<time>-<random>/<name>). The entry is moved, not what a link points to. Refused while a
+// program of the sandbox works in it (JON-1158): the code container checks its own open sessions, but a shell of a
+// terminal window, Claude Code started there, a dev server, Run & test — any process whose working folder is it or one
+// below it — would be left working in the trash. Refused too when that cannot be told.
+export function projectTrash(req, { procDir = PROC_DIR } = {}) {
   const v = req?.root;
   const r = typeof v === 'string' && v.startsWith(`${WORKSPACE}/`) ? v.slice(WORKSPACE.length + 1) : null;
   if (!r || !rootRel(r)) throw new Error('not a project folder of the workspace');
   const type = rootType(r);
   if (type !== 'dir') throw new Error(type === 'missing' ? 'the project\'s folder is not there' : 'the project\'s folder is a link or not a folder: nothing was moved');
   const at = path.join(WORKSPACE, r);
+  const busy = workingIn(at, procDir);
+  if (busy === 'unknown') throw new Error('cannot tell whether a program in the terminal works in the project\'s folder: nothing was moved');
+  if (busy) throw new Error('a program in the terminal works in the project\'s folder: close it, or leave the folder, first');
   const dest = path.join(newTrashDir(path.join(WORKSPACE, TRASH)), path.basename(at));
   fs.renameSync(at, dest);
   return { trash: path.relative(WORKSPACE, dest) };
+}
+// workingIn(at, procDir) -> null when no process of the sandbox (but this bn-coded) has its working folder at `at` or
+// below it; 'busy' when one has; 'unknown' when that cannot be told: /proc not listed, more processes than looked at
+// (16,384), a working folder that cannot be read for another reason than the process's end (the sandbox's processes
+// are all its one user's: an unreadable one is not expected). Compared without case: a macOS workspace is
+// case-insensitive, and a shell that went to /workspace/APP works in /workspace/app (on a case-sensitive one, a
+// sibling differing only in case is taken for it: the safe side, a removal refused).
+function workingIn(at, procDir) {
+  const gone = (e) => e?.code === 'ENOENT' || e?.code === 'ESRCH';
+  let names;
+  try { names = fs.readdirSync(procDir).filter((n) => /^[1-9][0-9]{0,9}$/.test(n)); } catch { return 'unknown'; }
+  if (names.length > 16384) return 'unknown';
+  const top = at.toLowerCase();
+  for (const n of names) {
+    if (Number(n) === process.pid) continue;
+    let cwd;
+    try { cwd = fs.readlinkSync(path.join(procDir, n, 'cwd')); } catch (e) { if (gone(e)) continue; return 'unknown'; }
+    const c = cwd.toLowerCase();
+    if (c === top || c.startsWith(`${top}/`)) return 'busy';
+  }
+  return null;
 }
 // git.init {repo} — `git init` in a folder of the workspace that is no repository yet (Connect a git repository)
 export async function gitInit(req, { git = GIT } = {}) {
