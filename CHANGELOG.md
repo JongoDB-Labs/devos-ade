@@ -4,11 +4,14 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.72.1] - 2026-11-27
 
 ### Fixed
 
 - **The Code page's project chip keeps the project's name in sight.** On a tight top bar the chip's folder now gives way first; the name is cut short only once the folder is gone. (JON-1428)
+
+### To get it
+Existing installs: Home › Update now.
 
 ## [0.72.0] - 2026-11-27
 
