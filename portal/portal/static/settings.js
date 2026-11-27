@@ -1870,29 +1870,8 @@
       list.append(el("li", { class: "set-project leaving" }, el("span", { class: "note", text: x.path }), " ",
         el("p", { class: "note set-project-pending", text: `Removed, but still in the sandbox (${x.mode === "ro" ? "read-only" : "read-write"}) until it restarts — ./stack project apply, or the next ./stack up.` })));
     }
-    if (!pf.folders.length && !(pf.leaving || []).length) list.append(el("li", { class: "note", text: "None yet: the sandbox sees only the workspace." }));
+    if (!pf.folders.length && !(pf.leaving || []).length) list.append(el("li", { class: "note", text: "No folders of this computer yet: the sandbox sees only the workspace." }));
     rw._main.append(list);
-    // beside these, the Code page's own list: its projects in the workspace — made, renamed and removed there (JON-1158;
-    // no list while the Code page is off here)
-    const cp = data.code_projects;
-    if (cp && Array.isArray(cp.projects)) {
-      const mine = cp.projects.filter((p) => p.where === "workspace" && p.id !== "ws");
-      const ul = el("ul", { class: "set-projects", "aria-label": "The Code page's projects in the workspace" });
-      for (const p of mine) {
-        const li = el("li", { class: "set-project", "data-project": p.id },
-          el("span", { class: "set-project-name", text: p.name }), " ", el("span", { class: "note", text: p.path }));
-        if (!p.ok) li.append(el("p", { class: "error", text: `No new session here: ${p.why}.` }));
-        const go = el("button", { type: "button", class: "action", text: "New session", "data-act": "project-new-session" });
-        go.disabled = !p.ok;
-        go.addEventListener("click", () => { if (window.bnCode && window.bnCode.newSession) window.bnCode.newSession(p.id); else showTab("code"); });
-        li.append(el("span", { class: "set-project-actions" }, go));
-        ul.append(li);
-      }
-      if (!mine.length) ul.append(el("li", { class: "note", text: cp.listed ? "None yet: New project on the Code page makes one." : "The Code page lists them here once it has started." }));
-      rw._main.append(el("div", { class: "set-code-projects", id: "set-code-projects" },
-        el("p", { class: "set-code-projects-head", text: "In the workspace: the Code page's projects" }), ul,
-        el("p", { class: "note set-extra", text: "Made, renamed and removed on the Code page (its Projects tab). They sit in the sandbox's /workspace, so a change to them restarts nothing." })));
-    }
     // adding: on this computer only
     const add = el("div", { class: "set-projects-add" });
     const ro = el("input", { type: "checkbox", id: "set-projects-ro" });
@@ -1916,6 +1895,27 @@
     rw._main.append(el("p", { class: "set-cli" }, el("span", { class: "note", text: "In a terminal on this computer: " }), el("code", { text: "./stack project add ~/path/to/folder" }), " ",
       copyButton("./stack project add ~/path/to/folder")));
     rw._main.append(el("p", { class: "note set-extra", text: `${working ? `${working} Code session${working === 1 ? " has a turn" : "s have turns"} running now. ` : ""}${RESTART_ENDS} Removing a folder or making it read-only never waits more than 30 minutes, whatever runs.` }));
+    // after this computer's folders and how to add one, the Code page's own list: its projects in the workspace — made, renamed and removed there (JON-1158;
+    // no list while the Code page is off here)
+    const cp = data.code_projects;
+    if (cp && Array.isArray(cp.projects)) {
+      const mine = cp.projects.filter((p) => p.where === "workspace" && p.id !== "ws");
+      const ul = el("ul", { class: "set-projects", "aria-label": "The Code page's projects in the workspace" });
+      for (const p of mine) {
+        const li = el("li", { class: "set-project", "data-project": p.id },
+          el("span", { class: "set-project-name", text: p.name }), " ", el("span", { class: "note", text: p.path }));
+        if (!p.ok) li.append(el("p", { class: "error", text: `No new session here: ${p.why}.` }));
+        const go = el("button", { type: "button", class: "action", text: "New session", "data-act": "project-new-session" });
+        go.disabled = !p.ok;
+        go.addEventListener("click", () => { if (window.bnCode && window.bnCode.newSession) window.bnCode.newSession(p.id); else showTab("code"); });
+        li.append(el("span", { class: "set-project-actions" }, go));
+        ul.append(li);
+      }
+      if (!mine.length) ul.append(el("li", { class: "note", text: cp.listed ? "None yet: New project on the Code page makes one." : "The Code page lists them here once it has started." }));
+      rw._main.append(el("div", { class: "set-code-projects", id: "set-code-projects" },
+        el("p", { class: "set-code-projects-head", text: "In the workspace: the Code page's projects" }), ul,
+        el("p", { class: "note set-extra", text: "Made, renamed and removed on the Code page (its Projects tab). They sit in the sandbox's /workspace, so a change to them restarts nothing." })));
+    }
     rw._actions.append(when);
     return rw;
   }
