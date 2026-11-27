@@ -830,7 +830,7 @@ def update_last_job_and_reconnecting(ctx):
                  ("Image downloads", "25s"), ("Open WebUI image", "1s"), ("LiteLLM config: web search check, default models", "0s"),
                  ("Postgres + RustFS", "8s"), ("LiteLLM (13 models)", "26s"), ("LiteLLM setup key", "1s"), ("Voice", "0s"),
                  ("Web search (the built-in SearXNG)", "5s"), ("Web search check", "6s"), ("LiteLLM keys, Admin sign-in, voice service", "2s"),
-                 ("Open WebUI + portal + shared-mcp (http://devos-ade.localhost)", "11s"), ("Portal sign-in and Chat's API key", "3s"),
+                 ("Open WebUI + web app + shared-mcp (http://devos-ade.localhost)", "11s"), ("Web app sign-in and Chat's API key", "3s"),
                  ("Open WebUI syncs (models, prices, banner)", "9s"), ("Code page default", "0s"), ("Terminal: its key and project folders", "1s"),
                  ("Subscription tools (installed: codex; kept: copilot cursor gemini grok)", "38s"), ("Image terminal (rebuilt from RUN sh /tmp/tools/install.sh, 38s)", "2m05s"),
                  ("Image code (from Docker's cache)", "3s"), ("Sandbox images", "40s"), ("Terminal", "9s"), ("Code page", "9s"), ("Chat's sandbox", "4s"),

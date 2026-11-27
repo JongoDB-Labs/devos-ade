@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # The portal over HTTPS on this computer (JON-976; README "HTTPS for the portal", docs/security.md "HTTPS on this computer").
-# Opt-in: PORTAL_HTTPS=true (Settings › Account & security › Serve the portal over HTTPS, ./stack https on). Without it
+# Opt-in: PORTAL_HTTPS=true (Settings › Account & security › Serve the web app over HTTPS, ./stack https on). Without it
 # everything is plain HTTP on 127.0.0.1, as before.
 #
 #   .state/tls/ca.pem, ca.key   this install's own CA: EC P-256, ten years, pathlen 0, and critical name constraints that let

@@ -88,7 +88,9 @@ does not end in `.localhost` is refused unless you also set `DEVOS_ADE_ALLOW_PUB
 plain HTTP, so its session cookie is not `Secure` and goes to that name and all its subdomains. Only use a name
 that resolves to this computer alone.
 
-## HTTPS for the portal (`./stack https`)
+<a id="https-for-the-portal-stack-https"></a>
+
+## HTTPS for the web app (`./stack https`)
 
 `PORTAL_HTTPS=true` (Settings › Account & security › **Serve the web app over HTTPS**) serves the web app and its
 sibling hosts over HTTPS on the same port. `./stack https on` makes the certificates, trusts the install's own CA (macOS:

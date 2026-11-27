@@ -22,7 +22,7 @@ disable` the Code page alone; either stays off across updates).
 |---|---|---|---|
 | [**Chat**](#chat-open-webui) | Open WebUI with the Bedrock models your key can use (and OpenRouter's, once you turn it on): the cost under every answer, documents and knowledge bases, images | on | — |
 | [**`devos-claude`**](#claude-code-devos-claude) | Claude Code in your own terminal, billed to Bedrock (or to OpenRouter for its models), with a lean config folder and each session's cost; any chat model of the catalog (`--models` lists them and how each works, `--model` picks one) | on (needs `claude`) | setup offers to put it on your `PATH` |
-| [**Home, Admin, Files**](#the-portal-one-login-for-everything) | health, spend and budgets; LiteLLM's UI; the shared file store (also an MCP server for Claude Code) | on | — |
+| [**Home, Admin, Files**](#the-web-app-one-login-for-everything) | health, spend and budgets; LiteLLM's UI; the shared file store (also an MCP server for Claude Code) | on | — |
 | [**The API for your tools**](#the-models-from-your-own-code) | the same models for your own scripts and apps: OpenAI- and Anthropic-compatible, on `127.0.0.1`, a key and budget per tool (Admin › Virtual Keys) | on | — |
 | [**Activity & search**](#activity-and-search) | a bell for budget alerts, updates, Code sessions that need you and jobs; **Ctrl/⌘+K** finds pages, settings, Code sessions and workspace files, Chat conversations, the walkthrough and these docs | on | — |
 | [**Settings**](#settings) | every setting of `.env`, shown in the web app | on (read-only until the update helper is installed) | `./stack helper install` makes it editable |
@@ -161,7 +161,9 @@ is off again, and the next setup turns it on.
 
 ## Using it
 
-### The portal: one login for everything
+<a id="the-portal-one-login-for-everything"></a>
+
+### The web app: one login for everything
 
 Open http://devos-ade.localhost (or the URL `./stack status` prints) and sign in with `PORTAL_PASSWORD`.
 `*.localhost` names point at your own computer in every current browser, so there is nothing to configure. You

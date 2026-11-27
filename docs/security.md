@@ -314,7 +314,7 @@ or MCP token — it is restarted with them, as it holds the current ones), and c
 ## HTTPS on this computer
 
 With `PORTAL_HTTPS` on (`./stack https on`, or Settings), the web app is served over HTTPS from a certificate authority
-made for this install ([advanced](advanced.md#https-for-the-portal-stack-https) has the commands).
+made for this install ([advanced](advanced.md#https-for-the-web-app-stack-https) has the commands).
 
 - **The CA can only vouch for your install.** It is an EC P-256 CA with `CA:TRUE, pathlen:0` and a critical *name
   constraint* that permits only `PORTAL_HOST`, the preview domain, the names under each, and any other local host you
