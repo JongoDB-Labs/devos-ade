@@ -194,11 +194,12 @@ services:
       # reach the model as context, it just can't edit them itself. Image generation, code interpreter, web
       # search and attached-file tools stay on (each is sent only while the user turns that feature on in the
       # chat). Attachments and #knowledge still use RAG. A model's own Builtin Tools settings (Workspace →
-      # Models) override this. README: Costs.
+      # Models) override this. README: Costs. 0.13 added two always-on ones, off here too: users (search this
+      # install's users) and tools (the model creating an Open WebUI tool: Python that Open WebUI itself runs).
       DEFAULT_MODEL_METADATA: >-
         {"capabilities":{"usage":true},"builtinTools":{"time":false,"user_input":false,"knowledge":false,
         "chats":false,"notes":false,"channels":false,"skills":false,"tasks":false,"automations":false,
-        "calendar":false,"notifications":false,"subagents":false,"memory":false}}
+        "calendar":false,"notifications":false,"subagents":false,"memory":false,"users":false,"tools":false}}
       ENABLE_VERSION_UPDATE_CHECK: "false"
       # No changelog popup / update toast; read-aloud uses the browser's system voices. The microphone follows
       # AUDIO_STT_ENGINE (no per-user STT default, so turning server speech-to-text on reaches every user).

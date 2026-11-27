@@ -404,3 +404,28 @@ test_python_runner_line_says_what_is_ready_and_what_is_left_out() {
   printf 'ready\tmicropip\t1\nleft\tnumpy\tdownload failed (URLError: no network)\nleft\tpandas\tneeds numpy, left out\n' > "$STATE_DIR/status/python-runner.txt"
   assert_eq "$(python_runner_line)" "Python runner (Chat): 1 package ready; left out: numpy (download failed (URLError: no network)), pandas (needs numpy, left out)"
 }
+
+test_open_webui_turns_off_the_built_in_tools_sent_with_every_chat() {
+  # Open WebUI sends every built-in tool group that is on with each chat request (~8-10K input tokens on 0.12): the
+  # groups not tied to a feature switched on in the chat are off for every model (README: Costs). 0.13's "tools" (the
+  # model creating an Open WebUI tool: Python Open WebUI runs on its own server) is off for that reason as well.
+  command -v python3 >/dev/null || return 77
+  out="$(python3 -I - "$STACK_DIR/compose.yaml" <<'PY'
+import json, sys
+lines = open(sys.argv[1]).read().splitlines()
+i = next(n for n, l in enumerate(lines) if l.strip() == 'DEFAULT_MODEL_METADATA: >-')
+ind = len(lines[i]) - len(lines[i].lstrip())
+body = []
+for l in lines[i + 1:]:
+    if not l.strip() or len(l) - len(l.lstrip()) <= ind:
+        break
+    body.append(l.strip())
+m = json.loads(' '.join(body))   # (a folded scalar: its lines joined by spaces)
+want = {'time', 'user_input', 'knowledge', 'chats', 'notes', 'channels', 'skills', 'tasks', 'automations', 'calendar',
+        'notifications', 'subagents', 'memory', 'users', 'tools'}
+off = {k for k, v in m['builtinTools'].items() if v is False}
+print('still on: ' + ','.join(sorted(want - off)) if want - off else 'ok', m['capabilities'].get('usage'))
+PY
+)"
+  assert_eq "$out" "ok True"
+}

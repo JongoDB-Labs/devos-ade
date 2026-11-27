@@ -2269,14 +2269,15 @@ about $0.04, a long interactive Opus session can cost dollars. Use Haiku or Sonn
 servers multiply this, which is why `devos-claude` leaves your `~/.claude` out
 ([a lean config folder](#a-lean-config-folder-for-bedrock)).
 
-**Why Open WebUI adds tokens.** Open WebUI v0.12 lets the model call its built-in tools (search your knowledge
-bases, chat history and notes, calendar, automations, skills, task lists, the time, …) and sends the
+**Why Open WebUI adds tokens.** Open WebUI (since v0.12) lets the model call its built-in tools (search your knowledge
+bases, chat history and notes, calendar, automations, skills, task lists, the time, its users, …) and sends the
 definitions of all of them, about 40 tools, with every chat request: a one-sentence question cost ~9,800 input
 tokens instead of ~25. DevOS ADE turns those always-on categories off for every model
 (`DEFAULT_MODEL_METADATA` → `builtinTools` in `compose.yaml`), so a short question now costs about what it
 costs through the API. The memory tools are off too (~2,000 tokens more, because the browser switches Memory
 on in every chat): memories you save in Settings → Personalization → Memory still reach the model as context,
-but the model can no longer add or edit them itself. Still on, and sent only while you switch the feature on
+but the model can no longer add or edit them itself. So is the tool that lets the model create a new Open WebUI
+tool, for another reason as well: such a tool is Python that Open WebUI runs on its own server. Still on, and sent only while you switch the feature on
 in a chat: image generation (when enabled), code interpreter and web search (off in this stack). Files you attach and knowledge bases you add
 with `#` still work (Open WebUI retrieves the relevant passages and adds them to the prompt). One thing needs a
 manual step: a custom model (Workspace → Models) with knowledge attached reads it through the Knowledge tool,
