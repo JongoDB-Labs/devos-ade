@@ -12,7 +12,9 @@ import { createServer } from '../server/main.mjs';
 import { SandboxError } from '../server/spawn-client.mjs';
 import { Projects, TITLES_MAX, shortTitleOk } from '../server/projects.mjs';
 import { sessionRow } from '../server/normalize.mjs';
-import { Titler, makeTitleMaker, cleanTitle, titlePrompt, TITLE_MODEL, TITLE_SYSTEM, TITLE_MAX, PROMPT_CHARS, ANSWER_CHARS } from '../server/titles.mjs';
+import { Titler, makeTitleMaker, cleanTitle, titlePrompt, notTitled, TITLE_MODEL, TITLE_SYSTEM, TITLE_MAX, PROMPT_CHARS, ANSWER_CHARS } from '../server/titles.mjs';
+import { SessionManager } from '../server/sessions.mjs';
+import { PermissionBroker } from '../server/broker.mjs';
 import { fakeQuery } from './fake-sdk.mjs';
 import { tmp, stubDist } from './helpers.mjs';
 
@@ -136,7 +138,7 @@ test('titlePrompt: the first prompt and the start of the answer, cut; nothing of
 });
 
 // --- who is asked, and when ---
-const sess = (id, extra = {}) => ({ id, harness: 'bedrock', title: '', ...extra });
+const sess = (id, extra = {}) => ({ id, harness: 'bedrock', begunHere: true, model: null, title: '', ...extra });
 function titler(over = {}) {
   const made = [], saved = new Map(), told = [], logs = [];
   const t = new Titler({ make: async (p, a) => { made.push([p, a]); return over.title === undefined ? 'A short title' : over.title; },
@@ -214,21 +216,60 @@ test('the titler: no title made (no model there, a failure): the first prompt st
   assert.match(b.logs.join('\n'), /disk/, 'said in the log');
 });
 
-test('the titler: two at once at most; one turned away is asked for on a later turn', async () => {
-  const gate = []; let release;
+test('the titler: two at once at most; one that waits is asked for once one is done, from its first turn', async () => {
+  let release;
   const wait = new Promise((r) => { release = r; });
-  const made = [];
-  const t = new Titler({ make: async (p) => { made.push(p); await wait; return 'T'; }, has: () => false, save: () => {}, log: () => {} });
+  const made = [], saved = new Map();
+  const t = new Titler({ make: async (p) => { made.push(p); await wait; return `T ${p}`; }, has: (id) => saved.has(id), save: (id, x) => saved.set(id, x), log: () => {} });
   const ss = [sess(uuid()), sess(uuid()), sess(uuid())];
   ss.forEach((s, i) => turn(t, s, `p${i}`, ['a']));
   await tick();
-  assert.equal(made.length, 2);
+  assert.deepEqual(made, ['p0', 'p1'], 'two at once');
   release();
+  await tick(); await tick();
+  assert.deepEqual(made, ['p0', 'p1', 'p2'], 'the third without another turn');
   await tick();
-  turn(t, ss[2], 'p2 again', ['a']);
+  assert.equal(saved.get(ss[2].id), 'T p2');
+});
+
+test('the titler: at most 20 wait; past that the oldest keeps its first prompt (said in the log)', async () => {
+  let release;
+  const wait = new Promise((r) => { release = r; });
+  const made = [], logs = [];
+  const t = new Titler({ make: async (p) => { made.push(p); await wait; return 'T'; }, has: () => false, save: () => {}, log: (l) => logs.push(l) });
+  const ss = Array.from({ length: 23 }, () => sess(uuid()));
+  ss.forEach((s, i) => turn(t, s, `p${i}`, ['a']));
   await tick();
-  assert.equal(made.length, 3);
-  void gate;
+  assert.equal(made.length, 2);
+  assert.equal(t.waiting.size, 20);
+  assert.match(logs.join('\n'), new RegExp(`${ss[2].id.slice(0, 8)}: too many waiting`));
+  release();
+  for (let i = 0; i < 30; i++) await tick();
+  assert.equal(made.length, 22, 'every one kept waiting was asked for');
+  assert.ok(!made.includes('p2'), 'the dropped one was not');
+});
+
+test('who is titled: a session begun here, on Bedrock, on a Claude model or the default', () => {
+  assert.equal(notTitled(sess('a')), false, 'the default model');
+  for (const model of ['claude-haiku-5-5', 'claude-sonnet-5-5', 'haiku', 'sonnet[1m]']) assert.equal(notTitled(sess('a', { model })), false, model);
+  assert.equal(notTitled(sess('a', { begunHere: false })), true, 'a resumed or forked session: its prompt here is a later one');
+  assert.equal(notTitled(sess('a', { harness: 'claude' })), true, 'your plan: no Bedrock spend behind it');
+  assert.equal(notTitled(sess('a', { harness: 'codex' })), true, 'an agent');
+  assert.equal(notTitled(sess('a', { harness: undefined })), true);
+  for (const model of ['or/meta-llama/llama-4:free', 'xl/some-model', 'deepseek.r1', 'gpt-5']) assert.equal(notTitled(sess('a', { model })), true, model);
+  assert.equal(notTitled(null), true);
+});
+
+test('a session knows whether it was begun in this process', () => {
+  const fq = fakeQuery([]);
+  const mgr = new SessionManager({ broker: new PermissionBroker({ onAsk: () => {} }), spawn: () => { throw new Error('not used'); }, query: (a) => fq(a) });
+  const fresh = mgr.get(mgr.open({}).id);
+  assert.equal(fresh.begunHere, true, 'new');
+  const R = uuid();
+  assert.equal(mgr.get(mgr.open({ resume: R }).id).begunHere, false, 'resumed');
+  assert.equal(mgr.get(mgr.open({ resume: R, fork: true }).id).begunHere, false, 'forked');
+  fresh.prompt({ text: 'the first prompt' });
+  assert.equal(fresh.begunHere, true, 'still, after its first prompt');
 });
 
 // --- order of a session's title ---

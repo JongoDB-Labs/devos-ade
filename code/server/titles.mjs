@@ -7,9 +7,14 @@
 // (projects.mjs titles) — never as Claude Code's own custom title: Rename stays yours and always wins.
 //   order of a session's title: Rename > Claude Code's own ai-title / summary > this short title > the first prompt
 // One request per session and process; a bounded prompt; no model there (no Haiku, a local model only, an error): no
-// title, the first prompt stays, a line in the log, nothing shown as an error. Old sessions are not titled in bulk:
-// only a session that has a turn here and no short title yet.
+// title, the first prompt stays, a line in the log, nothing shown as an error. Old sessions are never titled: only a
+// session begun in this server process, from its first prompt. And only one that runs on the stack's Bedrock with a
+// Claude model (or the default): a session on your plan (Claude subscription) or on another vendor's or a free model
+// keeps its first prompt — the helper runs on the stack's Haiku, a spend such a session is there to avoid (as
+// bn-coded's backgroundEnv: a session on a free model never spends on Haiku behind it); an agent's session (Codex, ACP)
+// is not titled either.
 import { proposedMessage, runDraft } from './gitdraft.mjs';
+import { MODEL_ALIAS } from './validate.mjs';
 
 /** The model the helper runs on: Claude Code's "haiku" — this sandbox's Haiku (ANTHROPIC_DEFAULT_HAIKU_MODEL), never
  *  Sonnet or Opus. (An alias is safe here: the helper never plans, and bn-coded's own work-model rules leave it on Haiku.) */
@@ -75,7 +80,16 @@ export function makeTitleMaker({ query, spawn, log = () => {}, run = runDraft, t
   };
 }
 
-const SEEN_MAX = 200, TRIED_MAX = 5000, ACTIVE_MAX = 2;
+/** notTitled(session) -> true for a session the helper is never asked for: not begun in this process (a resumed or
+ *  forked one), not on the stack's Bedrock (your plan's, an agent's), or on a model that is not a Claude model (a
+ *  session's own model: none is the stack's default; Claude Code's aliases are Claude models). */
+export function notTitled(s) {
+  if (!s || s.begunHere !== true || s.harness !== 'bedrock') return true;
+  const m = s.model;
+  return !(m === null || m === undefined || m === '' || (typeof m === 'string' && (/^claude-/i.test(m) || MODEL_ALIAS.test(m))));
+}
+
+const SEEN_MAX = 200, TRIED_MAX = 5000, ACTIVE_MAX = 2, WAITING_MAX = 20;
 /** The one that watches sessions' events (main.mjs gives it every one) and asks for a title after a first turn.
  *  make(prompt, answer) -> title | null (makeTitleMaker's); has(id) -> a title is kept already; save(id, title) keeps it;
  *  onTitle(id, title, turn) tells the pages (turn: {prompt, answer}). skip(session, turn) -> true for a session that is not
@@ -85,6 +99,7 @@ export class Titler {
     Object.assign(this, { make, has, save, onTitle, skip, log });
     this.seen = new Map();     // id -> {prompt, answer}: this process's first turn of a session, until its result
     this.tried = new Set();    // ids asked for in this process (once, whatever came back)
+    this.waiting = new Map();  // id -> [session, turn]: first turns over while two were being made, asked for in turn (at most 20)
     this.active = 0;
   }
   event(s, ev) {
@@ -110,17 +125,37 @@ export class Titler {
     const id = s.id;
     try {
       if (this.tried.has(id) || this.skip(s, e) || this.has(id)) return;
-      if (this.active >= ACTIVE_MAX) { this.log(`session title ${id.slice(0, 8)}: two are being made already; not asked`); return; }
+      if (this.active >= ACTIVE_MAX) {
+        // (asked for once one of the two is done; past 20 waiting, the oldest is dropped and keeps its first prompt)
+        if (!this.waiting.has(id)) {
+          if (this.waiting.size >= WAITING_MAX) {
+            const old = this.waiting.keys().next().value;
+            this.waiting.delete(old);
+            this.log(`session title ${old.slice(0, 8)}: too many waiting; not asked`);
+          }
+          this.waiting.set(id, [s, e]);
+        }
+        return;
+      }
+      this.waiting.delete(id);
       if (this.tried.size >= TRIED_MAX) this.tried.clear();
       this.tried.add(id);
       this.active++;
       let title = null;
-      try { title = await this.make(e.prompt, e.answer); } finally { this.active--; }
+      try { title = await this.make(e.prompt, e.answer); } finally { this.active--; this.next(); }
       if (!title) return;
       this.save(id, title);
       this.onTitle(id, title, e);
     } catch (err) {
       this.log(`session title ${id.slice(0, 8)}: ${String(err?.message || err).slice(0, 200)}`);
     }
+  }
+  // the first one waiting, now that one of the two is done
+  next() {
+    const first = this.waiting.entries().next();
+    if (first.done) return;
+    const [id, [s, e]] = first.value;
+    this.waiting.delete(id);
+    void this.ask(s, e);
   }
 }

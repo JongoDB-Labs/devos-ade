@@ -25,7 +25,7 @@ import { makeAutoProjects, AUTO_MS, AUTO_IDLE_MS } from './autoproj.mjs';
 import { makeTermLink, makeProjectAnswer } from './termlink.mjs';
 import { NEVER_ASKS, CLAUDE_SAID, sandboxWords } from './said.mjs';
 import { SandboxError } from './spawn-client.mjs';
-import { Titler, makeTitleMaker } from './titles.mjs';
+import { Titler, makeTitleMaker, notTitled } from './titles.mjs';
 import { Projects, ProjectError, projectIdOk, WS, absOf } from './projects.mjs';
 import { UserPrefs, PrefsError } from './userprefs.mjs';
 import { makeTrust } from './trust.mjs';
@@ -214,7 +214,8 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
   // session's process is told of them (gitnote.mjs)
   const hostStore = gitHosts || new GitHosts();
   // a short title for a session once its first turn is over (titles.mjs): Claude Haiku, one request, kept here by session id;
-  // never Claude Code's own custom title (your Rename stays yours and wins). Claude Code's sessions only.
+  // never Claude Code's own custom title (your Rename stays yours and wins). Claude Code's sessions on the stack's Bedrock only,
+  // begun in this process (titles.mjs notTitled).
   const titler = new Titler({
     make: (prompt, answer) => (titleMaker ?? makeTitleMaker({ query: mgr.query, spawn: mgr.spawn, log: logger }))(prompt, answer),
     has: (id) => proj().shortTitles().has(id),
@@ -227,7 +228,8 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
       // (replaced: the session is open here and was still named by its first prompt — a page shows the new one at once; any page lists again)
       toAll({ type: 'session_title', session: id, title, replaced });
     },
-    skip: (s, turn) => (s.harness && s.harness !== 'bedrock' && s.harness !== 'claude') || Boolean(s.pendingTitle) || (Boolean(s.title) && s.title !== short(turn.prompt, 80)),
+    // (not asked: a session not begun here, on your plan, on a model that is not Claude's (titles.mjs notTitled), or with a title of your own)
+    skip: (s, turn) => notTitled(s) || Boolean(s.pendingTitle) || (Boolean(s.title) && s.title !== short(turn.prompt, 80)),
     log: logger,
   });
   const mgr = new SessionManager({

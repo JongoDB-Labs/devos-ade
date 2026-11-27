@@ -139,6 +139,9 @@ export class Session {
     // Whether Claude Code has written this session's transcript: a resumed or forked one has; a new one once it got its
     // first prompt. A process for a session without one starts with --session-id (a --resume would find nothing).
     this.hasTranscript = hasTranscript ?? Boolean(resume);
+    // a session begun in this process (no transcript when it was made here): its first prompt here is its first prompt
+    // (titles.mjs titles only these; a resumed or forked one's prompt here is a later one)
+    this.begunHere = !this.hasTranscript;
     this.ring = new Ring();   // this process's events (a new process starts a new ring at seq 1)
     this.epoch = '';          // this process's id (8 hex), sent with every event: a page can tell a restart
     this.title = '';          // the first prompt of this process, or a title given here (what /api/state lists)

@@ -30,7 +30,8 @@
 //                                           folder holding cwd, else "ws": the Workspace). title: your Rename, else Claude
 //                                           Code's own title (ai-title, summary), else the short title made after the
 //                                           session's first turn (titles.mjs: Haiku, 3 to 7 words, kept here by session
-//                                           id — never Claude Code's custom title), else the first prompt. ?q= matches
+//                                           id — never Claude Code's custom title; not for a session on your plan, an
+//                                           agent's or one on a model that is not Claude's), else the first prompt. ?q= matches
 //                                           the title, the first and last prompt, and — plain, case-insensitive, 2
 //                                           characters or more — the words of the conversation (the sandbox's
 //                                           sessions.search: bounded, a bound only shortens the list)
