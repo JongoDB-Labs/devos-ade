@@ -157,7 +157,7 @@ def test_the_refusal_says_whether_the_helper_was_ever_seen(make_client, dirs):
     assert "last seen 15 min ago" in e and "./stack helper install" in e and "./stack clean" in e
     beat(st, age=-(admin.HEARTBEAT_SKEW_S + 50))   # dated a minute ahead: Docker's clock is behind
     e = ask(c).json()["error"]
-    assert re.search(r"heartbeat is (59|60) s ahead of the portal's clock", e) and "restarting Docker Desktop" in e
+    assert re.search(r"heartbeat is (59|60) s ahead of the web app's clock", e) and "restarting Docker Desktop" in e
     assert requests_in(rq) == []
 
 
@@ -531,7 +531,7 @@ def test_home_has_the_switch_and_the_helper_missing_hint():
     assert "hidden" in p["helper-off"][1] and p["helper-off-title"][2] == "One-click updates are off"
     assert p["helper-cmd"] == ("code", {"id": "helper-cmd"}, "./stack helper install")
     assert p["copy-helper"][0] == "button" and p["copy-helper"][2] == "Copy"
-    assert p["helper-off-why"][2].startswith("The portal cannot install software on your computer (by design), so this one step runs in a terminal")
+    assert p["helper-off-why"][2].startswith("The web app cannot install software on your computer (by design), so this one step runs in a terminal")
     assert "update-helper-slot" in p and "maint-helper-slot" in p   # the hint moves into the update card when one is available
     # Roll back right in the progress card after a failed update, and Finish the update first when it did not finish; once
     # that card is dismissed, both in the update card (JON-996)
@@ -630,8 +630,8 @@ def test_home_says_what_an_update_ends_and_reconnects_calmly():
     assert 'e.data.type !== "bn-code-status"' in js and "e.source !== f.contentWindow" in js
     # the gap while the portal restarts: a line with a spinner and the time so far, not an error banner
     assert html["job-reconnect"][1].get("role") == "status" and "hidden" in html["job-reconnect"][1]
-    assert "job-reconnect-time" in html and "The portal is restarting as part of this — reconnecting…" in js
-    assert "Reconnected: the portal was away for ${mmss(" in js
+    assert "job-reconnect-time" in html and "The web app is restarting as part of this — reconnecting…" in js
+    assert "Reconnected: the web app was away for ${mmss(" in js
     assert "if (adminState && adminState.in_progress) { pollAdmin(); }" in js
 
 

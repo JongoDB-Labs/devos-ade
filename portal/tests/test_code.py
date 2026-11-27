@@ -176,7 +176,7 @@ def test_code_tab_is_always_there_and_explains_itself_while_off():
     for words in ("Turn on in Settings", "on the computer running DevOS ADE", './stack code enable', "./stack code enable --workspace DIR",
                   'code("~/devos-ade-workspace"), ", or ", code("~/bedrock-now-workspace"),', '" on an install that already has it"',
                   "its own key and budget", "Manual mode", "Bypass permissions and Auto mode stay off",
-                  "portal password again", "TERMINAL_EGRESS=off", "public internet addresses only", "not this computer's own services",
+                  "web app password again", "TERMINAL_EGRESS=off", "public internet addresses only", "not this computer's own services",
                   "Sandbox internet access", "reload this page", "REMOTE_TERMINAL=true", "./stack up",
                   "off for remote access"):
         assert words in page, words

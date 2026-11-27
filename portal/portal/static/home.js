@@ -272,7 +272,7 @@
       parts.push(el("h3", { class: "cont-group", text: "Recent" }), el("ul", { class: "cont-list", "aria-label": "Recent sessions and chats" }, ...recent.map((r) => row(r.kind, r.item, now))));
     }
     const notes = [];
-    if (CODE.here && !rep) notes.push("Your Code sessions show here once the Code page has been open in a browser since the portal started.");
+    if (CODE.here && !rep) notes.push("Your Code sessions show here once the Code page has been open in a browser since the web app started.");
     else if (rep && !rep.live && now - rep.at > STALE_S) notes.push(`Code sessions as the Code page last said, ${ago(rep.at, now)}: open it for what they do now.`);
     if (!CODE.here) notes.push(CODE.enabled ? "The Code page is off from this device (remote access): its sessions are not listed here." : "The Code page is off: Settings › Claude Code turns it on.");
     if (cont && cont.chats && cont.chats.error) notes.push(`Chat's conversations are not listed: ${shown(cont.chats.error, 160)}.`);
@@ -323,7 +323,7 @@
             : "Claude Code in your browser: ask it about your project. It asks before it runs a command or changes a file.",
           acts: () => [actLink("action", codeLink({ new: "1" }), "Open Code", () => newSession(""))] }
         : { id: "code", title: "Open Code and run a first session", done: false,
-          text: CODE.enabled ? "The Code page is off from this device: open the portal on the computer running DevOS ADE." : "The Code page is off: turn it on in Settings, on the computer running DevOS ADE.",
+          text: CODE.enabled ? "The Code page is off from this device: open the web app on the computer running DevOS ADE." : "The Code page is off: turn it on in Settings, on the computer running DevOS ADE.",
           acts: () => (CODE.enabled ? [] : [settingsLink("CODE_ENABLED", "Turn on in Settings")]) },
       { id: "chat", title: "Open Chat and ask something", done: chats > 0 || (chatSpent || 0) > 0,
         text: chats ? `${plural(chats, "conversation")} in Chat${chats >= 5 ? " (at least)" : ""}.` : (chatSpent || 0) > 0 ? "Done: Chat's key has been used." : "Pick a model at the top of Chat and ask: each answer says what it cost.",

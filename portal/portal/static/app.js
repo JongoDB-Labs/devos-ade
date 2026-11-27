@@ -656,8 +656,8 @@ window.addEventListener("message", (e) => {
 // An update's or a rollback's steps as the helper reads them from its log (job.step, job.steps): what runs now and how
 // long it has taken ("Terminal, 2 min so far"), and the ones done with their time — a slow step never looks stuck.
 const BACKGROUND = {
-  update: "Updating in the background: keep working, or close DevOS ADE. The update finishes on its own, and you get a notice when it's done. Services restart one at a time; the portal is away for under a minute.",
-  rollback: "Rolling back in the background: keep working, or close DevOS ADE. It finishes on its own, and you get a notice when it's done. Services restart one at a time; the portal is away for under a minute.",
+  update: "Updating in the background: keep working, or close DevOS ADE. The update finishes on its own, and you get a notice when it's done. Services restart one at a time; the web app is away for under a minute.",
+  rollback: "Rolling back in the background: keep working, or close DevOS ADE. It finishes on its own, and you get a notice when it's done. Services restart one at a time; the web app is away for under a minute.",
 };
 function soFar(s) { return s < 60 ? `${Math.max(1, Math.round(s))} s` : `${Math.round(s / 60)} min`; }
 function stepText(job) {
@@ -795,7 +795,7 @@ function showReconnect(down) {
   if (down) {
     if (!downSince) downSince = Date.now();
     const tick = () => { $("#job-reconnect-time").textContent = mmss(Date.now() - downSince); };
-    $("#job-reconnect-text").textContent = "The portal is restarting as part of this — reconnecting…";
+    $("#job-reconnect-text").textContent = "The web app is restarting as part of this — reconnecting…";
     p.querySelector(".spinner").hidden = false;
     tick();
     if (!downTick) downTick = setInterval(tick, 1000);
@@ -804,7 +804,7 @@ function showReconnect(down) {
   }
   if (!downSince) return;
   clearInterval(downTick); downTick = null;
-  $("#job-reconnect-text").textContent = `Reconnected: the portal was away for ${mmss(Date.now() - downSince)}.`;
+  $("#job-reconnect-text").textContent = `Reconnected: the web app was away for ${mmss(Date.now() - downSince)}.`;
   $("#job-reconnect-time").textContent = "";
   p.querySelector(".spinner").hidden = true;
   downSince = 0;
@@ -883,7 +883,7 @@ function updateHintBase(a, usable) {
     const skipped = sk.at && (Date.now() / 1000 - sk.at) < 86400 && sk.reason ? ` The last window was skipped: ${sk.reason}.` : "";
     return `Will install automatically ${h >= 18 || h < 6 ? "tonight" : "today or tomorrow"} between ${from} and ${to} (this computer's time) — or Update now.${skipped}`;
   }
-  return "The update helper runs it on this computer; it asks for the portal password first.";
+  return "The update helper runs it on this computer; it asks for the web app password first.";
 }
 
 // The update card's one action first: with the update helper usable here, Update now, and the terminal command folded
@@ -963,7 +963,7 @@ function renderJob(job, inProgress) {
   $("#job-message").className = `job-message ${job.phase === "failed" ? "bad" : job.phase === "done" ? "good" : ""}`;
   let note = "";
   if (reconnecting) note = "Chat, Admin and Files come back when it has finished. This page keeps trying by itself.";
-  else if (inProgress && term) note = "It runs in a terminal on your computer; Home follows it (the portal may restart during it).";
+  else if (inProgress && term) note = "It runs in a terminal on your computer; Home follows it (the web app may restart during it).";
   else if (inProgress && !term && BACKGROUND[job.action]) note = BACKGROUND[job.action];
   else if (inProgress) note = "You can leave this page; it is carried out on your computer.";
   else if (job.phase === "done" && (job.action === "update" || job.action === "rollback") && !nothingNew) note = "Reload this page to use the new version of DevOS ADE.";
@@ -1045,7 +1045,7 @@ async function submitConfirm(ev) {
     if (adminState) renderAdmin(adminState);
     setTimeout(pollAdmin, 1500);
   } catch (e) {
-    const er = $("#confirm-error"); er.textContent = `Could not reach the portal (${e.message}).`; er.hidden = false;
+    const er = $("#confirm-error"); er.textContent = `Could not reach the web app (${e.message}).`; er.hidden = false;
   } finally {
     $("#confirm-ok").disabled = false;
   }
@@ -1075,7 +1075,7 @@ async function refresh() {
     if (adminState && adminState.in_progress) { pollAdmin(); }
     else {
       const b = $("#load-error"); b.hidden = false;
-      b.textContent = `Could not load the latest numbers (${e.message}). The portal keeps trying every 30 seconds; ./stack status shows what is running.`;
+      b.textContent = `Could not load the latest numbers (${e.message}). The web app keeps trying every 30 seconds; ./stack status shows what is running.`;
     }
   }
   if (!$("#home").hidden) timer = setTimeout(() => { if (!document.hidden) refresh(); else timer = setTimeout(refresh, REFRESH_MS); }, REFRESH_MS);

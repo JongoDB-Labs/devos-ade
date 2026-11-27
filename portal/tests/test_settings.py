@@ -222,8 +222,8 @@ def test_removing_a_key_says_what_that_key_does():
     form = js[js.index('} else if (k.validator === "or_key" || k.validator === "stt_key" || k.validator === "xl_key" || k.validator === "ws_key") {'):js.index('} else if (k.validator === "webhook") {')]
     assert "REMOVE_KEY[k.validator]" in form and "disappear" not in form
     stt = words[words.index("stt_key:"):words.index("xl_key:")]
-    assert "OpenRouter" not in stt and "OpenAI or Groq key is deleted" in stt and "the model gateway, Chat and the portal restart" in stt
-    assert "or_key: \"OpenRouter's models disappear from Chat and the API; the model gateway and the portal restart (about 40 s).\"" in words
+    assert "OpenRouter" not in stt and "OpenAI or Groq key is deleted" in stt and "the model gateway, Chat and the web app restart" in stt
+    assert "or_key: \"OpenRouter's models disappear from Chat and the API; the model gateway and the web app restart (about 40 s).\"" in words
     # (the Experiential Labs key restarts LiteLLM alone: RESTARTS.explabs)
     assert "xl_key: \"Experiential Labs' models disappear from Chat, the Code page and the API; the model gateway restarts (about 30 s).\"" in words
     # (a web search key, or SearXNG's URL: WebSearch stops searching with it)

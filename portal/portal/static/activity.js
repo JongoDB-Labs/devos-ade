@@ -180,7 +180,7 @@
   // prompt, a job's message, a model name or an error would otherwise show on a lock screen or in the system's
   // notification history. The details stay in the Activity panel, behind the portal's sign-in. A budget names its
   // key's label (this stack's own wording: "Chat (Open WebUI)") and the percentage.
-  const NOTE_BODY = "Details in Activity, in the DevOS ADE portal.";
+  const NOTE_BODY = "Details in Activity, in the DevOS ADE web app.";
   function notificationText(it) {
     const d = it && it.data && typeof it.data === "object" ? it.data : {};
     let title = "Something new in Activity";
@@ -551,7 +551,7 @@
       chip.setAttribute("aria-pressed", String(state.notify && granted));
       const note = $("#activity-notify-note", panel);
       if (note && !(Notification.permission === "denied" && !state.notify && note.textContent)) {
-        note.textContent = state.notify && granted ? "On in this browser, while a portal tab is open (no push service): budgets, updates, finished jobs, Code sessions that need you."
+        note.textContent = state.notify && granted ? "On in this browser, while a web app tab is open (no push service): budgets, updates, finished jobs, Code sessions that need you."
           : Notification.permission === "denied" ? "Blocked for this site in your browser's settings." : "";
       }
     }

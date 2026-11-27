@@ -124,7 +124,7 @@ def routes(ctx: Ctx) -> list[Route]:
             return err(403, "That password is not right (PORTAL_PASSWORD in .env).")
         ctx.throttle.success()
         if len(password.encode("utf-8", "surrogatepass")) > st.MAX_AUTH:
-            return err(413, f"The portal password is longer than {st.MAX_AUTH} bytes, more than a request to the update helper "
+            return err(413, f"The web app password is longer than {st.MAX_AUTH} bytes, more than a request to the update helper "
                             "can carry: set a shorter one with ./stack config set PORTAL_PASSWORD.")
         return data, password
 
@@ -373,7 +373,7 @@ def routes(ctx: Ctx) -> list[Route]:
         try:
             nonce = st.write_action(s.request_dir, act, password)
         except ValueError:
-            return err(413, f"The portal password is longer than {st.MAX_AUTH} bytes: set a shorter one with ./stack config set PORTAL_PASSWORD.")
+            return err(413, f"The web app password is longer than {st.MAX_AUTH} bytes: set a shorter one with ./stack config set PORTAL_PASSWORD.")
         except OSError as e:
             log.warning("cannot write the %s request to %s (%s)", act, s.request_dir, e)
             return err(500, "Could not hand the request to the helper (see ./stack logs portal).")
@@ -416,7 +416,7 @@ def routes(ctx: Ctx) -> list[Route]:
             nonce = st.write_project_action(s.request_dir, act, password, when, project=project if act != "project-pick" else None,
                                             mode=mode, hide=hide)
         except ValueError:
-            return err(413, f"The portal password is longer than {st.MAX_AUTH} bytes: set a shorter one with ./stack config set PORTAL_PASSWORD.")
+            return err(413, f"The web app password is longer than {st.MAX_AUTH} bytes: set a shorter one with ./stack config set PORTAL_PASSWORD.")
         except OSError as e:
             log.warning("cannot write the %s request to %s (%s)", act, s.request_dir, e)
             return err(500, "Could not hand the request to the helper (see ./stack logs portal).")
@@ -447,7 +447,7 @@ def routes(ctx: Ctx) -> list[Route]:
         try:
             nonce = st.write_sessions_action(s.request_dir, password, project, tool)
         except ValueError:
-            return err(413, f"The portal password is longer than {st.MAX_AUTH} bytes: set a shorter one with ./stack config set PORTAL_PASSWORD.")
+            return err(413, f"The web app password is longer than {st.MAX_AUTH} bytes: set a shorter one with ./stack config set PORTAL_PASSWORD.")
         except OSError as e:
             log.warning("cannot write the %s request to %s (%s)", act, s.request_dir, e)
             return err(500, "Could not hand the request to the helper (see ./stack logs portal).")
@@ -477,7 +477,7 @@ def routes(ctx: Ctx) -> list[Route]:
         try:
             nonce = st.write_subs_action(s.request_dir, password, act, tool if act in st.SUBS_SIGNOUT else None)
         except ValueError:
-            return err(413, f"The portal password is longer than {st.MAX_AUTH} bytes: set a shorter one with ./stack config set PORTAL_PASSWORD.")
+            return err(413, f"The web app password is longer than {st.MAX_AUTH} bytes: set a shorter one with ./stack config set PORTAL_PASSWORD.")
         except OSError as e:
             log.warning("cannot write the %s request to %s (%s)", act, s.request_dir, e)
             return err(500, "Could not hand the request to the helper (see ./stack logs portal).")
@@ -748,7 +748,7 @@ def routes(ctx: Ctx) -> list[Route]:
                                           size=fields.get("bytes", 0), tools=fields.get("tools", "unknown"), context=fields.get("context", 0),
                                           params_m=fields.get("params_m", 0), license=fields.get("license", "unknown"))
         except ValueError:
-            return err(413, f"The portal password is longer than {st.MAX_AUTH} bytes: set a shorter one with ./stack config set PORTAL_PASSWORD.")
+            return err(413, f"The web app password is longer than {st.MAX_AUTH} bytes: set a shorter one with ./stack config set PORTAL_PASSWORD.")
         except OSError as e:
             log.warning("cannot write the %s request to %s (%s)", act, s.request_dir, e)
             return err(500, "Could not hand the request to the helper (see ./stack logs portal).")
@@ -835,7 +835,7 @@ def routes(ctx: Ctx) -> list[Route]:
         try:
             nonce = st.write_runtime_action(s.request_dir, op, rid, password)
         except ValueError:
-            return err(413, f"The portal password is longer than {st.MAX_AUTH} bytes: set a shorter one with ./stack config set PORTAL_PASSWORD.")
+            return err(413, f"The web app password is longer than {st.MAX_AUTH} bytes: set a shorter one with ./stack config set PORTAL_PASSWORD.")
         except OSError as e:
             log.warning("cannot write the runtime %s request to %s (%s)", op, s.request_dir, e)
             return err(500, "Could not hand the request to the helper (see ./stack logs portal).")
@@ -932,7 +932,7 @@ def routes(ctx: Ctx) -> list[Route]:
                                                  models=",".join(models), ref=ref)
         except ValueError as e:
             if "password" in str(e):
-                return err(413, f"The portal password is longer than {st.MAX_AUTH} bytes: set a shorter one with ./stack config set PORTAL_PASSWORD.")
+                return err(413, f"The web app password is longer than {st.MAX_AUTH} bytes: set a shorter one with ./stack config set PORTAL_PASSWORD.")
             return err(400, "That address, name, key or model list is not one DevOS ADE can use (names: lowercase letters, digits and -).")
         except OSError as e:
             log.warning("cannot write the model-server request to %s (%s)", s.request_dir, e)
@@ -979,7 +979,7 @@ def routes(ctx: Ctx) -> list[Route]:
             url = "http://" + url
         # (no password only for this computer's own addresses; the helper judges the pinned address again and refuses the rest)
         if not _LOOPBACK_URL.match(url):
-            return err(403, "Checking another computer asks for your portal password.")
+            return err(403, "Checking another computer asks for your web app password.")
         trust = data.get("trust") is True and url.startswith("https://")
         ref = secrets.token_hex(8)
         try:

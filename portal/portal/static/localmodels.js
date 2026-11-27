@@ -81,7 +81,7 @@
       const d = await r.json().catch(() => ({}));
       if (r.status === 401) { location.assign("/login"); return; }
       if (!r.ok) { stopping = null; stopNote = d.error || `That did not work (HTTP ${r.status}).`; render(); return; }
-    } catch (e) { stopping = null; stopNote = `Could not reach the portal (${e.message}).`; render(); return; }
+    } catch (e) { stopping = null; stopNote = `Could not reach the web app (${e.message}).`; render(); return; }
     clearTimeout(timer); timer = setTimeout(load, 1000);
   }
 
@@ -122,7 +122,7 @@
       const d = await r.json().catch(() => ({}));
       if (r.status === 401) { location.assign("/login"); return false; }
       if (!r.ok) { rtSending = null; rtNote = d.error || `That did not work (HTTP ${r.status}).`; render(); return false; }
-    } catch (e) { rtSending = null; rtNote = `Could not reach the portal (${e.message}).`; render(); return false; }
+    } catch (e) { rtSending = null; rtNote = `Could not reach the web app (${e.message}).`; render(); return false; }
     if (op !== "logs") { clearTimeout(timer); timer = setTimeout(load, 1000); }
     return true;
   }
@@ -393,7 +393,7 @@
       for (const r of results) ul.append(repoRow(r));
       out.append(ul);
     }
-    out.append(el("p", { class: "note", text: "Searches Hugging Face's public list from this portal (nothing about you is sent) and pulls only from huggingface.co. A gated model needs a Hugging Face token (set it below) and its license accepted there. Small local models are weak at Claude Code's tools: each model says what to expect." }));
+    out.append(el("p", { class: "note", text: "Searches Hugging Face's public list from this web app (nothing about you is sent) and pulls only from huggingface.co. A gated model needs a Hugging Face token (set it below) and its license accepted there. Small local models are weak at Claude Code's tools: each model says what to expect." }));
     return out;
   }
 
@@ -470,7 +470,7 @@
       if (r.status === 401) { location.assign("/login"); return; }
       if (!r.ok) { srv.wait = null; srv.note = d.error || `That did not work (HTTP ${r.status}).`; render(); return; }
       waitFor(d.ref, "probe", "");
-    } catch (e) { srv.wait = null; srv.note = `Could not reach the portal (${e.message}).`; render(); }
+    } catch (e) { srv.wait = null; srv.note = `Could not reach the web app (${e.message}).`; render(); }
   }
 
   const ask = (what, title, text, ok) => askPw({ kind: "server", ...what }, title, text, ok);

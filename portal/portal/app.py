@@ -548,7 +548,7 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
                 to = settings.origin(app, False) + "/.bn/session-unlock?next=" + quote(request.headers.get("x-forwarded-uri") or "/", safe="")
                 return _no_store(RedirectResponse(to, status_code=302))
             return _unlock_page(settings, rem, app=app, next_link=nxt)
-        return _no_store(PlainTextResponse(f"{NAME[app]} locked: unlock it with the portal password", status_code=401))
+        return _no_store(PlainTextResponse(f"{NAME[app]} locked: unlock it with the web app password", status_code=401))
 
     def launch_gate(request: Request, rem: bool, websocket: bool) -> Response | None:
         """The terminal host, unlocked: an address with the pickers' words (?arg=…, which ttyd hands to bn-session) needs
@@ -653,7 +653,7 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
         if not await asyncio.to_thread(verify_password, password, settings.password_hash):
             throttle.failure()
             log.warning("%s unlock: wrong password (%d in a row)", app, throttle.failures)
-            return _unlock_page(settings, rem, "That password is not right. It is the portal password (PORTAL_PASSWORD in .env).", app=app, next_link=nxt)
+            return _unlock_page(settings, rem, "That password is not right. It is the web app password (PORTAL_PASSWORD in .env).", app=app, next_link=nxt)
         throttle.success()
         log.warning("%s unlocked%s", app, " (remote)" if rem else "")
         # a deep link (rebuilt from what checks out: same host, the root path, ?session / ?prompt / ?git only — the
@@ -717,7 +717,7 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
         if origin is not None and origin != settings.origin(CODE, rem):
             return _no_store(JSONResponse({"error": "cross-site request refused"}, status_code=403))
         if not authed(request) or not unlocked(request, rem, CODE):
-            return _no_store(JSONResponse({"error": "locked: unlock the Code page with the portal password"}, status_code=401))
+            return _no_store(JSONResponse({"error": "locked: unlock the Code page with the web app password"}, status_code=401))
         return None
 
     # --- the Code page's terminal panel: one unlock for both. GET /.bn/terminal on the code host (Caddy → here, after the
@@ -838,7 +838,7 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
         if not isinstance(password, str) or not await asyncio.to_thread(verify_password, password, settings.password_hash):
             throttle.failure()
             log.warning("code: sessions request with a wrong password (%d in a row)", throttle.failures)
-            return sessions_err(403, "That password is not right. It is the portal password (PORTAL_PASSWORD in .env).")
+            return sessions_err(403, "That password is not right. It is the web app password (PORTAL_PASSWORD in .env).")
         throttle.success()
         rem = remote(request)
         act = data.get("action")
@@ -1334,7 +1334,7 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
         if not appsso.request_ok(request.headers):
             log.warning("automatic sign-in to %s: refused a request that is not a page load from this site, or from a "
                         "browser that does not say (Sec-Fetch headers)", appsso.NAME[app])
-            return appsso.error_page(portal, app, "The portal signs you in only for a page you open on this site, in a browser "
+            return appsso.error_page(portal, app, "The web app signs you in only for a page you open on this site, in a browser "
                                      "that says where a request comes from (current Chrome, Edge, Firefox and Safari "
                                      "do) — never for another site's link, a script or an embedded resource.", manual, 403)
         claims = session_claims(request)
@@ -1354,10 +1354,10 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
         count = int(raw) if raw.isdigit() and len(raw) < 4 else 0
         if count >= appsso.LOOP_MAX:
             return appsso.error_page(portal, app, f"{appsso.NAME[app]} keeps going back to its sign-in page right after the "
-                                     "automatic sign-in (blocked cookies or site data, or an app version this portal does not "
+                                     "automatic sign-in (blocked cookies or site data, or an app version this web app does not "
                                      "know). Try again shortly, or sign in by hand.", manual, 409)
         if not appsso.available(settings, app):
-            return appsso.error_page(portal, app, "The portal does not have this sign-in yet: run ./stack setup.", manual, 503)
+            return appsso.error_page(portal, app, "The web app does not have this sign-in yet: run ./stack setup.", manual, 503)
         if not sso_budget.take((claims["iat"], login)):
             return appsso.error_page(portal, app, "Too many automatic sign-ins in the last minute. Try again shortly.", manual, 429)
         try:

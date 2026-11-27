@@ -276,7 +276,7 @@ def not_running(state: dict, now: float | None = None) -> str:
         return "The update helper is not running"
     age = (time.time() if now is None else now) - hb
     if age < 0:
-        return (f"The update helper's heartbeat is {_span(-age)} ahead of the portal's clock: Docker's clock is behind "
+        return (f"The update helper's heartbeat is {_span(-age)} ahead of the web app's clock: Docker's clock is behind "
                 "this computer's (restarting Docker Desktop sets it right)")
     if age <= HEARTBEAT_LATE_S:
         return f"The update helper has not answered for {_span(age)}: this computer or Docker is busy"

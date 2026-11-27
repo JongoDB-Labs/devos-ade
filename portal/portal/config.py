@@ -273,7 +273,7 @@ def from_env(env: dict | None = None) -> Settings:
         raise ConfigError("PORTAL_SECRET is missing or shorter than 32 characters — run ./stack setup")
     password_hash = (env.get("PORTAL_PASSWORD_HASH") or "").strip()
     if password_hash and not PW_HASH.fullmatch(password_hash):
-        raise ConfigError("PORTAL_PASSWORD_HASH is not a hash this portal reads — run ./stack up")
+        raise ConfigError("PORTAL_PASSWORD_HASH is not a hash this web app reads — run ./stack up")
     if not password_hash and env.get("PORTAL_PASSWORD"):
         # Development only (compose passes the hash): a salt derived from the secret keeps sessions across restarts.
         password_hash = hash_password(env["PORTAL_PASSWORD"], salt=hashlib.sha256(secret.encode()).digest()[:8])

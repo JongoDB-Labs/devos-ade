@@ -154,7 +154,7 @@
     const card = el("div", { class: "code-off-card" });
     if (remoteOnly) {
       card.append(
-        el("p", { class: "code-off-lede", text: "The local git server is on, on the computer running DevOS ADE: open the portal there and this tab opens it. Its web UI has no address on the remote site, so it is not shown over remote access." }));
+        el("p", { class: "code-off-lede", text: "The local git server is on, on the computer running DevOS ADE: open the web app there and this tab opens it. Its web UI has no address on the remote site, so it is not shown over remote access." }));
     } else {
       const turnOn = el("button", { type: "button", class: "action primary", id: "git-off-settings", text: "Turn on in Settings" });
       turnOn.addEventListener("click", toSettings);

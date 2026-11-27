@@ -190,7 +190,7 @@
         try { url = `${new URL(appUrl("files")).origin}/rustfs/console/browser/${encodeURIComponent(String(j.bucket))}`; } catch (_) { /* none */ }
         reply({ ok: true, key: String(j.key), bucket: String(j.bucket), url });
       } catch (_) {
-        reply({ ok: false, error: "the portal did not answer" });
+        reply({ ok: false, error: "the web app did not answer" });
       }
     });
   }
@@ -243,7 +243,7 @@
         let j = {};
         try { j = await r.json(); } catch (_) { /* not JSON */ }
         if (r.status === 413 || j.tooBig === true) tooBig();
-        else if (!r.ok || typeof j.id !== "string" || !HANDOFF_ID.test(j.id)) reply({ ok: false, error: String(j.error || `The portal answered HTTP ${r.status}`).slice(0, 200) });
+        else if (!r.ok || typeof j.id !== "string" || !HANDOFF_ID.test(j.id)) reply({ ok: false, error: String(j.error || `The web app answered HTTP ${r.status}`).slice(0, 200) });
         else {
           filing.set(j.id, { id: d.id, at: Date.now() });
           while (filing.size > FILE_KEPT) filing.delete(filing.keys().next().value);
@@ -251,7 +251,7 @@
           openLink({ handoff: j.id });
         }
       } catch (_) {
-        reply({ ok: false, error: "The portal did not answer." });
+        reply({ ok: false, error: "The web app did not answer." });
       } finally {
         busy = false;
       }
@@ -377,7 +377,7 @@
     const card = el("div", { class: "code-off-card" });
     if (remoteOnly) {
       card.append(
-        el("p", { class: "code-off-lede", text: "The Code page is on, on the computer running DevOS ADE: open the portal there and this tab opens it. Over remote access it stays off unless you allow it, because Claude runs commands on that computer." }),
+        el("p", { class: "code-off-lede", text: "The Code page is on, on the computer running DevOS ADE: open the web app there and this tab opens it. Over remote access it stays off unless you allow it, because Claude runs commands on that computer." }),
         el("p", { class: "note", text: "It is Claude Code in your browser, like its desktop app:" }), features,
         el("h2", { text: "Using it from your devices too" }),
         el("ol", { class: "code-off-list" },
@@ -385,7 +385,7 @@
           item("The same switch shares the browser terminal over remote access too (a shell from your phone), so it is a step in a terminal on purpose: ",
             el("a", { href: "#settings/REMOTE_TERMINAL", "data-setup": "terminal-remote-off", text: "Settings › Remote access" }), " shows it, read-only."),
           item("With Tailscale, approve the new Services (", code("…-terminal"), " and ", code("…-code"), ") in the admin console like the others; ", code("./stack remote status"), " lists them."),
-          item("Both still ask for the portal password again before they open.")));
+          item("Both still ask for the web app password again before they open.")));
     } else {
       // (both names until Settings names the folder this install would mount — fillFolder: ./stack's own choice, the new
       // ~/devos-ade-workspace, or ~/bedrock-now-workspace on an install that already has it)
@@ -404,7 +404,7 @@
           item("It sees ", el("strong", { text: "one folder" }), " of this computer, its workspace: ", ws, " (created if it is not there). Another folder: ", other, "."),
           item("It has ", el("strong", { text: "its own key and budget" }), " (the terminal's, $50 a month unless you change it), apart from Chat's and ", code("devos-claude"), "'s; its spend shows on Home."),
           item("Claude ", el("strong", { text: "asks before acting" }), ": in Manual mode every command and file change waits for your OK. Bypass permissions and Auto mode stay off unless you allow them in Settings › Claude Code."),
-          item("It asks for the portal password again before it opens, because it runs commands. The sandbox reaches ", el("strong", { text: "public internet addresses only" }), ", through its egress proxy: not this computer's own services, your local network or private addresses. Settings › Claude Code › Sandbox internet access changes that (", code("TERMINAL_EGRESS=off"), " in ", code(".env"), ": no internet at all)."),
+          item("It asks for the web app password again before it opens, because it runs commands. The sandbox reaches ", el("strong", { text: "public internet addresses only" }), ", through its egress proxy: not this computer's own services, your local network or private addresses. Settings › Claude Code › Sandbox internet access changes that (", code("TERMINAL_EGRESS=off"), " in ", code(".env"), ": no internet at all)."),
           item("The first time, it builds the Code page's image: a few minutes.")),
         el("h2", { text: "Turning it on" }),
         el("p", { class: "note", text: "Turn on in Settings works only on the computer running DevOS ADE: from another device, Settings shows the switch but leaves it to that computer. Or in a terminal, in your DevOS ADE folder:" }),
@@ -447,7 +447,7 @@
     tab.addEventListener("click", () => showTab("code"));
     if (here) {
       line = el("p", { class: "note code-line" }, "Or with a chat, your files and permission prompts: the ", tab,
-        ". Claude runs in the terminal's sandbox; it asks for the portal password again.");
+        ". Claude runs in the terminal's sandbox; it asks for the web app password again.");
     } else if (state.enabled) {
       line = el("p", { class: "note code-line" }, "The ", tab, " is off for remote access (", code("REMOTE_TERMINAL=true"),
         " in ", code(".env"), " turns it on with the terminal: ",

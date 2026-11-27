@@ -189,7 +189,7 @@ def test_the_code_steps_name_what_a_developer_uses():
     # every feature of the Code page a developer needs, by its exact words in the page (README › The Code page)
     js = (STATIC / "tour.js").read_text(encoding="utf-8")
     want = {
-        "code-open": ("Open Code", "unlock it with the portal password", "New session", "Projects", "Needs you", "Working", "Done",
+        "code-open": ("Open Code", "unlock it with the web app password", "New session", "Projects", "Needs you", "Working", "Done",
                       "claude-code-terminal"),
         "code-modes": ("Read only", "Plan", "Manual", "Accept edits", "Shift+Tab", "Alt+M", "Allow once", "Always", "Deny", "Permissions",
                        "Auto", "Bypass permissions", '"CODE_AUTO_MODE"', "with Claude Code, file edits in the workspace and file commands there",

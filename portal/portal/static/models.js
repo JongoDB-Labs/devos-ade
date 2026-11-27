@@ -391,7 +391,7 @@
     const head = el("header", { class: "mb-head" },
       el("p", { class: "eyebrow" }, el("a", { href: "#settings/providers", text: "Settings › Models & providers" })),
       el("h1", { id: "models-title", text: "Browse models" }),
-      el("p", { class: "note mb-lede", text: "Search what Bedrock, OpenRouter and Experiential Labs offer with your keys, plus models you download or run on your own computers, and add a model to every picker: Chat, the Code page, the terminal and devos-claude. Each change is saved on this computer by the update helper, after your portal password, and applied in seconds: the model gateway takes the new list as it runs, without a restart." }));
+      el("p", { class: "note mb-lede", text: "Search what Bedrock, OpenRouter and Experiential Labs offer with your keys, plus models you download or run on your own computers, and add a model to every picker: Chat, the Code page, the terminal and devos-claude. Each change is saved on this computer by the update helper, after your web app password, and applied in seconds: the model gateway takes the new list as it runs, without a restart." }));
     if (!data) { p.replaceChildren(head, el("p", { class: "note", text: "Loading…" })); return; }
     if (data.error) { p.replaceChildren(head, el("p", { class: "banner", text: `Could not load the lists: ${data.error}` })); return; }
     const status = el("p", { id: "mb-job", class: "mb-job", role: "status", "aria-live": "polite", hidden: "" });
@@ -413,7 +413,7 @@
     dlg = el("dialog", { class: "confirm", id: "mb-confirm", "aria-labelledby": "mb-confirm-title" });
     const form = el("form", { method: "dialog" },
       el("h2", { id: "mb-confirm-title" }), el("p", { id: "mb-confirm-text" }),
-      el("label", { for: "mb-confirm-password", text: "Portal password" }),
+      el("label", { for: "mb-confirm-password", text: "Web app password" }),
       el("input", { id: "mb-confirm-password", type: "password", autocomplete: "current-password", required: "" }),
       el("p", { id: "mb-confirm-error", class: "error", role: "alert", hidden: "" }),
       el("p", { class: "confirm-buttons" }, el("button", { type: "button", class: "quiet", id: "mb-confirm-cancel", text: "Cancel" }),
@@ -467,7 +467,7 @@
       renderJob();
       poll();
     } catch (e) {
-      if (e.message !== "signed out") { err.textContent = `Could not reach the portal (${e.message}).`; err.hidden = false; }
+      if (e.message !== "signed out") { err.textContent = `Could not reach the web app (${e.message}).`; err.hidden = false; }
     } finally { ok.disabled = false; }
   }
   async function poll() {

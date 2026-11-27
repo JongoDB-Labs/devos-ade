@@ -96,7 +96,7 @@ class GitSearch:
         except httpx.HTTPError as e:
             raise SearchError(f"The git server did not answer ({type(e).__name__})") from None
         if r.status_code in (401, 403):
-            raise SearchError(f"The git server refused the portal's search token (HTTP {r.status_code}): ./stack up makes a new one")
+            raise SearchError(f"The git server refused the web app's search token (HTTP {r.status_code}): ./stack up makes a new one")
         if r.status_code != 200:
             raise SearchError(f"The git server answered HTTP {r.status_code}")
         if len(r.content) > MAX_ANSWER:
@@ -112,7 +112,7 @@ class GitSearch:
         if not self.s.git:
             raise SearchError("The local git server is off", 409)
         if not self.s.git_token:
-            raise SearchError("The portal has no search token for the git server yet: ./stack up makes it", 503)
+            raise SearchError("The web app has no search token for the git server yet: ./stack up makes it", 503)
         repos, issues = await asyncio.gather(self._get(client, "/api/v1/repos/search", repo_params(q)),
                                              self._get(client, "/api/v1/repos/issues/search", issue_params(q)))
         rows = repos.get("data") if isinstance(repos, dict) else None

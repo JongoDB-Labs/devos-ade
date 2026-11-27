@@ -244,7 +244,7 @@ def activity_notifications(ctx):
         page.click("#activity-notify")
         page.locator("#activity-notify[aria-pressed=true]").wait_for(timeout=5000)
         expect(page.evaluate("window.__asked") == 1, "the permission was not asked exactly once")
-        expect("while a portal tab is open" in page.inner_text("#activity-notify-note"), "the note does not say how it works")
+        expect("while a web app tab is open" in page.inner_text("#activity-notify-note"), "the note does not say how it works")
         expect(page.evaluate("window.__notes.length") == 0, "a notification for what was there already")
         page.keyboard.press("Escape")
         # a new item while the page is not looked at: one notification
@@ -254,7 +254,7 @@ def activity_notifications(ctx):
         page.wait_for_function("() => window.__notes.length > 0", timeout=15000)
         notes = page.evaluate("window.__notes")
         # fixed words only: nothing of the job's message (it could be on a lock screen)
-        expect(len(notes) == 1 and notes[0]["title"] == "A job failed" and notes[0]["body"] == "Details in Activity, in the DevOS ADE portal."
+        expect(len(notes) == 1 and notes[0]["title"] == "A job failed" and notes[0]["body"] == "Details in Activity, in the DevOS ADE web app."
                and notes[0]["tag"] == f"bn-job:terminal:{jid}:failed" and "e2e" not in json.dumps(notes), f"notifications {notes}")
         # the same item again (another poll): no second one; with the focus: none
         page.evaluate("() => window.bnActivity.refresh()")

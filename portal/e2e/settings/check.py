@@ -222,7 +222,7 @@ class Stub(http.server.BaseHTTPRequestHandler):
         if path == "/api/local-models/probe":    # (Check server of this computer: read-only, no password asked or sent)
             LM["probes"].append(body)
             if not re.match(r"(https?://)?(localhost|127\.\d+\.\d+\.\d+|\[::1\])(:\d+)?(/|$)", body.get("url", "")):
-                return self.send(403, json.dumps({"error": "Checking another computer asks for your portal password."}), "application/json")
+                return self.send(403, json.dumps({"error": "Checking another computer asks for your web app password."}), "application/json")
             return self.send(202, json.dumps(lm_helper({"op": "probe", "url": body.get("url", ""), "key": body.get("key", ""), "trust": body.get("trust")})), "application/json")
         if path == "/api/local-models/change":
             LM["changes"].append(body)

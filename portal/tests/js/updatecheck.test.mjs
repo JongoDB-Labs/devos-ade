@@ -76,7 +76,7 @@ test("the click's answer: 'checked a moment ago' until then, then the status spe
   // said once, as answered: no countdown in the announced text
   assert.equal(say(base, false, { kind: "again", wait: 25, until: NOW + 3000 }).text, again.text);
   const failed = say(base, false, { kind: "failed", until: NOW + 60000 });
-  assert.equal(failed.text, "The portal could not be reached — try again");
+  assert.equal(failed.text, "The web app could not be reached — try again");
 });
 
 test("no answer yet, the daily check off, an unknown installed version", () => {
@@ -98,7 +98,7 @@ test("GitHub refused otherwise (no rate-limit headers): said as such, the button
   assert.equal(d.state, "refused");
   assert.equal(d.text, `GitHub refused the request — try again after ${U.clock(at, NOW)}`);
   assert.equal(d.disabled, true);
-  assert.match(d.why, /^GitHub refused the last check \(api\.github\.com refused the request \(HTTP 403\)\), so the portal waits up to an hour/);
+  assert.match(d.why, /^GitHub refused the last check \(api\.github\.com refused the request \(HTTP 403\)\), so the web app waits up to an hour/);
   assert.equal(say({ ...base, error: "x", refused: true, retry_at: null }).disabled, false);
 });
 

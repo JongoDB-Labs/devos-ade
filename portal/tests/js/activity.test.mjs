@@ -126,7 +126,7 @@ test("a browser notification says fixed words only: no session title, prompt, jo
     "Budget used up: Setup and tests", "OpenRouter requests failed", "A model check could not check every model",
     "Voice changed to browser speech"]);
   for (const n of got) {
-    assert.equal(n.body, "Details in Activity, in the DevOS ADE portal.");
+    assert.equal(n.body, "Details in Activity, in the DevOS ADE web app.");
     assert.ok(!JSON.stringify(n).includes("SECRET") && !JSON.stringify(n).includes("sk-live"), JSON.stringify(n));
   }
   assert.equal(A.notificationText({ kind: "whatever", title: secret }).title, "Something new in Activity");
@@ -153,8 +153,8 @@ test("needs you: the Code sessions that wait and are not read yet, newest first,
 });
 
 test("HTTPS: the offer and the notice that the address changed pass through checked, and only the offer carries the switch", () => {
-  const offer = { id: "https-offer", kind: "https", level: "info", title: "Serve the portal over HTTPS", text: "x", at: null, link: "#settings/PORTAL_HTTPS", notify: false, data: { offer: true } };
-  const sw = { id: "https-switched:1792700000", kind: "https", level: "good", title: "The portal's address changed", text: "Sign in again", at: 1792700000, link: "#home", notify: true, data: { offer: false } };
+  const offer = { id: "https-offer", kind: "https", level: "info", title: "Serve the web app over HTTPS", text: "x", at: null, link: "#settings/PORTAL_HTTPS", notify: false, data: { offer: true } };
+  const sw = { id: "https-switched:1792700000", kind: "https", level: "good", title: "The web app's address changed", text: "Sign in again", at: 1792700000, link: "#home", notify: true, data: { offer: false } };
   assert.deepEqual(plain(A.takeServerItem(offer)).data, { offer: true });
   assert.equal(plain(A.takeServerItem(offer)).notify, false);
   assert.deepEqual(plain(A.takeServerItem(sw)).data, { offer: false });

@@ -818,7 +818,7 @@ def update_last_job_and_reconnecting(ctx):
         states.append(f"portal away: reconnecting {t1}")
         # 3. back
         page.unroute(api)
-        page.locator("#job-reconnect-text", has_text="Reconnected: the portal was away for").wait_for(timeout=15000)
+        page.locator("#job-reconnect-text", has_text="Reconnected: the web app was away for").wait_for(timeout=15000)
         states.append("back: " + page.inner_text("#job-reconnect-text"))
         # 4. done: "Updated to …", no step running; every step of the whole update with its time, from the backup to
         # what's new (lib/helper.sh _job_steps: a helper of this version reads them all, up to 80); Settings' notice gone

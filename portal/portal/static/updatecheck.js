@@ -48,17 +48,17 @@
     const said = (o) => ({ ...o, why: [o.why, off && o.state !== "off" ? OFF : "", PRIVACY].filter(Boolean).join(" ") });
     if (busy || (u && u.checking)) return said({ ...out, state: "checking", text: "Checking for updates…", why: "GitHub is being asked now.", disabled: true });
     const n = note && note.until > now && (note.base === undefined || note.base === statusKey(u)) ? note : null;
-    if (n && n.kind === "failed") return said({ ...out, state: "failed", text: "The portal could not be reached — try again", why: "The portal did not answer the click." });
+    if (n && n.kind === "failed") return said({ ...out, state: "failed", text: "The web app could not be reached — try again", why: "The web app did not answer the click." });
     if (n && n.kind === "hourly") {
       return said({ ...out, state: "hourly", text: `Checked many times this hour — try again after ${clock(n.at, now)}`,
-        why: "The portal asks GitHub at most 20 times an hour for these clicks.", disabled: true });
+        why: "The web app asks GitHub at most 20 times an hour for these clicks.", disabled: true });
     }
     if (!u) return said(out);
     const when = u.checked_at ? `checked ${ago(u.checked_at, now)}` : "";
     const latest = RELEASE.test(u.latest || "") ? u.latest : "";
     if (n && n.kind === "again") {
       return said({ ...out, state: "again", text: `Checked a moment ago — try again in ${Math.max(1, Math.round(Number(n.wait) || 30))} s`,
-        why: "The portal asks GitHub at most every 30 seconds for these clicks." });
+        why: "The web app asks GitHub at most every 30 seconds for these clicks." });
     }
     const at = u.retry_at && Date.parse(u.retry_at) > now ? clock(u.retry_at, now) : "";
     if (u.error && u.limited) {
@@ -67,7 +67,7 @@
       return said({ ...out, state: "error", text: "GitHub's limit for this hour was reached — try again now", when, why });
     }
     if (u.error && u.refused) {
-      const why = `GitHub refused the last check (${u.error}), so the portal waits up to an hour before it asks again.`;
+      const why = `GitHub refused the last check (${u.error}), so the web app waits up to an hour before it asks again.`;
       if (at) return said({ ...out, state: "refused", text: `GitHub refused the request — try again after ${at}`, when, why, disabled: true });
       return said({ ...out, state: "error", text: "GitHub refused the last request — try again now", when, why });
     }

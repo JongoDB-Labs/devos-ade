@@ -195,7 +195,7 @@ def https_items(s: Settings, now: float) -> list[dict]:
     and everything else are the server's)."""
     out: list[dict] = []
     if not s.https_raw and not s.https:
-        it = _item("https-offer", "https", "info", "Serve the portal over HTTPS",
+        it = _item("https-offer", "https", "info", "Serve the web app over HTTPS",
                    "Browsers call this address not secure. A certificate that can only vouch for this install's own addresses "
                    f"fixes that: macOS asks for your password once to trust it. The address becomes https://{s.host}:{s.port}; "
                    "you sign in again there and install the app again from it.", None, "#settings/PORTAL_HTTPS", False,
@@ -207,13 +207,13 @@ def https_items(s: Settings, now: float) -> list[dict]:
     if isinstance(at, int) and not isinstance(at, bool) and 0 < at <= now + 300 and now - at <= HTTPS_DAYS * 86400 and isinstance(now_https, bool) \
             and now_https == s.https:
         where = s.origin() + "/"
-        text = (f"The portal is now at {where} — sign in again there. An installed app belongs to the old address: remove it and "
+        text = (f"The web app is now at {where} — sign in again there. An installed app belongs to the old address: remove it and "
                 "install it again from the new one. This browser's read and dismissed marks in the notification centre start over; "
                 "your layouts, widgets and settings are kept on this computer and come with you."
                 if s.https else
-                f"The portal is plain HTTP again at {where} — sign in again there, and install the app again from it if you had installed "
+                f"The web app is plain HTTP again at {where} — sign in again there, and install the app again from it if you had installed "
                 "the https:// one.")
-        it = _item(f"https-switched:{at}", "https", "good", "The portal's address changed", text, at, "#home", data={"offer": False})
+        it = _item(f"https-switched:{at}", "https", "good", "The web app's address changed", text, at, "#home", data={"offer": False})
         if it:
             out.append(it)
     return out

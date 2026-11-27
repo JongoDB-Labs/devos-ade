@@ -214,7 +214,7 @@ def test_an_expired_token_signs_in_again_once_and_errors_are_said(settings):
     assert c.get("/api/search/chats?q=trip", headers=API).status_code == 200
     assert ow.signins == 2 and [a for _, a in ow.searches] == ["Bearer jwt-1", "Bearer jwt-2"]
     # always 401, a sign-in refused, Chat down: an answer that says so (the page offers Chat's own search), nothing else
-    for ow2, words in ((OWUI(search_status=401), "HTTP 401"), (OWUI(signin_status=400), "refused the portal's sign-in (HTTP 400)"),
+    for ow2, words in ((OWUI(search_status=401), "HTTP 401"), (OWUI(signin_status=400), "refused the web app's sign-in (HTTP 400)"),
                        (OWUI(search_status=500), "HTTP 500")):
         c2 = client(settings, httpx.MockTransport(ow2))
         r = c2.get("/api/search/chats?q=trip", headers=API)
@@ -279,9 +279,9 @@ def test_an_image_without_the_docs_index_says_where_the_docs_are():
     # this version never runs with, or a plain docker build): an empty index, said so — and how to get it (this version
     # needs Compose 2.24.4, which builds it)
     js = (STATIC / "search.js").read_text(encoding="utf-8")
-    assert "if (index && !((index.docs && index.docs.pages) || []).length) out.push(\"Docs: this portal's image has no index" in js
+    assert "if (index && !((index.docs && index.docs.pages) || []).length) out.push(\"Docs: this web app's image has no index" in js
     assert "./stack setup builds it with one" in js
-    assert "2.17" not in js.split("out.push(\"Docs: this portal's image has no index", 1)[1].split("\n", 1)[0]
+    assert "2.17" not in js.split("out.push(\"Docs: this web app's image has no index", 1)[1].split("\n", 1)[0]
 
 
 def test_ctrl_k_never_opens_over_the_password_dialogs():

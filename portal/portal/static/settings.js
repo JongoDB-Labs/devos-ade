@@ -21,19 +21,19 @@
   const STT_REFUSED = "Bedrock speech-to-text is unavailable: AWS no longer accepts audio for the Voxtral models (since October 2026). Use browser speech, or your own OpenAI/Groq key.";
   // what a change restarts, by settings.tsv's apply column (lib/settings.sh _cfg_post): the badge next to a setting —
   // in the page's words (LiteLLM is the model gateway, Caddy the web server, shared-mcp the shared file server)
-  const RESTARTS = { "portal-pw": ["the portal"], email: ["Chat", "the portal"], "litellm-pw": ["the portal"], portal: ["the portal"],
-    "litellm-cfg": ["the model gateway"], aws: ["the model gateway"], pins: ["Chat", "the portal"], "alert-pct": ["the portal"], stt: ["the model gateway", "Chat", "the portal"],
-    openrouter: ["the model gateway", "the portal"], explabs: ["the model gateway"], websearch: ["the model gateway"],
-    rustfs: ["Files", "Chat", "the shared file server", "the portal"], mcp: ["the shared file server", "the portal"],
-    code: ["the portal", "the web server"], "code-env": ["the Code page"], "terminal-env": ["the terminal"], "terminal-egress": ["the terminal"],
-    "remote-preview": ["the portal", "the web server"] };
+  const RESTARTS = { "portal-pw": ["the web app"], email: ["Chat", "the web app"], "litellm-pw": ["the web app"], portal: ["the web app"],
+    "litellm-cfg": ["the model gateway"], aws: ["the model gateway"], pins: ["Chat", "the web app"], "alert-pct": ["the web app"], stt: ["the model gateway", "Chat", "the web app"],
+    openrouter: ["the model gateway", "the web app"], explabs: ["the model gateway"], websearch: ["the model gateway"],
+    rustfs: ["Files", "Chat", "the shared file server", "the web app"], mcp: ["the shared file server", "the web app"],
+    code: ["the web app", "the web server"], "code-env": ["the Code page"], "terminal-env": ["the terminal"], "terminal-egress": ["the terminal"],
+    "remote-preview": ["the web app", "the web server"] };
   // the settings the model gateway takes without a restart (lib/litellm_live.sh: only its model list changes): a badge
   // that says so, instead of what their apply class restarts for a key
   const LIVE = new Set(["EXPLABS_MODELS", "OPENROUTER_MODELS", "OPENROUTER_MAX_MODELS", "OPENROUTER_INCLUDE_ALIASES", "CODE_MODELS", "CODE_DEFAULT_MODEL", "BEDROCK_MODELS", "LOCAL_MODELS", "MODEL_SERVERS", "MODEL_SERVER_MODELS"]);
   // what removing a key does, in each key's own words (the keys share one form; lib/settings.sh _cfg_post, _stt_apply)
   const REMOVE_KEY = {
-    or_key: "OpenRouter's models disappear from Chat and the API; the model gateway and the portal restart (about 40 s).",
-    stt_key: "The OpenAI or Groq key is deleted. While Speech-to-text uses OpenAI or Groq the removal is refused (they need a key): switch it to the browser or Bedrock first. the model gateway, Chat and the portal restart (about 40 s).",
+    or_key: "OpenRouter's models disappear from Chat and the API; the model gateway and the web app restart (about 40 s).",
+    stt_key: "The OpenAI or Groq key is deleted. While Speech-to-text uses OpenAI or Groq the removal is refused (they need a key): switch it to the browser or Bedrock first. the model gateway, Chat and the web app restart (about 40 s).",
     // (Experiential Labs' key restarts LiteLLM alone: RESTARTS.explabs)
     xl_key: "Experiential Labs' models disappear from Chat, the Code page and the API; the model gateway restarts (about 30 s).",
     ws_key: "Claude Code's WebSearch stops searching with it (the next search backend set up takes over, or none); the model gateway restarts (about 15 s).",
@@ -487,7 +487,7 @@
     box.classList.add("helper-off");
     box.append(el("p", { class: "helper-off-title", text: title }),
       el("p", { class: "cmdline" }, el("code", { text: cmd }), " ", copyBtn),
-      el("p", { class: "note", text: "Everything below is read-only until then: the portal never changes your settings file itself. The update helper (a small job under your user, outside Docker) applies changes, after checking each one again. Or change a setting in a terminal: each one's Details has its command." }));
+      el("p", { class: "note", text: "Everything below is read-only until then: the web app never changes your settings file itself. The update helper (a small job under your user, outside Docker) applies changes, after checking each one again. Or change a setting in a terminal: each one's Details has its command." }));
     return box;
   }
 
@@ -664,9 +664,9 @@
     AUTO_UPDATE_HOUR: hourRange(3), OPENROUTER_MODELS: "all", OPENROUTER_MAX_MODELS: "1000", EXPLABS_MODELS: "qwen3.8-27b",
     TERMINAL_EGRESS: "Internet only",
     WEBSEARCH_BACKEND: "automatic: the first one you set up, else the built-in SearXNG", TERMINAL_MEM_LIMIT: "4g", TERMINAL_AI_TOOLS: "all", REMOTE_MODE: "off", AWS_AUTH: "an access key", REMOTE_SUBNET: "10.255.255.248/29", LOCALGIT_SUBNET: "10.255.255.224/28",
-    PORTAL_HOST: "devos-ade.localhost", PORTAL_PORT: "80, else 8800", CHAT_HOST: "chat. + the portal's address",
-    ADMIN_HOST: "admin. + the portal's address", FILES_HOST: "files. + the portal's address",
-    TERMINAL_HOST: "terminal. + the portal's address", CODE_HOST: "code. + the portal's address",
+    PORTAL_HOST: "devos-ade.localhost", PORTAL_PORT: "80, else 8800", CHAT_HOST: "chat. + the web app's address",
+    ADMIN_HOST: "admin. + the web app's address", FILES_HOST: "files. + the web app's address",
+    TERMINAL_HOST: "terminal. + the web app's address", CODE_HOST: "code. + the web app's address",
     CODE_MODELS: "every enabled model", CODE_DEFAULT_MODEL: "Claude Sonnet (the Sonnet slot)" };
   // display K -> the value in words: "$50 a month", "30 days (default)", "On", "Not set", "••••••••"
   function display(k) {
@@ -713,7 +713,7 @@
   const EGRESS_LABEL = { internet: "Internet only (not this computer's services)", host: "Internet and this computer's services", off: "Off" };
   const EGRESS_WHAT = {
     internet: "The sandbox reaches public internet addresses (npm, pip, git, documentation, Claude Code's web fetch) through its egress proxy, on ports 80, 443 and 22 — never this computer's own services, your local network or private addresses. The terminal restarts (about 10 s; its shells and open Code sessions end).",
-    host: "The sandbox itself goes on the internet, and reaches this computer's own services with it — on Docker Desktop the model gateway, the shared MCP server, the portal's login and dev servers on its 127.0.0.1, through Docker's host address — and your local network, on any port: how v0.10.0 and earlier worked. Choose it only for a service of this computer or your network that the sandbox needs. The terminal restarts (about 10 s; its shells and open Code sessions end).",
+    host: "The sandbox itself goes on the internet, and reaches this computer's own services with it — on Docker Desktop the model gateway, the shared MCP server, the web app's login and dev servers on its 127.0.0.1, through Docker's host address — and your local network, on any port: how v0.10.0 and earlier worked. Choose it only for a service of this computer or your network that the sandbox needs. The terminal restarts (about 10 s; its shells and open Code sessions end).",
     off: "The sandbox gets no internet: only the model gateway and the shared MCP server through its gateway (npm, pip and git clone stop working there). The terminal restarts (about 10 s; its shells and open Code sessions end)." };
   // Settings › Claude Code › Sandbox internet access: Internet only · + this computer · Off (opening it further: only here)
   function egressChoice(k) {
@@ -1246,8 +1246,8 @@
     if (val !== "true") return "The helper runs ./stack code disable: the code container goes; the terminal (and its tmux session), its folder and Claude Code's history stay.";
     const ws = codeFolder() || "the default folder";
     return terminalOn()
-      ? `The helper runs ./stack code enable: it builds the Code page's image (a few minutes the first time) and restarts the portal and Caddy; the terminal keeps running. Claude sees the terminal's folder ${ws}.`
-      : `The helper runs ./stack code enable: it turns the browser terminal on too, with the folder ${ws} as its workspace (created if it is not there; Claude sees only that folder), then builds the Code page's image (a few minutes the first time) and restarts the portal and Caddy.`;
+      ? `The helper runs ./stack code enable: it builds the Code page's image (a few minutes the first time) and restarts the web app and Caddy; the terminal keeps running. Claude sees the terminal's folder ${ws}.`
+      : `The helper runs ./stack code enable: it turns the browser terminal on too, with the folder ${ws} as its workspace (created if it is not there; Claude sees only that folder), then builds the Code page's image (a few minutes the first time) and restarts the web app and Caddy.`;
   }
   function codeRow(r) {
     const k = keys.CODE_ENABLED;
@@ -1327,7 +1327,7 @@
     const b = el("button", { type: "button", class: "copy", "data-reveal": key, text: label });
     b.disabled = !data.here.allowed;
     b.addEventListener("click", () => askPassword({ kind: "reveal", key, show },
-      "Show and copy?", `${key} goes on your clipboard${show ? " and shows here" : ""}. The portal already holds this value; nothing else can be revealed.`, "Copy"));
+      "Show and copy?", `${key} goes on your clipboard${show ? " and shows here" : ""}. The web app already holds this value; nothing else can be revealed.`, "Copy"));
     return b;
   }
 
@@ -1670,7 +1670,7 @@
       return false;
     } catch (e) {
       st.hidden = true;
-      if (e.message !== "signed out") say(form, `Could not reach the portal (${e.message}).`);
+      if (e.message !== "signed out") say(form, `Could not reach the web app (${e.message}).`);
       return false;
     } finally {
       delete form.dataset.busy;
@@ -2235,7 +2235,7 @@
     const others = el("button", { type: "button", class: "action", text: "Sign out other devices" });
     others.disabled = !data.here.allowed;
     others.addEventListener("click", () => askPassword({ kind: "signout" }, "Sign out every other device?",
-      "Every other browser, phone and installed app signs in again with the portal password. This browser stays signed in.", "Sign them out"));
+      "Every other browser, phone and installed app signs in again with the web app password. This browser stays signed in.", "Sign them out"));
     const all = el("form", { method: "post", action: "/logout", class: "set-inline" }, el("button", { type: "submit", class: "action", text: "Sign out everywhere" }));
     rw._actions.append(others, all);
     return rw;
@@ -2338,7 +2338,7 @@
 
   function restartRow(r) {
     const rw = ownFrame(r, "Restart a service");
-    rw._main.append(el("p", { class: "note set-extra", text: "The portal and Postgres are not restarted on their own." }));
+    rw._main.append(el("p", { class: "note set-extra", text: "The web app and Postgres are not restarted on their own." }));
     const sel = el("select", { id: "set-restart", "aria-label": "Service to restart" });
     for (const s of (data.snapshot.choices.restart || [])) sel.append(el("option", { value: s, text: s }));
     const rb = el("button", { type: "button", class: "action", text: "Restart" });
@@ -2399,7 +2399,7 @@
     d = el("dialog", { id: "set-confirm", class: "confirm", "aria-labelledby": "set-confirm-title" });
     const form = el("form", { method: "dialog" },
       el("h2", { id: "set-confirm-title" }), el("p", { id: "set-confirm-text" }), el("ul", { id: "set-confirm-keys", class: "set-keys" }),
-      el("label", { for: "set-confirm-password", text: "Portal password" }),
+      el("label", { for: "set-confirm-password", text: "Web app password" }),
       el("input", { id: "set-confirm-password", type: "password", autocomplete: "current-password", required: "" }),
       el("p", { id: "set-confirm-error", class: "error", role: "alert", hidden: "" }),
       el("p", { class: "confirm-buttons" }, el("button", { type: "button", class: "quiet", id: "set-confirm-cancel", text: "Cancel" }),
@@ -2495,7 +2495,7 @@
       toast("Sent to the update helper");
     } catch (e) {
       if (e.message === "signed out") return;
-      err.textContent = `Could not reach the portal (${e.message}).`; err.hidden = false;
+      err.textContent = `Could not reach the web app (${e.message}).`; err.hidden = false;
     } finally {
       ok.disabled = false;
     }
@@ -2655,7 +2655,7 @@
     msg.textContent = job.message || "";
     msg.className = `job-message ${job.phase === "failed" ? "bad" : job.phase === "done" ? "good" : ""}`;
     let note = "";
-    if (reconnecting) note = "The portal is restarting as part of the change — reconnecting…";
+    if (reconnecting) note = "The web app is restarting as part of the change — reconnecting…";
     else if (job.phase === "done" && w.password) note = "This browser stays signed in; every other browser and device signs in again with the new password.";
     else if (!w.job && Date.now() - w.at > 60000) note = "The update helper has not picked this up yet: is it still running? (./stack helper status)";
     else if (job.phase !== "done" && job.phase !== "failed") note = "You can leave this page; the change is carried out on your computer.";

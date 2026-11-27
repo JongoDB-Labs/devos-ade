@@ -87,7 +87,7 @@ class ChatSearch:
         except httpx.HTTPError as e:
             raise SearchError(f"Chat did not answer ({type(e).__name__})") from None
         if r.status_code != 200:
-            raise SearchError(f"Chat refused the portal's sign-in (HTTP {r.status_code})")
+            raise SearchError(f"Chat refused the web app's sign-in (HTTP {r.status_code})")
         try:
             tok = r.json().get("token")
         except (ValueError, AttributeError):
@@ -132,7 +132,7 @@ class ChatSearch:
             if not isinstance(rows, list):
                 raise SearchError("Chat's answer was not a list")
             return rows
-        raise SearchError("Chat refused the portal's session")
+        raise SearchError("Chat refused the web app's session")
 
     @staticmethod
     def _row(x, snippet: bool) -> dict | None:
@@ -198,7 +198,7 @@ class ChatSearch:
                 return r.json()
             except ValueError:
                 raise SearchError("Chat's answer was not JSON") from None
-        raise SearchError("Chat refused the portal's session")
+        raise SearchError("Chat refused the web app's session")
 
     async def rename(self, client: httpx.AsyncClient, chat_id: str, title) -> str:
         """The conversation's new title (Open WebUI keeps the rest of the chat as it is)."""

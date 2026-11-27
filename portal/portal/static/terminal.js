@@ -50,7 +50,7 @@
       const open = el("button", { type: "button", class: "linkish", text: "Terminal tab" });
       open.addEventListener("click", () => showTab("terminal"));
       line = el("p", { class: "note terminal-line" }, "Or in the browser: the ", open,
-        ". It runs in a sandbox that sees only your workspace folder, and asks for the portal password again.");
+        ". It runs in a sandbox that sees only your workspace folder, and asks for the web app password again.");
     } else if (state.enabled) {
       line = el("p", { class: "note terminal-line" }, "Or in the browser: the Terminal tab is off for remote access (",
         el("code", { text: "REMOTE_TERMINAL=true" }), " in ", el("code", { text: ".env" }), " turns it on: ",

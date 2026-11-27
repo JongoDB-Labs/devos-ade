@@ -253,7 +253,7 @@
       status = r.status;
       if (r.status === 401) { location.assign("/login"); return; }
       d = await r.json().catch(() => ({}));
-    } catch (e) { d = { error: `the portal did not answer (${e.message})` }; }
+    } catch (e) { d = { error: `the web app did not answer (${e.message})` }; }
     if (chats.q !== text || mine !== seq) return;
     const list = Array.isArray(d.chats) ? d.chats.slice(0, 20).filter((c) => c && typeof c.id === "string" && UUID.test(c.id))
       .map((c) => ({ id: c.id, title: shownText(typeof c.title === "string" && c.title ? c.title : "Untitled chat", 200), snippet: typeof c.snippet === "string" ? shownText(c.snippet, 160) : "" })) : [];
@@ -271,7 +271,7 @@
       status = r.status;
       if (r.status === 401) { location.assign("/login"); return; }
       d = await r.json().catch(() => ({}));
-    } catch (e) { d = { error: `the portal did not answer (${e.message})` }; }
+    } catch (e) { d = { error: `the web app did not answer (${e.message})` }; }
     if (git.q !== text || mine !== gitSeq) return;
     git = { q: text, repos: Array.isArray(d.repos) ? d.repos : [], issues: Array.isArray(d.issues) ? d.issues : [],
       error: d.off ? "the local git server is off" : d.error ? shownText(String(d.error), 200) : status === 200 ? "" : `HTTP ${status}`, busy: false };
@@ -321,7 +321,7 @@
     if (q.length < MIN_ASYNC) return out;
     // an image built without the docs index (compose.portal-docs.yaml left out: a Docker Compose that does not read
     // build.additional_contexts — which this version never runs with —, or a plain docker build): say where they are
-    if (index && !((index.docs && index.docs.pages) || []).length) out.push("Docs: this portal's image has no index of them (./stack setup builds it with one): README and docs/ are on GitHub.");
+    if (index && !((index.docs && index.docs.pages) || []).length) out.push("Docs: this web app's image has no index of them (./stack setup builds it with one): README and docs/ are on GitHub.");
     if (!APP_URLS.code) { /* the Code page is off here: nothing to say */ }
     else if (!codeReady()) out.push("Workspace files and every Code session: open the Code tab once (unlocked), and it answers here too.");
     else if (code.error) out.push(code.error);

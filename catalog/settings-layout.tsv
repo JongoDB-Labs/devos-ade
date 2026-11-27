@@ -17,14 +17,14 @@
 # in this order; rows in file order.
 
 @account	Account & security	Your password, the owner email, how long sign-ins last, and what the model gateway keeps of your prompts.	README.md#the-portal-one-login-for-everything
-PORTAL_PASSWORD	account	main	-	The one password for the portal, Chat, Admin and Files; it also unlocks the Terminal and the Code page.
+PORTAL_PASSWORD	account	main	-	The one password for the web app, Chat, Admin and Files; it also unlocks the Terminal and the Code page.
 PORTAL_PASSWORD_HASH	account	with	PORTAL_PASSWORD	-
 OPENWEBUI_ADMIN_EMAIL	account	main	-	Your account in Chat, and your sign-in name for Admin (LiteLLM).
 LITELLM_UI_USER	account	with	OPENWEBUI_ADMIN_EMAIL	-
-LITELLM_UI_PASSWORD	account	main	-	Admin's own password: the portal signs you in to the Admin tab with it.
+LITELLM_UI_PASSWORD	account	main	-	Admin's own password: the web app signs you in to the Admin tab with it.
 PORTAL_SESSION_DAYS	account	main	-	How long a sign-in lasts on each browser and device.
-PORTAL_HTTPS	account	main	-	Serves the portal at https:// with a certificate that can only vouch for this install's own addresses.
-+devices	account	main	-	Every browser, phone and installed app that signed in with the portal password.
+PORTAL_HTTPS	account	main	-	Serves the web app at https:// with a certificate that can only vouch for this install's own addresses.
++devices	account	main	-	Every browser, phone and installed app that signed in with the web app password.
 LITELLM_STORE_PROMPTS	account	main	-	Keep the text of every prompt and answer in the model gateway's logs (90 days, and in backups).
 
 @providers	Models & providers	Each key and sign-in here adds models to every picker: Chat's Who answers, the Code page, the terminal and devos-claude --model, with nothing else to set up. Keys stay on this computer; a provider without one sends nothing. Search: what Claude Code's WebSearch searches with, on every model.	README.md#models--providers
@@ -94,7 +94,7 @@ TERMINAL_ENABLED	code	main	-	The Terminal tab: a shell with Claude Code in a san
 TERMINAL_WORKSPACE	code	with	TERMINAL_ENABLED	-
 LOCALGIT	code	main	-	A git server on this computer (Forgejo): the sandbox pushes and pulls to it with no internet (on by default).
 LOCALGIT_ADMIN_PASSWORD	code	more	LOCALGIT	The built-in git server's owner password (user devos): setup made it; sign in at the server with it.
-LOCALGIT_READ_TOKEN	code	more	LOCALGIT	The read-only token the portal's Git search uses (made by ./stack up; only the portal has it).
+LOCALGIT_READ_TOKEN	code	more	LOCALGIT	The read-only token the web app's Git search uses (made by ./stack up; only the web app has it).
 LOCALGIT_INDEXER	code	more	LOCALGIT	Code search in the built-in git server (off by default): set true in .env, then ./stack up.
 LOCALGIT_SUBNET	code	more	LOCALGIT	The git server's small Docker network; change it if ./stack says it collides.
 TERMINAL_EGRESS	code	main	TERMINAL_ENABLED	The sandbox's internet: public addresses only (the default), with this computer's services too, or off.
@@ -116,11 +116,11 @@ GIT_GITHUB_APP_SLUG	code	with	GIT_GITHUB_CLIENT_ID	-
 GIT_GITLAB_CLIENT_ID	code	more	CODE_ENABLED	Sign in with GitLab (Git hosts): the gitlab.com application's ID (blank: none — yours, for gitlab.com).
 
 @files	Files & sharing	The file store behind the Files tab, and the shared file server Claude Code and Chat use.	README.md#shared-files-and-knowledge-mcp
-RUSTFS_ACCESS_KEY	files	main	-	The Files tab's sign-in (the portal signs you in with it); also the storage key of Chat and backups.
+RUSTFS_ACCESS_KEY	files	main	-	The Files tab's sign-in (the web app signs you in with it); also the storage key of Chat and backups.
 RUSTFS_SECRET_KEY	files	with	RUSTFS_ACCESS_KEY	-
 SHARED_MCP_TOKEN	files	main	-	The token of the shared file server (MCP) devos-claude and other MCP clients use.
 
-@remote	Remote access	The portal from your phone or laptop over Tailscale (or your own domain), without opening a port to the internet.	docs/remote.md
+@remote	Remote access	The web app from your phone or laptop over Tailscale (or your own domain), without opening a port to the internet.	docs/remote.md
 REMOTE_MODE	remote	main	-	Off, Tailscale or your own domain. Turned on in a terminal: it needs steps in your tailnet.
 TAILSCALE_ALLOWED_LOGIN	remote	main	REMOTE_MODE	The only Tailscale login whose requests are served.
 REMOTE_ADMIN_ACTIONS	remote	main	REMOTE_MODE	Let your devices use Update, Settings and Diagnostics too (off: they can look, not change).
@@ -146,29 +146,29 @@ BACKUP_KEEP	updates	main	BACKUP_NIGHTLY	How many nightly backups to keep. Yours,
 +services	updates	main	-	What version each core service runs, what this release pins, and the newest upstream.
 UPDATE_REQUIRE_SIGNED_TAGS	updates	more	-	Install only releases whose signature git verifies.
 DEVOS_ADE_HELPER_ALLOW_BRANCH	updates	more	-	Let the update helper update a checkout that follows a branch (a switch of the helper itself).
-HELPER_PORTAL_UID	updates	more	-	Linux: the host user that may own the portal's request files (a switch of the helper itself).
+HELPER_PORTAL_UID	updates	more	-	Linux: the host user that may own the web app's request files (a switch of the helper itself).
 
-@diagnostics	Diagnostics	Checks and restarts, carried out on this computer by the update helper. Each asks for the portal password.	README.md#troubleshooting
+@diagnostics	Diagnostics	Checks and restarts, carried out on this computer by the update helper. Each asks for the web app password.	README.md#troubleshooting
 +test	diagnostics	main	-	Every service end to end, like ./stack test: two tiny Bedrock requests (~$0.0001).
 +check-aws	diagnostics	main	-	Ask AWS who the key belongs to and whether it may call Bedrock (free: no model runs).
 +report	diagnostics	main	-	Versions, services and settings without secrets (your home folder shown as ~), to copy into an issue.
 +restart	diagnostics	main	-	Recreate one service with its current settings (10-30 s; requests in flight fail).
 
 @advanced	Advanced	Rarely needed, and read-only here: addresses, ports and internal keys, each with the reason and the command that changes it.	README.md#advanced
-PORTAL_HOST	advanced	main	-	The portal's address; it carries this page and its sign-in cookie.
-PORTAL_PORT	advanced	main	-	The port the portal is published on (80, else 8800).
-CHAT_HOST	advanced	main	-	Chat's address (blank: chat. and the portal's address).
-ADMIN_HOST	advanced	main	-	Admin's address (blank: admin. and the portal's address).
-FILES_HOST	advanced	main	-	Files' address (blank: files. and the portal's address).
-GIT_HOST	advanced	main	-	The git server's address (blank: git. and the portal's address).
-TERMINAL_HOST	advanced	main	-	The Terminal's address (blank: terminal. and the portal's address).
-CODE_HOST	advanced	main	-	The Code page's address (blank: code. and the portal's address).
+PORTAL_HOST	advanced	main	-	The web app's address; it carries this page and its sign-in cookie.
+PORTAL_PORT	advanced	main	-	The port the web app is published on (80, else 8800).
+CHAT_HOST	advanced	main	-	Chat's address (blank: chat. and the web app's address).
+ADMIN_HOST	advanced	main	-	Admin's address (blank: admin. and the web app's address).
+FILES_HOST	advanced	main	-	Files' address (blank: files. and the web app's address).
+GIT_HOST	advanced	main	-	The git server's address (blank: git. and the web app's address).
+TERMINAL_HOST	advanced	main	-	The Terminal's address (blank: terminal. and the web app's address).
+CODE_HOST	advanced	main	-	The Code page's address (blank: code. and the web app's address).
 LITELLM_PORT	advanced	main	-	The port of LiteLLM's API on this computer, for tools like devos-claude.
 SHARED_MCP_PORT	advanced	main	-	The port of the shared file server on this computer.
-DEVOS_ADE_ALLOW_PUBLIC_HOST	advanced	main	-	Allow a portal address that does not end in .localhost (a security switch).
+DEVOS_ADE_ALLOW_PUBLIC_HOST	advanced	main	-	Allow a web app address that does not end in .localhost (a security switch).
 COMPOSE_PROJECT_NAME	advanced	main	-	This checkout's Docker Compose project; changing it would orphan all data.
-PORTAL_SECRET	advanced	main	-	Signs portal sessions; a new one signs out every device.
-PORTAL_PROXY_SECRET	advanced	main	-	Proves to the portal that a request came through Caddy.
+PORTAL_SECRET	advanced	main	-	Signs web app sessions; a new one signs out every device.
+PORTAL_PROXY_SECRET	advanced	main	-	Proves to the web app that a request came through Caddy.
 LITELLM_MASTER_KEY	advanced	main	-	LiteLLM's admin key (./stack and Home's spend use it).
 LITELLM_SALT_KEY	advanced	main	-	Encrypts what LiteLLM stores; never changed after the first setup.
 POSTGRES_PASSWORD	advanced	main	-	The database password; Postgres keeps its own copy.
@@ -191,17 +191,17 @@ OWUI_STT_ENGINE	about	main	-	Chat's speech-to-text engine; follows the speech-to
 OWUI_STT_BASE_URL	about	main	-	Where Chat sends recordings.
 PORTAL_ORIGIN	about	main	-	The only page that may frame the apps.
 CHAT_ORIGIN	about	main	-	The origin Chat answers cross-origin requests from.
-LOCALGIT_SSO_HEADER	code	more	LOCALGIT	The secret name of the header the portal's sign-in to the git server uses (made by setup).
+LOCALGIT_SSO_HEADER	code	more	LOCALGIT	The secret name of the header the web app's sign-in to the git server uses (made by setup).
 LOCALGIT_MIRROR_EGRESS	about	main	-	Whether the built-in git server has a way out to a remote it mirrors to.
 LOCALGIT_MIRROR_HOSTS	about	main	-	The host names its mirrors reach.
 GIT_ORIGIN	about	main	-	Where the built-in git server's web UI is.
 PREVIEW_DOMAIN	about	main	-	The site the Code page's previews of dev servers are served from.
 TS_TAILNET	about	main	-	Your tailnet, read from the sidecar.
-REMOTE_HOST	about	main	-	The portal's remote address.
+REMOTE_HOST	about	main	-	The web app's remote address.
 REMOTE_CHAT_HOST	about	main	-	Chat's remote address.
 REMOTE_ADMIN_HOST	about	main	-	Admin's remote address.
 REMOTE_FILES_HOST	about	main	-	Files' remote address.
-REMOTE_ORIGIN	about	main	-	The remote portal's origin.
+REMOTE_ORIGIN	about	main	-	The remote web app's origin.
 REMOTE_TERMINAL_HOST	about	main	-	The Terminal's remote address.
 REMOTE_CODE_HOST	about	main	-	The Code page's remote address.
 REMOTE_PREVIEW_HOST	about	main	-	The remote address of previews.
@@ -209,7 +209,7 @@ REMOTE_PREVIEW_SITE	about	main	-	Whether previews have a site of their own.
 REMOTE_SIDECAR_IP	about	main	-	The sidecar's address on its network.
 LOCALGIT_CADDY_IP	about	main	-	Caddy's address on the git server's network.
 LITELLM_DB_ADMIN_READY	about	main	-	Setup created the Admin (LiteLLM) account.
-PORTAL_GID	about	main	-	Linux: the group the portal runs with.
+PORTAL_GID	about	main	-	Linux: the group the web app runs with.
 TERMINAL_UID	about	main	-	Your user id in the sandbox, so files in the workspace stay yours.
 TERMINAL_GID	about	main	-	Your group id in the sandbox.
 TERMINAL_PROXY_SECRET	about	main	-	Internal: proves to the Terminal that a request came through Caddy.

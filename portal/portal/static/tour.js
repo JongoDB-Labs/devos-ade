@@ -231,7 +231,7 @@
   // Where Claude Code also runs: the Code tab when it is on here, else the tab's own page (how to turn it on)
   function codeLine(use) {
     if (CODE.here) {
-      return use ? p("Or in the ", b("Code"), " tab: start a session and paste the same prompt. In its Manual mode (the picker next to Send) it shows each command and edit for your OK first; unlock it with the portal password.")
+      return use ? p("Or in the ", b("Code"), " tab: start a session and paste the same prompt. In its Manual mode (the picker next to Send) it shows each command and edit for your OK first; unlock it with the web app password.")
         : p("Or nothing to install: the ", b("Code"), " tab is Claude Code in the browser, with a chat, your workspace's files and permission prompts, in the browser terminal's sandbox.");
     }
     if (CODE.enabled) return note("The ", b("Code"), " tab is off for remote access (", code("REMOTE_TERMINAL=true"), " in ", code(".env"), " turns it on with the terminal).");
@@ -326,7 +326,7 @@
           [b("Chat"), " (Open WebUI): conversations, voice and your documents."],
           [b("Your own tools"), ": scripts and apps use the same models through one OpenAI- and Anthropic-compatible API."],
           [b("Admin"), " (keys, budgets, logs) and ", b("Files"), " (the store Claude Code and Chat share)."]]),
-        p("One sign-in, the portal's, opens all of them, and every answer shows what it cost."),
+        p("One sign-in, the web app's, opens all of them, and every answer shows what it cost."),
         note("Six parts; skip what you do not need (each part folds away). Trying everything costs a few cents. Commands here run in a terminal, in your DevOS ADE folder."),
       ],
     },
@@ -467,7 +467,7 @@
         const how = PHONE.matches ? "iPhone and iPad: Share → Add to Home Screen. Android: Chrome's ⋮ → Install app."
           : "Chrome: ⋮ → Cast, save and share → Install page as app. Edge: ⋯ → Apps → Install this site as an app. Safari on a Mac: File → Add to Dock.";
         return [
-          p(b("Desktop app"), ": the portal in its own window, with its own icon."),
+          p(b("Desktop app"), ": the web app in its own window, with its own icon."),
           open ? el("div", { class: "tour-actions" }, button("Open in the app", "open-app", () => open.click()))
             : install ? el("div", { class: "tour-actions" }, button("Install app", "install", () => install.click()))
               : note(app || how),
@@ -480,7 +480,7 @@
     "signin-portal": {
       title: "The portal: your one sign-in", badges: ["Sign-in: Done"], info: true,
       body: () => [
-        p("The portal password (", code("PORTAL_PASSWORD"), " in ", code(".env"), "; ", code("./stack password --show"),
+        p("The web app password (", code("PORTAL_PASSWORD"), " in ", code(".env"), "; ", code("./stack password --show"),
           " prints it) is the only one you type: Chat, Admin and Files sign you in with it, and the Terminal and the Code page (when they are on) ask for it once more to unlock, because they run commands. Change it in ", settings("Account & security", "PORTAL_PASSWORD"), "."),
         p("A sign-in lasts 30 days (", code("PORTAL_SESSION_DAYS"), ", also in Account & security). ", b("Sign out"),
           PHONE.matches ? " (under More)" : " at the bottom of the sidebar", " ends it everywhere, and Admin's and Files' with it."),
@@ -494,7 +494,7 @@
     "signin-admin": {
       title: "Admin (LiteLLM)", badges: ["Sign-in: Automatic"],
       body: () => [
-        p("Admin opens LiteLLM already signed in, on ", b("Virtual Keys"), ": the portal signs in for you."),
+        p("Admin opens LiteLLM already signed in, on ", b("Virtual Keys"), ": the web app signs in for you."),
         fallback("admin", "Username", "Copy username", "Copy password",
           ["For LiteLLM's API, or its own form (", b("Username"), ", ", b("Password"), ", ", b("Login"),
             ") if the automatic sign-in ever fails. A password changed inside LiteLLM is not known here: set it in ",
@@ -505,7 +505,7 @@
     "signin-files": {
       title: "Files (RustFS)", badges: ["Sign-in: Automatic"],
       body: () => [
-        p("Files opens RustFS's console already signed in, on the list of buckets: the portal signs in for you."),
+        p("Files opens RustFS's console already signed in, on the list of buckets: the web app signs in for you."),
         fallback("files", "Access key", "Copy access key", "Copy secret key",
           ["For S3 tools, or the console's own form (the access key under ", b("Account"), ", the secret key under ",
             b("Key"), ", ", b("Login"), ") if the automatic sign-in ever fails."]),
@@ -552,7 +552,7 @@
         list("ol", [
           ["On that computer, set ", code("REMOTE_TERMINAL=true"), " in ", code(".env"), ", then run ", code("./stack up"), " (it shares the browser terminal too)."],
           ["With Tailscale, approve its new Services (", code("…-terminal"), ", ", code("…-code"), "); ", code("./stack remote status"), " lists them."]]),
-        note("Or open the portal on that computer: its steps then show here."),
+        note("Or open the web app on that computer: its steps then show here."),
       ] : [
         p("Claude Code in the browser, like its desktop app: a chat beside your project's files, Git with your git hosts, previews of dev servers, Run & test — and every command and file change shown to you first."),
         list("ul", [
@@ -568,7 +568,7 @@
       waiting: "Not detected yet: send a prompt (its spend can take a minute to show).",
       body: () => [
         list("ol", [
-          [b("Open Code"), " and unlock it with the portal password (it stays unlocked for 12 hours in this browser)."],
+          [b("Open Code"), " and unlock it with the web app password (it stays unlocked for 12 hours in this browser)."],
           ["Type in the prompt box and press ", kbd("Enter"), ": the answer streams in, each command and file change as a card; ", b("Stop"), " (or ", kbd("Esc"), ") interrupts."],
           [b("New session"), " (+) starts another; the ", b("Projects"), " tab lists them by project, the open ones as ", b("Needs you"), ", ", b("Working"), " and ", b("Done"),
             ". A session keeps working when you close the tab, and Home's Continue row lists the ones that need you."]]),
@@ -703,7 +703,7 @@
       title: "The browser terminal", optional: true, when: () => TERM.here,
       body: () => [
         p("Claude Code in a sandbox that sees only your workspace folder: in the ", b("Terminal"), " tab, ", code("devos-claude"),
-          " starts by itself in its first window. It asks for the portal password again."),
+          " starts by itself in its first window. It asks for the web app password again."),
         list("ul", [
           ["Closing the tab keeps it running: come back later, or from your phone, and it is where you left it."],
           [code("Ctrl-b c"), " opens a shell beside it; ", code("Ctrl-b n"), " goes to the next window."],
@@ -780,7 +780,7 @@
           snippet("anthropic", "Python: anthropic", ex.anthropic),
           note("Put the key in place of YOUR_KEY (or ", code("OPENAI_API_KEY"), " / ", code("ANTHROPIC_API_KEY"), " with ", code("OPENAI_BASE_URL"), " / ",
             code("ANTHROPIC_BASE_URL"), "). LiteLLM's port listens on ", code("127.0.0.1"), " only: tools on other devices cannot reach it. Over remote access LiteLLM is the ",
-            b("Admin"), " site, behind your portal sign-in — not an endpoint for tools (", doc("the-models-from-your-own-code", "more"), ")."),
+            b("Admin"), " site, behind your web app sign-in — not an endpoint for tools (", doc("the-models-from-your-own-code", "more"), ")."),
         ];
       },
       actions: () => [openApp("admin"), showOnHome("models", "Show models")],
@@ -846,7 +846,7 @@
         list("ul", [
           [b("Activity"), PHONE.matches ? " (More → Activity)" : " (the bell at the top of the sidebar)",
             ": budget alerts, an update, Code sessions that need you, jobs, and each use Claude's git made of a host. Mark as read, or ✕."],
-          [b("Search"), " (", kbd("Ctrl/⌘+K"), " with the focus in the portal, or the box at the top of the sidebar): pages, settings by name or key, Code sessions and workspace files, Chat conversations, these steps and the docs."],
+          [b("Search"), " (", kbd("Ctrl/⌘+K"), " with the focus in the web app, or the box at the top of the sidebar): pages, settings by name or key, Code sessions and workspace files, Chat conversations, these steps and the docs."],
           ["Browser notifications are off until you turn them on in Activity's panel; they never show a prompt or a title."]]),
       ],
       actions: () => [openPanel("activity"), openPanel("search")],
@@ -882,7 +882,7 @@
       title: "From your phone", optional: true, live: true,
       detect: (d) => (d.remote && d.remote.on ? { ok: true, text: `Remote access is on (${d.remote.mode === "domain" ? "your own domain" : "Tailscale"})` } : null),
       body: () => [
-        p("Remote access serves the portal over HTTPS to your own devices, through Tailscale, with no port opened to the internet:"),
+        p("Remote access serves the web app over HTTPS to your own devices, through Tailscale, with no port opened to the internet:"),
         cmd("./stack remote enable tailscale"),
         list("ul", [
           ["On the phone: Safari's Share › ", b("Add to Home Screen"), " (Android: Chrome's ⋮ › Install app). Home opens first, with Chat and Code beside it in the tab bar; the rest is under ", b("More"), "."],

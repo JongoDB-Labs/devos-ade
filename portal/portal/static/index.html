@@ -63,7 +63,7 @@
   <button type="button" class="nav-toggle" id="nav-toggle" aria-label="Sidebar" aria-controls="sidebar" aria-expanded="true" hidden>
     <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="4" width="14" height="12" rx="2"/><path d="M8 4v12"/><path class="nav-chev" d="m13.5 8-2 2 2 2"/></svg></button>
   <div class="side-tools">
-    <button type="button" class="side-search" id="search-btn" aria-haspopup="dialog" aria-controls="search" aria-expanded="false" title="Search the portal" hidden>
+    <button type="button" class="side-search" id="search-btn" aria-haspopup="dialog" aria-controls="search" aria-expanded="false" title="Search the web app" hidden>
       <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5"/><path d="m12.3 12.3 4.2 4.2"/></svg><span class="side-search-text">Search</span><kbd class="side-kbd" id="search-kbd">Ctrl K</kbd></button>
     <button type="button" class="bell-btn" id="activity-btn" aria-controls="activity" aria-expanded="false" aria-label="Activity" title="Activity" hidden>
       <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3.2a4.6 4.6 0 0 0-4.6 4.6v3.1L3.8 13.6h12.4l-1.6-2.7V7.8A4.6 4.6 0 0 0 10 3.2zM8.2 15.6a1.9 1.9 0 0 0 3.6 0"/></svg><span class="bell-count" id="activity-count" hidden></span></button>
@@ -275,7 +275,7 @@
 
       <section class="logins" data-widget="logins" aria-labelledby="logins-title">
         <h2 id="logins-title">Admin and Files sign you in automatically</h2>
-        <p class="note">Opening Admin or Files signs you in to LiteLLM and RustFS with your portal session: no second password. Sign out ends it.</p>
+        <p class="note">Opening Admin or Files signs you in to LiteLLM and RustFS with your web app session: no second password. Sign out ends it.</p>
         <details class="logins-more" id="logins-more">
           <summary>Credentials (for the API or if automatic sign-in fails)</summary>
           <dl id="logins" class="logins-list">
@@ -292,7 +292,7 @@
           <div id="helper-off" class="helper-off" hidden>
             <p class="helper-off-title" id="helper-off-title">One-click updates are off</p>
             <p class="cmdline"><code id="helper-cmd">./stack helper install</code> <button type="button" class="copy" id="copy-helper">Copy</button></p>
-            <p class="note" id="helper-off-why">The portal cannot install software on your computer (by design), so this one step runs in a terminal, in your DevOS ADE folder; then Update, Roll back, Clean up and automatic updates work from Home.</p>
+            <p class="note" id="helper-off-why">The web app cannot install software on your computer (by design), so this one step runs in a terminal, in your DevOS ADE folder; then Update, Roll back, Clean up and automatic updates work from Home.</p>
           </div>
         </div>
         <p class="note" id="maint-state"></p>
@@ -308,7 +308,7 @@
           <button type="button" class="action" data-action="clean" id="clean-now">Clean up old images</button>
           <button type="button" class="action" data-action="rollback" id="rollback-now" hidden>Roll back</button>
         </p>
-        <p class="note" id="maint-note">Each action asks for the portal password and is carried out on this computer by the update helper (<code>./stack helper status</code>).</p>
+        <p class="note" id="maint-note">Each action asks for the web app password and is carried out on this computer by the update helper (<code>./stack helper status</code>).</p>
       </section>
 
       <section class="claude" data-widget="claude" aria-labelledby="claude-title">
@@ -329,7 +329,7 @@
     <form id="confirm-form" method="dialog">
       <h2 id="confirm-title">Confirm</h2>
       <p id="confirm-text"></p>
-      <label for="confirm-password">Portal password</label>
+      <label for="confirm-password">Web app password</label>
       <input id="confirm-password" type="password" autocomplete="current-password" required>
       <p id="confirm-error" class="error" role="alert" hidden></p>
       <p class="confirm-buttons"><button type="button" class="quiet" id="confirm-cancel">Cancel</button>
@@ -360,7 +360,7 @@
   <dialog id="search" class="search-dlg" aria-label="Search">
     <div class="search-box">
       <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5"/><path d="m12.3 12.3 4.2 4.2"/></svg>
-      <input id="search-input" type="text" role="combobox" aria-expanded="true" aria-controls="search-list" aria-autocomplete="list" aria-label="Search the portal"
+      <input id="search-input" type="text" role="combobox" aria-expanded="true" aria-controls="search-list" aria-autocomplete="list" aria-label="Search the web app"
         autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="64" placeholder="Settings, sessions, files, chats, Git, docs…">
       <button type="button" class="search-close" id="search-close" aria-label="Close search"><kbd>Esc</kbd></button>
     </div>

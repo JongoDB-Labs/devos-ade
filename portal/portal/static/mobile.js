@@ -193,7 +193,7 @@
     // From an iPhone/iPad Home Screen app, Admin and Files open in Safari, which has its own cookies.
     if (isIOS() && navigator.standalone) {
       const n = $("#more-newtab-note");
-      if (n) n.textContent += " From this Home Screen app they open in Safari, which asks for the portal password once.";
+      if (n) n.textContent += " From this Home Screen app they open in Safari, which asks for the web app password once.";
     }
     sheet(); healthLine(); statusFilter(); fit();
     // Item menu on the nav (ctxmenu.js, JON-821): Open, and for an app its own window and its link. No ⋯ on a tab (it would

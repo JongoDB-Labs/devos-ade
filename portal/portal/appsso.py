@@ -435,7 +435,7 @@ async def litellm_session(http: httpx.AsyncClient, s: Settings, clock=time.time)
     except httpx.HTTPError as e:
         raise SignInError(f"LiteLLM did not answer ({type(e).__name__}). ./stack status shows whether it runs.") from None
     if r.status_code in (400, 401, 403):
-        raise SignInError("LiteLLM refused the Admin sign-in the portal has (LITELLM_UI_USER / LITELLM_UI_PASSWORD). If you "
+        raise SignInError("LiteLLM refused the Admin sign-in the web app has (LITELLM_UI_USER / LITELLM_UI_PASSWORD). If you "
                           "changed the password inside LiteLLM, set it in Settings → Account & security; until then, "
                           "sign in with the password you chose.", 502)
     if r.status_code == 429:
@@ -449,7 +449,7 @@ async def litellm_session(http: httpx.AsyncClient, s: Settings, clock=time.time)
     claims = _jwt_claims(token) if isinstance(token, str) and _JWT.fullmatch(token) else {}
     exp, key = claims.get("exp"), claims.get("key")
     if not isinstance(exp, (int, float)) or exp <= clock() + 60 or not isinstance(key, str) or not key:
-        raise SignInError("LiteLLM's sign-in answered without a usable session (a LiteLLM version this portal does not know?).")
+        raise SignInError("LiteLLM's sign-in answered without a usable session (a LiteLLM version this web app does not know?).")
     return token, float(exp), key
 
 
@@ -502,7 +502,7 @@ async def rustfs_session(http: httpx.AsyncClient, s: Settings, clock=time.time) 
     vals = _xml_values(r.text[:65536])
     if r.status_code in (400, 401, 403):
         code = vals.get("Code", "")
-        raise SignInError("RustFS refused the key pair the portal has (RUSTFS_ACCESS_KEY / RUSTFS_SECRET_KEY)"
+        raise SignInError("RustFS refused the key pair the web app has (RUSTFS_ACCESS_KEY / RUSTFS_SECRET_KEY)"
                           + (f": {code}" if re.fullmatch(r"[A-Za-z]{1,64}", code) else "") + ".", 502)
     if r.status_code != 200:
         raise SignInError(f"RustFS's sign-in answered HTTP {r.status_code}.")
@@ -512,7 +512,7 @@ async def rustfs_session(http: httpx.AsyncClient, s: Settings, clock=time.time) 
     except ValueError:
         exp = 0.0
     if not all(_STS_VALUE.fullmatch(creds[k]) for k in ("AccessKeyId", "SecretAccessKey", "SessionToken")) or exp <= clock() + 60:
-        raise SignInError("RustFS's sign-in answered without usable credentials (a RustFS version this portal does not know?).")
+        raise SignInError("RustFS's sign-in answered without usable credentials (a RustFS version this web app does not know?).")
     return creds, exp
 
 
@@ -555,7 +555,7 @@ def files_page(portal: str, creds: dict | None, nxt: str, manual: str, want: str
     extra = (f'<script type="application/json" id="bn-sso">{data}</script>\n<script>{FILES_SCRIPT}</script>\n'
              f'<noscript><p class="hint">Files needs JavaScript. <a href="{html.escape(manual, quote=True)}">'
              "Sign in with the key pair instead</a>.</p></noscript>")
-    return _page(portal, "Opening Files…", "Signing you in to RustFS with your portal session.", extra,
+    return _page(portal, "Opening Files…", "Signing you in to RustFS with your web app session.", extra,
                  script=f"'{FILES_SCRIPT_HASH}'")
 
 
@@ -567,4 +567,4 @@ def error_page(portal: str, app: str, message: str, manual: str, status: int) ->
              f'<p class="hint">Home shows the {"user and password" if app == "admin" else "access key and secret key"} under '
              "Admin and Files sign you in automatically → Credentials.</p>")
     return _page(portal, f"{NAME[app].split(' ')[0]}: automatic sign-in did not work",
-                 f"The portal could not sign you in to {html.escape(NAME[app])} by itself.", extra, status)
+                 f"The web app could not sign you in to {html.escape(NAME[app])} by itself.", extra, status)

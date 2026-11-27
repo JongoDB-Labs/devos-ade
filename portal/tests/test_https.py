@@ -105,7 +105,7 @@ def test_home_offers_https_once_to_an_install_that_never_chose(settings, tmp_pat
     s = replace(settings, status_dir=tmp_path, port=8800, https_raw="")
     (offer,) = [x for x in activity.items(s, False) if x["kind"] == "https"]
     assert offer["id"] == "https-offer" and offer["data"] == {"offer": True} and offer["notify"] is False
-    assert offer["title"] == "Serve the portal over HTTPS" and offer["link"] == "#settings/PORTAL_HTTPS"
+    assert offer["title"] == "Serve the web app over HTTPS" and offer["link"] == "#settings/PORTAL_HTTPS"
     assert "https://devos-ade.localhost:8800" in offer["text"]
     # declined (false) or on (true): not offered again
     assert not [x for x in activity.items(replace(s, https_raw="false"), False) if x["kind"] == "https"]
@@ -117,7 +117,7 @@ def test_the_switch_is_announced_once_and_for_two_weeks(settings, tmp_path):
     s = replace(settings, status_dir=tmp_path, port=8800, https_raw="true")
     (tmp_path / "https-switched.json").write_text(json.dumps({"at": now - 60, "https": True}))
     (it,) = [x for x in activity.items(s, False) if x["kind"] == "https"]
-    assert it["id"] == f"https-switched:{now - 60}" and it["title"] == "The portal's address changed"
+    assert it["id"] == f"https-switched:{now - 60}" and it["title"] == "The web app's address changed"
     assert "https://devos-ade.localhost:8800/" in it["text"] and "sign in again" in it["text"].lower()
     assert "install it again from the new one" in it["text"]
     # ... after two weeks, or when the record is about the other direction, or odd, it is gone
@@ -141,6 +141,6 @@ def test_the_settings_row_and_its_apply_step_exist():
     repo = Path(os.environ.get("BN_REPO_DIR") or Path(__file__).resolve().parents[2])
     rows = {l.split("\t")[0]: l.split("\t") for l in (repo / "catalog" / "settings.tsv").read_text().splitlines() if l and not l.startswith("#")}
     k = rows["PORTAL_HTTPS"]
-    assert k[1] == "account" and k[3] == "edit" and k[4] == "bool" and k[5] == "https" and k[6] == "Serve the portal over HTTPS"
+    assert k[1] == "account" and k[3] == "edit" and k[4] == "bool" and k[5] == "https" and k[6] == "Serve the web app over HTTPS"
     lay = [l for l in (repo / "catalog" / "settings-layout.tsv").read_text().splitlines() if l.startswith("PORTAL_HTTPS\t")]
     assert len(lay) == 1 and lay[0].split("\t")[1:4] == ["account", "main", "-"]

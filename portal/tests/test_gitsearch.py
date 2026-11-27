@@ -131,8 +131,8 @@ def test_results_are_capped_per_group(settings):
 @pytest.mark.parametrize("make,words", [
     (lambda req: (_ for _ in ()).throw(httpx.ConnectError("refused " + TOKEN)), "did not answer (ConnectError)"),
     (lambda req: (_ for _ in ()).throw(httpx.ReadTimeout("slow " + TOKEN)), "did not answer (ReadTimeout)"),
-    (lambda req: httpx.Response(401, text=TOKEN), "refused the portal's search token (HTTP 401)"),
-    (lambda req: httpx.Response(403, text="forbidden " + TOKEN), "refused the portal's search token (HTTP 403)"),
+    (lambda req: httpx.Response(401, text=TOKEN), "refused the web app's search token (HTTP 401)"),
+    (lambda req: httpx.Response(403, text="forbidden " + TOKEN), "refused the web app's search token (HTTP 403)"),
     (lambda req: httpx.Response(500, text="boom " + TOKEN), "answered HTTP 500"),
     (lambda req: httpx.Response(302, headers={"location": "http://evil.example/"}), "answered HTTP 302"),
     (lambda req: httpx.Response(200, text="<html>" + TOKEN), "not JSON"),
