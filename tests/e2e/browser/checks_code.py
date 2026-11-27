@@ -2962,6 +2962,7 @@ def ui_sessions_bulk(ctx):
             see(row(sid)).to_have_count(0, timeout=30000)
         page.reload()
         see(page.get_by_test_id("conn")).to_have_text("Connected", timeout=30000)
+        c = Code.on(page, rec, goto=False)   # (a reload drops the check's client from the page: listed() reads through it)
         expect(not any(sid in listed() for sid in sids[:2]), "a deleted session is still listed after a reload")
         expect(sids[2] in listed(), "the session that was not selected is gone")
         csp_clean(page, rec)
