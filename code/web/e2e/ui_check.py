@@ -86,6 +86,7 @@ class Page:
         # a small device, with the previews' smaller caps
         self.ctx.add_init_script(f"Object.defineProperty(Navigator.prototype, 'deviceMemory', {{ get: () => {int(memory)}, configurable: true }});")
         self.page = self.ctx.new_page()
+        OPEN_PAGES.append(self)
         self.errors, self.dialogs, self.requests = [], [], []
         self.page.on("pageerror", lambda e: self.errors.append(str(e)))
         # (the artifact viewer's policy names webrtc 'block', which Chromium 140 does not know and says so: expected)
@@ -115,6 +116,8 @@ class Page:
         assert not self.dialogs, f"dialogs: {self.dialogs}"
 
     def close(self):
+        if self in OPEN_PAGES:
+            OPEN_PAGES.remove(self)
         self.ctx.close()
 
 
@@ -128,12 +131,27 @@ def wait_turns(page, n, timeout=30_000):
     expect(page.get_by_test_id("turn-end")).to_have_count(n, timeout=timeout)
 
 
+OPEN_PAGES = []   # the pages a check has open now (a failing check keeps a screenshot of each: JON-1431)
+
+
+def keep_failure_shots(name):
+    """A failed check leaves fail-<check>-<page>.png of every page it still had open (what the page showed when it gave up)."""
+    slug = re.sub(r"[^a-z0-9]+", "-", name.split(":")[0].lower()).strip("-")[:40] or "check"
+    for i, p in enumerate(list(OPEN_PAGES)):
+        try:
+            pn = re.sub(r"[^a-z0-9]+", "-", p.name.lower())
+            p.page.screenshot(path=f"{OUT}/fail-{slug}-{pn}-{i}.png", timeout=5_000)
+        except Exception as e:   # (a closed or hung page: the failure itself is already said)
+            print(f"  (no failure screenshot of {p.name}: {type(e).__name__})", flush=True)
+
+
 def check(name):
     def deco(fn):
         def run(browser):
             if ONLY and not any(o and o in name for o in ONLY.split("|")):
                 return
             t0 = time.time()
+            del OPEN_PAGES[:]
             try:
                 fn(browser)
                 results.append(("PASS", name, time.time() - t0, ""))
@@ -143,6 +161,9 @@ def check(name):
                 results.append(("FAIL", name, time.time() - t0, msg))
                 print(f"FAIL  {name}: {msg}", flush=True)
                 traceback.print_exc()
+                keep_failure_shots(name)
+            finally:
+                del OPEN_PAGES[:]
         run.__name__ = name
         CHECKS.append(run)
         return run
