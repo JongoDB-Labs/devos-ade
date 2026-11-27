@@ -1321,7 +1321,7 @@ export async function boot(): Promise<void> {
   void loadDir(projectRoot());
   // Git hosts' recent uses (for Activity: Claude's own git getting a credential is said there), and a link from
   // Settings › Claude Code › Git hosts (?git=hosts) or one that clones (?git=clone)
-  void api.getGitHosts().then((h) => { setGit((g) => ({ ...g, hosts: h, events: h.events })); announce(); }, () => {});
+  void loadGitHosts(true);
   if (link.git) {
     showGit();
     openGitDialog(link.git);
@@ -4084,13 +4084,20 @@ export function openGitDialog(dialog: GitState['dialog']): void {
   setGit((g) => ({ ...g, dialog }));
   if (dialog === 'hosts') void loadGitHosts();
 }
-export async function loadGitHosts(): Promise<void> {
+let hostsAsked = 0;   // the Git hosts' views asked for, in order: only the newest asked for is kept (see loadGitHosts)
+/** The Git hosts' view, again. Answers can arrive out of order (a slow network, a busy computer): one asked for before
+ *  a newer one, arriving after it, is dropped — it would put back what the newer one replaced (the app for Sign in set
+ *  up a moment ago, a host just added) and the form would take it for a change. quiet: the page's first look, which
+ *  says nothing when it fails (the dialog asks again). */
+export async function loadGitHosts(quiet = false): Promise<void> {
+  const mine = ++hostsAsked;
   try {
     const hosts = await api.getGitHosts();
+    if (mine !== hostsAsked) return;
     setGit((g) => ({ ...g, hosts, events: hosts.events }));
     announce();   // (the portal: its Activity's Git hosts uses, the walkthrough's count of hosts)
   } catch (e) {
-    failed(e, 'Git hosts');
+    if (!quiet) failed(e, 'Git hosts');
   }
 }
 /** A Git hosts change (add a host, a token, a key, Claude's use …): the list again, and what went wrong said. */
