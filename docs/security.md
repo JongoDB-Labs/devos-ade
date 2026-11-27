@@ -3908,12 +3908,16 @@ never reads, copies, keeps, passes on or relays a login.**
   hide a process, and can read those screens itself.
 - [x] **No login behind an API: the vendors' own interfaces for other apps.** Your plans answer in Chat and on the Code
   page only through the interface each vendor ships for other apps — the Claude Agent SDK (the same, unmodified Claude
-  Code), Codex's app server (`codex app-server`), the ACP mode of Copilot CLI, Cursor CLI and Grok Build — run in the
+  Code), Codex's app server (`codex app-server`), the ACP mode of Copilot CLI, Cursor CLI, Grok Build and Gemini CLI (the Code page only) — run in the
   sandbox by bn-coded's `agent` op (fixed argument lists through the launchers, none that approves anything by itself:
   no `--yolo`, `--always-approve`, `--allow-all-tools`, `--force`; the stack's variables out), the app itself making
   every request with its own login there. Nothing on this side reads, refreshes or passes on a login: Codex's request
   to refresh its tokens is refused, ACP's `authenticate` is called only to name a login the tool already has (Cursor's,
-  Grok's default), never one that would start a sign-in. LiteLLM never sees these requests (no key of it is used, no
+  Grok's default), never one that would start a sign-in. Gemini CLI is the exception that proves it: `authenticate` is
+  **never** sent to it (it names no default, and its `session/new` signs in by itself with the sign-in the Terminal's
+  Gemini CLI holds in `~/.gemini`: an organisation's Code Assist login or an API key it keeps itself); a session it
+  refuses ("Authentication required.", "Gemini API key is missing or not configured.") is "not signed in", with where to
+  sign in. LiteLLM never sees these requests (no key of it is used, no
   dollar is counted).
 - [x] **Chat: a separate connection, Open WebUI's alone.** Open WebUI reaches the code container's
   OpenAI-compatible endpoint (`:8096`) through the main Caddy's internal site (`caddy:8098`, unpublished, those two
@@ -4130,13 +4134,17 @@ never reads, copies, keeps, passes on or relays a login.**
   an allowlist per tool, by the ids the pinned version reports — Cursor's `agent`, `plan`, `ask`; Copilot's
   protocol `#agent` and `#plan` (its `#autopilot` turns allow-all on); Grok's `default`, `ask`, `plan` (its
   `acceptEdits` writes without asking; Grok's ACP ids are not confirmed without a sign-in, so another id ends the
-  session) — whether it gives its mode as a mode or as a config option of the mode category, and only while every
+  session); Gemini CLI 0.65.0's `default` and `plan` (its `autoEdit` writes without asking, which this side's Accept edits
+  does per path, and `yolo` never) — whether it gives its mode as a mode or as a config option of the mode category, and only while every
   other config option but its model's, its model's parameters' and its thinking level's (an allowlist: an "Auto-run"
   switch, or one a later version adds, whatever its name, counts) says default or ask. One that starts elsewhere (an
   approve-everything mode, a mode added later, none reported — a session taken up again too: its report is taken once
   its past is replayed) is moved to an allowed one, taken only once the agent reports it (a `current_mode_update`, or
   a config option's answer); one it cannot leave, or one it switches itself to (`current_mode_update`,
-  `config_option_update`), ends its session: no turn runs outside the list. Codex runs with its own sandbox off (the container is the boundary) and its "untrusted" approvals. The watchlist checks the files that run on your computer
+  `config_option_update`), ends its session: no turn runs outside the list. Gemini CLI never sends a
+  `current_mode_update` (it applies `session/set_mode` before it answers and throws for an id it does not know), so for
+  it alone a successful answer counts as the report (a fixed list of tools, `MODE_BY_ANSWER`); every other tool must
+  report the mode. Codex runs with its own sandbox off (the container is the boundary) and its "untrusted" approvals. The watchlist checks the files that run on your computer
   after each turn, with Revert. Its tool cards, its text and its history (kept by the code container: `agents/` in its
   volume, at most 2 MiB a session, 300 sessions) are the sandbox's words, shown as data.
 - [ ] **Accept edits checks, then the agent writes.** `paths.plain` answers for the paths as they are when it looks;
@@ -4144,6 +4152,19 @@ never reads, copies, keeps, passes on or relays a login.**
   it (the sandbox can change its own files at any moment anyway). The watchlist checks the files that run on your
   computer after each turn, with Revert. A `.envrc` deeper in the folder that is a link is left to direnv's own
   `allow` (it asks again whenever the file's content changes), and a deeper `*.code-workspace` is one you open by hand.
+- [x] **Gemini CLI on the Code page: its own sign-in, started by us only with fixed settings.** bn-coded runs `gemini
+  --acp --approval-mode default` (not in Chat yet: JON-1424) with two variables set from its side and never from a project:
+  `GEMINI_CLI_SYSTEM_SETTINGS_PATH=/etc/gemini-cli/code-settings.json` (the image's file: auto-update off,
+  `security.disableYoloMode`, `advanced.ignoreLocalEnv`; system settings outrank yours and the project's) and
+  `GEMINI_CLI_TRUST_WORKSPACE`, which Gemini CLI takes as its folder trust outright — `true` only when the code
+  container says this project's own agent settings are trusted (the decision above), `false` otherwise, so an untrusted
+  folder's `.gemini/settings.json` is ignored and only four sanitized keys are read from its `.env`; with
+  `ignoreLocalEnv` no project `.env` is read at all. Gemini also reads the project's `GEMINI.md` as instructions;
+  `.gemini/` is in the agent-settings trust hash (`.gemini/settings.json`, hooks and MCP servers included), so a change
+  there asks again. A stale or revoked sign-in makes Gemini CLI take the screen for its own sign-in (escape codes on
+  stdout, then a wait for a code on stdin): a raw ESC byte can never be part of JSON-RPC, so the first one stops the
+  process (killed) and ends the pending request as "not signed in", asking you to sign in again in the Terminal —
+  never a wait for the 120 s timeout, and never a code typed from this side.
 - [ ] **Approvals a tool saved in its own home settings skip the card.** Cursor's `~/.cursor/cli-config.json` allow
   list, Copilot's saved approvals and Grok's settings in the sandbox's home are the tools' own: what they allow runs
   without asking you, in any mode that asks. They are in the sandbox's home, which anything in the sandbox can write

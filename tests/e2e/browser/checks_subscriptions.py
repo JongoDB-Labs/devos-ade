@@ -186,7 +186,7 @@ def chat_embed(ctx):
     expect(all(vals.get(f"tool:{t}") is False for t in TOOLS), f"the tools are not all offered: {opts}")
     # as Chat models: each the catalog offers as one — one not signed in for Chat (its own sign-in, apart from the
     # terminal's) as "Sign in for Chat…", Claude greyed (its switch off), Copilot, which cannot say, listed; Cursor (no
-    # switch that turns its tools off) and Gemini CLI (planned through your own key) not Chat models
+    # switch that turns its tools off) and Gemini CLI (not yet: JON-1424) not Chat models
     for t in ("codex", "grok"):
         expect(vals.get(f"signin:{t}") is False, f"{t}: no 'Sign in for Chat…' entry: {opts}")
     # (greyed out: a choice that goes where it is turned on — catalog/setup-links.tsv)
@@ -304,7 +304,8 @@ def code_harness(ctx):
     r = c.api("GET", "/api/harnesses?fresh=1")
     expect(r["status"] == 200, f"/api/harnesses: {r}")
     hs = {h["id"]: h for h in r["json"]["harnesses"]}
-    expect(list(hs) == ["claude", "codex", "copilot", "cursor", "grok"], f"harnesses {list(hs)}")
+    expect(list(hs) == ["claude", "codex", "gemini", "copilot", "cursor", "grok"], f"harnesses {list(hs)}")
+    expect(hs["gemini"]["signed"] == "no", f"Gemini CLI: {hs['gemini']}")
     expect(hs["codex"]["signed"] == "no" and hs["copilot"]["signed"] == "unknown" and hs["claude"]["allowed"] is False, f"{hs}")
     r = c.api("POST", "/api/sessions", {"harness": "claude", "mode": "default"})
     expect(r["status"] == 409 and "Claude on your plan is off" in json.dumps(r["json"]), f"Claude on your plan: {r}")
@@ -315,6 +316,16 @@ def code_harness(ctx):
     st = c.wait(lambda m: m.get("type") == "session_state" and m.get("session") == sid and m.get("state") == "ended", "the Copilot session's end", 120)
     expect("GitHub Copilot is not signed in in the sandbox" in (st.get("error") or ""), f"its state: {st}")
     expect(st.get("harness") == "copilot", f"its harness: {st}")
+    # Gemini CLI (the real pinned binary: gemini --acp --approval-mode default, with the Code page's system settings): no
+    # sign-in here, so its session/new fails — not signed in, quickly (never a wait for a code on its stdin)
+    t0 = time.time()
+    r = c.api("POST", "/api/sessions", {"harness": "gemini", "mode": "default"})
+    expect(r["status"] == 200, f"a Gemini CLI session: {r}")
+    gid = r["json"]["id"]
+    c.send({"type": "attach", "session": gid, "since": 0})
+    st = c.wait(lambda m: m.get("type") == "session_state" and m.get("session") == gid and m.get("state") == "ended", "the Gemini CLI session's end", 90)
+    expect("Gemini CLI is not signed in in the sandbox" in (st.get("error") or ""), f"its state: {st}")
+    expect(st.get("harness") == "gemini" and time.time() - t0 < 60, f"its state: {st} after {time.time() - t0:.0f} s")
     # the picker: Who answers, each subscription with whether it can start
     page, rec = ui_page(ctx, "subscriptions-code-picker")
     page.get_by_test_id("model-picker").click()
@@ -328,7 +339,7 @@ def code_harness(ctx):
     see(page.get_by_test_id("harness-claude")).to_contain_text("Off: Settings › Models & providers › Claude Code › Use my Claude plan")
     shot(page, "s5-code-who-answers")
     page.keyboard.press("Escape")
-    return "Who answers: five subscriptions listed (none signed in); Copilot's real ACP agent started and ended at \"not signed in\"; Claude on your plan off (409)"
+    return "Who answers: six subscriptions listed (none signed in); Copilot's and Gemini CLI's real ACP agents started and ended at \"not signed in\" (Gemini CLI within a minute); Claude on your plan off (409)"
 
 
 # --- the terminal's way out the direct one (TERMINAL_EGRESS=host: tests/e2e/run.sh --host-egress, its own throwaway

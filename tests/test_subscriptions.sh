@@ -319,6 +319,11 @@ umask 0077"
   assert_contains "$out" "or its download failed when the image was built: $b/SKIPPED"
   # the Gemini CLI's system settings (they outrank the user's) only turn its auto-update off
   assert_eq "$(tr -d ' \n' < "$STACK_DIR/terminal/tools/gemini-settings.json")" '{"general":{"enableAutoUpdate":false,"enableAutoUpdateNotification":false}}'
+  # the Code page's Gemini CLI sessions get a second file (GEMINI_CLI_SYSTEM_SETTINGS_PATH, set by bn-coded): the same, and
+  # no YOLO mode, no project .env files — installed by the Dockerfile next to the first
+  assert_eq "$(tr -d ' \n' < "$STACK_DIR/terminal/tools/gemini-code-settings.json")" '{"general":{"enableAutoUpdate":false,"enableAutoUpdateNotification":false},"security":{"disableYoloMode":true},"advanced":{"ignoreLocalEnv":true}}'
+  assert_contains "$(cat "$STACK_DIR/terminal/Dockerfile")" 'COPY tools/gemini-code-settings.json /etc/gemini-cli/code-settings.json'
+  assert_contains "$(cat "$STACK_DIR/terminal/bin/bn-coded.mjs")" "GEMINI_CODE_SETTINGS = '/etc/gemini-cli/code-settings.json'"
 }
 
 test_bn_session_takes_only_its_words() {
@@ -574,12 +579,13 @@ test_one_list_of_tools_everywhere() {
   # bn-session's words and the portal's (answers.TERMINAL_TOOLS): the same
   assert_contains "$(cat "$STACK_DIR/terminal/bin/bn-session")" '  claude | codex | gemini | copilot | cursor | grok) ;;'
   assert_contains "$(cat "$STACK_DIR/portal/portal/answers.py")" 'TERMINAL_TOOLS = ("bedrock", "claude", "codex", "gemini", "copilot", "cursor", "grok", "shell")'
-  # the Code page's and Chat's (code/server/agents/tools.mjs): the catalog's tools but Gemini (Google's plans stopped working in
-  # its CLI; follow-up), Chat's the catalog's chat_model column — each with the models its tool offers (plan-<tool>--<model>)
+  # the Code page's and Chat's (code/server/agents/tools.mjs): the catalog's tools, all of them (Gemini CLI is a Code harness
+  # on its own sign-in, JON-981), Chat's the catalog's chat_model column — Gemini not yet (JON-1424) — each with the models
+  # its tool offers (plan-<tool>--<model>)
   local code_ids chat_ids
   code_ids="$(cd "$STACK_DIR/code" && node --input-type=module -e "import { HARNESSES } from './server/agents/tools.mjs'; console.log(Object.keys(HARNESSES).join(' '))")"
   chat_ids="$(cd "$STACK_DIR/code" && node --input-type=module -e "import { HARNESSES } from './server/agents/tools.mjs'; console.log(Object.values(HARNESSES).filter((h) => !h.noChat).map((h) => h.id).join(' '))")"
-  assert_eq "$code_ids" "$(printf '%s' "$cat_ids" | tr ' ' '\n' | grep -vx gemini | tr '\n' ' ' | sed 's/ $//')"
+  assert_eq "$code_ids" "$(printf '%s' "$cat_ids" | sed 's/ $//')"
   assert_eq "$chat_ids" "$(awk -F'\t' '!/^#/ && $1 != "id" && $7 == "yes" { print $1 }' "$STACK_DIR/catalog/ai-tools.tsv" | tr '\n' ' ' | sed 's/ $//')"
   assert_eq "$(cd "$STACK_DIR/code" && node --input-type=module -e "import { chatModelId, parseChatModel } from './server/agents/tools.mjs'; const i = chatModelId('copilot', 'gpt-5.1'); console.log(i, JSON.stringify(parseChatModel(i)))")" \
     'plan-copilot--gpt-5.1 {"tool":"copilot","model":"gpt-5.1"}'

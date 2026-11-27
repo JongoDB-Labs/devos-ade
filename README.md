@@ -748,10 +748,10 @@ from the computer running the stack).
   place of Open WebUI, in the folder you pick (you type into the real app, its own history and usage display); each
   choice there acts on the button beside the menu (*Use this model*, *Open it here*, *Use Open WebUI*, *Open it in …*
   for another folder), never on the choice alone.
-  Google's plans no longer work in Gemini CLI: Gemini in Chat is planned through your own Gemini API key, like the
-  other providers' keys (OpenAI, Anthropic, xAI, Mistral).
+  Google's plans no longer work in Gemini CLI, and it is not a Chat model yet; Gemini in Chat is planned through your own
+  Gemini API key, like the other providers' keys (OpenAI, Anthropic, xAI, Mistral).
 - **Code page**: the model picker's **Who answers** — Claude Code on Bedrock (as before), *Claude · your plan*, Codex,
-  Copilot, Cursor or Grok. Choosing one starts a session with it in the project's folder (your conversation so far
+  Gemini CLI, Copilot, Cursor or Grok. Choosing one starts a session with it in the project's folder (your conversation so far
   goes with your first prompt there, quoted as an earlier conversation); its own models in the same picker. It works like a Claude session: its answers,
   its tool cards (commands, edits with their diffs, to-dos), its questions on the same permission cards (*Allow once*,
   *Always* for this session, *Deny*), the watchlist after each turn, the same files, Git, Review and previews, and its
@@ -804,8 +804,13 @@ In Chat's model picker a subscription is its default (`plan-codex`, the tool's o
 sandbox with Chat's own sign-in, when the picker is first asked for and then at most every 10 minutes (30 seconds after a
 read that failed, keeping the last list; Claude's then falls back to `opus`, `sonnet` and `haiku`); a conversation on one
 model can switch to another or back to the default, and the answer says "… does not offer the model … on your plan now"
-for an id the tool no longer offers. Not yet: Gemini CLI (Google's plans stopped working in it; use your own key) and
-Cursor (no switch that turns its tools off) in Chat and the Code page.
+for an id the tool no longer offers. Not yet in Chat: Gemini CLI (JON-1424) and Cursor (no switch that turns its tools off). Gemini CLI is on the Code
+page, on the sign-in it holds itself (an organisation's Code Assist login or an API key, signed in in the Terminal; Google's
+personal plans stopped working in it on 2026-06-18): `gemini --acp --approval-mode default` with its own system settings
+file (no YOLO mode, no project `.env`) and folder trust only where you trusted the project's settings, in its asking
+modes (default and plan; never its auto-edit or YOLO), never sent an `authenticate`; a sign-in that has lapsed says so at
+once and asks you to sign in again in the Terminal. It also reads the project's `GEMINI.md` as instructions, and the
+project's `.gemini/` is part of the settings you trust first.
 
 **Greyed out means "set it up here".** Anything greyed because of a setting or a sign-in says where it is turned on,
 and takes you there: in a menu — the Terminal's *Open*, Chat's *Who answers*, the Code page's terminal panel's
@@ -816,7 +821,7 @@ its previews over remote access, a read-only project folder, Home's update tools
 your devices, Home's voice note. It goes to the Settings row that turns it on (scrolled to and highlighted; a switch
 of its own focused), to Chat's sign-in row with its *Sign in* open and focused, or to the tool itself in the terminal,
 where its own sign-in starts (`catalog/setup-links.tsv`). Not links, on purpose: *Your own API keys* (coming next),
-Cursor and Gemini CLI as Chat models (nothing turns them on), what needs the update helper (`./stack helper install`,
+Cursor and Gemini CLI as Chat models (nothing turns them on; Gemini CLI is not in Chat yet), what needs the update helper (`./stack helper install`,
 a step in a terminal) and switches that open things further, which work only from the computer running DevOS ADE
 (on your devices their rows say so, with the command).
 
