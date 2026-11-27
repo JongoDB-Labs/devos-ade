@@ -2715,6 +2715,8 @@ export function gitRepos({ depth = 2, max = 50, root = WS_ROOT, files = false } 
 // ref and packed-refs are small regular files. head: null when the branch has no commit yet; branch and head null for a detached HEAD.
 // A head is given only as 40 (or 64) lowercase hex characters. At most 100 repositories; one that cannot be read is its own error entry.
 export const HEADS_MAX = 100;
+const HEADS_NOLIST = 'repos: a list of repository folders';
+const HEADS_TOOMANY = 'repos: at most 100 repositories';
 const HEADS_FILE_MAX = 4096, HEADS_PACKED_MAX = 1 << 20;
 // noLinksTo(abs, top) -> whether every part of abs below top is a real folder (lstat), and abs is top or inside it
 function noLinksTo(abs, top) {
@@ -2736,32 +2738,33 @@ function smallFile(abs, cap) {
 }
 const headBranchOk = (b) => typeof b === 'string' && b.length > 0 && b.length <= 255 && !/[\0-\x1f\x7f\\]/.test(b) && b.split('/').every((s) => s && s !== '.' && s !== '..');
 function headsOf(repo) {
-  const root = repoRoot(repo);
+  let root;
+  try { root = repoRoot(repo); } catch (e) { return { error: printable(e.message, 200) }; }
   const dot = path.join(root.abs, '.git');
   let st;
-  try { st = fs.lstatSync(dot); } catch { throw new Error(GIT_REASONS.notRepo); }
+  try { st = fs.lstatSync(dot); } catch { return { error: GIT_REASONS.notRepo }; }
   let gitdir = dot;
   if (st.isFile()) {
     const m = /^gitdir: ([^\n\0]{1,1024})\n?$/.exec(smallFile(dot, HEADS_FILE_MAX) ?? '');
-    if (!m) throw new Error('its .git file is not a git folder link');
+    if (!m) return { error: 'its .git file is not a git folder link' };
     gitdir = path.resolve(root.abs, m[1]);
-    if (!noLinksTo(gitdir, root.top)) throw new Error('its git folder is not inside the project folders (or a link is on the way)');
-  } else if (!st.isDirectory()) throw new Error('its .git is not a folder');
+    if (!noLinksTo(gitdir, root.top)) return { error: 'its git folder is not inside the project folders (or a link is on the way)' };
+  } else if (!st.isDirectory()) return { error: 'its .git is not a folder' };
   let common = gitdir;
   const cd = smallFile(path.join(gitdir, 'commondir'), HEADS_FILE_MAX);
   if (cd !== null) {
     common = path.resolve(gitdir, cd.trim());
-    if (!noLinksTo(common, root.top)) throw new Error('its common git folder is not inside the project folders (or a link is on the way)');
+    if (!noLinksTo(common, root.top)) return { error: 'its common git folder is not inside the project folders (or a link is on the way)' };
   }
-  if (isDirHere(path.join(common, 'reftable'))) throw new Error('this repository keeps its references in a format that is not read here');
+  if (isDirHere(path.join(common, 'reftable'))) return { error: 'this repository keeps its references in a format that is not read here' };
   const headText = smallFile(path.join(gitdir, 'HEAD'), HEADS_FILE_MAX);
-  if (headText === null) throw new Error('its HEAD cannot be read');
+  if (headText === null) return { error: 'its HEAD cannot be read' };
   const line = headText.split('\n')[0].trim();
   const ref = /^ref: (.+)$/.exec(line);
-  if (!ref) return SHA.test(line) ? { branch: null, head: null } : (() => { throw new Error('its HEAD is not understood'); })();
+  if (!ref) return SHA.test(line) ? { branch: null, head: null } : { error: 'its HEAD is not understood' };
   const b = /^refs\/heads\/(.+)$/.exec(ref[1])?.[1];
   if (!b) return { branch: null, head: null };
-  if (!headBranchOk(b)) throw new Error('its branch name is not one read here');
+  if (!headBranchOk(b)) return { error: 'its branch name is not one read here' };
   let head = null;
   const dir = path.join(common, 'refs/heads', path.dirname(b) === '.' ? '' : path.dirname(b));
   // (a folder of the branch's name that is not there: the ref is packed, or not there; one that is a link: not read)
@@ -2782,11 +2785,11 @@ function headsOf(repo) {
 }
 export function gitHeads(req) {
   const repos = req?.repos;
-  if (!Array.isArray(repos)) throw new Error('repos: a list of repository folders');
-  if (repos.length > HEADS_MAX) throw new Error(`repos: at most ${HEADS_MAX}`);
+  if (!Array.isArray(repos)) throw new Error(HEADS_NOLIST);
+  if (repos.length > HEADS_MAX) throw new Error(HEADS_TOOMANY);
   return { heads: repos.map((r) => {
     const name = typeof r === 'string' ? r.slice(0, 1024) : '';
-    try { return { repo: name, ...headsOf(r) }; } catch (e) { return { repo: name, error: printable(e.message, 200) }; }
+    return { repo: name, ...headsOf(r) };
   }) };
 }
 

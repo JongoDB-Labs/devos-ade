@@ -28,6 +28,9 @@ export const GIT_REASONS = Object.freeze([
 export const GIT_REFUSALS = Object.freeze([
   // (the projects' ops among them: a new project's folder, git init in one, Remove from Code with its folder)
   'the new folder is not a folder any more',
+  // (git.heads, JON-1430)
+  'repos: a list of repository folders',
+  'repos: at most 100 repositories',
   'not a project folder of the workspace',
   "the project's folder is not there",
   "the project's folder is a link or not a folder: nothing was moved",
