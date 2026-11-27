@@ -842,3 +842,86 @@ def test_auto_detect_is_quiet_when_throttled_not_a_console_error(app):
     assert d.get("throttled") is True and "ref" not in d
     # only the first scan was handed to the helper
     assert len(list(rq.glob("act-*.json"))) == 1
+
+
+# --- JON-849: what a server is billed as (self-hosted, free, Local — or a hosted API, paid, Remote) and its prices ---
+
+def _billing_helper(sd):
+    (sd / "helper-settings.json").write_text(json.dumps({"settings": 1, "local": list(st.LOCAL_ACTIONS) + ["local-server", "local-server-billing"], "written_at": int(time.time())}))
+
+
+def test_a_servers_kind_and_prices_are_read_field_by_field(tmp_path):
+    _status(tmp_path)
+    d = json.loads((tmp_path / "local-models.json").read_text())
+    d["servers"] = [
+        {"name": "lab", "url": "http://10.0.0.5:8000", "status": "ok", "detail": "a|0", "kind": "self", "prices": "", "enabled": "*"},
+        {"name": "groq", "url": "https://api.groq.com", "status": "ok", "detail": "llama|0", "kind": "hosted", "enabled": "*",
+         "prices": "*=0.59;0.79,llama:8b=1.5;2,<x>=1;2,bad=1,over=1000000000;1"},
+        {"name": "old", "url": "http://10.0.0.6:8000", "status": "ok", "detail": "a|0", "enabled": "*"},       # (a file from before kinds)
+        {"name": "odd", "url": "http://10.0.0.7:8000", "status": "ok", "detail": "a|0", "kind": "free", "enabled": "*"}]
+    (tmp_path / "local-models.json").write_text(json.dumps(d))
+    s = {x["name"]: x for x in lm.read_status(tmp_path)["servers"]}
+    assert s["lab"]["kind"] == "self" and s["lab"]["prices"] == []
+    assert s["groq"]["kind"] == "hosted"
+    assert s["groq"]["prices"] == [{"id": "*", "in": 0.59, "out": 0.79}, {"id": "llama:8b", "in": 1.5, "out": 2.0}]    # the unsafe or malformed entries are dropped
+    assert lm.price_of(s["groq"], "llama:8b") == {"id": "llama:8b", "in": 1.5, "out": 2.0}      # its own
+    assert lm.price_of(s["groq"], "other") == {"id": "*", "in": 0.59, "out": 0.79}               # else the server's
+    assert lm.price_of(s["lab"], "x") is None                                                    # none: unknown, never $0
+    assert s["old"]["kind"] == "self" and s["odd"]["kind"] == "self"
+
+
+def test_saving_a_hosted_server_hands_the_helper_its_kind_and_prices_in_the_second_shape(app):
+    c, sd, rq = app
+    _billing_helper(sd)
+    r = _srv(c, "save", name="groq", url="https://api.groq.com", key=KEY, models=["*"], kind="hosted",
+             prices=[{"id": "*", "in": 0.59, "out": 0.79}, {"id": "llama-3.3-70b", "in": 1, "out": 2.5}])
+    assert r.status_code == 202, r.text
+    b = _last(rq)
+    assert list(b) == ["action", "requested_at", "nonce", "auth", "op", "name", "url", "trust", "key", "models", "kind", "prices", "ref"]
+    assert b["op"] == "save" and b["kind"] == "hosted" and b["prices"] == "*=0.59;0.79,llama-3.3-70b=1;2.5"
+    assert KEY not in r.text
+
+
+def test_a_save_without_a_kind_or_prices_keeps_the_shape_the_helper_always_took(app):
+    c, sd, rq = app
+    r = _srv(c, "save", name="lab", url="10.0.0.5:8000", models=["*"])
+    assert r.status_code == 202, r.text
+    assert list(_last(rq)) == ["action", "requested_at", "nonce", "auth", "op", "name", "url", "trust", "key", "models", "ref"]
+
+
+def test_the_billing_op_changes_a_saved_servers_kind_and_prices_or_clears_them(app):
+    c, sd, rq = app
+    _billing_helper(sd)
+    assert _srv(c, "billing", name="groq", kind="hosted", prices=[{"id": "*", "in": 0.5, "out": 0.5}]).status_code == 202
+    b = _last(rq)
+    assert b["op"] == "billing" and b["kind"] == "hosted" and b["prices"] == "*=0.5;0.5"
+    for f in rq.glob("act-*.json"):
+        f.unlink()
+    r = _srv(c, "billing", name="groq", kind="self", prices="none")      # (one change a second at most: the route's own rate limit)
+    assert r.status_code == 429 or (r.status_code == 202 and _last(rq)["prices"] == "none" and _last(rq)["kind"] == "self")
+
+
+def test_a_helper_that_does_not_do_billing_yet_refuses_a_hosted_server_instead_of_saving_it_free(app):
+    c, sd, rq = app      # (the fixture's helper: local-server, no local-server-billing)
+    r = _srv(c, "save", name="groq", url="https://api.groq.com", models=["*"], kind="hosted")
+    assert r.status_code == 503 and "helper install" in r.json()["error"] and not list(rq.glob("act-*.json"))
+    r = _srv(c, "save", name="groq", url="https://api.groq.com", models=["*"], prices=[{"id": "*", "in": 1, "out": 2}])
+    assert r.status_code == 503 and not list(rq.glob("act-*.json"))
+
+
+def test_kind_and_prices_are_checked_before_anything_reaches_the_helper(app):
+    c, sd, rq = app
+    _billing_helper(sd)
+    for bad in ({"kind": "free"}, {"kind": 3}, {"prices": "1;2"}, {"prices": [{"id": "*", "in": -1, "out": 2}]}, {"prices": [{"id": "*", "in": "1", "out": 2}]},
+                {"prices": [{"id": "a b", "in": 1, "out": 2}]}, {"prices": [{"id": "*", "in": 1}]}, {"prices": [{"id": "*", "in": 1e9, "out": 2}]}, {"prices": [{"id": "*", "in": True, "out": 2}]}):
+        r = _srv(c, "billing", name="groq", **bad)
+        assert r.status_code == 400, (bad, r.status_code, r.text)
+    assert not list(rq.glob("act-*.json"))
+    for kw in ({"kind": "x"}, {"prices": "x=1"}, {"prices": "*=1;2;3"}, {"prices": "*=a;2"}):
+        with pytest.raises(ValueError):
+            st.write_local_server_action(rq, PW, "billing", name="groq", ref="0123456789abcdef", **kw)
+
+
+def test_the_helper_capability_lists_the_billing_token_only_when_the_helper_says_so(tmp_path):
+    (tmp_path / "helper-settings.json").write_text(json.dumps({"settings": 1, "local": ["local-server", "local-server-billing", "nope"], "written_at": int(time.time())}))
+    assert st.capability(tmp_path)["local"] == ["local-server", "local-server-billing"]

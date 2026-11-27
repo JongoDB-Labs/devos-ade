@@ -6,7 +6,10 @@
 # config, and: 1 the probe lists the model with its context; 2 a probe without the key says 401; 3 a chat completion goes
 # through LiteLLM to the server by IP; 4 it is booked at $0; 5 the Code page's rows list it as Local and free;
 # 6 a server that is stopped is said to be "connection refused"; 7 removing the server unregisters its models and its key;
-# 8 the auto-detect (JON-1262) finds a server running on this computer's own loopback and lists its model.
+# 8 the auto-detect (JON-1262) finds a server running on this computer's own loopback and lists its model;
+# 9 to 12 (JON-849) a server at a public address is a hosted API by default: Remote, never free, at its prices; a hosted
+# server (the same fake one, marked hosted, priced) books a real spend that is not $0 while the self-hosted one books $0, and
+# LiteLLM's own model info carries the prices it books at (a hosted model with no price carries none, never 0).
 # Needs: Docker on LINUX (the host reaches the container's IP directly; on Docker Desktop for Mac a container's IP is not
 # reachable from the host, so use the localhost mapping check in tests/test_local_models.sh instead). The Linux host also
 # needs outbound access to pull the LiteLLM image if it is not there. --out DIR (default tests/e2e/out).
@@ -43,6 +46,14 @@ st="$(msrv_probe fake)"; case "$st" in down*401*) ok "2 without the key the prob
 printf '%s\n' "$KEYV" | msrv_set_key fake >/dev/null 2>&1
 st="$(msrv_status_of fake)"; case "$st" in ok*fake/tiny-chat\|8192*) ok "1 the probe lists fake/tiny-chat with its context" ;; *) fail "1 the probe: $st" ;; esac
 msrv_enable fake '*' on >/dev/null 2>&1
+# 9-12 (JON-849): a public address (203.0.113.9, TEST-NET-3: registration needs only that it is checked, not that it answers) is
+# hosted by default; the same fake server is added again as a hosted server with a price, and once with none
+msrv_add pub http://203.0.113.9:8000 >/dev/null 2>&1
+msrv_enable pub gpt-e2e on >/dev/null 2>&1; msrv_set_price pub '*' 0.59 0.79 >/dev/null 2>&1
+msrv_add paid "http://$IP:8000" --hosted >/dev/null 2>&1; printf '%s\n' "$KEYV" | msrv_set_key paid >/dev/null 2>&1
+msrv_enable paid '*' on >/dev/null 2>&1; msrv_set_price paid '*' 1000 2000 >/dev/null 2>&1
+msrv_add nopr "http://$IP:8000" --hosted >/dev/null 2>&1; printf '%s\n' "$KEYV" | msrv_set_key nopr >/dev/null 2>&1
+msrv_enable nopr '*' on >/dev/null 2>&1
 { printf 'model_list:\n'; local_models_yaml; } > "$WORK/litellm/config.yaml"; chmod 644 "$WORK/litellm/config.yaml"
 PORT="$(python3 -I -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
 MK="sk-e2e-$(python3 -I -c 'import secrets; print(secrets.token_hex(16))')"   # (LiteLLM 1.106 does not start without a strong master key)
@@ -68,9 +79,41 @@ MSRV_DISCOVER_PORTS="$DPORT" msrv_discover "$(python3 -I -c 'import secrets; pri
 DJSON="$(cat "$(msrv_discover_file)" 2>/dev/null)"
 case "$DJSON" in *"\"port\":$DPORT"*fake/tiny-chat*) ok "8 auto-detect found the server on localhost:$DPORT with its model" ;; *) fail "8 auto-detect: $DJSON" ;; esac
 kill "$DPID" 2>/dev/null
+# 9 the default kind comes from the address; a stored kind and the label follow
+{ [ "$(msrv_kind pub)" = hosted ] && [ "$(msrv_kind fake)" = self ] && [ "$(get_env MODEL_SERVER_KINDS | tr ',' '\n' | grep -c '^pub=hosted$')" = 1 ]; } \
+  && ok "9 a public address is hosted by default (pub), a container's private one is self-hosted (fake)" || fail "9 kinds: pub=$(msrv_kind pub) fake=$(msrv_kind fake) saved=$(get_env MODEL_SERVER_KINDS)"
+R="$(code_models_rows "" 2>/dev/null | awk -F'\t' '$1 == "ms/pub/gpt-e2e"')"
+{ [ "$(printf '%s' "$R" | cut -f3)" = Remote ] && [ "$(printf '%s' "$R" | cut -f9)" = 0 ] && [ "$(printf '%s' "$R" | cut -f5)" = 0.59 ] && [ "$(printf '%s' "$R" | cut -f6)" = 0.79 ]; } \
+  && ok "10 the Code page lists ms/pub/gpt-e2e as Remote, not free, at 0.59 / 0.79 per million" || fail "10 rows: '$R'"
+# 11 LiteLLM's own model info: the registered prices (per token), 0 for the self-hosted one, none (never 0) without a price
+curl -sS -m 30 -H "Authorization: Bearer $MK" "http://127.0.0.1:$PORT/model/info" -o "$WORK/info.json" 2>/dev/null || true
+INFO="$(python3 -I - "$WORK/info.json" <<'PY' 2>/dev/null
+import json, sys
+d = json.load(open(sys.argv[1])).get("data", [])
+def cost(name):
+    for m in d:
+        if m.get("model_name") == name:
+            mi = m.get("model_info") or {}; lp = m.get("litellm_params") or {}
+            v = lp.get("input_cost_per_token", mi.get("input_cost_per_token"))
+            w = lp.get("output_cost_per_token", mi.get("output_cost_per_token"))
+            return f"{v}/{w}"
+    return "absent"
+print(cost("ms/pub/gpt-e2e"), cost("ms/fake/fake/tiny-chat"), cost("ms/nopr/fake/tiny-chat"))
+PY
+)"
+set -- $INFO
+case "${1:-}" in 5.9e-07/7.9e-07 | 0.00000059/0.00000079 | 5.9e-7/7.9e-7) pubok=1 ;; *) pubok='' ;; esac
+{ [ -n "$pubok" ] && [ "${2:-}" = 0/0 ] && [ "${3:-}" != 0/0 ] && [ "${3:-}" != absent ]; } \
+  && ok "11 LiteLLM carries the prices: pub 0.59/0.79 per million, fake 0, nopr none (not 0)" || fail "11 model info: '$INFO'"
+# 12 a real request through the hosted, priced server books a spend that is not $0; the self-hosted one booked $0 at step 4
+curl -sS -m 60 -D "$WORK/hdr2" -o "$WORK/body2" -H 'Content-Type: application/json' -H "Authorization: Bearer $MK" -d '{"model":"ms/paid/fake/tiny-chat","max_tokens":10,"messages":[{"role":"user","content":"hi"}]}' "http://127.0.0.1:$PORT/v1/chat/completions"
+COST2="$(tr -d '\r' < "$WORK/hdr2" | sed -n 's/^[Xx]-[Ll]itellm-[Rr]esponse-[Cc]ost: *//p' | head -n 1)"
+if grep -q "Hello from the fake server" "$WORK/body2" && awk -v c="${COST2:-0}" 'BEGIN { exit !(c + 0 > 0) }'; then
+  ok "12 a request through the hosted server is booked at ${COST2} (3 in, 5 out at 1000 / 2000 per million = 0.013): not \$0"
+else fail "12 the hosted request was booked at '${COST2:-none}' ($(head -c 200 "$WORK/body2"))"; fi
 
 docker stop "$FK" >/dev/null; st="$(msrv_probe fake)"
 case "$st" in down*refused* | down*"no answer"*) ok "6 a stopped server is said so: ${st#*$'\t'}" ;; *) fail "6 stopped server: $st" ;; esac
-msrv_rm fake >/dev/null 2>&1
-{ [ -z "$(get_env MODEL_SERVERS)" ] && [ -z "$(get_env MODEL_SERVER_KEYS)" ] && [ -z "$(local_models_yaml)" ]; } && ok "7 removed: the server, its key and its models are gone" || fail "7 something is left"
+for n in fake pub paid nopr; do msrv_rm "$n" >/dev/null 2>&1; done
+{ [ -z "$(get_env MODEL_SERVERS)" ] && [ -z "$(get_env MODEL_SERVER_KEYS)" ] && [ -z "$(get_env MODEL_SERVER_KINDS)" ] && [ -z "$(get_env MODEL_SERVER_PRICES)" ] && [ -z "$(local_models_yaml)" ]; } && ok "7 removed: the server, its key and its models are gone" || fail "7 something is left"
 [ "$FAILS" -eq 0 ] && { echo "model servers: all checks passed" >&2; exit 0; } || exit 1

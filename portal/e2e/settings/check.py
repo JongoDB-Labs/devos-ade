@@ -320,7 +320,8 @@ def lm_helper(b):
     elif op == "save":
         ids = b.get("models") or []
         LM["servers"].append({"name": name, "url": url, "reached_as": url + "/v1", "trust": bool(b.get("trust")), "key": bool(b.get("key")), "up": True,
-                              "reason": "", "warning": "", "models": LM_MODELS, "all": ids == ["*"], "enabled": [i for i in ids if i != "*"]})
+                              "reason": "", "warning": "", "models": LM_MODELS, "all": ids == ["*"], "enabled": [i for i in ids if i != "*"],
+                              "kind": b.get("kind") or "self", "prices": [p for p in (b.get("prices") or []) if isinstance(p, dict)]})
     else:
         sv = next((x for x in LM["servers"] if x["name"] == name), None)
         if sv is None:
@@ -330,6 +331,9 @@ def lm_helper(b):
             sv["all"], sv["enabled"] = ids == ["*"], [i for i in ids if i != "*"]
         elif op == "key":
             sv["key"] = bool(b.get("key"))
+        elif op == "billing":
+            sv["kind"] = b.get("kind") or sv.get("kind", "self")
+            sv["prices"] = [] if b.get("prices") == "none" else [p for p in (b.get("prices") or sv.get("prices") or []) if isinstance(p, dict)]
         elif op == "remove":
             LM["servers"].remove(sv)
     LM["result"] = r
@@ -876,6 +880,100 @@ def check_servers(page, failures, label):
     if page.evaluate("() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1"):
         failures.append(f"{label}: the servers card makes the page wider than the screen at 390 px")
     page.set_viewport_size({"width": 1280, "height": 900})
+
+
+def check_hosted_server(page, failures, label):
+    """A paid hosted API as a model server (JON-849): a public address defaults to "Hosted API (paid)" and asks for prices; the saved
+    server says Remote with its price, never Local or $0; its models in Browse models say Remote with the price (a spend row that is not
+    $0); with no price it says "price unknown", never $0; Billing switches it to self-hosted (Local, $0) and back."""
+    PWD = "correct horse"
+    LM.update(servers=[], result=None, posts=[], gets=[], probes=[], changes=[], installed=[])
+
+    def ask():
+        page.wait_for_selector("#set-confirm[open]", timeout=5000)
+        page.fill("#set-confirm-password", PWD)
+        page.click("#set-confirm-ok")
+
+    page.goto(BASE + "/#settings")
+    page.wait_for_selector("#settings .set-card:not([hidden])", timeout=20000)
+    page.click(".set-nav-item[data-section='providers']")
+    page.click("#set-providers .set-minnav .chip[data-group='local models']")
+    page.wait_for_selector("#lm-server-list", timeout=10000)
+    # a private address is self-hosted by default: no price boxes
+    page.fill("#ms-url", "10.0.0.5:8000")
+    if page.input_value("#ms-kind") != "self" or page.locator("#ms-price-row").is_visible():
+        failures.append(f"{label}: a private address is not self-hosted by default (kind {page.input_value('#ms-kind')!r})")
+    # a public address is hosted by default and asks for prices
+    page.fill("#ms-url", "203.0.113.9:8000"); page.fill("#ms-name", "groq")
+    if page.input_value("#ms-kind") != "hosted" or not page.locator("#ms-price-row").is_visible():
+        failures.append(f"{label}: a public address is not a hosted API by default (kind {page.input_value('#ms-kind')!r})")
+    page.fill("#ms-price-in", "0.59"); page.fill("#ms-price-out", "0.79")
+    page.click("#ms-check"); ask()
+    page.wait_for_selector("#ms-probe.good", timeout=10000)
+    page.click("#ms-save")
+    page.wait_for_selector("#set-confirm[open]", timeout=5000)
+    said = page.inner_text("#set-confirm")
+    if "Remote" not in said or "$0.59 in / $0.79 out" not in said or "Local" in said:
+        failures.append(f"{label}: the confirmation does not say Remote and the price: {said[:300]!r}")
+    page.fill("#set-confirm-password", PWD); page.click("#set-confirm-ok")
+    row = page.locator("[data-server-row=groq]")
+    row.wait_for(state="visible", timeout=10000)
+    save = next((q for q in LM["posts"] if q["op"] == "save"), None)
+    if not save or save.get("skind") != "hosted" or save.get("prices") != [{"id": "*", "in": 0.59, "out": 0.79}]:
+        failures.append(f"{label}: the save request carries {save}")
+    head = row.locator(".lm-name").inner_text()
+    if "Remote" not in head or "$0.59 in / $0.79 out per 1M" not in head or "Local" in head or "$0\n" in head + "\n":
+        failures.append(f"{label}: the hosted server's row says {head!r}")
+    if "$0.59 in / $0.79 out per 1M" not in row.locator(".lm-models").first.inner_text():
+        failures.append(f"{label}: a hosted model does not show its price: {row.locator('.lm-models').first.inner_text()!r}")
+    # Browse models: Remote, with the price — a spend row that is not $0
+    page.goto(BASE + "/?browse=1#modelbrowser")
+    page.wait_for_selector("#modelbrowser:not([hidden]) .mb-row[data-provider=server]", timeout=20000)
+    mrow = page.locator(".mb-row[data-id='ms/groq/qwen/Qwen3-8B']")
+    text = mrow.inner_text() if mrow.count() else ""
+    if "Remote" not in text or "$0.59 in" not in text or "$0.79 out" not in text or "Free" in text:
+        failures.append(f"{label}: the hosted model's row in Browse models says {text!r}")
+    # a hosted server with no price: "price unknown", never free or $0
+    LM["servers"].append({"name": "nopr", "url": "https://api.example.org", "reached_as": "https://api.example.org/v1", "trust": False, "key": True, "up": True,
+                          "reason": "", "warning": "", "models": LM_MODELS, "all": True, "enabled": [], "kind": "hosted", "prices": []})
+    page.reload()
+    page.wait_for_selector(".mb-row[data-id='ms/nopr/llama3:8b']", timeout=20000)
+    u = page.locator(".mb-row[data-id='ms/nopr/llama3:8b']").inner_text()
+    if "Remote" not in u or "price unknown" not in u or "Free" in u or "$0" in u:
+        failures.append(f"{label}: an unpriced hosted model says {u!r}")
+    # Billing: switch groq to self-hosted (Local, $0), then back to hosted at a new price
+    page.goto(BASE + "/#settings")
+    page.wait_for_selector("#settings .set-card:not([hidden])", timeout=20000)
+    page.click(".set-nav-item[data-section='providers']")
+    page.click("#set-providers .set-minnav .chip[data-group='local models']")
+    row = page.locator("[data-server-row=groq]")
+    row.wait_for(state="visible", timeout=10000)
+    row.locator("[data-act=server-billing]").click()
+    row.locator("#ms-bill-kind").select_option("self")
+    row.locator("#ms-bill-save").click(); ask()
+    page.wait_for_function("() => /Local/.test(document.querySelector('[data-server-row=groq] .lm-name')?.innerText || '')", timeout=10000)
+    head = page.locator("[data-server-row=groq] .lm-name").inner_text()
+    if "Remote" in head or "$0" not in head:
+        failures.append(f"{label}: after Billing → self-hosted the row says {head!r}")
+    bill = next((q for q in LM["posts"] if q["op"] == "billing"), None)
+    if not bill or bill.get("skind") != "self":
+        failures.append(f"{label}: the billing request carries {bill}")
+    row = page.locator("[data-server-row=groq]")
+    row.locator("[data-act=server-billing]").click()
+    row.locator("#ms-bill-kind").select_option("hosted")
+    row.locator("#ms-bill-in").fill("1.5"); row.locator("#ms-bill-out").fill("2")
+    row.locator("#ms-bill-save").click(); ask()
+    page.wait_for_function("() => /Remote/.test(document.querySelector('[data-server-row=groq] .lm-name')?.innerText || '')", timeout=10000)
+    head = page.locator("[data-server-row=groq] .lm-name").inner_text()
+    if "$1.5 in / $2 out per 1M" not in head:
+        failures.append(f"{label}: after Billing → hosted at 1.5 / 2 the row says {head!r}")
+    # nothing is wider than a phone
+    page.set_viewport_size({"width": 390, "height": 800})
+    page.wait_for_timeout(150)
+    if page.evaluate("() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1"):
+        failures.append(f"{label}: the hosted server's billing makes the page wider than the screen at 390 px")
+    page.set_viewport_size({"width": 1280, "height": 900})
+    LM.update(servers=[], result=None, posts=[])
 
 
 def check_downloads(page, failures, label):
@@ -1484,6 +1582,7 @@ def main():
                     check_code_models(page, failures, label)
                     check_services(page, failures, label)
                     check_servers(page, failures, label)
+                    check_hosted_server(page, failures, label)
                     check_downloads(page, failures, label)
                     check_runtimes(page, failures, label)
                     check_browse(page, failures, label)

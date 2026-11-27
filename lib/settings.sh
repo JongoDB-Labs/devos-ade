@@ -229,6 +229,8 @@ _sv_local_models() {
 }
 _sv_model_servers() { valid_msrv_list "$1" && [ "${#1}" -le "$SETTINGS_MAX_VALUE" ] || { SV_ERR="must be a comma list of name=http(s)://host[:port] (at most 8; no user:password@)"; return 1; }; }
 _sv_model_server_keys() { valid_msrv_keys "$1" || { SV_ERR="must be name=key pairs"; return 1; }; }
+_sv_model_server_kinds() { valid_msrv_kinds "$1" || { SV_ERR="must be name=self or name=hosted pairs"; return 1; }; }
+_sv_model_server_prices() { valid_msrv_prices "$1" && [ "${#1}" -le "$SETTINGS_MAX_VALUE" ] || { SV_ERR="must be name:model-id=IN;OUT (or name:*=IN;OUT) pairs, US dollars per million tokens"; return 1; }; }
 _sv_model_server_models() { valid_msrv_models "$1" || { SV_ERR="must be name:model-id (or name:* for all) pairs"; return 1; }; }
 _sv_local_runtime() { case "$1" in '' | auto | mlx | dmr | ollama | llamacpp | lmstudio | vllm) return 0 ;; esac; SV_ERR="must be auto, mlx, dmr, ollama, llamacpp, lmstudio or vllm (blank = auto)"; return 1; }
 _sv_hf_token() { valid_hf_token "$1" || { SV_ERR="must be a Hugging Face token (hf_ and letters and digits)"; return 1; }; }

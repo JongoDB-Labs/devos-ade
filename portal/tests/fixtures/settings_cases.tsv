@@ -293,6 +293,17 @@ model_server_keys	0	ok	lab=abc123.-_
 model_server_keys	0	bad	lab
 model_server_models	0	ok	lab:*,lab:qwen/Qwen3-8B:latest
 model_server_models	0	bad	lab:
+model_server_kinds	0	ok
+model_server_kinds	0	ok	lab=self,groq=hosted
+model_server_kinds	0	bad	lab=free
+model_server_kinds	0	bad	lab
+model_server_kinds	0	bad	Lab=self
+model_server_prices	0	ok
+model_server_prices	0	ok	groq:*=0.59;0.79,groq:llama-3.3-70b=1;2.5,oai:gpt-4o:2024=2.5;10
+model_server_prices	0	bad	groq:*=0.59
+model_server_prices	0	bad	groq:*=-1;2
+model_server_prices	0	bad	groq=1;2
+model_server_prices	0	bad	groq:*=1;2;3
 local_runtime	0	ok	
 local_runtime	0	ok	auto
 local_runtime	0	ok	ollama

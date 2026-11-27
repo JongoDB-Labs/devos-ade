@@ -633,6 +633,17 @@ def _model_server_models(v, remote_on=False):
     return None if ok else "must be name:model-id (or name:* for all) pairs"
 
 
+def _model_server_kinds(v, remote_on=False):   # (lib/local_models.sh valid_msrv_kinds)
+    ok = v == "" or all(re.fullmatch(r"[a-z0-9][a-z0-9-]{0,23}=(self|hosted)", x) for x in v.split(","))
+    return None if ok else "must be name=self or name=hosted pairs"
+
+
+def _model_server_prices(v, remote_on=False):   # (lib/local_models.sh valid_msrv_prices)
+    num = r"[0-9]{1,6}(\.[0-9]{1,6})?"
+    ok = v == "" or (len(v) <= MAX_VALUE and all(re.fullmatch(r"[a-z0-9][a-z0-9-]{0,23}:(\*|[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,127})=" + num + ";" + num, x) for x in v.split(",")))
+    return None if ok else "must be name:model-id=IN;OUT (or name:*=IN;OUT) pairs, US dollars per million tokens"
+
+
 def _hf_token(v, remote_on=False):
     return None if v == "" or re.fullmatch(r"hf_[A-Za-z0-9]{20,200}", v) else "must be a Hugging Face token (hf_ and letters and digits)"
 
@@ -677,7 +688,7 @@ VALIDATORS = {
     "pct": _range(50, 99, "must be a percentage from 50 to 99 (blank = 80)"),
     "keep": _range(1, 60, "must be a whole number from 1 to 60 (blank = 7)"),
     "model_pin": _model_pin, "models_list": _models_list, "pw_hash": _pw_hash,
-    "code_models": _code_models, "code_model": _code_model, "bedrock_models": _bedrock_models, "local_models": _local_models, "model_servers": _model_servers, "model_server_keys": _model_server_keys, "model_server_models": _model_server_models, "hf_token": _hf_token,
+    "code_models": _code_models, "code_model": _code_model, "bedrock_models": _bedrock_models, "local_models": _local_models, "model_servers": _model_servers, "model_server_keys": _model_server_keys, "model_server_models": _model_server_models, "model_server_kinds": _model_server_kinds, "model_server_prices": _model_server_prices, "hf_token": _hf_token,
     "oauth_client_id": _oauth_client_id, "app_slug": _app_slug,
 }
 

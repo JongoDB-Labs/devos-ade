@@ -1275,3 +1275,17 @@ def test_setup_over_remote_access_never_a_look_or_an_open_a_copy_said_remote(cs,
         r = _ses(c, {"action": "setup-copy", "units": ["s_0123456789abcdef"], "digest": "d" * 64, "keep": ["v#0123456789abcdef"], "password": PW}, tok, ut, **kw)
         assert r.status_code == 202, r.text
         assert '"origin":"remote"' in (rs.request_dir / f"ses-{r.json()['request']}.json").read_text()
+
+
+def test_jon849_a_hosted_model_servers_models_are_remote_never_free_and_a_missing_price_stays_unknown(tmp_path):
+    """Rows of a model server: Local (this network, free, $0) and Remote (a hosted API: paid, its price or none — never $0)."""
+    (tmp_path / "code-models.tsv").write_text(
+        "ms/nas/qwen\tqwen\tLocal\tnas\t0\t0\t-\t-\t1\tuntested\t1\t0\t-\t-\tFree to use.\n"
+        "ms/groq/llama\tllama\tRemote\tgroq\t0.59\t0.79\t-\t-\t0\tuntested\t1\t0\t-\t-\tbilled by its provider\n"
+        "ms/groq/mystery\tmystery\tRemote\tgroq\t-\t-\t-\t-\t0\tuntested\t1\t0\t-\t-\tno price\n", encoding="utf-8")
+    rows, _ = codepage.read_code_models(tmp_path)
+    by = {r["id"]: r for r in rows}
+    assert [r["provider"] for r in rows] == ["Local", "Remote", "Remote"]
+    assert by["ms/nas/qwen"]["free"] is True
+    assert by["ms/groq/llama"]["free"] is False and by["ms/groq/llama"]["prices"]["in"] == 0.59 and by["ms/groq/llama"]["prices"]["out"] == 0.79
+    assert by["ms/groq/mystery"]["free"] is False and by["ms/groq/mystery"]["prices"]["in"] is None and by["ms/groq/mystery"]["prices"]["out"] is None

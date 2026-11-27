@@ -2092,6 +2092,22 @@ use unknown; a down server's models say why (DNS, refused, TLS, 401, no `/v1/mod
 server at a time (`--trust`), and plain http to a public address is allowed with a warning. A Tailscale MagicDNS name may not
 resolve inside the gateway container: use the server's tailnet IP.
 
+**A paid hosted API goes here too.** Any OpenAI-compatible endpoint with a key works as a model server: Groq, Together,
+Fireworks, OpenAI itself or a company gateway (address `https://api.groq.com/openai` or the like, then its key). Each server
+is billed as one of two kinds, chosen when you add it (Settings: **Billed as**; `./stack local-models server add NAME URL
+--hosted` or `--self`; changed later with the **Billing** button or `./stack local-models server kind NAME self|hosted`):
+**This network / self-hosted (free)** is for a box you run (vLLM, llama.cpp, Ollama, LM Studio): its models are marked
+**Local** and show $0 Actual, as before. **Hosted API (paid)** is for a provider that bills you: its models are marked
+**Remote**, never free, and LiteLLM records their spend at the prices you give, so your budgets apply to them. The kind
+defaults from the address: loopback, private (10/8, 172.16/12, 192.168/16, fc00::/7), link-local, tailnet (100.64/10,
+`*.ts.net`), `*.local`/`*.lan`/`*.internal` and a name with no dot mean self-hosted; any other host means hosted (when the
+name resolves, the address it resolved to decides). Servers saved before this existed keep working: with no kind saved, one
+at a private address stays free, and one at a public address becomes a hosted API with no price until you set one.
+Prices are US dollars per million input and output tokens, for the whole server (Settings, or `server price NAME '*' IN OUT`)
+or for one model (`server price NAME MODEL-ID IN OUT`; `clear` removes it). With no price set, LiteLLM prices a model itself
+when its own price map knows the id; otherwise the spend is shown as unknown (the pickers say "price unknown"), never $0 and
+never counted as free.
+
 The **Local models** section of Models & providers (collapsed until you have a model) downloads a model from Hugging
 Face and runs it on this computer, free: search GGUF models, pick a quantization (each shows its size, license and
 whether it fits this computer's memory: Apple silicon's GPU share, an NVIDIA card's VRAM, or the CPU's), and
@@ -2100,7 +2116,7 @@ the download is stuck and what to do). **Pause** stops it and keeps what arrived
 Download) continues from there; **Cancel** stops it and deletes what arrived, after asking. Pause and Cancel need no password:
 they only stop something. While a download is paused no other one starts: resume or cancel it first. The model is
 registered with the model gateway live, in seconds, and is in Chat, the
-Code page's picker and the terminal marked **Local**, free, $0 Actual. **Remove** deletes it. Tool use is stated
+Code page's picker and the terminal marked **Local**, free, $0 Actual (a model server's models are Local when it is self-hosted, Remote when it is a paid hosted API: see above). **Remove** deletes it. Tool use is stated
 honestly: no tool support or under 3B parameters is chat only, under 7B is weak at Claude Code's tools, and none is
 called working until checked; answers are capped at 4096 tokens so a model that loops stops.
 
