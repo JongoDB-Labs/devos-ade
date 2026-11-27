@@ -19,12 +19,13 @@ import { Spinner } from './icons';
 import { SandboxSaid } from './Said';
 import { Dialog } from './ui';
 
-/** The session that carries on from the chat, in the project just made (the one shown): its first message is the conversation,
- *  quoted. -> whether it started. */
-export async function startHandoffSession(chat: Handoff): Promise<boolean> {
+/** The session that carries on from the chat, in the project shown (just made, or into: one you have, by its name): its first
+ *  message is the conversation, quoted. -> whether it started. (noAsk: a project's own settings not applied as they are do not
+ *  apply to it — the safer side for text from a chat; trusted ones do, and the dialog says so before.) */
+export async function startHandoffSession(chat: Handoff, into?: string): Promise<boolean> {
   const id = await newSession({ project: store.get().project, mode: 'default', noAsk: true });
   if (!id) return false;
-  if (!sendToSession(id, handoffPrompt(chat))) return false;
+  if (!sendToSession(id, handoffPrompt(chat, undefined, into))) return false;
   if (chat.title) void renameSessionById(id, label(`From the chat: ${chat.title}`, 100));
   return true;
 }
@@ -57,7 +58,9 @@ function HandoffForm({ chat, onClose }: { chat: Handoff; onClose: () => void }) 
     const shown = store.get().project;
     return targets.some((p) => p.id === shown) ? shown : WORKSPACE_ID;
   });
-  const chosen = targets.find((p) => p.id === pick) ?? null;
+  const chosen = targets.find((p) => p.id === pick) ?? targets[0] ?? null;
+  // (its own Claude Code settings apply when you trusted them: their rules can let a command run without asking)
+  const ownApply = chosen !== null && (chosen.settings === 'trusted' || chosen.settings === 'recheck');
   const [name, setName] = useState(() => handoffName(chat.title, taken));
   // "Keep it on your local git server": when the built-in server is there (null: not known yet); on by default
   const [available, setAvailable] = useState<boolean | null>(null);
@@ -81,7 +84,7 @@ function HandoffForm({ chat, onClose }: { chat: Handoff; onClose: () => void }) 
     if (where === 'existing' && chosen) {
       // (nothing made: the chosen project shown, and the session that carries on from the chat started there)
       setProject(chosen.id);
-      const ok = store.get().project === chosen.id && (await startHandoffSession(chat));
+      const ok = store.get().project === chosen.id && (await startHandoffSession(chat, chosen.workspace ? 'Workspace' : chosen.name));
       setBusy(false);
       if (!ok) {
         setErr({ text: `The session did not start in ${chosen.name}: start one there, and paste the chat if you need it.`, said: null });
@@ -115,23 +118,36 @@ function HandoffForm({ chat, onClose }: { chat: Handoff; onClose: () => void }) 
         <label class="gitr-check">
           <input type="radio" name="ho-where" checked={where === 'existing'} disabled={!targets.length} onChange={() => setWhere('existing')}
             data-testid="handoff-where-existing" />
-          <span>A project you have</span>
+          <span>
+            A project you have
+            {!targets.length && <span class="muted small"> (none can start a session now)</span>}
+          </span>
         </label>
       </fieldset>
       {where === 'existing' ? (
         <div class="gitr-form np-fields">
           <label class="wide">
-            The project (a new Claude session starts there with the conversation below as its context — text from the chat, not instructions
-            from you; each change waits for your OK)
-            <select value={pick} onChange={(e) => setPick((e.currentTarget as HTMLSelectElement).value)} data-testid="handoff-project">
+            The project
+            <select value={chosen?.id ?? ''} onChange={(e) => setPick((e.currentTarget as HTMLSelectElement).value)} aria-describedby="handoff-into-note"
+              data-testid="handoff-project">
               {targets.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {label(p.name, 80)} — {label(p.path, 120)}
-                  {p.readOnly ? ' (read-only)' : ''}
+                  {p.workspace ? 'Workspace' : label(p.name, 80)} — {label(p.path, 120)}
+                  {p.readOnly || p.pending === 'rw' ? ' (read-only)' : ''}
                 </option>
               ))}
             </select>
           </label>
+          <p class="muted small wide" id="handoff-into-note" data-testid="handoff-into-note">
+            A new Claude session starts there, in Manual mode, with the conversation below as its context — text from the chat, not instructions
+            from you. Nothing else is made.
+          </p>
+          {ownApply && (
+            <p class="small wide ho-own" role="note" data-testid="handoff-own-settings">
+              This project&apos;s own Claude Code settings apply to that session — its rules, hooks and MCP servers — because you trusted them. A rule that
+              allows a command lets it run without asking, even with the chat&apos;s text in the session.
+            </p>
+          )}
         </div>
       ) : (
       <>

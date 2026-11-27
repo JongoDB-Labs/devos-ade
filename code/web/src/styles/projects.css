@@ -54,6 +54,7 @@
 .np-fields { margin-top: 4px; }
 .ho-where { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 8px 0 0; padding: 0; border: 0; }
 .ho-where legend { padding: 0; margin-bottom: 2px; }
+.ho-own { margin: 6px 0 0; color: var(--warn, #9a6700); }
 .np-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; max-height: 50vh; overflow: auto; }
 .np-confirm { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; }
 .np-confirm input { height: 30px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }

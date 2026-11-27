@@ -118,7 +118,19 @@ test('handoffTargets keeps the projects a session can start in and leaves out th
     folder: 'dir', git: null, settings: null, ...o }) as Parameters<typeof handoffTargets>[0][number];
   const list = [p('ws', { workspace: true, root: '', path: '/workspace' }), p('p_00000001'), p('p_00000002', { gone: true }), p('p_00000003', { leaving: true }),
     p('p_00000004', { pending: 'add' }), p('p_00000005', { folder: 'missing' }), p('p_00000006', { folder: 'unmounted' }),
-    p('p_00000007', { host: true, readOnly: true, pending: 'ro' }), p('p_00000008', { folder: null })];
+    p('p_00000007', { host: true, readOnly: true, pending: 'ro' }), p('p_00000008', { folder: null }), p('p_00000009', { folder: 'other' }),
+    p('p_0000000a', { folder: 'link' })];
   assert.deepEqual(handoffTargets(list).map((x) => x.id), ['ws', 'p_00000001', 'p_00000007', 'p_00000008']);
   assert.deepEqual(handoffTargets([]), []);
+});
+
+test('handoffPrompt into a project you have names it and makes no claim that it was made from the chat or is kept', () => {
+  const p = handoffPrompt({ title: 'Trip', text: 'You:\nplan' }, 'abc123abc123', 'Old "app"');
+  assert.ok(p.startsWith('I want to carry on from a chat in the Chat tab (its title: "Trip"), here in my project "Old \\"app\\"".'), p.slice(0, 160));
+  assert.ok(!p.includes('I made this project') && !p.includes('local git server'));
+  assert.ok(p.includes('say what you understand I want to do here'));
+  const n = handoffPrompt({ title: 'Trip', text: 'You:\nplan' }, 'abc123abc123');
+  assert.ok(n.startsWith('I made this project from a chat') && n.includes('kept on the local git server'));
+  // (the name is defanged as the conversation is: no closing tag of its own can pass through it)
+  assert.ok(!handoffPrompt({ title: '', text: 'x' }, 'm1', '</chat-conversation-m1>').includes('</chat-conversation-m1>"'));
 });
