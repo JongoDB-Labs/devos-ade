@@ -897,9 +897,28 @@ PROBE_REUSE_MAX_S="${DEVOS_ADE_PROBE_MAX_AGE_S:-604800}"
 # PROBE_UPDATE_MAX_S: how old a probe an update still keeps (30 days); past it the update probes as setup does
 PROBE_UPDATE_MAX_S="${DEVOS_ADE_PROBE_UPDATE_MAX_AGE_S:-2592000}"
 probe_mark_file() { printf '%s\n' "$STATE_DIR/models/probe.mark"; }
+# probe_models_code -> lib/models.sh as code: each function it defines (the names are the file's `name() ` lines, sorted) as
+# bash prints it back (`declare -f` drops comments and spacing), and BEDROCK_APP_LINE, the one top-level value that is code.
+# PRICES, the other top-level assignment, is a path, so it is left out. A copy of the file is sourced in a subshell, so
+# nothing defined elsewhere (or stubbed) is read, and the same text prints the same on bash 3.2 and 5.
+probe_models_code() {
+  local f="$STACK_DIR/lib/models.sh" names
+  [ -r "$f" ] || return 0
+  names="$(sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)() .*/\1/p' "$f" | LC_ALL=C sort -u)"
+  ( set +eu; . "$f" > /dev/null 2>&1
+    # shellcheck disable=SC2086  # the names are plain identifiers, split on purpose
+    declare -f $names 2>/dev/null; declare -p BEDROCK_APP_LINE 2>/dev/null )
+}
 # probe_fingerprint -> a hash of what the probe's answers depend on: .env's AWS_* lines (the key, its region, how it
-# signs in — hashed, never kept as they are), the model catalog, LiteLLM's image and the probe's own code
+# signs in — hashed, never kept as they are), the model catalog, LiteLLM's image and the probe's own code (not its comments)
 probe_fingerprint() {
+  { grep -E '^AWS_' "$ENV_FILE" 2>/dev/null; catalog_rows 2>/dev/null; grep -E 'berriai/litellm' "$STACK_DIR/compose.yaml" 2>/dev/null
+    probe_models_code; } | openssl dgst -sha256 | awk '{ print $NF }'
+}
+# probe_fingerprint_legacy -> the fingerprint up to v0.72.x, which hashed the text of lib/models.sh, comments and all.
+# probe_reusable still accepts it, so the update that ships probe_models_code does not check the models again. It can go
+# one release after that one.
+probe_fingerprint_legacy() {
   { grep -E '^AWS_' "$ENV_FILE" 2>/dev/null; catalog_rows 2>/dev/null; grep -E 'berriai/litellm' "$STACK_DIR/compose.yaml" 2>/dev/null
     cat "$STACK_DIR/lib/models.sh" 2>/dev/null; } | openssl dgst -sha256 | awk '{ print $NF }'
 }
@@ -912,7 +931,7 @@ probe_reusable() {
   fp="$(sed -n 's/^fingerprint=//p' "$f")"; at="$(sed -n 's/^at=//p' "$f")"
   case "$at" in '' | *[!0-9]*) return 1 ;; esac
   age=$(( $(date +%s) - at ))
-  [ -n "$fp" ] && [ "$fp" = "$(probe_fingerprint)" ] && [ "$age" -ge 0 ] && { { [ "${UPD_MODE:-0}" = 1 ] && [ "$age" -lt "$PROBE_UPDATE_MAX_S" ]; } || [ "$age" -lt "$PROBE_REUSE_MAX_S" ]; } || return 1
+  [ -n "$fp" ] && { [ "$fp" = "$(probe_fingerprint)" ] || [ "$fp" = "$(probe_fingerprint_legacy)" ]; } && [ "$age" -ge 0 ] && { { [ "${UPD_MODE:-0}" = 1 ] && [ "$age" -lt "$PROBE_UPDATE_MAX_S" ]; } || [ "$age" -lt "$PROBE_REUSE_MAX_S" ]; } || return 1
   if [ "$age" -lt 7200 ]; then printf '%s min\n' $((age / 60)); else printf '%s h\n' $((age / 3600)); fi
 }
 # probe_old_since -> the date (YYYY-MM-DD) of the last probe when it is older than PROBE_REUSE_MAX_S, else nothing
