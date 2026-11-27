@@ -4,6 +4,12 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **Setup and Update now no longer print a stray "child setpgid … Operation not permitted" line on a Mac.** Bash on macOS sometimes printed it, under load, as the checks started side by side. It was harmless: every check still ran and still counted. It is now kept out of the output, and out of the Settings log of a change. (JON-1432)
+
 ## [0.73.2] - 2026-11-27
 
 ### Fixed
