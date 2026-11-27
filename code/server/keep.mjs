@@ -1,7 +1,9 @@
 // Keep a project on the built-in git server (Forgejo; lib/localgit.sh, JON-1005): the Code page asks once per project, and
 // when you say yes it makes a private repository for it on the server (Forgejo's API, through the mirrors.mjs route to Caddy's
 // internal site), adds it as a remote of the project's repository and pushes — then keeps pushing by itself: after a commit
-// made in the Git panel, after a session's turn in the project, and every 10 minutes for what moved meanwhile.
+// made in the Git panel, after a session's turn in the project, within about 10 seconds of a commit made anywhere else (the
+// Terminal, any git: a light look at each kept project's branch and commit, from files, no git process; JON-1430), and every
+// 10 minutes for what moved meanwhile.
 // The pushes are the Git panel's own (gitremote.mjs plan and run: the same URL rules, credential and CA as Publish), one
 // branch at a time to the branch of that name, never forced. A branch the server would not take — it has commits the project
 // does not — is noted and left alone until it moves; nothing on the server is ever overwritten. One push run per project at
@@ -16,6 +18,8 @@ const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
 const RESERVED = /\.(git|wiki|rss|atom)$/i;
 const HEX = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
 export const SWEEP_MS = 10 * 60000;
+export const LOOK_MS = 10000;
+const LOOK_MAX = 100;   // (bn-coded's git.heads takes at most this many repositories)
 const PER_RUN = 20;
 const err = (status, m) => new HostError(status, m);
 
@@ -46,13 +50,17 @@ export const astrayText = (remote) => `the remote ${remote} no longer points at 
 export const rejectedText = (branch) => `${branch}: the local git server has commits this project doesn't — pull first`;
 
 // makeKeep({store, remote, mirrors}) -> the API of keeping (main.mjs routes): store() — the project records (projects.mjs);
-// remote() — gitremote.mjs's API (state, remoteSet, remoteRemove, plan, run); mirrors — mirrors.mjs (owner, nameFree)
-export function makeKeep({ store, remote, mirrors, git = null, now = () => Date.now(), log = () => {} }) {
+// remote() — gitremote.mjs's API (state, remoteSet, remoteRemove, plan, run); mirrors — mirrors.mjs (owner, nameFree);
+// heads(repos) -> bn-coded's git.heads answer {heads: [{repo, branch, head} | {repo, error}]} (the look; none: no look)
+export function makeKeep({ store, remote, mirrors, git = null, heads = null, now = () => Date.now(), log = () => {} }) {
   const running = new Map();   // project id -> the run in progress
   const complained = new Set();   // repositories whose failed protection was logged already
   const guarded = new Map();   // 'owner/name' -> the branches known to be protected on the server (this start's memory: a restart looks again)
   const again = new Set();     // project ids asked to push again while a run was in progress
-  let timer = null;
+  let timer = null, lookTimer = null;
+  let looking = false, noLook = false;
+  const lookSaid = new Set();   // the texts a failed look said already
+  const tried = new Map();      // project id -> 'branch@head' the look last started a push for
   const rootOf = (id) => {
     const r = store().rootOf(id);
     if (!r) throw err(404, 'no such project (it was removed?)');
@@ -356,18 +364,58 @@ export function makeKeep({ store, remote, mirrors, git = null, now = () => Date.
       } catch (e) { log(`keep ${id}: ${short(e?.message, 200)}`); }
     }
   }
+  // look() — the light look (JON-1430): one git.heads call for every kept project with automatic pushes on that is not pushing now;
+  // a project whose branch has a commit that is neither the one last pushed nor one the server refused is pushed at once. Nothing
+  // else runs when nothing moved. One look at a time; no kept project, no call. A commit that did not go (a failed push) is not
+  // tried again by the look — the sweep does that. An older sandbox that does not know the op ends the looks until the next start.
+  async function look() {
+    if (typeof heads !== 'function' || noLook || looking) return;
+    looking = true;
+    try {
+      const asked = [];
+      for (const id of store().keptIds()) {
+        const rec = store().localgit(id);
+        if (rec?.state !== 'kept' || !rec.auto || running.has(id)) continue;
+        try { asked.push({ id, rel: rootOf(id).rel }); } catch { /* no such project any more */ }
+      }
+      for (const id of [...tried.keys()]) if (!asked.some((a) => a.id === id)) tried.delete(id);
+      for (let i = 0; i < asked.length; i += LOOK_MAX) {
+        const part = asked.slice(i, i + LOOK_MAX);
+        const out = await heads(part.map((a) => a.rel));
+        part.forEach((a, k) => {
+          const h = out?.heads?.[k];
+          if (!h || h.error || typeof h.branch !== 'string' || !HEX.test(h.head ?? '')) return;
+          const rec = store().localgit(a.id);
+          if (rec?.state !== 'kept' || !rec.auto || rec.heads[h.branch] === h.head || rec.rejected[h.branch] === h.head) return;
+          const mark = `${h.branch}@${h.head}`;
+          if (tried.get(a.id) === mark && !running.has(a.id)) return;
+          tried.set(a.id, mark);
+          trigger(a.id);
+        });
+      }
+    } catch (e) {
+      const text = short(e?.message || String(e), 200);
+      if (/unknown op/i.test(text)) {
+        noLook = true;
+        log('keep: this sandbox does not know git.heads (an older one): commits made outside the panel are pushed by the 10-minute sweep until it restarts');
+      } else if (!lookSaid.has(text)) { lookSaid.add(text); log(`keep: the look at the kept projects failed: ${text}`); }
+    } finally { looking = false; }
+  }
   async function guardAll() {
     let ids = [];
     try { ids = store().keptIds(); } catch { return; }
     for (const id of ids) { try { const rec = store().localgit(id); if (rec?.state === 'kept') await ensure(rec.repo); } catch (e) { log(`keep ${id}: ${short(e?.message, 200)}`); } }
   }
-  function start(ms = SWEEP_MS) {
+  function start(ms = SWEEP_MS, lookMs = LOOK_MS) {
     clearInterval(timer);
+    clearInterval(lookTimer);
+    noLook = false;
     void guardAll();   // (at once, not after the first interval: the repositories kept before this version get their protection when the Code page starts)
     timer = setInterval(() => { void sweep(); }, ms);
     timer.unref?.();
+    if (typeof heads === 'function' && lookMs > 0) { lookTimer = setInterval(() => { void look(); }, lookMs); lookTimer.unref?.(); }
   }
-  const close = () => { clearInterval(timer); timer = null; };
+  const close = () => { clearInterval(timer); timer = null; clearInterval(lookTimer); lookTimer = null; };
 
-  return { view, keep, pushNow, setAuto, setAutoCommit, commitTurn, decline, stop, sync, committed, turnEnded, keptRepo, sweep, guardAll, start, close };
+  return { view, keep, pushNow, setAuto, setAutoCommit, commitTurn, decline, stop, sync, committed, turnEnded, keptRepo, sweep, look, guardAll, start, close };
 }

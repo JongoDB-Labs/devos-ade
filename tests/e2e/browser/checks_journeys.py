@@ -334,6 +334,14 @@ def terminal_folder_to_git(ctx):
         except AssertionError:
             j.step(False, f"{J4} (a package.json, no git) was not added with Start git here, or Start git here did not lead to keeping it")
         shot(page, "j2-2-added-node")
+        # (JON-1430: the J4 folder is kept with no commit. A first commit made in the still-open Terminal tab, with the page doing nothing, must reach the
+        # server within seconds — the keeper looks every 10 s — not at the 10-minute sweep, while the Git panel says it pushes by itself)
+        say(tp, f, f"cd /workspace/{J4} && git add package.json && git commit -q -m 'First commit after keeping'; echo j4-commit-exit-$?", r"^j4-commit-exit-\d+$")
+        out4 = T.term_text(f)
+        j.step("j4-commit-exit-0" in out4,
+               f"git commit in {J4} (kept, no commit yet) failed in the Terminal tab: {out4[-300:]!r}")
+        st4, _ = wait_repo(ctx, J4, "/commits?limit=1", 30)
+        j.step(st4 == 200, f"JON-1430: a commit made in the Terminal in {J4}, kept with no commit yet, is not on the server {owner}/{J4} within 30 s (HTTP {st4}): it waits for the 10-minute sweep")
         # (JON-1158: the Terminal tab, still open, lists the same project in its Projects panel, as kept)
         try:
             T.show_projects_widget(tp)

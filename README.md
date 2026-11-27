@@ -1585,7 +1585,7 @@ uninstall` removes it, turning the server off keeps it).
   (one on the server already, or held by another kept project, is said, and nothing is changed), makes the private
   repository `devos/<name>` on the server at once (empty, so the project is in the Git tab from the start, before any commit),
   adds it as the project's remote (`origin`, or `local` beside a remote it has), and pushes what the project has. After that the project is pushed by itself — after a commit
-  made in the panel, after a session's turn, and every 10 minutes for what moved — each branch to the branch of that name,
+  made in the panel, after a session's turn, within about 10 seconds of a commit made anywhere else (the Terminal, any git), and every 10 minutes for anything else that moved — each branch to the branch of that name,
   **never forced**: the default branch of every kept repository is also **protected on the server** (no force-push and no deletion; ordinary pushes
   are unaffected), so nothing a terminal or Claude does can rewrite it there. A branch the server would not take (it has commits the project does not) is shown as *the local git server has
   commits this project doesn't — pull first* and left alone. Automatic pushes stop, and the panel says why, if the remote is

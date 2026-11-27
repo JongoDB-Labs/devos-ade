@@ -31,12 +31,21 @@ function sandbox() {
   const log = [];
   const server = new Map();   // "remote url" -> Map(branch -> commit)
   let busy = 0, maxBusy = 0, delay = 0, refuse = new Set(), afterLook = null;
+  let headsBusy = 0, maxHeadsBusy = 0, headsDelay = 0, headsFail = null;   // (git.heads: the cheap look, JON-1430)
   const repo = (r) => {
     if (!repos.has(r)) throw new SandboxError('not a git repository', 'refused');
     return repos.get(r);
   };
   const call = async (req) => {
     log.push(req);
+    if (req.op === 'git.heads') {
+      headsBusy++; maxHeadsBusy = Math.max(maxHeadsBusy, headsBusy);
+      try {
+        if (headsDelay) await tick(headsDelay);
+        if (headsFail) throw headsFail;
+        return { result: { heads: req.repos.map((r) => (repos.has(r) ? { repo: r, branch: repos.get(r).branch, head: repos.get(r).branches[repos.get(r).branch] ?? null } : { repo: r, error: 'not a git repository' })) } };
+      } finally { headsBusy--; }
+    }
     if (req.op === 'git.remote.state') {
       if (!repos.has(req.repo)) return { result: { repo: false, reason: 'not a git repository' } };
       const g = repos.get(req.repo);
@@ -66,14 +75,15 @@ function sandbox() {
     }
     throw new Error(`unexpected ${req.op}`);
   };
-  return { call, log, repos, server, get maxBusy() { return maxBusy; }, set delay(v) { delay = v; }, refuse, after: (f) => { afterLook = f; },
+  return { call, log, repos, server, get maxBusy() { return maxBusy; }, set delay(v) { delay = v; }, get maxHeadsBusy() { return maxHeadsBusy; }, set headsDelay(v) { headsDelay = v; }, set headsFail(v) { headsFail = v; },
+    asks: (op) => log.filter((r) => r.op === op), refuse, after: (f) => { afterLook = f; },
     nets: () => log.filter((r) => r.op === 'git.net'),
     make: (r, over = {}) => repos.set(r, { branch: 'main', branches: { main: sha('a') }, remotes: {}, ...over }) };
 }
 
 let n = 0;
 // a whole setup: records, Git hosts (the built-in one connected), a stand-in Forgejo, the Git panel's remote operations, keep
-function setup({ connected = true, badDefault = null, existsName = null, createFails = null, protectFails = null, defaultBranch = 'main' } = {}) {
+function setup({ connected = true, badDefault = null, existsName = null, createFails = null, protectFails = null, defaultBranch = 'main', looks = true } = {}) {
   const dir = path.join(ROOT, `s${++n}`);
   const hosts = new GitHosts({ dir });
   if (connected) hosts.addLocalGit({ ca: CA, token: LTOK, account: 'devos' });
@@ -111,7 +121,7 @@ function setup({ connected = true, badDefault = null, existsName = null, createF
   const mirrors = makeMirrors({ store: hosts, fetchImpl, base: 'http://caddy:8099' });
   const remote = makeGitRemote({ call: sb.call, store: hosts });
   const logs = [];
-  const keep = makeKeep({ store: () => projects, remote: () => remote, mirrors, log: (m) => logs.push(m) });
+  const keep = makeKeep({ store: () => projects, remote: () => remote, mirrors, log: (m) => logs.push(m), ...(looks ? { heads: async (repos) => (await sb.call({ op: 'git.heads', repos })).result } : {}) });
   return { dir, hosts, projects, sb, api, keep, logs, mirrors, rules, made, state };
 }
 const project = (s, name = 'My App', root = 'app', git = {}) => { s.sb.make(root, git); return s.projects.add({ name, root }).id; };
@@ -632,4 +642,117 @@ test('a default branch that is not a plain name is not guarded and is said once;
   const n = m.api.length;
   await m.keep.sweep();
   assert.deepEqual(m.api.slice(n).map((c) => c.method), ['GET'], 'known to be protected: one look at the default branch, nothing more');
+});
+
+// --- the look (JON-1430): a commit made in the terminal (or by any other git) is pushed within seconds, not at the next sweep ---
+test('the look: a project kept with no commit, then a commit made elsewhere, is pushed by one look; the same head again asks git nothing more', async () => {
+  const s = setup();
+  const id = project(s, 'Fresh', 'fresh', { branches: {}, branch: 'main' });
+  await s.keep.keep(id, {});
+  assert.equal(s.sb.nets().length, 0, 'no commit: nothing pushed');
+  await s.keep.look();
+  assert.equal(s.sb.nets().length, 0, 'still no commit: a look pushes nothing');
+  assert.deepEqual(s.sb.asks('git.heads').at(-1).repos, ['fresh']);
+  s.sb.repos.get('fresh').branches.main = sha('b');   // (a commit in the terminal)
+  await s.keep.look();
+  await sleepUntil(() => s.sb.nets().length === 1);
+  await tick(30);
+  assert.deepEqual(s.sb.nets().map((r) => [r.repo, r.branch]), [['fresh', 'main']]);
+  assert.deepEqual(s.projects.localgit(id).heads, { main: sha('b') });
+  const states = s.sb.asks('git.remote.state').length, nets = s.sb.nets().length;
+  await s.keep.look();
+  await s.keep.look();
+  assert.equal(s.sb.asks('git.remote.state').length, states, 'the same head: no git.remote.state');
+  assert.equal(s.sb.nets().length, nets);
+});
+
+test('the look: a head the server refused is not pushed again; a project with automatic pushes off is not asked about; no kept project, no call', async () => {
+  const s = setup();
+  const none = s.sb.asks('git.heads').length;
+  await s.keep.look();
+  assert.equal(s.sb.asks('git.heads').length, none, 'no kept project: no call');
+  const a = project(s, 'A', 'a', { branches: { main: sha('a'), side: sha('1') } });
+  const b = project(s, 'B', 'b');
+  await s.keep.keep(a, {});
+  await s.keep.keep(b, {});
+  await s.keep.setAuto(b, false);
+  await tick(30);
+  await s.keep.look();
+  assert.deepEqual(s.sb.asks('git.heads').at(-1).repos, ['a'], 'auto off: not in the call');
+  // (refused: the server has commits the branch does not; the look leaves it alone until it moves)
+  s.sb.refuse.add('main');
+  s.sb.repos.get('a').branches.main = sha('c');
+  await s.keep.look();
+  await sleepUntil(() => s.projects.localgit(a).rejected.main === sha('c'));
+  await tick(30);
+  const nets = s.sb.nets().length, states = s.sb.asks('git.remote.state').length;
+  await s.keep.look();
+  await s.keep.look();
+  assert.equal(s.sb.nets().length, nets, 'a rejected head is not pushed again');
+  assert.equal(s.sb.asks('git.remote.state').length, states);
+  s.sb.refuse.delete('main');
+  s.sb.repos.get('a').branches.main = sha('d');   // (it moved: tried again)
+  await s.keep.look();
+  await sleepUntil(() => s.projects.localgit(a).heads.main === sha('d'));
+  assert.equal(s.projects.localgit(a).heads.main, sha('d'));
+  s.keep.close();
+  await s.keep.setAuto(a, false);
+  await s.keep.look();
+  const last = s.sb.asks('git.heads').length;
+  await s.keep.look();
+  assert.equal(s.sb.asks('git.heads').length, last, 'every project has automatic pushes off: no call');
+});
+
+test('the look: an older sandbox (unknown op) stops the looks, said once; another failure is said once per text and tried again', async () => {
+  const s = setup();
+  const id = project(s, 'A', 'a');
+  await s.keep.keep(id, {});
+  s.sb.headsFail = new SandboxError('busy: try again', 'failed');
+  await s.keep.look(); await s.keep.look();
+  assert.equal(s.logs.filter((m) => /busy: try again/.test(m)).length, 1, 'said once');
+  s.sb.headsFail = new SandboxError('boom', 'failed');
+  await s.keep.look();
+  assert.equal(s.logs.filter((m) => /boom/.test(m)).length, 1);
+  assert.equal(s.sb.asks('git.heads').length, 3, 'tried again each time');
+  s.sb.headsFail = new SandboxError('unknown op', 'failed');
+  await s.keep.look(); await s.keep.look(); await s.keep.look();
+  assert.equal(s.sb.asks('git.heads').length, 4, 'one more call, then none');
+  assert.equal(s.logs.filter((m) => /unknown op|older/.test(m)).length, 1);
+  s.sb.headsFail = null;
+  s.sb.repos.get('a').branches.main = sha('9');
+  await s.keep.look();
+  assert.equal(s.sb.asks('git.heads').length, 4, 'stopped until the next start');
+  s.keep.start(1e6, 1e6);   // (a new start looks again)
+  s.keep.close();
+  await s.keep.look();
+  assert.equal(s.sb.asks('git.heads').length, 5);
+});
+
+test('the look: never overlaps itself; without the option there is no look; start makes both timers and close stops both', async () => {
+  const s = setup();
+  const id = project(s, 'A', 'a');
+  await s.keep.keep(id, {});
+  s.sb.headsDelay = 60;
+  await Promise.all([s.keep.look(), s.keep.look(), s.keep.look()]);
+  assert.equal(s.sb.maxHeadsBusy, 1);
+  assert.equal(s.sb.asks('git.heads').length, 1, 'a look while one runs is skipped');
+  s.sb.headsDelay = 0;
+  const bare = setup({ looks: false });
+  const bid = project(bare, 'A', 'a');
+  await bare.keep.keep(bid, {});
+  bare.sb.repos.get('a').branches.main = sha('7');
+  await bare.keep.look();
+  assert.equal(bare.sb.asks('git.heads').length, 0, 'no option: no look');
+  // timers: the look repeats on its own, the sweep too, and both stop at close
+  const before = s.sb.asks('git.heads').length;
+  s.keep.start(1e6, 20);
+  s.sb.repos.get('a').branches.main = sha('6');
+  await sleepUntil(() => s.sb.nets().length >= 2, 3000);
+  assert.equal(s.projects.localgit(id).heads.main, sha('6'), 'pushed by the timer\'s look, the sweep being far off');
+  assert.ok(s.sb.asks('git.heads').length > before);
+  s.keep.close();
+  await tick(60);
+  const after1 = s.sb.asks('git.heads').length;
+  await tick(100);
+  assert.equal(s.sb.asks('git.heads').length, after1, 'closed: no more looks');
 });

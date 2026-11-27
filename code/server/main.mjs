@@ -306,10 +306,12 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
     try { return { available: true, mirrors: await mirrorsApi.list() }; } catch (e) { return { available: false, mirrors: [], why: short(e?.message, 200) }; }
   };
   let gitRemoteApi = null;
-  // keeping a project on the built-in git server (keep.mjs): the automatic pushes run from the first use of it, and every 10 minutes
+  // keeping a project on the built-in git server (keep.mjs): the automatic pushes run from the first use of it, a look every 10 seconds
+  // for a commit made outside the panel (git.heads), and the sweep every 10 minutes
   let keepApi = null;
   const keeper = () => {
     if (!keepApi) { keepApi = makeKeep({ store: proj, remote: () => gitRemote(), mirrors: mirrorsApi, log: logger,
+      heads: async (repos) => (await call({ op: 'git.heads', repos }, { timeoutMs: 15000 })).result,
       git: { status: (r) => api.gitStatus(r), file: (r, o) => api.gitFile({ repo: r, ...o }), stage: (r, paths) => api.gitStage({ repo: r, paths }), unstage: (r, paths) => api.gitUnstage({ repo: r, paths }), commit: (r, message) => api.gitCommit({ repo: r, message }) } }); if (keepSweepMs > 0) keepApi.start(keepSweepMs); }
     return keepApi;
   };
