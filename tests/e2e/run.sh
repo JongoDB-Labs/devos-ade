@@ -330,12 +330,15 @@ cli() {
 
 # signin_link CONTAINER TOOL PATTERN — the tool's own sign-in (`subscriptions login TOOL`) in a pseudo-terminal in the
 # sandbox CONTAINER, for 40 s, until a link matching PATTERN (a request to the provider; never completed). A provider's
-# device sign-in is sometimes slow to answer: with no link, it is tried once more (JON-1426). 0 with a link (and, on the
-# second try, what the first one printed); 1 with what both printed.
+# device sign-in sometimes fails for a moment (Chat's Codex: no link and an exit in seconds, or none in 40 s; a rerun
+# passed each time): with no link, it is tried once more 15 s later (JON-1426). Each try's words end with its exit status
+# (124: cut off at 40 s). 0 with a link (and, on the second try, what the first printed); 1 with what both printed.
 signin_link() {
   local c="$1" t="$2" pat="$3" try out said=''
   for try in 1 2; do
-    out="$(docker exec "$c" timeout 40 script -qec "subscriptions login $t" /dev/null </dev/null 2>&1 | tr -d '\r' | head -c 20000)"
+    [ "$try" = 1 ] || sleep 15
+    out="$(docker exec "$c" timeout 40 script -qec "subscriptions login $t" /dev/null </dev/null 2>&1 | tr -d '\r' | head -c 20000
+      printf ' [exit %s]' "${PIPESTATUS[0]}")"
     if printf '%s' "$out" | grep -E "$pat" >/dev/null; then
       [ "$try" = 1 ] || printf 'on a second try (the first printed no link: %s)' "$said"
       return 0
@@ -1658,8 +1661,10 @@ JS
   if part_on browser; then
     E2E_SUBSCRIPTIONS=1 browser_run "your AI subscriptions: the pickers" 'browser/subscriptions-(terminal-open|chat-embed|code-harness)$' subs runner-subs
     # (the windows the pickers opened: none when E2E_CHECKS left the pickers' checks out)
-    if ! grep -E "^browser	subscriptions-(terminal-open|chat-embed)@subs	" "$RESULTS" >/dev/null 2>&1; then
-      record subscriptions picker-windows SKIP 0 "the pickers' checks did not run (E2E_CHECKS)"
+    # (both: the Terminal's Open › Codex makes the codex windows, Chat's Who answers › Grok Build the grok ones)
+    if ! grep -E "^browser	subscriptions-terminal-open@subs	" "$RESULTS" >/dev/null 2>&1 \
+       || ! grep -E "^browser	subscriptions-chat-embed@subs	" "$RESULTS" >/dev/null 2>&1; then
+      record subscriptions picker-windows SKIP 0 "the pickers' checks did not both run (E2E_CHECKS)"
     else
       wins="$(docker exec "$tc" tmux list-windows -a -F '#{session_name}:#{window_name}' 2>/dev/null | tr '\n' ' ')"
       # (a window is named after what runs in it: codex until `subscriptions open` knows the kind — codex-chatgpt once signed in —, so both the bare name and a "-kind" one count)
