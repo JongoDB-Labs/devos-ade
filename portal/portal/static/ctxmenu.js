@@ -34,9 +34,12 @@
   };
 
   // --- the menu itself ---
+  // (closed by anything while it holds the focus, a scroll or a resize as well as Escape: the focus goes back to where the
+  // menu came from, never left on the page; a click elsewhere then moves it on as the browser does)
   function close(refocus = true) {
     if (!menu) return;
     const m = menu, f = back;
+    const held = m.contains(document.activeElement);
     menu = null; back = null;
     m.remove();
     for (const b of document.querySelectorAll(".ctx-more[aria-expanded=true], .cont-new-in[aria-expanded=true]")) b.setAttribute("aria-expanded", "false");
@@ -44,7 +47,7 @@
     document.removeEventListener("scroll", onScroll, true);
     window.removeEventListener("resize", onResize);
     document.removeEventListener("bn:tab", onResize);
-    if (refocus && f && f.isConnected) f.focus({ preventScroll: true });
+    if ((refocus || held) && f && f.isConnected) f.focus({ preventScroll: true });
   }
   const onOutside = (e) => { if (menu && !menu.contains(e.target)) close(false); };
   const onScroll = (e) => { if (menu && !(e.target instanceof Node && menu.contains(e.target))) close(false); };

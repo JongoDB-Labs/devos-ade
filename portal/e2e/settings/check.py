@@ -1368,6 +1368,14 @@ def check_menus(page, failures, label):
         page.keyboard.press("Escape")
         if page.locator(".ctx-menu").count() or page.evaluate("() => document.activeElement && document.activeElement.closest('.set-row') !== null") is not True:
             failures.append(f"{label}: Shift+F10 / Escape did not open and close the row menu, focus back on the row")
+        # a scroll while the menu holds the focus closes it, and the focus goes back to the row, not to the page: a
+        # keyboard user keeps their place (the page scrolled by focusing a row could close a just-opened menu, gates 0730b)
+        ctl.focus()
+        page.keyboard.press("Shift+F10")
+        page.wait_for_selector(".ctx-menu", timeout=3000)
+        page.evaluate("() => document.dispatchEvent(new Event('scroll'))")
+        if page.locator(".ctx-menu").count() or page.evaluate("() => document.activeElement && document.activeElement.closest('.set-row') !== null") is not True:
+            failures.append(f"{label}: a scroll closed the row menu but the focus did not go back to the row")
     # screenshots, light and dark, three widths
     for scheme in ("light", "dark"):
         page.emulate_media(color_scheme=scheme)
