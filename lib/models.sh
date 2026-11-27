@@ -91,7 +91,7 @@ prices_identity() {
   if [ -n "$v" ]; then printf 'auto %s\n' "$v"; else printf 'catalog %s\n' "$(prices_as_of)"; fi
 }
 
-prices_age_days() { # -> whole days from as_of to today (UTC dates, like the web app; TODAY=YYYY-MM-DD for tests), or empty
+prices_age_days() { # -> whole days from as_of to today (UTC dates, like the portal; TODAY=YYYY-MM-DD for tests), or empty
   local d t a
   d="$(prices_as_of)"; [ -n "$d" ] || return 0
   a="$(date_to_epoch "$d")" || return 0
