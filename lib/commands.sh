@@ -919,8 +919,8 @@ probe_fingerprint() {
     probe_models_code; } | openssl dgst -sha256 | awk '{ print $NF }'
 }
 # probe_fingerprint_legacy -> the fingerprint up to v0.72.x, which hashed the text of lib/models.sh, comments and all.
-# probe_reusable still accepts it, so the update that ships probe_models_code does not check the models again. It can go
-# one release after that one.
+# probe_reusable still accepts it, and rewrites such a mark with today's fingerprint (its time kept), so the update that
+# ships probe_models_code does not check the models again. It can go a few releases after that one.
 probe_fingerprint_legacy() {
   { grep -E '^AWS_' "$ENV_FILE" 2>/dev/null; catalog_rows 2>/dev/null; grep -E 'berriai/litellm' "$STACK_DIR/compose.yaml" 2>/dev/null
     cat "$STACK_DIR/lib/models.sh" 2>/dev/null; } | openssl dgst -sha256 | awk '{ print $NF }'
@@ -928,13 +928,18 @@ probe_fingerprint_legacy() {
 # probe_reusable -> 0 when the last probe's answers still stand: the same fingerprint, younger than PROBE_REUSE_MAX_S
 # (an update: PROBE_UPDATE_MAX_S), and its results still there (litellm/enabled-models.txt, litellm/probe-results.tsv); prints how old they are
 probe_reusable() {
-  local f fp at age
+  local f fp at age legacy=0
   f="$(probe_mark_file)"; [ -r "$f" ] || return 1
   [ -s "$STACK_DIR/litellm/enabled-models.txt" ] && [ -s "$STACK_DIR/litellm/probe-results.tsv" ] || return 1
   fp="$(sed -n 's/^fingerprint=//p' "$f")"; at="$(sed -n 's/^at=//p' "$f")"
   case "$at" in '' | *[!0-9]*) return 1 ;; esac
   age=$(( $(date +%s) - at ))
-  [ -n "$fp" ] && { [ "$fp" = "$(probe_fingerprint)" ] || [ "$fp" = "$(probe_fingerprint_legacy)" ]; } && [ "$age" -ge 0 ] && { { [ "${UPD_MODE:-0}" = 1 ] && [ "$age" -lt "$PROBE_UPDATE_MAX_S" ]; } || [ "$age" -lt "$PROBE_REUSE_MAX_S" ]; } || return 1
+  [ -n "$fp" ] || return 1
+  if [ "$fp" != "$(probe_fingerprint)" ]; then [ "$fp" = "$(probe_fingerprint_legacy)" ] || return 1; legacy=1; fi
+  [ "$age" -ge 0 ] && { { [ "${UPD_MODE:-0}" = 1 ] && [ "$age" -lt "$PROBE_UPDATE_MAX_S" ]; } || [ "$age" -lt "$PROBE_REUSE_MAX_S" ]; } || return 1
+  # (a mark of the old formula that still stands gets today's fingerprint and keeps its own time, so its age rules do not
+  # change and probe_fingerprint_legacy can go without one more check on each install)
+  [ "$legacy" = 0 ] || probe_mark "$at"
   if [ "$age" -lt 7200 ]; then printf '%s min\n' $((age / 60)); else printf '%s h\n' $((age / 3600)); fi
 }
 # probe_old_since -> the date (YYYY-MM-DD) of the last probe when it is older than PROBE_REUSE_MAX_S, else nothing
@@ -944,12 +949,14 @@ probe_old_since() {
   [ $(( $(date +%s) - at )) -ge "$PROBE_REUSE_MAX_S" ] || return 0
   date -r "$at" +%Y-%m-%d 2>/dev/null || date -d "@$at" +%Y-%m-%d 2>/dev/null || true
 }
-# probe_mark — the probe just answered: its fingerprint and the time (a failure to write it only means a probe next time)
+# probe_mark [AT] — the probe just answered: its fingerprint and the time (AT: the time of an older answer that still stands;
+# a failure to write it only means a probe next time)
 probe_mark() {
-  local d tmp
+  local d tmp at="${1:-}"
+  case "$at" in '' | *[!0-9]*) at="$(date +%s)" ;; esac
   d="$(dirname "$(probe_mark_file)")"
   mkdir -p "$d" 2>/dev/null && chmod 700 "$d" 2>/dev/null && tmp="$(mktemp "$d/.probe.XXXXXX" 2>/dev/null)" || return 0
-  printf 'fingerprint=%s\nat=%s\n' "$(probe_fingerprint)" "$(date +%s)" > "$tmp" && mv -f "$tmp" "$(probe_mark_file)" || rm -f "$tmp"
+  printf 'fingerprint=%s\nat=%s\n' "$(probe_fingerprint)" "$at" > "$tmp" && mv -f "$tmp" "$(probe_mark_file)" || rm -f "$tmp"
   return 0
 }
 

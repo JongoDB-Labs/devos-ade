@@ -71,6 +71,31 @@ test_a_legacy_mark_keeps_the_age_rules() {
   ! probe_reusable > /dev/null || fail "a nine day old legacy mark was kept outside an update"
   UPD_MODE=1; probe_reusable > /dev/null || fail "an update refused a nine day old legacy mark"
 }
+test_a_legacy_mark_is_rewritten_with_the_new_fingerprint_and_its_own_time() {
+  # (so the legacy formula can go later without a check again: the mark's time is kept, so its age rules do not change)
+  _pf_setup; _pf_write_mark "$(probe_fingerprint_legacy)" 3600
+  at="$(sed -n 's/^at=//p' "$(probe_mark_file)")"
+  probe_reusable > /dev/null || fail "refused a legacy mark"
+  assert_eq "$(sed -n 's/^fingerprint=//p' "$(probe_mark_file)")" "$(probe_fingerprint)"
+  assert_eq "$(sed -n 's/^at=//p' "$(probe_mark_file)")" "$at"
+}
+test_a_legacy_mark_too_old_is_refused_and_left_as_it_is() {
+  _pf_setup; legacy="$(probe_fingerprint_legacy)"; _pf_write_mark "$legacy" $((PROBE_REUSE_MAX_S + 60))
+  ! probe_reusable > /dev/null || fail "accepted a legacy mark past its age"
+  assert_eq "$(sed -n 's/^fingerprint=//p' "$(probe_mark_file)")" "$legacy"
+}
+test_the_fingerprint_sees_every_function_and_value_lib_models_sh_defines() {
+  # bash's own list, after sourcing the file in a clean environment, against the names the fingerprint reads: a function
+  # written another way (function f {, f(){, indented) or a new top-level value would otherwise drop out of the hash unseen
+  f="$T_ROOT/lib/models.sh"
+  listed="$(sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)() .*/\1/p' "$f" | LC_ALL=C sort -u)"
+  # shellcheck disable=SC2016
+  defined="$(env -i PATH="$PATH" LC_ALL=C /bin/bash --noprofile --norc -c '. "$1" > /dev/null 2>&1; declare -F | sed "s/^declare -f[a-z]* //"' _ "$f" | LC_ALL=C sort -u)"
+  assert_eq "$listed" "$defined"
+  # shellcheck disable=SC2016
+  vars="$(env -i PATH="$PATH" LC_ALL=C /bin/bash --noprofile --norc -c 'a="$(compgen -v | LC_ALL=C sort)"; . "$1" > /dev/null 2>&1; comm -13 <(printf "%s\n" "$a") <(compgen -v | LC_ALL=C sort | grep -vxE "a|_|PIPESTATUS|BASH_.*")' _ "$f" | tr '\n' ' ')"
+  assert_eq "$vars" "BEDROCK_APP_LINE PRICES "   # (PRICES is a path; BEDROCK_APP_LINE is hashed: a new value here needs a choice)
+}
 test_probe_mark_writes_the_new_fingerprint() {
   _pf_setup; probe_mark
   assert_eq "$(sed -n 's/^fingerprint=//p' "$(probe_mark_file)")" "$(probe_fingerprint)"
