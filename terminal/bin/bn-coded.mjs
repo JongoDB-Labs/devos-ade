@@ -46,6 +46,8 @@
 //                   (message on stdin), discarding a file's changes (its current version to the workspace trash) — the
 //                   same hardening, and no hook, signing program or editor ever runs; in /workspace or a repository
 //                   folder of it (repo)
+//   git.heads       the branch checked out and its commit, for up to 100 repositories, read from the files under each .git
+//                   (no git process, no link followed): the look that tells the automatic pushes a commit was made
 //   git.repos / git.remote.state / git.branch / git.remote.set / git.remote.remove / git.init / git.net / git.clone / git.test / git.broker
 //                   its remotes: the repositories in a project, the remotes and branches (no network), a branch
 //                   switched or made, a remote's URL, a folder made a repository (git init, no template); fetch, pull (a
@@ -2704,6 +2706,88 @@ export function gitRepos({ depth = 2, max = 50, root = WS_ROOT, files = false } 
     }
   }
   return { repos: out, truncated: out.length >= max, above, ...(files && !root.rel ? { folders } : {}) };
+}
+
+// git.heads {repos: [repo…]} -> {heads: [{repo, branch, head} | {repo, error}]} (JON-1430): for each repository folder (named as git.remote.state's
+// `repo`, resolved by repoRoot), the branch its HEAD names and that branch's commit, read from the files under its .git — no git
+// process (a cheap look, for the automatic pushes to ask every few seconds), and no link followed: `.git` is a real folder, or a
+// file "gitdir: <path>" (a worktree) whose folder is inside the same top and reached through real folders only; HEAD, the loose
+// ref and packed-refs are small regular files. head: null when the branch has no commit yet; branch and head null for a detached HEAD.
+// A head is given only as 40 (or 64) lowercase hex characters. At most 100 repositories; one that cannot be read is its own error entry.
+export const HEADS_MAX = 100;
+const HEADS_FILE_MAX = 4096, HEADS_PACKED_MAX = 1 << 20;
+// noLinksTo(abs, top) -> whether every part of abs below top is a real folder (lstat), and abs is top or inside it
+function noLinksTo(abs, top) {
+  if (abs !== top && !abs.startsWith(top + '/')) return false;
+  let p = top;
+  for (const seg of abs.slice(top.length).split('/').filter(Boolean)) {
+    p = path.join(p, seg);
+    if (!isDirHere(p)) return false;
+  }
+  return true;
+}
+// smallFile(abs, cap) -> the text of a regular file (not a link) of at most cap bytes, or null
+function smallFile(abs, cap) {
+  try {
+    const st = fs.lstatSync(abs);
+    if (!st.isFile() || st.size > cap) return null;
+    return fs.readFileSync(abs, 'utf8');
+  } catch { return null; }
+}
+const headBranchOk = (b) => typeof b === 'string' && b.length > 0 && b.length <= 255 && !/[\0-\x1f\x7f\\]/.test(b) && b.split('/').every((s) => s && s !== '.' && s !== '..');
+function headsOf(repo) {
+  const root = repoRoot(repo);
+  const dot = path.join(root.abs, '.git');
+  let st;
+  try { st = fs.lstatSync(dot); } catch { throw new Error(GIT_REASONS.notRepo); }
+  let gitdir = dot;
+  if (st.isFile()) {
+    const m = /^gitdir: ([^\n\0]{1,1024})\n?$/.exec(smallFile(dot, HEADS_FILE_MAX) ?? '');
+    if (!m) throw new Error('its .git file is not a git folder link');
+    gitdir = path.resolve(root.abs, m[1]);
+    if (!noLinksTo(gitdir, root.top)) throw new Error('its git folder is not inside the project folders (or a link is on the way)');
+  } else if (!st.isDirectory()) throw new Error('its .git is not a folder');
+  let common = gitdir;
+  const cd = smallFile(path.join(gitdir, 'commondir'), HEADS_FILE_MAX);
+  if (cd !== null) {
+    common = path.resolve(gitdir, cd.trim());
+    if (!noLinksTo(common, root.top)) throw new Error('its common git folder is not inside the project folders (or a link is on the way)');
+  }
+  if (isDirHere(path.join(common, 'reftable'))) throw new Error('this repository keeps its references in a format that is not read here');
+  const headText = smallFile(path.join(gitdir, 'HEAD'), HEADS_FILE_MAX);
+  if (headText === null) throw new Error('its HEAD cannot be read');
+  const line = headText.split('\n')[0].trim();
+  const ref = /^ref: (.+)$/.exec(line);
+  if (!ref) return SHA.test(line) ? { branch: null, head: null } : (() => { throw new Error('its HEAD is not understood'); })();
+  const b = /^refs\/heads\/(.+)$/.exec(ref[1])?.[1];
+  if (!b) return { branch: null, head: null };
+  if (!headBranchOk(b)) throw new Error('its branch name is not one read here');
+  let head = null;
+  const dir = path.join(common, 'refs/heads', path.dirname(b) === '.' ? '' : path.dirname(b));
+  // (a folder of the branch's name that is not there: the ref is packed, or not there; one that is a link: not read)
+  let linked = false;
+  for (let q = dir; q !== path.join(common, 'refs') && !linked; q = path.dirname(q)) { try { linked = !fs.lstatSync(q).isDirectory(); } catch { /* not there */ } }
+  if (!linked) {
+    const loose = smallFile(path.join(dir, path.basename(b)), HEADS_FILE_MAX);
+    if (loose !== null) { const t = loose.trim(); if (SHA.test(t)) head = t; }
+    else {
+      const packed = smallFile(path.join(common, 'packed-refs'), HEADS_PACKED_MAX);
+      if (packed !== null) for (const l of packed.split('\n')) {
+        const mm = /^([0-9a-f]{40}(?:[0-9a-f]{24})?) (.+)$/.exec(l.trim());
+        if (mm && mm[2] === `refs/heads/${b}`) { head = mm[1]; break; }
+      }
+    }
+  }
+  return { branch: b, head };
+}
+export function gitHeads(req) {
+  const repos = req?.repos;
+  if (!Array.isArray(repos)) throw new Error('repos: a list of repository folders');
+  if (repos.length > HEADS_MAX) throw new Error(`repos: at most ${HEADS_MAX}`);
+  return { heads: repos.map((r) => {
+    const name = typeof r === 'string' ? r.slice(0, 1024) : '';
+    try { return { repo: name, ...headsOf(r) }; } catch (e) { return { repo: name, error: printable(e.message, 200) }; }
+  }) };
 }
 
 // gitInitIn(abs, git) -> {git: true} or {git: false, gitError}: `git init` in a folder — no template (no hook, no
@@ -6157,6 +6241,8 @@ export function serve(sock) {
         case 'paths.plain': return finish(T.RESULT, pathsPlain(req));
         // the Git panel's remotes: no network for these two; a branch switch or a remote's URL is a change
         case 'git.repos': return finish(T.RESULT, gitRepos({ root: root(), files: req.files === true }));
+        // the keeper's cheap look (JON-1430): each repository's branch and commit from its files, no git process
+        case 'git.heads': return finish(T.RESULT, gitHeads(req));
         case 'git.remote.state':
         case 'git.branch':
         case 'git.remote.set':
