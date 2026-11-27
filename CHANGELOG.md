@@ -6,6 +6,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.75.0] - 2026-11-27
+
 ### Added
 
 - **Archive, unarchive or delete several Code sessions at once.** In the Projects list, the select button (✓) now also offers Archive, Unarchive and Delete… for the sessions you tick. Delete asks once, naming them, and then deletes each one as Delete does for a single session: its conversation leaves the sandbox, and the files it changed stay. A session that a turn is running in, or that is open in the terminal, is skipped, and one notice says what was done and what was skipped. Only the sessions you can see are acted on, so one that a search hides is left out. Works on the desktop and on the phone's Code tab. (JON-605)
@@ -13,6 +15,9 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 ### Changed
 
 - **The browser terminal's Claude Code no longer asks whether you trust /workspace.** A repository cloned or made inside /workspace still gets the question the first time you start Claude Code in it, before that repository's own settings (its hooks and MCP servers) can run. A folder in /workspace that is not a git repository is trusted along with /workspace. Claude Code then also adds its official plugin marketplace, as it does in any folder you trust, so the Code page's Plugins menu lists those plugins to install if you want them. (JON-518)
+
+### To get it
+Existing installs: Home › Update now.
 
 ## [0.74.0] - 2026-11-27
 
