@@ -64,5 +64,11 @@
   "control": "button:Unlock",
   "why": "Local single sign-on (JON-1140): on this computer the terminal unlocks from your portal session, so its second-password 'Unlock' button no longer appears locally. Remote access still shows the unlock form.",
   "changelog": "v0.59.1"
+ },
+ {
+  "state": "code-model-picker-*",
+  "control": "menuitem:Subscriptions (sign in to use) Claude, Codex, Cursor, Grok #",
+  "why": "Gemini CLI joins the Code page's Who answers (JON-981): the model picker's group of subscriptions to sign in to now names it, 'Subscriptions (sign in to use) Claude, Codex, Gemini CLI, Cursor, Grok', the same control with one more name in it.",
+  "changelog": "v0.72.0"
  }
 ]
