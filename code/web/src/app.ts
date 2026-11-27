@@ -33,6 +33,7 @@ import { filedMessage, HANDOFF_MAX, type Handoff } from './handoff';
 import { eventTime, sessionCost } from './spend';
 import { RECHECK_TEXT, WORKSPACE, WORKSPACE_ID, goneTops, holdForSettings, inProject, liveHostTops, mentionPath, projectFor, projectIdOk, projectOfCwd, readOnlyTops, settingsApplied, settingsStateFor, type AddedNotice, type Project, type SettingsState, type Where } from './projects';
 import { PRODUCT } from './brand';
+import { bulkNotice, skipReason } from './bulk';
 
 export interface Toast {
   id: number;
@@ -251,6 +252,7 @@ export type ProjectDialog =
   | { kind: 'file'; ids: string[] }
   /** Delete a session: what goes, said first (Projects.tsx) */
   | { kind: 'delete-session'; id: string; title: string }
+  | { kind: 'delete-sessions'; ids: string[]; titles: string[]; done?: () => void }
   /** a project's own Claude Code settings: what they set, Trust / Stop trusting (start: then a new session there) */
   | { kind: 'settings'; id: string; start?: NewSessionOptions }
   /** your Claude Code and devos-claude sessions of a folder of this computer, copied into the sandbox (Import.tsx) */
@@ -1920,6 +1922,54 @@ export async function deleteSessionById(id: string): Promise<boolean> {
   toast(transcript ? 'Deleted: its transcript is gone from the sandbox.' : 'Deleted: it had no prompts yet, so there was no transcript to remove.', 'ok');
   void refreshSessions();
   return true;
+}
+
+/** Archive (or list again) several sessions: one request each, a turn running in one skips it. One notice for all. */
+export async function bulkArchive(ids: string[], on: boolean): Promise<void> {
+  const reasons: string[] = [];
+  const done: string[] = [];
+  for (const id of ids) {
+    if (!isUuid(id)) continue;
+    const v = get().views[id];
+    if (on && (v?.state === 'busy' || v?.state === 'starting')) { reasons.push(skipReason('a turn is running')); continue; }
+    try {
+      await api.archiveSession(id, on);
+      done.push(id);
+    } catch (e) {
+      reasons.push(skipReason(errText(e)));
+    }
+  }
+  if (on) for (const id of done) if (get().views[id] && get().views[id].state !== 'closed') await closeSessionById(id);
+  set((s) => ({ ...s, sessions: s.sessions.map((x) => (done.includes(x.id) ? { ...x, archived: on || undefined } : x)) }));
+  toast(bulkNotice(on ? 'Archived' : 'Listed again', done.length, reasons), reasons.length && !done.length ? 'error' : 'ok');
+  void refreshSessions();
+}
+
+/** Delete several sessions (the dialog first, Projects.tsx BulkDeleteDialog): each with its own request naming its own id. */
+export async function bulkDelete(ids: string[]): Promise<void> {
+  const reasons: string[] = [];
+  let done = 0;
+  for (const id of ids) {
+    if (!isUuid(id)) continue;
+    const v = get().views[id];
+    if (v?.state === 'busy' || v?.state === 'starting') { reasons.push(skipReason('a turn is running')); continue; }
+    try {
+      await api.deleteSession(id);
+    } catch (e) {
+      // (unknown to the backend and the sandbox, one this page still showed: nothing of it to delete — it leaves the page)
+      if (!(e instanceof api.ApiError && e.status === 404 && v)) { reasons.push(skipReason(errText(e))); continue; }
+    }
+    done++;
+    attached.delete(id);
+    set((s) => {
+      const views = { ...s.views };
+      delete views[id];
+      return { ...s, views, active: s.active === id ? null : s.active, sessions: s.sessions.filter((x) => x.id !== id) };
+    });
+  }
+  announce();
+  toast(bulkNotice('Deleted', done, reasons), reasons.length && !done ? 'error' : 'ok');
+  void refreshSessions();
 }
 
 /** The terminal opened (a tab of its own on a phone), then a message about the window it made. */

@@ -8,6 +8,7 @@
 // by a path typed here: the dialog says where). A folder of this computer no longer added is listed under "Folders no
 // longer added" with its sessions, read only. Names, paths and titles come from the backend and the sandbox: shown as
 // text.
+import { bulkDeleteHeading, bulkTitles } from '../bulk';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { useSel } from '../store';
 import {
@@ -15,6 +16,8 @@ import {
   activate,
   addToProject,
   archiveSessionById,
+  bulkArchive,
+  bulkDelete,
   askToKeep,
   openPortalGit,
   pushKept,
@@ -346,6 +349,8 @@ export function ProjectsPanel() {
   const subOf = (v: SessionView) => [v.permissions.length ? 'waiting for you' : v.state === 'busy' ? 'working' : v.state === 'starting' ? 'starting' : v.unseen ? 'done — new' : v.state,
     modelLabel(models, v.model)].filter(Boolean).join(' · ');
   const isOpen = (p: Project) => expanded[p.id] ?? (!p.gone && (p.id === current || by[p.id].open.some((id) => groupOf(views[id]) !== 'done')));
+  // (select mode ends when the action is done; the list then shows it)
+  const endPicking = async (done: Promise<void>) => { await done; setPicking(false); setPicked([]); };
   const pick = (id: string, on: boolean) => setPicked((x) => (on ? [...new Set([...x, id])] : x.filter((y) => y !== id)));
   // (a session shown in a project whose folder does not hold its own: Continue in that project forks it there)
   const continueTo = (id: string, p: Project) => {
@@ -505,7 +510,7 @@ export function ProjectsPanel() {
             }}
           />
         </label>
-        <button type="button" class={`icon-btn${picking ? ' on' : ''}`} title={picking ? 'Done selecting' : 'Select sessions (to add them to a project)'} aria-pressed={picking}
+        <button type="button" class={`icon-btn${picking ? ' on' : ''}`} title={picking ? 'Done selecting' : 'Select sessions (to add them to a project, archive or delete them)'} aria-pressed={picking}
           onClick={() => (setPicking(!picking), setPicked([]))} data-testid="sessions-select">
           <Icon name="check" size={15} />
         </button>
@@ -541,6 +546,17 @@ export function ProjectsPanel() {
           <span class="muted small">{picked.length} selected</span>
           <button type="button" class="btn small primary" disabled={!picked.length} onClick={() => openProjectDialog({ kind: 'file', ids: picked })} data-testid="sessions-add-to-project">
             Add to project…
+          </button>
+          <button type="button" class="btn small" disabled={!picked.length || picked.every((id) => info.get(id)?.archived)} onClick={() => void endPicking(bulkArchive(picked.filter((id) => !info.get(id)?.archived), true))} data-testid="sessions-archive">
+            Archive
+          </button>
+          {picked.some((id) => info.get(id)?.archived) && (
+            <button type="button" class="btn small" onClick={() => void endPicking(bulkArchive(picked.filter((id) => info.get(id)?.archived), false))} data-testid="sessions-unarchive">
+              Unarchive
+            </button>
+          )}
+          <button type="button" class="btn small danger" disabled={!picked.length} onClick={() => openProjectDialog({ kind: 'delete-sessions', ids: picked, titles: picked.map((id) => titleOf(id, views[id] ?? ({} as SessionView))), done: () => (setPicking(false), setPicked([])) })} data-testid="sessions-delete">
+            Delete…
           </button>
           <button type="button" class="btn small ghost" onClick={() => (setPicking(false), setPicked([]))}>
             Cancel
@@ -616,6 +632,7 @@ export function ProjectDialogs() {
   const close = () => openProjectDialog(null);
   if (d.kind === 'new') return <NewProjectDialog tab={d.tab} add={d.add} folder={d.folder} onClose={close} />;
   if (d.kind === 'remove') return <RemoveProjectDialog id={d.id} onClose={close} />;
+  if (d.kind === 'delete-sessions') return <DeleteSessionsDialog ids={d.ids} titles={d.titles} done={d.done} onClose={close} />;
   if (d.kind === 'delete-session') return <DeleteSessionDialog id={d.id} title={d.title} onClose={close} />;
   if (d.kind === 'export') return <ExportDialog id={d.id} onClose={close} />;
   if (d.kind === 'settings') return <SettingsDialog id={d.id} start={d.start} onClose={close} />;
@@ -929,6 +946,33 @@ function RemoveProjectDialog({ id, onClose }: { id: string; onClose: () => void 
         </button>
         <button type="button" class="btn danger" disabled={busy || (trash && confirm !== p.root)} onClick={() => void go()} data-testid="remove-project-go">
           {busy ? <Spinner size={12} /> : null} {trash ? 'Remove, and trash its folder' : 'Remove from Code'}
+        </button>
+      </div>
+    </Dialog>
+  );
+}
+
+/** Delete several sessions: one confirm for the selection, what goes said as for one; each is then deleted by its own request. */
+function DeleteSessionsDialog({ ids, titles, done, onClose }: { ids: string[]; titles: string[]; done?: () => void; onClose: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const { shown, more } = bulkTitles(titles.map((t) => label(t, 80) || 'Untitled session'));
+  return (
+    <Dialog title={bulkDeleteHeading(ids.length)} onClose={onClose} testid="delete-sessions-dialog">
+      <ul class="bulk-titles" data-testid="delete-sessions-titles">
+        {shown.map((t, i) => <li key={i}><strong>{t}</strong></li>)}
+        {more > 0 && <li class="muted">and {more} more</li>}
+      </ul>
+      <p class="muted small">
+        Their conversations (their transcripts) are deleted from the sandbox for good: they can no longer be resumed or forked, and there is no trash for them.
+        The files they changed stay as they are. A session a turn runs in, or that is open in the terminal, is skipped.
+      </p>
+      <div class="dlg-buttons">
+        <button type="button" class="btn ghost" onClick={onClose}>
+          Cancel
+        </button>
+        <button type="button" class="btn danger" disabled={busy} data-testid="delete-sessions-confirm"
+          onClick={() => { setBusy(true); void bulkDelete(ids).then(() => (done?.(), onClose())); }}>
+          {busy ? <Spinner size={12} /> : null} Delete {ids.length === 1 ? 'the session' : `${ids.length} sessions`}
         </button>
       </div>
     </Dialog>
