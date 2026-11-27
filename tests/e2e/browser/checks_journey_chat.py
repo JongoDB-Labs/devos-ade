@@ -89,12 +89,13 @@ def chat_to_git(ctx):
                 if fid:
                     fl_ = json.loads(owui_api(f, "/api/v1/folders/")["body"])
                     folder = next((x for x in fl_ if x.get("id") == fid), {"id": fid, "name": None})
+                    filed = fid if (folder.get("name") or "").lower() == name.lower() else None   # (tidied even if a check below fails)
                 else:
                     page.wait_for_timeout(1000)
             expect(folder is not None, f"the chat was not filed in a Chat folder within 30 s of Create ({chat_id})")
             expect(folder.get("name") == proj["name"] and not folder.get("parent_id"),
                    f"the chat is filed in {folder.get('name')!r}, not a top-level folder named {proj['name']!r}")
-            filed = folder["id"]
+
         see(cf.get_by_test_id("turn-end")).to_have_count(1, timeout=150000)
         sid = cf.evaluate("JSON.parse(localStorage.getItem('bn.code.v1')).lastSession")
         s = next((x for x in c.api("GET", "/api/state")["json"]["sessions"] if x["id"] == sid), {})

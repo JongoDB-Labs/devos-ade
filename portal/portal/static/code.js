@@ -199,7 +199,8 @@
   // Taken only from the Chat tab's own frame, from Chat's origin. The portal keeps the text for the Code page (POST /api/chat-handoff:
   // once, ten minutes, in memory — portal/chathandoff.py) and the Code tab opens at ?handoff=<id>, where a dialog shows the
   // conversation read-only and creates nothing until you confirm. The frame is told how it went ({type: "bn-portal-chat-handoff",
-  // id, ok, error?, tooBig?}). Open WebUI gets no key and no route to the Code page or the workspace by this: it only says a chat.
+  // id, ok, error?, tooBig?}). Open WebUI gets no key and no route to the Code page or the workspace by this: it only says a chat
+  // (and, below, is told one project's name back).
   // (JON-1158) Then where it went: the Code page says the project the chat continued in ({type: "bn-code-handoff-done", handoff,
   // project} — from the Code tab's own frame only, for a hand-off this page made in the last FILE_MS only, once), and the Chat
   // frame is told that name for its own id ({type: "bn-portal-chat-filed", id, project}): it files the chat in a Chat folder of

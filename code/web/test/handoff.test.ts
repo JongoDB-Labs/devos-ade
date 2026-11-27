@@ -7,7 +7,7 @@ import { defang, filedMessage, handoffName, handoffPrompt, handoffTargets, HANDO
 import { parseDeepLink, withoutDeepLink } from '../src/deeplink';
 import { rootOk } from '../src/projects';
 import { redeemHandoff } from '../src/api';
-import { openHandoff, store } from '../src/app';
+import { openHandoff, store, tellPortalFiled } from '../src/app';
 
 const ID = 'aB3_-'.repeat(6) + 'xy';
 
@@ -147,4 +147,28 @@ test('filedMessage carries the hand-off id and a cleaned project name, and nothi
   assert.equal(filedMessage(id, '   '), null);
   // (an invisible or direction-changing character is shown, never passed on as itself)
   assert.ok(!filedMessage(id, 'Trip\u202Efdp')?.project.includes('\u202E'));
+});
+
+test('tellPortalFiled posts only to the portal that frames the page, and nothing without a portal, a frame or a hand-off', () => {
+  const id = 'A'.repeat(32);
+  const posts: [unknown, string][] = [];
+  const parent = { postMessage: (m: unknown, o: string) => { posts.push([m, o]); } };
+  const framed = { parent } as unknown as Window;
+  const before = store.get().server;
+  try {
+    store.set((s) => ({ ...s, server: null }));
+    tellPortalFiled(id, 'Trip', framed);
+    assert.equal(posts.length, 0, 'no portal known');
+    store.set((s) => ({ ...s, server: { ...(before ?? {}), portalOrigin: 'https://devos-ade.localhost:8443/some/path' } as NonNullable<typeof before> }));
+    tellPortalFiled(id, 'Trip', framed);
+    assert.deepEqual(posts, [[{ type: 'bn-code-handoff-done', handoff: id, project: 'Trip' }, 'https://devos-ade.localhost:8443']]);
+    const alone = {} as { parent: unknown };
+    alone.parent = alone;
+    tellPortalFiled(id, 'Trip', alone as unknown as Window);
+    tellPortalFiled(undefined, 'Trip', framed);
+    tellPortalFiled(id, '  ', framed);
+    assert.equal(posts.length, 1, 'not framed, no hand-off id, or no name: nothing');
+  } finally {
+    store.set((s) => ({ ...s, server: before }));
+  }
 });

@@ -2090,8 +2090,9 @@ policy). The path chosen is the one that gives Open WebUI **no new reach**:
 1. The action formats the chat as plain text (turns, without the cost line or reasoning blocks), takes its title from Open
    WebUI (this user's own chat only) and asks the Chat page to run one short snippet: `window.parent.postMessage({type:
    "bn-chat-handoff", id, title, text}, <the framing origin>)`. The chat is a JSON string literal in that snippet, parsed
-   there; it is never code. The action holds **no key, no address and no network call** (a unit test checks the file for
-   them); Open WebUI never reaches the portal or the Code page, and the Code page and the portal gain no route into Open WebUI.
+   there; it is never code. The action holds **no key and no address**, and the snippet's one network use is step 5's,
+   to Open WebUI itself (a unit test checks the file and the snippet for every other way out); Open WebUI never reaches the
+   portal or the Code page, and the Code page and the portal gain no route into Open WebUI beyond step 5's one name.
    A chat over 200,000 characters is not sent at all.
 2. The portal page (`static/code.js`) takes the message **only from the Chat tab's own frame and Chat's origin** (Chat can be
    framed by the portal alone: `frame-ancestors`), one at a time, and POSTs it to `/api/chat-handoff` — the portal session and
@@ -2106,15 +2107,33 @@ policy). The path chosen is the one that gives Open WebUI **no new reach**:
    old or unknown id: 404. The link leaves the address bar at once.
 4. The dialog shows the conversation **read-only**, every invisible or direction-changing character shown as `⟨U+…⟩`, as
    everything untrusted on this page; the title is only a suggestion for the folder name (`a-z0-9._-`, always a name the page
-   takes). Nothing is created until **Create**. The session that continues the chat starts in **Manual** mode (every command
-   and file change waits for your OK), on the page's default model, and its first message quotes the chat between two tags
+   takes). Nothing is created until **Create**. Or (JON-1158) **Continue it in: A project you have** — only the projects a
+   session can start in now (not one gone or leaving, its folder there) — creates nothing: that project is shown and the
+   session starts there. Such a project's own Claude Code settings apply to that session only when you trusted them (rules,
+   hooks, MCP servers — a rule that allows a command lets it run without asking, the chat's text in the session or not), and
+   the dialog says so under the choice before you continue; settings not applied as they are never apply to it (the
+   session is started without the trust dialog, the safer side for text from a chat). The session that continues the chat
+   starts in **Manual** mode (every command and file change waits for your OK, unless a trusted rule of the project's says
+   otherwise), on the page's default model, and its first message quotes the chat between two tags
    with a random mark of their own, states that it is text from the chat and not instructions from you, and defangs
    every role-like tag and every `@`-mention in it (`@~/.codex/auth.json` would otherwise attach a file) — the same rules as
    the other quoted conversations (`code/server/agents/quote.mjs`).
+5. (JON-1158) **Filed under its project in Chat.** Once a chat has gone to a project (made, or one you have; never the
+   workspace), the Code page tells the portal page `{type: "bn-code-handoff-done", handoff, project}` — the hand-off's id
+   and the project's name, to the portal's origin only. The portal page takes it **only from the Code tab's own frame and
+   origin**, for a hand-off **it** deposited in the last 30 minutes (20 kept), once, and tells the Chat frame, at Chat's
+   origin, `{type: "bn-portal-chat-filed", id, project}`: the Chat frame's own id for that hand-off and the name, every
+   invisible or direction-changing character a space, 80 at most. The Chat page listens for that once, for 30 minutes, **only
+   from the page that frames it and only with its own random id**, and then, on its own origin, with the sign-in cookie
+   Open WebUI keeps (no token read or sent): `GET /api/v1/chats/<this chat>` (a chat already in a folder stays there),
+   `GET /api/v1/folders/`, `POST /api/v1/folders/` `{name}` when there is no top-level folder of that name (in any case), and
+   `POST /api/v1/chats/<this chat>/folder` `{folder_id}` — never a move without a folder. A temporary chat is never filed.
+   So the most the portal page (or a Code page that fakes its message) can cause in Chat is a folder of some name and this
+   one chat in it; nothing reaches the Code page or the portal from Chat by this.
 
 What a compromised or prompt-injected Chat can therefore do: put a chat of the signed-in user's in a dialog that user must
 read and confirm, up to 8 times in 10 minutes. It cannot create a project, start a session, read or write a file, or learn
-anything from the Code page. Tests: `owui/tests/test_make_project.py`, `portal/tests/test_chat_handoff.py`,
+anything from the Code page beyond, once you confirm, the name of the project you chose. Tests: `owui/tests/test_make_project.py`, `portal/tests/test_chat_handoff.py`,
 `portal/tests/js/chathandoff.test.mjs`, `code/web/test/handoff.test.ts`, the e2e `journey-chat-to-git`.
 
 ### Export to Files

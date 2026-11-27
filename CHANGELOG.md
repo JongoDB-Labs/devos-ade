@@ -8,7 +8,7 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ### Added
 
-- **Chat files a chat under the project it went to.** Once you choose where a chat continues on the Code page, Chat puts that chat in a folder of the project's name in its sidebar (the one you have, or a new one). Chat does it itself, with its own sign-in: only the project's name comes back from DevOS ADE, and Chat still has no way into the Code page or your files. A chat continued in the workspace stays where it was. (JON-1158)
+- **Chat files a chat under the project it went to.** Once you choose where a chat continues on the Code page, Chat puts that chat in a folder of the project's name (the one you have, in any case, or a new one); Chat's sidebar shows it the next time it loads, or when you reload Chat. Chat does it itself, with its own sign-in: only the project's name comes back from DevOS ADE, and Chat still has no way into the Code page or your files. A chat continued in the workspace, or one you already put in a folder, stays where it was. (JON-1158)
 
 ## [0.70.0] - 2026-11-26
 

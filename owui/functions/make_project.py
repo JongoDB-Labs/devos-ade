@@ -21,10 +21,13 @@ version: 1
 # (JON-1158) The chat is then filed under the project it went to: once you confirm, the Code page tells the portal's page
 # the project's name, and that page tells this Chat page ({type: "bn-portal-chat-filed", id, project} — from the page that
 # frames it only, for this hand-off's own random id only, within FILE_WAIT_S). The Chat page then puts this chat in a
-# Chat folder of that name — the one at the top level if you have it, else a new one — through Open WebUI's own API, on
-# its own origin, with the sign-in Open WebUI already keeps (its cookie): the only calls it makes, and nothing of Chat's
-# reaches the portal or the Code page by them. A name is all that comes back; a reload of Chat meanwhile, or folders
-# turned off, and the chat just stays where it was.
+# Chat folder of that name (any case) — the one at the top level if you have it, else a new one — through Open WebUI's own
+# API, on its own origin, with the sign-in Open WebUI already keeps (its cookie): GET /api/v1/chats/<id>, GET and POST
+# /api/v1/folders/, POST /api/v1/chats/<id>/folder — the only calls it makes, and nothing of Chat's reaches the portal or
+# the Code page by them. A name is all that comes back, so the most the portal's page can cause is a folder of some name
+# and this one chat in it. A chat you already put in a folder stays there; a reload of Chat meanwhile, a page that is not
+# on Chat's own site, or folders turned off, and the chat just stays where it was. Chat's sidebar shows the folder the
+# next time it loads its list.
 #
 # Self-contained on purpose: Open WebUI loads this file's text, so it may import only the standard library and pydantic
 # (which Open WebUI ships), plus Open WebUI's own chat model, tried once for the chat's title and optional.
@@ -69,12 +72,18 @@ const fileWhenTold = () => {
       const r = await fetch('/api/v1/' + p, { method: m, credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: b ? JSON.stringify(b) : undefined });
       return r.ok ? r.json() : null;
     };
-    try {
+    const key = name.toLowerCase();
+    const top = async () => {
       const list = await call('folders/', 'GET');
-      let f = Array.isArray(list) ? list.find((x) => x && x.name === name && !x.parent_id) : null;
-      if (!f) f = await call('folders/', 'POST', { name: name });
+      return Array.isArray(list) ? list.find((x) => x && typeof x.name === 'string' && x.name.trim().toLowerCase() === key && !x.parent_id) : null;
+    };
+    try {
+      const chat = await call('chats/' + encodeURIComponent(chatId), 'GET');
+      if (!chat || chat.folder_id) return;   // (gone, or one you filed yourself already: it stays where you put it)
+      let f = await top();
+      if (!f) f = (await call('folders/', 'POST', { name: name })) || (await top());
       if (f && typeof f.id === 'string') await call('chats/' + encodeURIComponent(chatId) + '/folder', 'POST', { folder_id: f.id });
-    } catch (_) { /* not filed: the chat stays where it was */ }
+    } catch (e) { console.debug('DevOS ADE: this chat was not filed', String(e)); }
   };
   const stop = setTimeout(() => window.removeEventListener('message', told), %d);
   window.addEventListener('message', told);
@@ -202,7 +211,8 @@ class Action:
             await __event_emitter__({"type": "status", "data": {"description": "", "done": True, "hidden": True}})
         if isinstance(res, dict) and res.get("ok"):
             await say("success", "This chat is too big to hand over: the Code page says so." if res.get("tooBig")
-                      else "Opened in the Code page: choose where it continues there. This chat is then filed here, in a folder of that project's name.")
+                      else "Opened in the Code page: choose where it continues there. If it continues in a project, this chat is filed here in a "
+                 "folder of that project's name (reload Chat to see it).")
         else:
             why = res.get("error") if isinstance(res, dict) and res.get("error") else "DevOS ADE did not answer."
             await say("error", "Could not hand this chat over. " + str(why))

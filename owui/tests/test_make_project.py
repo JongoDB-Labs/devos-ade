@@ -65,8 +65,11 @@ def test_the_code_the_chat_page_runs_carries_the_chat_as_data_only():
     # (JON-1158) one network call from the page's side, to Open WebUI's own API on its own origin (filing the chat), with the
     # sign-in it keeps itself: no other address, no token read or sent by hand, no XHR or socket
     assert code.count("fetch(") == 1 and "fetch('/api/v1/' + p, { method: m, credentials: 'same-origin'" in code
-    assert "http" not in code.replace("http://", "") and "//" not in re.sub(r"/\*.*?\*/", "", code.replace("'//'", ""))
-    assert "localStorage" not in code and "Authorization" not in code and "XMLHttpRequest" not in code and "WebSocket" not in code
+    page = code.replace(json.dumps(json.dumps(p)), "")
+    assert "://" not in page and "http" not in page.lower()
+    for sink in ("localStorage", "sessionStorage", "document.cookie", "Authorization", "XMLHttpRequest", "WebSocket", "sendBeacon", "EventSource",
+                 "new Image", "import(", "eval(", "new Function", "window.fetch", "window.open", ".src", "location.href", "location.assign", "innerHTML"):
+        assert sink not in page, sink
 
 
 def test_a_chat_over_the_cap_sends_no_text():
@@ -169,13 +172,18 @@ const window = { parent, addEventListener: (t, f) => listeners.add(f), removeEve
 const fetch = async (url, init) => {
   calls.push([url, init.method, init.body ? JSON.parse(init.body) : null, init.credentials]);
   if (url === '/api/v1/folders/' && init.method === 'GET') return { ok: true, json: async () => sc.folders };
+  if (url.startsWith('/api/v1/chats/') && !url.endsWith('/folder')) return sc.chatGone ? { ok: false, json: async () => ({}) } : { ok: true, json: async () => ({ id: 'c', folder_id: sc.chatFolder || null }) };
   if (url === '/api/v1/folders/' && init.method === 'POST') return sc.createFails ? { ok: false, json: async () => ({}) } : sc.createNoId ? { ok: true, json: async () => ({}) } : { ok: true, json: async () => ({ id: 'new1', name: JSON.parse(init.body).name }) };
   return { ok: true, json: async () => ({}) };
 };
-const run = new Function('window', 'location', 'fetch', 'return (async () => {' + code + '})()');
+const late = [];
+const realTimeout = setTimeout;
+const setT = (f, ms) => (ms >= 60000 ? (late.push(f), 0) : realTimeout(f, ms));   // (the half-hour wait: run when the scenario says)
+const run = new Function('window', 'location', 'fetch', 'setTimeout', 'clearTimeout', 'console', 'return (async () => {' + code + '})()');
 (async () => {
-  const res = await run(window, { ancestorOrigins: ['http://portal.example'] }, fetch);
+  const res = await run(window, { ancestorOrigins: ['http://portal.example'] }, fetch, setT, clearTimeout, { debug() {} });
   const hid = posted.length ? posted[0].id : null;
+  if (sc.expire) for (const f of late) f();
   for (const m of sc.msgs || []) {
     emit({ source: m.other ? {} : parent, data: { type: m.type || 'bn-portal-chat-filed', id: m.id === '$' ? hid : m.id, project: m.project } });
     await new Promise((r) => setTimeout(r, 20));
@@ -202,7 +210,8 @@ def test_told_where_it_went_the_chat_is_filed_in_a_new_folder_of_that_name():
     if out is None:
         return
     assert out["res"] == {"ok": True, "tooBig": False, "error": ""}
-    assert out["calls"] == [["/api/v1/folders/", "GET", None, "same-origin"], ["/api/v1/folders/", "POST", {"name": "Trip planner"}, "same-origin"],
+    assert out["calls"] == [[f"/api/v1/chats/{CID}", "GET", None, "same-origin"], ["/api/v1/folders/", "GET", None, "same-origin"],
+                            ["/api/v1/folders/", "POST", {"name": "Trip planner"}, "same-origin"],
                             [f"/api/v1/chats/{CID}/folder", "POST", {"folder_id": "new1"}, "same-origin"]]
     assert out["left"] == 0   # (heard once: nothing listens after)
 
@@ -212,7 +221,11 @@ def test_a_folder_of_that_name_at_the_top_is_used_not_a_nested_one():
                  "msgs": [{"id": "$", "project": "  Trip\n"}]})
     if out is None:
         return
-    assert [c[:3] for c in out["calls"]] == [["/api/v1/folders/", "GET", None], [f"/api/v1/chats/{CID}/folder", "POST", {"folder_id": "f1"}]]
+    assert [c[:3] for c in out["calls"]] == [[f"/api/v1/chats/{CID}", "GET", None], ["/api/v1/folders/", "GET", None],
+                                             [f"/api/v1/chats/{CID}/folder", "POST", {"folder_id": "f1"}]]
+    # (any case: Open WebUI keeps one folder per name, whatever its case)
+    out = _page({"folders": [{"id": "f2", "name": "trip planner ", "parent_id": None}], "msgs": [{"id": "$", "project": "Trip Planner"}]})
+    assert out["calls"][-1][:3] == [f"/api/v1/chats/{CID}/folder", "POST", {"folder_id": "f2"}] and len(out["calls"]) == 3
 
 
 def test_only_the_framing_page_saying_this_hand_offs_id_files_it_and_only_once():
@@ -222,7 +235,7 @@ def test_only_the_framing_page_saying_this_hand_offs_id_files_it_and_only_once()
     if out is None:
         return
     names = [c[2]["name"] for c in out["calls"] if c[:2] == ["/api/v1/folders/", "POST"]]
-    assert names == ["Real"] and len(out["calls"]) == 3
+    assert names == ["Real"] and len(out["calls"]) == 4
 
 
 def test_nothing_is_filed_for_a_temporary_chat_a_refused_hand_off_a_blank_name_or_a_folder_not_made():
@@ -237,8 +250,23 @@ def test_nothing_is_filed_for_a_temporary_chat_a_refused_hand_off_a_blank_name_o
         assert out["left"] == 0
     for sc in ({"createFails": True}, {"createNoId": True}):
         out = _page({**sc, "msgs": [{"id": "$", "project": "X"}]})
-        # (no move into nothing: a move without a folder takes the chat out of every folder)
-        assert [c[:2] for c in out["calls"]] == [["/api/v1/folders/", "GET"], ["/api/v1/folders/", "POST"]], sc
+        # (no move into nothing: a move without a folder takes the chat out of every folder; a refused make looks again once)
+        want = [[f"/api/v1/chats/{CID}", "GET"], ["/api/v1/folders/", "GET"], ["/api/v1/folders/", "POST"]] + ([["/api/v1/folders/", "GET"]] if sc.get("createFails") else [])
+        assert [c[:2] for c in out["calls"]] == want, sc
+    # (made meanwhile, as Open WebUI refuses a second one: the second look finds it)
+    out = _page({"createFails": True, "folders": [], "msgs": [{"id": "$", "project": "X"}]})
+    assert out["calls"][-1][:2] == ["/api/v1/folders/", "GET"]
+
+
+def test_a_chat_you_filed_yourself_or_one_gone_stays_and_a_late_word_does_nothing():
+    for sc in ({"chatFolder": "mine"}, {"chatGone": True}):
+        out = _page({**sc, "msgs": [{"id": "$", "project": "X"}]})
+        if out is None:
+            return
+        assert [c[:2] for c in out["calls"]] == [[f"/api/v1/chats/{CID}", "GET"]], sc
+    # half an hour later, nothing listens any more
+    out = _page({"expire": True, "msgs": [{"id": "$", "project": "X"}]})
+    assert out["calls"] == [] and out["left"] == 0
 
 
 def test_the_chat_id_goes_in_as_data_and_only_a_real_one():
