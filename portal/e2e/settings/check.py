@@ -1324,6 +1324,10 @@ def check_browse(page, failures, label):
     page.set_viewport_size({"width": 1280, "height": 900})
 
 
+# the page's toast once a copy has ended: copied (the browser's clipboard or the page's own way), or blocked
+COPIED = "() => /^Copied |blocked/.test((document.querySelector('#toast') || {}).textContent || '')"
+
+
 def check_menus(page, failures, label):
     """Item menus (ctxmenu.js, JON-821) on Settings rows: right-click, Shift+F10 and a long press open Copy name, key, value and
     link; a secret's value is never offered; the menu fits the viewport; screenshots at 390, 820 and 1440, light and dark."""
@@ -1348,6 +1352,9 @@ def check_menus(page, failures, label):
     page.locator('.ctx-menu .ctx-item:has-text("Copy setting key")').click()
     if page.locator(".ctx-menu").count():
         failures.append(f"{label}: the menu stayed open after an action")
+    # (the copy ends a moment later: the browser refusing its clipboard, then the page's own way; the steps below act once
+    # it has, not while it may still move the focus — JON-1435)
+    page.wait_for_function(COPIED, timeout=5000)
     # a masked row (a key, a password): Copy value says why it is off
     masked = page.locator(".set-row[data-key]:visible:has(.set-value.masked)").first
     if masked.count():
@@ -1368,6 +1375,26 @@ def check_menus(page, failures, label):
         page.keyboard.press("Escape")
         if page.locator(".ctx-menu").count() or page.evaluate("() => document.activeElement && document.activeElement.closest('.set-row') !== null") is not True:
             failures.append(f"{label}: Shift+F10 / Escape did not open and close the row menu, focus back on the row")
+        # Copy chosen from the keyboard where the browser refuses its clipboard (an http:// address, a permission denied),
+        # its answer coming a moment after the menu closed: the page copies its own way, and the focus is back on the
+        # control it came from — never left on nothing (JON-1435)
+        page.evaluate("""() => { const c = navigator.clipboard; window.__bnWrite = c && c.writeText;
+            if (c) c.writeText = () => new Promise((_, no) => setTimeout(() => no(new Error('refused')), 300));
+            const t = document.querySelector('#toast'); if (t) t.textContent = ''; }""")
+        ctl.focus()
+        page.keyboard.press("Shift+F10")
+        page.wait_for_selector(".ctx-menu", timeout=3000)
+        page.keyboard.press("ArrowDown")
+        act = page.evaluate("() => document.activeElement && document.activeElement.dataset.act")
+        page.keyboard.press("Enter")
+        try:
+            page.wait_for_function(COPIED, timeout=5000)
+            if act != "copy-key" or not ctl.evaluate("el => el === document.activeElement"):
+                failures.append(f"{label}: after Copy from the keyboard (the page's own way) the focus is not back on the row's control "
+                                f"(chose {act!r}; focus on {page.evaluate('() => document.activeElement && document.activeElement.tagName')})")
+        except Exception:  # noqa: BLE001
+            failures.append(f"{label}: Copy from the keyboard, where the browser refuses its clipboard, never said it copied")
+        page.evaluate("() => { if (window.__bnWrite) navigator.clipboard.writeText = window.__bnWrite; window.__bnWrite = null; }")
         # a scroll's event for a scroll that moved nothing (one that happened before the menu opened: focusing a row
         # scrolls it into view, and its event can come late) leaves the menu open (gates 0730b and 0730c)
         on_row = "() => document.activeElement && document.activeElement.closest('.set-row') !== null"
