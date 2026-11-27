@@ -237,6 +237,15 @@ export const SANDBOX_REFUSALS = Object.freeze([
 // permission rules' files, a search): the literal values of its error:, bad(…) and taskError(…) and NO_PROGRAM's —
 // code/test/sandbox-words.test.mjs checks the list equals them
 export const ANSWER_ERRORS = Object.freeze([
+  // (git.heads' per-repository errors, JON-1430)
+  'its .git file is not a git folder link',
+  'its .git is not a folder',
+  'its HEAD cannot be read',
+  'its HEAD is not understood',
+  'its branch name is not one read here',
+  'its common git folder is not inside the project folders (or a link is on the way)',
+  'its git folder is not inside the project folders (or a link is on the way)',
+  'this repository keeps its references in a format that is not read here',
   'a line too long to read',
   'not an object',
   'no name',
