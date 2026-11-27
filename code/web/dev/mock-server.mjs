@@ -1304,6 +1304,15 @@ class Session {
     const incomplete = watchIncomplete ? { incomplete: 'Not every file git runs from here could be checked (too many git config includes, hook files or submodules): review .git and the hook folders yourself.' } : {};
     this.emit({ type: 'watch', id, when, changes, ...incomplete }, { record: false });
   }
+  /** Cancel a prompt waiting behind the turn (the backend's unqueue): -> {cancelled}. One that says "cannot cancel" stands
+   *  for a prompt Claude Code already took into the turn: it stays queued and the answer is false. */
+  unqueue(uuid) {
+    const i = this.queue.findIndex((e) => e.uuid === uuid);
+    if (i < 0 || /cannot cancel/i.test(String(this.queue[i].text))) return { cancelled: false };
+    this.queue.splice(i, 1);
+    this.emit({ type: 'unqueued', uuid });
+    return { cancelled: true };
+  }
   interrupt() {
     if (this.state !== 'busy') return;
     this.abort = true;
@@ -3429,6 +3438,14 @@ server.on('upgrade', (req, sock, head) => {
         }
         case 'interrupt':
           return s.interrupt();
+        case 'unqueue': {
+          // as the backend: a bad message id is refused
+          if (typeof m.uuid !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(m.uuid)) {
+            if (req) reply({ type: 'reply', req, ok: false, error: 'bad message id' });
+            return reply({ type: 'error', session: s.id, req, message: 'bad message id' });
+          }
+          return reply({ type: 'reply', req, ok: true, data: s.unqueue(m.uuid.toLowerCase()) });
+        }
         case 'set_budget': {
           const b = mockBudget({ usd: m.usd ?? null, hard: m.hard });
           if (b === false) return reply({ type: 'reply', req, ok: false, error: 'budget: 0.01 to 999 USD' });

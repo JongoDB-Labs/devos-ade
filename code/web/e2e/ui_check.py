@@ -1629,6 +1629,86 @@ def prompts(browser):
     p.close()
 
 
+def queued_cancel_flow(browser, name, shots, **ctx):
+    """JON-626: prompts queued behind a turn held by a permission card; cancel one with its X, keep the other (it is sent),
+    Cancel all, and a prompt that is already being answered (the notice, the row stays). Desktop and phone alike."""
+    post(NORMAL + "/__mock/reset")
+    p = Page(browser, NORMAL, name, **ctx)
+    page = p.open()
+    send(page, "Please fix get() so it uses the retry policy")
+    expect(page.get_by_test_id("permission")).to_be_visible(timeout=15_000)   # (the turn is held until it is answered)
+    send(page, "Say alpha")
+    send(page, "Say beta")
+    queued = page.locator(".msg-user.queued")
+    expect(queued).to_have_count(2)
+    cancel = page.get_by_role("button", name="Cancel queued message")
+    expect(cancel).to_have_count(2)
+    expect(page.get_by_test_id("queued-cancel-all")).to_be_visible()
+    for i in range(2):   # (a tap target of at least 24 x 24 CSS px, inside the viewport)
+        b = cancel.nth(i).bounding_box()
+        vp = page.viewport_size
+        assert b["width"] >= 24 and b["height"] >= 24, f"cancel button too small: {b}"
+        assert b["x"] >= 0 and b["x"] + b["width"] <= vp["width"], f"cancel button off screen: {b}"
+    page.mouse.move(0, 0)
+    p.shot(shots + "-queued-two.png")
+    cancel.first.click()   # alpha
+    expect(queued).to_have_count(1)
+    expect(queued.first).to_contain_text("Say beta")
+    expect(page.get_by_test_id("queued-cancel-all")).to_have_count(0)   # (one left: no Cancel all)
+    page.mouse.move(0, 0)
+    p.shot(shots + "-queued-one-left.png")
+    page.get_by_test_id("perm-once").click()
+    wait_turns(page, 2, timeout=60_000)   # (the fix turn, then beta)
+    expect(queued).to_have_count(0)
+    users = page.get_by_test_id("msg-user")
+    expect(users).to_have_count(2)
+    expect(users.nth(1)).to_contain_text("Say beta")
+    expect(page.get_by_text("Say alpha")).to_have_count(0)
+    # Cancel all: three queued, none sent
+    send(page, "Please fix get() so it also times out")
+    expect(page.get_by_test_id("permission")).to_be_visible(timeout=15_000)
+    for w in ("one", "two", "three"):
+        send(page, f"Say {w}")
+    expect(queued).to_have_count(3)
+    page.mouse.move(0, 0)
+    p.shot(shots + "-queued-three.png")
+    page.get_by_test_id("queued-cancel-all").click()
+    expect(queued).to_have_count(0)
+    page.mouse.move(0, 0)
+    p.shot(shots + "-queued-cancelled-all.png")
+    # a prompt Claude Code already took into the turn: the answer is false, a notice says so, the row stays
+    send(page, "Say it cannot cancel this one")
+    expect(queued).to_have_count(1)
+    cancel.first.click()
+    expect(page.locator(".toast")).to_contain_text("Already being answered", timeout=5000)
+    expect(page.locator(".toast")).to_contain_text("Stop")
+    expect(queued).to_have_count(1)
+    page.mouse.move(0, 0)
+    p.shot(shots + "-queued-already.png")
+    page.get_by_test_id("perm-once").click()
+    wait_turns(page, 4, timeout=60_000)   # (the second fix turn, then the one that could not be cancelled)
+    expect(queued).to_have_count(0)
+    expect(page.get_by_test_id("msg-user").last).to_contain_text("cannot cancel this one")
+    for w in ("one", "two", "three"):
+        expect(page.get_by_text(f"Say {w}", exact=True)).to_have_count(0)
+    # a page that reconnects later replays the prompt and its cancel: nothing queued comes back
+    page.reload()
+    expect(page.get_by_test_id("msg-user").last).to_contain_text("cannot cancel this one", timeout=10_000)
+    expect(page.locator(".msg-user.queued")).to_have_count(0)
+    p.assert_clean()
+    p.close()
+
+
+@check("queued messages: cancel one with its X, Cancel all, the notice for one already answered (desktop)")
+def queued_cancel_desktop(browser):
+    queued_cancel_flow(browser, "queued-cancel", "desktop", **DESKTOP)
+
+
+@check("queued messages: cancel one, Cancel all and the notice on a phone (24 px taps)")
+def queued_cancel_phone(browser):
+    queued_cancel_flow(browser, "queued-cancel-phone", "phone", viewport={"width": 320, "height": 640}, device_scale_factor=2, is_mobile=True, has_touch=True, color_scheme="light")
+
+
 @check("sessions: fork from a prompt; a long transcript opens at its end, 'load earlier' the rest; its export is whole")
 def fork_and_history(browser):
     post(NORMAL + "/__mock/reset")
