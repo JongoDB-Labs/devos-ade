@@ -182,6 +182,44 @@ test('at most ADD_MAX projects per look', async () => {
   assert.equal(r.rootsOf().length, ADD_MAX + 5);
 });
 
+// --- with no page connected (JON-1158 G3): the workspace is still looked at, every autoProjectIdleMs; without it, not at all ---
+test('with no page connected, a folder made in the terminal becomes a project on the idle look (and only with the idle look on)', async () => {
+  const SECRET = 'ab'.repeat(16);
+  let looks = 0;
+  const answers = {
+    'git.repos': () => { looks++; return { result: { repos: [dirOf('made-in-terminal')], folders: [] } }; },
+    'project.check': (req) => ({ result: { roots: req.roots.map((x) => ({ root: x, type: 'dir', git: true, real: x, settings: null, settingsVerifiable: true })) } }),
+    'sessions.list': () => ({ result: { sessions: [] } }), 'sessions.running': () => ({ result: { running: false } }), 'ws.sensitive': () => ({ result: { files: [] } }),
+  };
+  const call = async (req) => { const a = answers[req.op]; if (!a) throw new SandboxError('unknown op', 'refused'); return a(req); };
+  const roots = (store) => store.list().filter((p) => !p.workspace && !p.host).map((p) => p.root);
+  for (const idle of [null, 40]) {
+    looks = 0;
+    const dist = stubDist('bnautoidle');
+    const pub = tmp('bnautoidlepub');
+    const store = new Projects({ dir: tmp('bnautoidle'), publicDir: pub });
+    // (the page's own timer far off: no page is connected anyway)
+    const srv = createServer({ secret: SECRET, query: fakeQuery(), spawn: () => {}, call, distDir: dist, logger: () => {}, projects: store,
+      autoProjectMs: 60000, autoProjectIdleMs: idle });
+    try {
+      const t0 = Date.now();
+      while (Date.now() - t0 < 1500 && !roots(store).length) await new Promise((r) => { setTimeout(r, 20); });
+      if (idle) {
+        assert.deepEqual(roots(store), ['made-in-terminal']);
+        assert.ok(looks >= 1);
+        // the summary the portal reads has it (Home, Settings, the Terminal's Projects panel)
+        const sum = JSON.parse(fs.readFileSync(path.join(pub, 'projects-summary.json'), 'utf8'));
+        assert.ok(sum.projects.some((p) => p.root === 'made-in-terminal'), JSON.stringify(sum));
+      } else {
+        assert.deepEqual(roots(store), []);
+        assert.equal(looks, 0);
+      }
+    } finally {
+      srv.closeGit(); srv.mgr.closeAll(); srv.wss.close(); srv.server.close(); fs.rmSync(dist, { recursive: true, force: true });
+    }
+  }
+});
+
 // --- the list: GET /api/projects looks first, and says what was added; the notice is dismissed; Remove from Code is remembered ---
 test('GET /api/projects adds what the workspace holds first and lists the notices; dismiss keeps the project; DELETE is remembered', async () => {
   const SECRET = 'ab'.repeat(16);

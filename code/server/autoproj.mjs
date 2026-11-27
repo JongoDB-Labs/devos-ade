@@ -1,6 +1,7 @@
 // Projects made by themselves (JON-1059): a git repository or a project folder that appears in the workspace — an agent made it in
 // the Terminal, you cloned it there — is a project of the Code page without a click, and is kept on the built-in git server when
-// it can be. Looked for whenever the Code page lists the projects and every 45 s while a page is connected (main.mjs); one look at a
+// it can be. Looked for whenever the Code page lists the projects, every 45 s while a page is connected, and every 2 minutes while
+// none is (main.mjs: so Home, Settings and the Terminal's Projects panel list it with the Code page closed — JON-1158); one look at a
 // time, at most one per MIN_GAP_MS, bounded: bn-coded's git.repos (files: true) lists at most 50 repositories (two levels down) and 50
 // folders (the workspace's direct children, no link followed), this adds at most ADD_MAX projects and keeps at most KEEP_MAX per look.
 //   what becomes a project   a repository (git.repos, a real .git folder), or a direct child of the workspace that is no repository
@@ -17,7 +18,7 @@ import { nameOk as repoNameOk } from './keep.mjs';
 import { mayKeep } from './termlink.mjs';
 import { short } from './validate.mjs';
 
-export const AUTO_MS = 45000, MIN_GAP_MS = 3000, ADD_MAX = 10, KEEP_MAX = 5;
+export const AUTO_MS = 45000, AUTO_IDLE_MS = 120000, MIN_GAP_MS = 3000, ADD_MAX = 10, KEEP_MAX = 5;
 
 /** makeAutoProjects({call, projects, addProject, keeper, mirrors, hosts, remoteState, log, now}) -> {scan(), running}
  *  projects() — the store (projects.mjs); addProject(b) — api.addProject; keeper() — keep.mjs's API (keep); mirrors.owner() — the built-in
