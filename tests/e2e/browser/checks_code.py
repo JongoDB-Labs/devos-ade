@@ -2934,7 +2934,7 @@ def ui_sessions_bulk(ctx):
         for sid in sids[:2]:
             row(sid, True).get_by_test_id("session-pick").check()
         page.get_by_test_id("sessions-unarchive").click()
-        see(page.get_by_test_id("toast").filter(has_text="Listed again 2")).to_have_count(1, timeout=30000)
+        see(page.get_by_test_id("toast").filter(has_text="Unarchived 2")).to_have_count(1, timeout=30000)
         for sid in sids[:2]:
             see(row(sid)).to_have_count(1, timeout=30000)
         see(row(sids[2], True)).to_have_count(1)

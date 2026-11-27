@@ -1941,7 +1941,7 @@ export async function bulkArchive(ids: string[], on: boolean): Promise<void> {
   }
   if (on) for (const id of done) if (get().views[id] && get().views[id].state !== 'closed') await closeSessionById(id);
   set((s) => ({ ...s, sessions: s.sessions.map((x) => (done.includes(x.id) ? { ...x, archived: on || undefined } : x)) }));
-  toast(bulkNotice(on ? 'Archived' : 'Listed again', done.length, reasons), reasons.length && !done.length ? 'error' : 'ok');
+  toast(bulkNotice(on ? 'Archived' : 'Unarchived', done.length, reasons), reasons.length && !done.length ? 'error' : 'ok');
   void refreshSessions();
 }
 

@@ -547,9 +547,11 @@ export function ProjectsPanel() {
           <button type="button" class="btn small primary" disabled={!picked.length} onClick={() => openProjectDialog({ kind: 'file', ids: picked })} data-testid="sessions-add-to-project">
             Add to project…
           </button>
-          <button type="button" class="btn small" disabled={!picked.length || picked.every((id) => info.get(id)?.archived)} onClick={() => void endPicking(bulkArchive(picked.filter((id) => !info.get(id)?.archived), true))} data-testid="sessions-archive">
-            Archive
-          </button>
+          {(!picked.length || picked.some((id) => !info.get(id)?.archived)) && (
+            <button type="button" class="btn small" disabled={!picked.length} onClick={() => void endPicking(bulkArchive(picked.filter((id) => !info.get(id)?.archived), true))} data-testid="sessions-archive">
+              Archive
+            </button>
+          )}
           {picked.some((id) => info.get(id)?.archived) && (
             <button type="button" class="btn small" onClick={() => void endPicking(bulkArchive(picked.filter((id) => info.get(id)?.archived), false))} data-testid="sessions-unarchive">
               Unarchive

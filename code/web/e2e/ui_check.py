@@ -5880,11 +5880,12 @@ def bulk_sessions_flow(browser, name, phone):
     go(root.get_by_test_id("sessions-select"))
     select(A, B, archived=True)
     expect(root.get_by_test_id("sessions-unarchive")).to_be_visible()
+    expect(root.get_by_test_id("sessions-archive")).to_have_count(0)   # (nothing of the selection to archive: not offered)
     bar_fits()
     p.shot(f"{name}-bulk-select-bar-archived.png")
     go(root.get_by_test_id("sessions-unarchive"))
     expect(rows).to_have_count(3, timeout=10_000)
-    expect(page.get_by_test_id("toast").filter(has_text="Listed again 2.")).to_have_count(1)
+    expect(page.get_by_test_id("toast").filter(has_text="Unarchived 2.")).to_have_count(1)
     assert len([x for x in plog() if x.startswith("unarchive ")]) == 2, plog()
     expect(ws.get_by_test_id("archived-list").get_by_test_id("session-row")).to_have_count(1)
     # Delete…: one dialog naming them; Cancel deletes nothing; Delete removes them
