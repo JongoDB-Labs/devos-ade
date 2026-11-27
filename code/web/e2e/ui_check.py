@@ -6160,6 +6160,57 @@ def widgets_reset_elsewhere(browser):
     b.close()
 
 
+@check("project chip: a long name and folder stay inside the chip and never run over the model picker (JON-1425)")
+def project_chip_long(browser):
+    probe = """() => {
+      const chip = document.querySelector('.topbar [data-testid=project-chip]');
+      const pick = document.querySelector('.topbar [data-testid=model-picker]');
+      const c = chip.getBoundingClientRect(), m = pick.getBoundingClientRect();
+      const spill = [];
+      for (const el of chip.querySelectorAll('*')) {
+        const r = el.getBoundingClientRect();
+        if (!r.width || !r.height) continue;
+        if (r.left < c.left - 1 || r.right > c.right + 1) spill.push(String(el.className.baseVal ?? el.className));
+      }
+      return { chip: [c.left, c.right], pick: [m.left, m.right], overlap: Math.min(c.right, m.right) - Math.max(c.left, m.left), spill,
+               name: chip.textContent, scroll: document.documentElement.scrollWidth <= innerWidth };
+    }"""
+    for w, h in ((1400, 900), (1200, 800), (1100, 800), (1024, 768)):
+        post(NORMAL + "/__mock/reset")
+        folder = f"e2e-journey-179574{w:04d}"   # (a name like the journey's, 22 characters; the mock keeps folders over a reset)
+        req = urllib.request.Request(NORMAL + "/api/projects", method="POST", headers={"Content-Type": "application/json"},
+                                     data=json.dumps({"kind": "new", "folder": folder, "name": folder}).encode())
+        urllib.request.urlopen(req, timeout=5).read()
+        p = Page(browser, NORMAL, f"chip-{w}", viewport={"width": w, "height": h}, color_scheme="light")
+        page = p.open()
+        page.get_by_test_id("project-chip").click()
+        page.get_by_test_id("project-chip-item").filter(has_text=folder).click()
+        expect(page.get_by_test_id("project-chip-name")).to_have_text(folder, timeout=10_000)
+        # (a turn done: the Review button and the turn meter join the right of the bar, as in a session at work)
+        send(page, "Please fix get() so it uses the retry policy")
+        page.get_by_test_id("perm-once").click(timeout=15_000)
+        wait_turns(page, 1)
+        page.mouse.move(5, 400)
+        page.wait_for_timeout(300)
+        p.shot(f"project-chip-long-{w}.png")
+        r = page.evaluate(probe)
+        print(f"chip {w}px: chip {r['chip']} picker {r['pick']} text {r['name']!r}", flush=True)
+        assert r["overlap"] <= 0, f"{w}px: the project chip {r['chip']} overlaps the model picker {r['pick']} by {r['overlap']:.0f} px"
+        assert not r["spill"], f"{w}px: parts of the chip stick out of it: {r['spill']} ({r['name']!r})"
+        assert r["scroll"], f"{w}px: horizontal overflow"
+        # (the mock has no /api/projects/ws/keep: the chip's menu asks for it and gets a 404, as in the projects check)
+        p.errors = [e for e in p.errors if "status of 404" not in e]
+        p.assert_clean()
+        p.close()
+    # a phone: the chip is compact (no folder), and still fits
+    p = Page(browser, NORMAL, "chip-390", viewport={"width": 390, "height": 844}, has_touch=True, color_scheme="light")
+    page = p.open()
+    p.shot("project-chip-long-390.png")
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth"), "390px: horizontal overflow"
+    p.assert_clean()
+    p.close()
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
     procs = start_mocks()
