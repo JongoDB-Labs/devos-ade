@@ -2976,7 +2976,7 @@ stops working. Open the web app URL the update prints, sign in with `PORTAL_PASS
 - **Linux, SELinux, rootless Docker:** supported (Docker Engine 28+; your user in the `docker` group; rootless
   puts the web app on 8800). See [docs/advanced.md](docs/advanced.md#linux-selinux-and-rootless-docker).
 - **A non-`.localhost` web app name** is refused unless you set `DEVOS_ADE_ALLOW_PUBLIC_HOST=1`: the web app is
-  plain HTTP. See [docs/advanced.md](docs/advanced.md#portal-host-name-port-and-the-public-host-opt-in).
+  plain HTTP. See [docs/advanced.md](docs/advanced.md#web-app-host-name-port-and-the-public-host-opt-in).
 - **Verbose output:** `DEVOS_ADE_VERBOSE=1 ./stack setup` shows the full docker compose output (also for
   `restore` and `rollback`, which otherwise leave out Compose's per-container "Waiting / Healthy" lines).
 - **Backups, restore on a new machine, AWS key rotation, adding models, the web app window:**

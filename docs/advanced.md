@@ -76,6 +76,8 @@ and `./stack clean --dry-run`. `--help` (or `-h`) exits 0 for a known command, w
 - `./stack open` starts the browser detached (`nohup setsid`); if it fails at once, the default browser
   (`xdg-open`) is used. Without a display it only prints the URL.
 
+<a id="portal-host-name-port-and-the-public-host-opt-in"></a>
+
 ## Web app host name, port and the public-host opt-in
 
 The web app uses port 80 when it is free (so the URLs carry no port); otherwise setup picks 8800 and says so,

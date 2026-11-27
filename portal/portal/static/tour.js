@@ -471,14 +471,14 @@
           open ? el("div", { class: "tour-actions" }, button("Open in the app", "open-app", () => open.click()))
             : install ? el("div", { class: "tour-actions" }, button("Install app", "install", () => install.click()))
               : note(app || how),
-          p(b("One-click Update, Rollback and Clean"), " on Home, and Settings you can change in the portal: the update helper (",
+          p(b("One-click Update, Rollback and Clean"), " on Home, and Settings you can change in the web app: the update helper (",
             doc("updating", "how it works"), "):"), cmd("./stack helper install"),
         ];
       },
     },
     // ---------------- Your apps (one sign-in)
     "signin-portal": {
-      title: "The portal: your one sign-in", badges: ["Sign-in: Done"], info: true,
+      title: "The web app: your one sign-in", badges: ["Sign-in: Done"], info: true,
       body: () => [
         p("The web app password (", code("PORTAL_PASSWORD"), " in ", code(".env"), "; ", code("./stack password --show"),
           " prints it) is the only one you type: Chat, Admin and Files sign you in with it, and the Terminal and the Code page (when they are on) ask for it once more to unlock, because they run commands. Change it in ", settings("Account & security", "PORTAL_PASSWORD"), "."),
@@ -559,7 +559,7 @@
           ["It runs in a sandbox that sees one folder of yours, with its own key and budget."],
           [settings("Claude Code", "CODE_ENABLED"), " › ", b("Code page: On"), " (from the computer running DevOS ADE), or in a terminal:"]]),
         cmd("./stack code enable"),
-        note("Once it is on, reload the portal: this part of the walkthrough then shows its steps (", doc("the-code-page", "the Code page"), ")."),
+        note("Once it is on, reload the web app: this part of the walkthrough then shows its steps (", doc("the-code-page", "the Code page"), ")."),
       ],
       actions: () => [openCode()],
     },
