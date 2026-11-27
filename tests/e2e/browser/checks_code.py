@@ -2884,6 +2884,91 @@ def ui_session_delete_and_new_project(ctx):
                " (the built-in git server is off here: not kept)") + "; no CSP violations")
 
 
+@check("browser", "code-ui-sessions-bulk")
+@saved
+def ui_sessions_bulk(ctx):
+    """Several sessions at once (JON-605), on the real stack, no model calls: three sessions with no prompt yet (Haiku picked;
+    nothing is sent) are selected together — Archive moves them under Archived, Unarchive lists two again, Delete… asks once
+    (naming them; Cancel deletes nothing) and then deletes each with its own request. The backend says the same:
+    /api/state no longer lists them after a reload. Screenshots sb1-sb2."""
+    need_on()
+    page, rec = ui_page(ctx, "code-ui-sessions-bulk", fresh_ws=True)
+    c = Code.on(page, rec, goto=False)
+    page.get_by_test_id("side-sessions").click()
+    page.get_by_test_id("model-picker").click()
+    page.get_by_test_id("model-haiku").click()
+    sids = []
+    try:
+        for _ in range(3):
+            old = _last_session(page)
+            page.get_by_test_id("new-session").click()
+            sids.append(_new_session_id(page, old))
+        _unfold(page, "ws")
+        ws = _proj(page, "ws")
+
+        def row(sid, archived=False):
+            scope = ws.get_by_test_id("archived-list") if archived else ws
+            return scope.locator(f"[data-testid=session-row][data-session='{sid}']")
+
+        def listed():
+            return [x["id"] for x in (c.api("GET", "/api/state")["json"] or {}).get("sessions", [])]
+
+        for sid in sids:
+            see(row(sid)).to_have_count(1, timeout=30000)
+        # select the three, Archive
+        page.get_by_test_id("sessions-select").click()
+        for sid in sids:
+            row(sid).get_by_test_id("session-pick").check()
+        see(page.get_by_test_id("sessions-picked")).to_contain_text("3 selected")
+        shot(page, "sb1-code-sessions-select")
+        page.get_by_test_id("sessions-archive").click()
+        see(page.get_by_test_id("toast").filter(has_text="Archived 3")).to_have_count(1, timeout=30000)
+        see(page.get_by_test_id("sessions-picked")).to_have_count(0)
+        for sid in sids:
+            see(row(sid)).to_have_count(0, timeout=30000)
+        ws.get_by_test_id("archived-toggle").click()
+        for sid in sids:
+            see(row(sid, True)).to_have_count(1, timeout=30000)
+        # two of them listed again
+        page.get_by_test_id("sessions-select").click()
+        for sid in sids[:2]:
+            row(sid, True).get_by_test_id("session-pick").check()
+        page.get_by_test_id("sessions-unarchive").click()
+        see(page.get_by_test_id("toast").filter(has_text="Listed again 2")).to_have_count(1, timeout=30000)
+        for sid in sids[:2]:
+            see(row(sid)).to_have_count(1, timeout=30000)
+        see(row(sids[2], True)).to_have_count(1)
+        # Delete…: asked once; Cancel keeps all; Delete removes each
+        page.get_by_test_id("sessions-select").click()
+        for sid in sids[:2]:
+            row(sid).get_by_test_id("session-pick").check()
+        page.get_by_test_id("sessions-delete").click()
+        dlg = page.get_by_test_id("delete-sessions-dialog")
+        see(dlg).to_contain_text("Delete 2 sessions?", timeout=10000)
+        see(dlg).to_contain_text("The files they changed")
+        shot(page, "sb2-code-sessions-delete-dialog")
+        dlg.get_by_role("button", name="Cancel").click()
+        see(dlg).to_have_count(0)
+        expect(all(sid in listed() for sid in sids), "Cancel deleted a session")
+        page.get_by_test_id("sessions-delete").click()
+        page.get_by_test_id("delete-sessions-confirm").click()
+        see(page.get_by_test_id("toast").filter(has_text="Deleted 2")).to_have_count(1, timeout=60000)
+        for sid in sids[:2]:
+            see(row(sid)).to_have_count(0, timeout=30000)
+        page.reload()
+        see(page.get_by_test_id("conn")).to_have_text("Connected", timeout=30000)
+        expect(not any(sid in listed() for sid in sids[:2]), "a deleted session is still listed after a reload")
+        expect(sids[2] in listed(), "the session that was not selected is gone")
+        csp_clean(page, rec)
+    finally:
+        try:
+            for sid in sids:
+                c.api("DELETE", f"/api/sessions/{sid}")
+        except Exception:  # noqa: BLE001 — cleanup never hides the failure
+            pass
+    return "three sessions selected together were archived (moved under Archived), two listed again, and two deleted after one confirm (Cancel deleted none); gone after a reload; no CSP violations"
+
+
 @check("browser", "code-projects-config-above")
 @saved
 def projects_config_above(ctx):
