@@ -919,7 +919,7 @@ def check_hosted_server(page, failures, label):
     row = page.locator("[data-server-row=groq]")
     row.wait_for(state="visible", timeout=10000)
     save = next((q for q in LM["posts"] if q["op"] == "save"), None)
-    if not save or save.get("skind") != "hosted" or save.get("prices") != [{"id": "*", "in": 0.59, "out": 0.79}]:
+    if not save or save.get("kind") != "hosted" or save.get("prices") != [{"id": "*", "in": 0.59, "out": 0.79}]:
         failures.append(f"{label}: the save request carries {save}")
     head = row.locator(".lm-name").inner_text()
     if "Remote" not in head or "$0.59 in / $0.79 out per 1M" not in head or "Local" in head or "$0\n" in head + "\n":
@@ -956,7 +956,7 @@ def check_hosted_server(page, failures, label):
     if "Remote" in head or "$0" not in head:
         failures.append(f"{label}: after Billing → self-hosted the row says {head!r}")
     bill = next((q for q in LM["posts"] if q["op"] == "billing"), None)
-    if not bill or bill.get("skind") != "self":
+    if not bill or bill.get("kind") != "self":
         failures.append(f"{label}: the billing request carries {bill}")
     row = page.locator("[data-server-row=groq]")
     row.locator("[data-act=server-billing]").click()

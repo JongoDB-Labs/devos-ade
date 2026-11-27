@@ -69,7 +69,8 @@ Usage: ./stack <command> [--yes]
                (~$0.007 at most) | aws-setup (AgentCore Web Search's one-time AWS setup, for your admin)
   local-models Models downloaded from Hugging Face and run on this computer (Docker Model Runner, else Ollama):
                status | pull ORG/REPO [QUANT] | pause | resume | cancel | rm ORG/REPO [QUANT] | enable | uninstall [--models]
-               server list|add NAME URL [--trust]|key NAME|enable NAME ID|disable NAME ID|rm NAME   (any OpenAI-compatible server)
+               server list|add NAME URL [--trust] [--hosted|--self]|kind NAME self|hosted|price NAME ID|* IN OUT|key NAME|enable NAME ID|disable NAME ID|rm NAME
+               (any OpenAI-compatible server; hosted = a paid API: models marked Remote, billed at the prices set, never free)
                (Settings › Models & providers › Local models; Apple silicon runs models with MLX, else Docker Model Runner, else Ollama;
                LOCAL_RUNTIME picks one)
   runtimes     The model runtimes DevOS ADE installs and runs itself (Ollama; macOS natively, Linux as a container):
