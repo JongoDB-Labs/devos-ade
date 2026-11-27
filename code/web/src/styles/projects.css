@@ -40,7 +40,10 @@
 .proj-chip { max-width: min(360px, 26cqi); border-color: var(--line) !important; background: var(--surface); }
 .proj-chip .ic { flex: none; color: var(--muted); }
 .proj-chip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-.proj-chip-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; }
+/* (the folder takes only the room the name leaves: from nothing it grows into what is free, so the name is cut short only
+   once the folder is gone; the name is what a project is known by. A shrink weight would not do: shrinking is shared out
+   in proportion, and the name's fraction of a pixel is enough for the ellipsis to take its last letter) */
+.proj-chip-path { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; }
 .proj-chip-branch { display: inline-flex; align-items: center; gap: 3px; flex: none; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .dd-sep { height: 1px; margin: 4px 2px; background: var(--line-soft); }
 

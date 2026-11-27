@@ -6185,8 +6185,14 @@ def project_chip_long(browser):
         if (!r.width || !r.height) continue;
         if (r.left < c.left - 1 || r.right > c.right + 1) spill.push(String(el.className.baseVal ?? el.className));
       }
+      // (the name is cut short only once the folder has given way: the name is what a project is known by)
+      const nm = chip.querySelector('.proj-chip-name'), pa = chip.querySelector('.proj-chip-path');
+      // (the text's own width against its box, to the fraction of a pixel: a name a fraction too wide already loses letters
+      // to the ellipsis)
+      const rg = document.createRange(); rg.selectNodeContents(nm);
+      const nameCut = rg.getBoundingClientRect().width > nm.getBoundingClientRect().width + 0.01, pathW = pa ? pa.getBoundingClientRect().width : 0;
       return { chip: [c.left, c.right], pick: [m.left, m.right], overlap: Math.min(c.right, m.right) - Math.max(c.left, m.left), spill,
-               name: chip.textContent, scroll: document.documentElement.scrollWidth <= innerWidth };
+               name: chip.textContent, scroll: document.documentElement.scrollWidth <= innerWidth, nameCut, pathW };
     }"""
     for w, h in ((1400, 900), (1200, 800), (1100, 800), (1024, 768)):
         post(NORMAL + "/__mock/reset")
@@ -6211,6 +6217,7 @@ def project_chip_long(browser):
         assert r["overlap"] <= 0, f"{w}px: the project chip {r['chip']} overlaps the model picker {r['pick']} by {r['overlap']:.0f} px"
         assert not r["spill"], f"{w}px: parts of the chip stick out of it: {r['spill']} ({r['name']!r})"
         assert r["scroll"], f"{w}px: horizontal overflow"
+        assert not (r["nameCut"] and r["pathW"] > 1), f"{w}px: the name is cut short while the folder keeps {r['pathW']:.0f} px ({r['name']!r})"
         p.assert_clean()
         p.close()
     # a phone: the chip is compact (no folder), and still fits
