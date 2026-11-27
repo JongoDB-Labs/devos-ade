@@ -169,7 +169,7 @@ const window = { parent, addEventListener: (t, f) => listeners.add(f), removeEve
 const fetch = async (url, init) => {
   calls.push([url, init.method, init.body ? JSON.parse(init.body) : null, init.credentials]);
   if (url === '/api/v1/folders/' && init.method === 'GET') return { ok: true, json: async () => sc.folders };
-  if (url === '/api/v1/folders/' && init.method === 'POST') return sc.createFails ? { ok: false, json: async () => ({}) } : { ok: true, json: async () => ({ id: 'new1', name: JSON.parse(init.body).name }) };
+  if (url === '/api/v1/folders/' && init.method === 'POST') return sc.createFails ? { ok: false, json: async () => ({}) } : sc.createNoId ? { ok: true, json: async () => ({}) } : { ok: true, json: async () => ({ id: 'new1', name: JSON.parse(init.body).name }) };
   return { ok: true, json: async () => ({}) };
 };
 const run = new Function('window', 'location', 'fetch', 'return (async () => {' + code + '})()');
@@ -235,8 +235,10 @@ def test_nothing_is_filed_for_a_temporary_chat_a_refused_hand_off_a_blank_name_o
             return
         assert out["calls"] == [], (scenario, chat_id, out)
         assert out["left"] == 0
-    out = _page({"createFails": True, "msgs": [{"id": "$", "project": "X"}]})
-    assert [c[:2] for c in out["calls"]] == [["/api/v1/folders/", "GET"], ["/api/v1/folders/", "POST"]]   # (no move into nothing)
+    for sc in ({"createFails": True}, {"createNoId": True}):
+        out = _page({**sc, "msgs": [{"id": "$", "project": "X"}]})
+        # (no move into nothing: a move without a folder takes the chat out of every folder)
+        assert [c[:2] for c in out["calls"]] == [["/api/v1/folders/", "GET"], ["/api/v1/folders/", "POST"]], sc
 
 
 def test_the_chat_id_goes_in_as_data_and_only_a_real_one():
