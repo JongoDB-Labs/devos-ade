@@ -4036,7 +4036,7 @@ def git_signin_stale_view(browser):
     dlg.get_by_role("button", name="Close").tap()
     # the second look: the app is set up by then, answered at once — and the form offers Sign in
     post(NORMAL + "/__mock/git-signin?app=1")
-    page.get_by_test_id("welcome-hosts").tap()
+    page.get_by_test_id("git-hosts-open").first.tap()
     page.get_by_test_id("git-host-add").tap()
     expect(page.get_by_test_id("git-host-signin")).to_be_visible(timeout=10_000)
     expect(page.get_by_test_id("git-host-auth-oauth")).to_be_checked()
