@@ -5852,13 +5852,22 @@ def bulk_sessions_flow(browser, name, phone):
     def go(t):
         (t.tap() if phone else t.click())
 
+    def back(*pick):
+        """(A phone's Projects sheet closes behind a dialog, and select mode with it: open it again, select again.)"""
+        if phone:
+            go(page.get_by_test_id("phone-sessions"))
+            expect(root).to_be_visible()
+            if pick:
+                go(root.get_by_test_id("sessions-select"))
+                select(*pick)
+
     # select 3, Archive: they move under Archived, select mode ends, one notice
     go(root.get_by_test_id("sessions-select"))
     select(A, B, C)
     expect(root.get_by_test_id("sessions-picked")).to_contain_text("3 selected")
     expect(root.get_by_test_id("sessions-unarchive")).to_have_count(0)
     bar_fits()
-    p.shot("bulk-select-bar.png")
+    p.shot(f"{name}-bulk-select-bar.png")
     go(root.get_by_test_id("sessions-archive"))
     expect(rows).to_have_count(1, timeout=10_000)
     expect(page.get_by_test_id("toast").filter(has_text="Archived 3.")).to_have_count(1)
@@ -5866,13 +5875,13 @@ def bulk_sessions_flow(browser, name, phone):
     assert len([x for x in plog() if x.startswith("archive ")]) == 3, plog()
     go(ws.get_by_test_id("archived-toggle"))
     expect(ws.get_by_test_id("archived-list").get_by_test_id("session-row")).to_have_count(3)
-    p.shot("bulk-archived.png")
+    p.shot(f"{name}-bulk-archived.png")
     # select 2 archived: Unarchive is there, and brings them back
     go(root.get_by_test_id("sessions-select"))
     select(A, B, archived=True)
     expect(root.get_by_test_id("sessions-unarchive")).to_be_visible()
     bar_fits()
-    p.shot("bulk-select-bar-archived.png")
+    p.shot(f"{name}-bulk-select-bar-archived.png")
     go(root.get_by_test_id("sessions-unarchive"))
     expect(rows).to_have_count(3, timeout=10_000)
     expect(page.get_by_test_id("toast").filter(has_text="Listed again 2.")).to_have_count(1)
@@ -5889,15 +5898,17 @@ def bulk_sessions_flow(browser, name, phone):
     expect(dlg).to_contain_text(D)
     expect(dlg).to_contain_text("for good")
     expect(dlg).to_contain_text("The files they changed")
-    p.shot("bulk-delete-dialog.png")
+    p.shot(f"{name}-bulk-delete-dialog.png")
     go(dlg.get_by_role("button", name="Cancel"))
     expect(dlg).to_have_count(0)
     assert not any(x.startswith("delete ") for x in plog()), plog()
+    back(B, D)
     expect(rows).to_have_count(3)
     go(root.get_by_test_id("sessions-delete"))
     go(page.get_by_test_id("delete-sessions-confirm"))
+    expect(page.get_by_test_id("toast").filter(has_text="Deleted 2.")).to_have_count(1, timeout=10_000)
+    back()
     expect(rows).to_have_count(1, timeout=10_000)
-    expect(page.get_by_test_id("toast").filter(has_text="Deleted 2.")).to_have_count(1)
     expect(root.get_by_test_id("sessions-picked")).to_have_count(0)
     assert len([x for x in plog() if x.startswith("delete ")]) == 2, plog()
     # a session a turn runs in is skipped and named; the other goes
@@ -5909,9 +5920,10 @@ def bulk_sessions_flow(browser, name, phone):
     expect(page.get_by_test_id("delete-sessions-dialog")).to_contain_text("Delete 2 sessions?")
     go(page.get_by_test_id("delete-sessions-confirm"))
     expect(page.get_by_test_id("toast").filter(has_text="Deleted 1; 1 skipped: a turn is running in it.")).to_have_count(1, timeout=10_000)
+    back()
     expect(rows.filter(has_text=A)).to_have_count(1)
     assert len([x for x in plog() if x.startswith("delete ")]) == 3, plog()
-    p.shot("bulk-skipped.png")
+    p.shot(f"{name}-bulk-skipped.png")
     p.assert_clean()
     p.close()
 
