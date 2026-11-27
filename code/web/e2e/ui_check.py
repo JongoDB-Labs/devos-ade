@@ -5671,6 +5671,18 @@ def item_menus(browser):
     page.keyboard.press("Escape")
     expect(page.get_by_role("menu")).to_have_count(0)
     assert page.evaluate("() => !!document.activeElement.closest('[data-testid=session-row]')"), "the focus did not return to the session row"
+    # Escape the moment the menu is there, before the page has drawn a frame (a busy or slow device): it still closes
+    # (its keys are listened to as it opens, not a frame later)
+    quick = page.evaluate("""async () => {
+      const row = document.activeElement;
+      row.dispatchEvent(new KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true, cancelable: true }));
+      for (let i = 0; i < 50 && !document.querySelector('[role=menu]'); i++) await Promise.resolve();
+      if (!document.querySelector('[role=menu]')) return 'no menu';
+      (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      return document.querySelector('[role=menu]') ? 'still open' : 'closed';
+    }""")
+    assert quick == "closed", f"Escape right as the menu opened: {quick}"
     # the same actions from the visible ⋯ button
     row.hover()
     row.get_by_test_id("session-menu").click()

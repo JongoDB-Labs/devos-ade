@@ -240,7 +240,9 @@ export function Dropdown(props: {
     p.querySelector<HTMLElement>('[aria-checked="true"]')?.scrollIntoView?.({ block: 'nearest' });
   }, [open]);
 
-  useEffect(() => {
+  // (as it opens, not a frame later: the menu has the focus before it is drawn, so its keys — Escape, the arrows — must be
+  // heard from then on; an effect would leave it deaf until the next frame, and a quick Escape on a busy device was lost)
+  useLayoutEffect(() => {
     if (!open) return;
     const me = token.current;
     openStack.push(me);
