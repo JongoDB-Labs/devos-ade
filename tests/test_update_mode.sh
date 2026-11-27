@@ -447,3 +447,51 @@ test_an_update_without_the_results_files_runs_the_model_check() {
   out="$(UM_PROBE_AGE=3600 UM_NO_RESULTS=1 _um_bringup update)"
   assert_contains "$out" "PROBE"
 }
+
+# JON-1419: the Code page default (and the terminal's and the Code page's hooks after it) write these keys late in a new
+# install's first setup, after the steps before them noted their digests. As an input of theirs, the first Update now ran each
+# of them again (41 s instead of 26 s on the test host). The steps from the Code page default on are noted after the keys are
+# written, and keep them as inputs.
+_um_code_late_keys() {
+  mkdir -p "$TMP/ws"
+  printf 'CODE_ENABLED=true\nCODE_CHAT_KEY=ck\nCODE_PROXY_SECRET=cp\nPREVIEW_DOMAIN=p.localhost\nPREVIEW_PROXY_SECRET=pp\nTERMINAL_ENABLED=true\nTERMINAL_GID=20\nTERMINAL_PROXY_SECRET=tp\nTERMINAL_UID=501\nTERMINAL_WORKSPACE=%s\nLITELLM_KEY_TERMINAL=sk-t\n' "$TMP/ws" >> "$ENV_FILE"
+}
+# a first setup: every gate runs; the Code page default's writes the keys, as code_default_on and its hooks do
+_um_first_setup_with_code_default() {
+  local g; : > "$TMP/ran"; upd_begin; UPD_MODE=0
+  localgit_tls_ensure   # (the git server step made its certificate: what localgit_start does)
+  for g in $_GATES; do
+    if [ "$g" = codedefault ]; then upd_gate "$g" "step $g" why _um_code_late_keys; else upd_gate "$g" "step $g" why sh -c "echo $g >> '$TMP/ran'"; fi
+  done
+  upd_commit
+}
+test_the_keys_the_code_page_default_writes_late_run_no_earlier_step_again() {
+  _um_setup; _um_first_setup_with_code_default
+  assert_contains "$(cat "$ENV_FILE")" "TERMINAL_ENABLED=true"
+  assert_eq "$(_um_run update)" ""
+  assert_eq "$(_um_run update)" ""
+}
+test_a_key_an_early_step_reads_still_runs_it_after_the_code_page_default() {
+  _um_setup; _um_first_setup_with_code_default; _um_run update >/dev/null
+  # a key the steps before it do read, one of the keys that are not written late
+  printf 'TERMINAL_EGRESS=off\n' >> "$ENV_FILE"
+  assert_eq "$(_um_run update)" "settings litellm_config voice stt_service keys searxng websearch gitserver codedefault gitafter signin syncs smoke"
+  # a key it reads, as setup's settings step does
+  sed -i.bak 's/^LITELLM_PORT=4000/LITELLM_PORT=4001/' "$ENV_FILE"
+  assert_eq "$(_um_run update)" "settings litellm_config voice stt_service keys searxng websearch gitserver codedefault gitafter signin syncs smoke"
+  # the services' own files (a compose file of the terminal, a pinned image): the steps that start a service of their own
+  echo "# changed" >> "$STACK_DIR/compose.yaml"
+  assert_eq "$(_um_run update)" "stt_service keys searxng gitserver gitafter smoke"
+  printf 'x: 1\n' > "$STACK_DIR/compose.terminal.yaml"; _um_run update >/dev/null
+  echo "# changed" >> "$STACK_DIR/compose.terminal.yaml"
+  assert_eq "$(_um_run update)" "stt_service keys searxng gitserver gitafter smoke"
+}
+# the steps from the Code page default on read the keys: a Code page or terminal turned off or on, a new secret
+test_a_change_of_the_code_page_keys_runs_the_code_page_default_step_and_the_ones_after_it() {
+  _um_setup; _um_first_setup_with_code_default; _um_run update >/dev/null
+  local k
+  for k in CODE_ENABLED TERMINAL_ENABLED CODE_PROXY_SECRET CODE_CHAT_KEY PREVIEW_PROXY_SECRET TERMINAL_PROXY_SECRET TERMINAL_UID TERMINAL_GID; do
+    sed -i.bak "s/^$k=.*/$k=changed-$k/" "$ENV_FILE"
+    assert_eq "$(_um_run update)" "codedefault gitafter smoke"; assert_eq "$(_um_run update)" ""
+  done
+}

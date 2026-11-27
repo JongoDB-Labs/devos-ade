@@ -343,7 +343,18 @@ UPD_ENV_DERIVED='^(LITELLM_KEY_[A-Z_]*|OPENWEBUI_API_KEY|LITELLM_UI_USER|LITELLM
 # the next update (tests/test_update_mode.sh).
 UPD_ENV_LATE='^(LOCALGIT_READ_TOKEN)='
 _upd_env() { grep -vE "${1:-$UPD_ENV_DERIVED}" "$ENV_FILE" 2>/dev/null | grep -vE "$UPD_ENV_LATE" | LC_ALL=C sort; }   # (hashed with the rest, never printed)
-_upd_env_settings() { _upd_env '^(LITELLM_KEY_[A-Z_]*|OPENWEBUI_API_KEY|LITELLM_UI_USER|LITELLM_DB_ADMIN_READY|OWUI_[A-Z_]*|STT_PROVIDER|STT_MODEL|STT_BEDROCK_MODEL|CLAUDE_BEDROCK_[A-Z_]*|PORTAL_GID|REMOTE_SIDECAR_IP|LOCALGIT_CADDY_IP)='; }
+# The keys the Code page default (code_default_on, and the terminal's and the Code page's hooks after it) writes into .env on a
+# new install: the Code page's and the terminal's switches, their secrets, the sandbox's user and the previews' site (JON-1419).
+# Written after the steps before that one noted their digests, so as an input of theirs the first Update now ran each of them
+# again (41 s instead of 26 s). The steps before it read none of them (tests/test_update_mode.sh, the trace in the JON-1419
+# ticket): the ones that run compose only start services of their own (--no-deps, or the phases' own lists), and what a Code
+# page or terminal that was turned on or off changes in a container they know — Open WebUI's, LiteLLM's, the portal's — is in
+# the identity they hash (_upd_container_of). Those steps keep every other key; the Code page default step and the two after
+# it (the git account, the smoke test) are noted after the keys are written, and keep these too.
+UPD_ENV_CODE_LATE='^(CODE_ENABLED|CODE_CHAT_KEY|CODE_PROXY_SECRET|PREVIEW_DOMAIN|PREVIEW_PROXY_SECRET|TERMINAL_ENABLED|TERMINAL_GID|TERMINAL_PROXY_SECRET|TERMINAL_UID|TERMINAL_WORKSPACE)='
+# _upd_env_early [DERIVED] -> _upd_env without them: for the steps before the Code page default
+_upd_env_early() { _upd_env "$@" | { grep -vE "$UPD_ENV_CODE_LATE" || true; }; }
+_upd_env_settings() { _upd_env_early '^(LITELLM_KEY_[A-Z_]*|OPENWEBUI_API_KEY|LITELLM_UI_USER|LITELLM_DB_ADMIN_READY|OWUI_[A-Z_]*|STT_PROVIDER|STT_MODEL|STT_BEDROCK_MODEL|CLAUDE_BEDROCK_[A-Z_]*|PORTAL_GID|REMOTE_SIDECAR_IP|LOCALGIT_CADDY_IP)='; }
 # _upd_keys -> the keys' lines, as get_env reads each (the last line of a name wins), in one awk
 # shellcheck disable=SC2086  # ($k: one key per word)
 _upd_keys() {
@@ -355,6 +366,16 @@ _upd_keys() {
   return 0
 }
 _upd_compose() { { cat "$STACK_DIR"/compose*.yaml 2>/dev/null; compose_overlays 2>/dev/null; project_name; } | cksum; }
+# _upd_compose_early -> _upd_compose without the overlays the terminal and the Code page switch on (JON-1419: compose_overlays
+# lists them from the keys above, which a first setup writes after these steps). For the voice service, the keys, SearXNG and the
+# git server: the services they start (stt, searxng, forgejo, each --no-deps) and the containers they only exec into are in
+# none of those files (compose.terminal*.yaml, compose.code*.yaml, compose.localgit.yaml: caddy, portal, litellm, shared-mcp,
+# open-webui and the sandbox's own). The files' own text is still hashed, whichever are on.
+_upd_compose_early() {
+  { cat "$STACK_DIR"/compose*.yaml 2>/dev/null
+    compose_overlays 2>/dev/null | { grep -vE '^(compose\.(terminal|terminal-proxy|terminal-egress|code|code-proxy|code-egress|code-offline|localgit)\.yaml|@projects)$' || true; }
+    project_name; } | cksum
+}
 # _upd_local_ids -> the IDs of the images this checkout builds (portal, shared-mcp, Open WebUI, stt), one docker call, kept for
 # the rest of one digest (upd_hash runs in a subshell: each digest asks Docker again — never an ID from before a build)
 _upd_local_ids() {
@@ -423,7 +444,7 @@ upd_in_prices() {
 # LiteLLM's config: everything render_config reads (.env, the catalog, the models found, the prices in use, the web search
 # backend, the template code) and what it wrote (a config or hook that was changed by hand is written again)
 upd_in_litellm_config() {
-  _upd_env "^(LITELLM_KEY_[A-Z_]*|OPENWEBUI_API_KEY|LITELLM_UI_USER|OWUI_[A-Z_]*|CLAUDE_BEDROCK_[A-Z_]*|PORTAL_GID|REMOTE_SIDECAR_IP|LOCALGIT_CADDY_IP)="
+  _upd_env_early "^(LITELLM_KEY_[A-Z_]*|OPENWEBUI_API_KEY|LITELLM_UI_USER|OWUI_[A-Z_]*|CLAUDE_BEDROCK_[A-Z_]*|PORTAL_GID|REMOTE_SIDECAR_IP|LOCALGIT_CADDY_IP)="
   printf 'admin=%s\n' "$(get_env LITELLM_DB_ADMIN_READY)"
   catalog_rows 2>/dev/null | cksum
   _upd_files "$STACK_DIR/litellm/enabled-models.txt" "$STACK_DIR/litellm/probe-results.tsv" "$STACK_DIR/litellm/config.yaml" \
@@ -437,13 +458,13 @@ upd_in_litellm_config() {
 }
 # Voice (the choice of Bedrock speech-to-text from the models found)
 upd_in_voice() {
-  _upd_env; printf 'stt=%s\n' "$(get_env STT_PROVIDER)"
+  _upd_env_early; printf 'stt=%s\n' "$(get_env STT_PROVIDER)"
   _upd_files "$STACK_DIR/litellm/probe-results.tsv" "$STACK_DIR"/lib/stt.sh "$STATE_DIR/stt-start-failed"
   _upd_fn stt_after_probe stt_sync_env
 }
 # The speech-to-text container: its sources, the week of its ffmpeg layer, the compose files and the mark of a start that failed
 upd_in_stt_service() {
-  _upd_env; _upd_tree "$STACK_DIR/stt"; stt_apk_week; _upd_compose
+  _upd_env_early; _upd_tree "$STACK_DIR/stt"; stt_apk_week; _upd_compose_early
   _upd_files "$STATE_DIR/stt-start-failed" "$STATE_DIR/stt-service" "$STACK_DIR"/lib/stt.sh
   _upd_local_ids | grep '/stt:local'
   _upd_fn stt_setup_service _stt_build_and_up _stt_build
@@ -451,18 +472,18 @@ upd_in_stt_service() {
 # LiteLLM's virtual keys and its admin account (kept in its database): the budgets (.env), the keys as they are now, LiteLLM's
 # image (the compose files), the database's volume (one made again holds no key) and the code
 upd_in_keys() {
-  _upd_env; _upd_keys; _upd_compose
+  _upd_env_early; _upd_keys; _upd_compose_early
   printf 'pgdata=%s\n' "$(docker volume inspect --format '{{.CreatedAt}}' "$(project_name)_pgdata" 2>/dev/null || echo missing)"
   _upd_fn _setup_litellm_keys ensure_virtual_key setup_litellm_admin ensure_litellm_db_admin alert_pct_mark
 }
 # The portal sign-in and Chat's API key, and the Open WebUI syncs (models, prices, banner; the banner lives in Open WebUI's
 # memory): the same Open WebUI container, and what the syncs send it
 upd_in_signin() {
-  _upd_env; _upd_keys; _upd_container_of open-webui; _upd_local_ids | grep -E '/(portal|open-webui):local'
+  _upd_env_early; _upd_keys; _upd_container_of open-webui; _upd_local_ids | grep -E '/(portal|open-webui):local'
   _upd_fn _setup_portal_signin settings_reconcile ensure_openwebui_api_key portal_session_start
 }
 upd_in_syncs() {
-  _upd_env; _upd_keys; _upd_container_of open-webui; _upd_local_ids | grep '/open-webui:local'
+  _upd_env_early; _upd_keys; _upd_container_of open-webui; _upd_local_ids | grep '/open-webui:local'
   catalog_rows 2>/dev/null | cksum; prices_identity 2>/dev/null
   _upd_files "$STACK_DIR/litellm/enabled-models.txt" "$STATE_DIR/openrouter-owui-synced" "$STATE_DIR/explabs-owui-synced" "$STACK_DIR"/lib/owui.sh
   _upd_tree "$STACK_DIR/owui"
@@ -471,11 +492,11 @@ upd_in_syncs() {
 # The built-in SearXNG and the git server (Forgejo): their settings, compose files and code. The compose files carry their
 # pinned images; compose itself recreates a container whose image or settings changed (config_sums), the step only checks.
 upd_in_searxng() {
-  _upd_env; _upd_compose; _upd_files "$STACK_DIR/searxng/settings.yml" "$STACK_DIR"/lib/websearch.sh
+  _upd_env_early; _upd_compose_early; _upd_files "$STACK_DIR/searxng/settings.yml" "$STACK_DIR"/lib/websearch.sh
   _upd_fn websearch_builtin_up websearch_searxng_write websearch_builtin_on
 }
 upd_in_gitserver() {
-  _upd_env; _upd_compose; _upd_files "$STACK_DIR"/lib/localgit.sh "$STATE_DIR"/localgit/tls/*
+  _upd_env_early; _upd_compose_early; _upd_files "$STACK_DIR"/lib/localgit.sh "$STATE_DIR"/localgit/tls/*
   _upd_fn localgit_start localgit_secrets localgit_tls_ensure
 }
 # The git server's account and the Code page's host (set in the Code page's container): the forgejo CLI (its image: the compose
@@ -493,7 +514,7 @@ upd_in_gitafter() {
 }
 # The web search check (one search through LiteLLM) and the smoke test: LiteLLM's container, its config, models and keys
 upd_in_websearch() {
-  _upd_env; _upd_keys; _upd_container_of litellm; printf 'cfg=%s\n' "$(litellm_compose_sum)"
+  _upd_env_early; _upd_keys; _upd_container_of litellm; printf 'cfg=%s\n' "$(litellm_compose_sum)"
   printf 'fp=%s\n' "$(_ws_search_fp "$(websearch_backend 2>/dev/null)" 2>/dev/null | _upd_sum)"
   _upd_files "$STACK_DIR/litellm/enabled-models.txt" "$STACK_DIR"/lib/websearch.sh
   _upd_fn websearch_after_start websearch_search_check websearch_report
