@@ -6261,6 +6261,8 @@ def project_chip_long(browser):
         assert not r["spill"], f"{w}px: parts of the chip stick out of it: {r['spill']} ({r['name']!r})"
         assert r["scroll"], f"{w}px: horizontal overflow"
         assert not (r["nameCut"] and r["pathW"] > 1), f"{w}px: the name is cut short while the folder keeps {r['pathW']:.0f} px ({r['name']!r})"
+        # (with room, the folder shows beside the whole name: the folder's basis 0 must not leave the chip without it)
+        assert w != 1400 or (not r["nameCut"] and r["pathW"] > 1), f"1400px: the folder is not shown ({r['pathW']:.0f} px) or the name is cut"
         p.assert_clean()
         p.close()
     # a phone: the chip is compact (no folder), and still fits

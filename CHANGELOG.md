@@ -4,6 +4,18 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- **DevOS ADE's own browser pages are now called "the web app".** Its pages, messages, setup's output and the documentation say "web app" where they said "portal", so they are not mistaken for DevOS Portal, a separate product with its own sign-in. What you type keeps its name: `./stack logs portal`, `PORTAL_PASSWORD` and the other settings, and the `portal` service. Links to the old README and guide sections still land. (JON-1251)
+  - The first Home › Update now from an earlier version may count a few renamed steps as new ones in its progress bar; it is right again from the next update.
+  - For event collectors: the setup step `Portal sign-in and Chat's API key` is now `Web app sign-in and Chat's API key` in `setup.step_failed` (contract `devos-ade/events/1`, not yet frozen).
+
+### Fixed
+
+- **The Code page's cost meter stays calm when the spend logs are slow.** When LiteLLM's spend logs do not answer in time, the web app now says so in an ordinary answer instead of an error, so the page logs no error; the meter keeps its last figures and catches up after the next turn or a click. (JON-1400)
+
 ## [0.72.1] - 2026-11-27
 
 ### Fixed
