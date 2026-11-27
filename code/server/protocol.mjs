@@ -27,7 +27,13 @@
 //                                           newest first (at most 300): cwd, the folder each ran in as its transcript
 //                                           records it (a folder outside the workspace: the row is left out); project,
 //                                           the project it is shown in (filed there by hand, else the deepest project
-//                                           folder holding cwd, else "ws": the Workspace)
+//                                           folder holding cwd, else "ws": the Workspace). title: your Rename, else Claude
+//                                           Code's own title (ai-title, summary), else the short title made after the
+//                                           session's first turn (titles.mjs: Haiku, 3 to 7 words, kept here by session
+//                                           id — never Claude Code's custom title), else the first prompt. ?q= matches
+//                                           the title, the first and last prompt, and — plain, case-insensitive, 2
+//                                           characters or more — the words of the conversation (the sandbox's
+//                                           sessions.search: bounded, a bound only shortens the list)
 //   GET    /api/sessions/ID/messages?offset=N&limit=N (≤ 2000) | ?tail=N (≤ 2000)
 //                                           {messages: [ev…], total, offset, limit, more, truncated} a transcript as the
 //                                           WebSocket's events (user with the prompt's uuid, text, thinking, tool_use,
@@ -399,6 +405,9 @@
 //                                                             process failed); mode: a page mode (MODES); settings:
 //                                                             {state, project} of its folder's own Claude Code settings
 //                                                             for its process (trust.mjs), or null
+//   {type: "session_title", session, title, replaced}         a short title was made for the session (JON-517); replaced:
+//                                                             it is open here and was still named by its first prompt
+//                                                             (the page takes it at once); every page lists again
 //   {type: "reset", session, new_session}                     Claude Code started a new conversation (/clear, a plan
 //                                                             approved with "clear context" …): the old session's
 //                                                             process ended after its turn; new_session (same model,
