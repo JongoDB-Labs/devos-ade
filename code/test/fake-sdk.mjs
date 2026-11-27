@@ -47,6 +47,8 @@ export function fakeQuery(log = []) {
           plugins: [{ name: 'hello-local', path: '/home/coder/.claude/plugins/cache/x', source: 'hello-local@bn-e2e', version: '1.0.0' }, { name: 7 }],
           mcpServers: [{ name: 'bedrock-shared', status: 'connected', tools: [] }] };
       },
+      // Claude Code's own queue: cancelResult true = the message was still queued there (the SDK's cancelAsyncMessage)
+      async cancelAsyncMessage(u) { q.calls.push(['cancelAsyncMessage', u]); if (q.cancelThrows) throw new Error('control request failed'); return q.cancelResult === true; },
       async stopTask(id) { q.calls.push(['stopTask', id]); },
       async rewindFiles(id, o) { q.calls.push(['rewindFiles', id, o]); return { canRewind: true, filesChanged: ['/workspace/a.txt', 7], insertions: 2, deletions: -1, extra: 'x' }; },
       close() { closed = true; q.calls.push('close'); wake?.(); },

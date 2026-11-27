@@ -506,6 +506,9 @@ test('WebSocket: another site\'s Origin refused; prompt, events, re-attach with 
     [{ type: 'allow_blocked', session: json.id, id: '00000000-0000-4000-8000-000000000000', req: 'e2d' }, /no longer known/], [{ type: 'set_mode', session: json.id, mode: 'yolo', req: 'e2c' }, /bad mode/],
     [{ type: 'watch_revert', session: json.id, id: 'x', req: 'e5' }, /bad change id/],
     [{ type: 'watch_revert', session: json.id, id: '00000000-0000-4000-8000-000000000000', req: 'e6' }, /no longer known/],
+    [{ type: 'unqueue', session: json.id, uuid: 'not-a-uuid', req: 'e7' }, /bad message id/],
+    [{ type: 'unqueue', session: '00000000-0000-4000-8000-000000000000', uuid: '11111111-1111-4111-8111-111111111111', req: 'e8' }, /no such session/],
+    [{ type: 'unqueue', session: '../x', uuid: '11111111-1111-4111-8111-111111111111', req: 'e9' }, /bad session/],
     [{ type: 'nope', req: 'e3' }, /unknown/], [{ type: 'stop_task', session: json.id, task: '../x', req: 'e4' }, /bad task/]]) {
     a.send(m);
     assert.match((await until(a.inbox, (x) => x.req === m.req)).error, re);

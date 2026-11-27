@@ -146,6 +146,8 @@ export class Session {
     this.state = 'ended';     // starting | idle | busy | ended (with `error` when the process failed)
     this.error = null;
     this.q = null;            // the SDK Query while a process runs
+    this.unsent = new Set();  // uuids of prompts typed in the page that wait for the watch snapshot (not yet in the feed): Cancel can still withdraw them
+    this.delivered = 0;       // prompts given to the process since the session was last idle
     this.feed = null;         // the prompts for the running process: {inbox, wake, closed}, one per process
     this.resetTo = null;      // Claude Code started a new conversation (conversation_reset): its id, handed over after the turn
     this.pluginsKey = null;   // what the process last reported loading (init, a reload)
@@ -236,6 +238,7 @@ export class Session {
   }
 
   setState(state, error = null) {
+    if (state === 'idle') this.delivered = 0;
     if (this.state === state && this.error === error) return;
     this.state = state; this.error = error;
     this.mgr.onState(this);
@@ -581,14 +584,17 @@ export class Session {
     else if (this.open && startsTurn && this.modelRestart()) this.close('model');
     if (this.open) this.mgr.dropSettings(this.cwd);   // (no start: the decision made for one goes)
     if (!this.open) this.start({ resume: this.id });
-    const id = isUuid(uuid) ? uuid : crypto.randomUUID();
+    const id = isUuid(uuid) ? uuid.toLowerCase() : crypto.randomUUID();
     // typed in the page: a human origin, stamped explicitly (absent, the CLI's strict trust gates fail closed)
     const feed = this.feed;
     this.preface = null;
     const msg = { type: 'user', message: { role: 'user', content: images.length ? content : sent }, parent_tool_use_id: null,
       session_id: '', uuid: id, origin: { kind: 'human' } };
+    this.unsent.add(id);
     const deliver = () => {
+      if (!this.unsent.delete(id)) return;   // (cancelled while it waited: it never reaches Claude Code)
       if (feed.closed) { this.emit({ type: 'local', text: 'That prompt was not delivered: the session\'s process ended meanwhile. Send it again.' }); return; }
+      this.delivered++;
       feed.inbox.push(msg); feed.wake?.(); feed.wake = null;
     };
     // A prompt that starts a turn waits (≤ WATCH_MS) for the watched files' snapshot: what the turn changes is told
@@ -602,6 +608,33 @@ export class Session {
     if (!this.title) this.title = short(text, 80);
     this.emit({ type: 'user', text: str(text, 200000), uuid: id, images: images.length });
     this.setState('busy');   // (prompts sent while busy wait in the CLI's queue: they run after the turn)
+  }
+
+  /** Cancel a queued prompt before Claude Code answers it. Withdrawn here while it has not reached Claude Code (it waits for
+   *  the watch snapshot, or sits in the feed unread); else Claude Code drops it from its own queue (the SDK's
+   *  cancelAsyncMessage, false once it was taken into a turn). -> {cancelled}: true emits {type: "unqueued", uuid}. */
+  async unqueue({ uuid } = {}) {
+    if (!isUuid(uuid)) throw new SessionError('bad message id');
+    const id = String(uuid).toLowerCase();
+    let withdrawn = this.unsent.delete(id);
+    if (!withdrawn && this.feed) {
+      const i = this.feed.inbox.findIndex((m) => m.uuid === id);
+      if (i >= 0) { this.feed.inbox.splice(i, 1); this.delivered--; withdrawn = true; }
+    }
+    let cancelled = withdrawn;
+    if (!withdrawn) {
+      const q = this.q;
+      if (!q || typeof q.cancelAsyncMessage !== 'function') return { cancelled: false };
+      try { cancelled = (await q.cancelAsyncMessage(id)) === true; } catch (e) {
+        this.mgr.log(`session ${this.id.slice(0, 8)}: cancel of a queued prompt failed (${short(e?.message || String(e), 200)})`);
+        return { cancelled: false };
+      }
+    }
+    if (!cancelled) return { cancelled: false };
+    this.emit({ type: 'unqueued', uuid: id });
+    // (a prompt that would have started the turn, withdrawn: nothing is running, so the session is not busy)
+    if (withdrawn && this.state === 'busy' && !this.unsent.size && !this.feed?.inbox.length && this.delivered === 0) this.setState('idle');
+    return { cancelled: true };
   }
 
   need() { if (!this.q) throw new SessionError('this session has no running process (send a prompt to resume it)', 409); return this.q; }

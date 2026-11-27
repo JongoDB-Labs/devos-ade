@@ -294,6 +294,12 @@
 //                                               Refused (empty, too long, bad image, the session gone …): reply ok false
 //                                               with req, and nothing was queued
 //   {type: "interrupt", session}
+//   {type: "unqueue", session, uuid, req}              cancel a prompt you sent while a turn ran (its uuid) -> reply data
+//                                               {cancelled: bool}: true when it was withdrawn before Claude took it (the
+//                                               session's feed, or Claude Code's own queue: the SDK's cancelAsyncMessage)
+//                                               — every page then gets an {type: "unqueued", uuid} event; false when it
+//                                               is already being answered or was taken into the turn (Stop ends the turn).
+//                                               A bad uuid, an unknown session or a message that is not queued: refused / false
 //   {type: "set_budget", session, usd: N | null, hard: bool, spent?: N, req}   the session's budget (USD 0.01–999; null:
 //                                               none) -> reply data {budget, restart}; hard: Claude Code's own stop
 //                                               (maxBudgetUsd, its estimate, after every request) at what is left (usd
@@ -422,6 +428,8 @@
 //          is readOnly)
 //   {type: "user", text, uuid, images}                         your prompt (uuid: the client's, or a new one; images:
 //                                                              how many) — in the transcript with the same uuid
+//   {type: "unqueued", uuid}                                   the prompt with that uuid was cancelled before it was
+//                                                              answered: pages drop it from the queue (replayed like any event)
 //   {type: "delta", text, parent} · {type: "thinking_delta", text, parent}      streaming
 //   {type: "text", text, model, parent} · {type: "thinking", text, parent}       a finished block
 //   {type: "tool_use", id, name, input, parent}

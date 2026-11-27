@@ -321,3 +321,89 @@ test('auto mode is off before Claude Code reads the first prompt (Plan asks agai
     mgr.closeAll();
   }
 });
+
+// Cancel a queued message (JON-626): withdrawn where it still waits here, else Claude Code's own queue drops it.
+const U1 = '11111111-1111-4111-8111-111111111111', U2 = '22222222-2222-4222-8222-222222222222';
+test('unqueue: a prompt still waiting for the watch snapshot is withdrawn and never reaches Claude Code; the session is not left busy', async () => {
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const w = { snapshot: async () => { await gate; return { files: [] }; }, restore: async () => ({}) };
+  const { mgr, events, sent } = manager({ watcher: w });
+  const s = mgr.get(mgr.open({}).id);
+  s.prompt({ text: 'first', uuid: U1 });
+  assert.equal(s.state, 'busy');
+  assert.deepEqual(await s.unqueue({ uuid: U1.toUpperCase() }), { cancelled: true });
+  assert.deepEqual(events.filter(([, , e]) => e.type === 'unqueued').map(([, , e]) => e), [{ type: 'unqueued', uuid: U1 }]);
+  assert.equal(s.state, 'idle', 'nothing is running: not busy');
+  release();
+  await tick(60);
+  assert.equal(sent.length, 0, 'never delivered');
+  assert.deepEqual(await s.unqueue({ uuid: U1 }), { cancelled: false }, 'already gone');
+  // the next prompt works as usual
+  s.prompt({ text: 'second', uuid: U2 });
+  await tick(80);
+  assert.deepEqual(sent.map((m) => m.uuid), [U2]);
+  mgr.closeAll();
+});
+
+test('unqueue: a prompt behind another one waiting for the snapshot is withdrawn alone, the first one is still sent and the state stays busy', async () => {
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const w = { snapshot: async () => { await gate; return { files: [] }; }, restore: async () => ({}) };
+  const { mgr, sent } = manager({ watcher: w });
+  const s = mgr.get(mgr.open({}).id);
+  s.prompt({ text: 'first', uuid: U1 });
+  s.prompt({ text: 'second', uuid: U2 });
+  assert.deepEqual(await s.unqueue({ uuid: U2 }), { cancelled: true });
+  assert.equal(s.state, 'busy', 'the first still runs');
+  release();
+  await tick(80);
+  assert.deepEqual(sent.map((m) => m.uuid), [U1]);
+  mgr.closeAll();
+});
+
+test('unqueue: a prompt in the feed the SDK has not read is taken out of it', async () => {
+  const { mgr, sent } = manager();
+  const s = mgr.get(mgr.open({}).id);
+  s.feed.ready = new Promise(() => {});   // (the process is not reading yet)
+  s.prompt({ text: 'held', uuid: U1 });
+  assert.equal(s.feed.inbox.length, 1);
+  assert.deepEqual(await s.unqueue({ uuid: U1 }), { cancelled: true });
+  assert.equal(s.feed.inbox.length, 0);
+  assert.equal(s.state, 'idle');
+  assert.equal(sent.length, 0);
+  mgr.closeAll();
+});
+
+test('unqueue: a prompt Claude Code holds in its own queue is cancelled through the SDK; false (taken into a turn) leaves it and emits nothing', async () => {
+  const { mgr, queries, events, sent } = manager();
+  const s = mgr.get(mgr.open({}).id);
+  s.prompt({ text: 'ping', uuid: U1 });
+  await tick(60);
+  assert.equal(sent.length, 1);
+  const n = events.length;
+  queries[0].cancelResult = false;
+  assert.deepEqual(await s.unqueue({ uuid: U1 }), { cancelled: false });
+  assert.equal(events.length, n, 'no event');
+  queries[0].cancelThrows = true;
+  assert.deepEqual(await s.unqueue({ uuid: U1 }), { cancelled: false }, 'a failed request is not a cancel');
+  queries[0].cancelThrows = false; queries[0].cancelResult = true;
+  assert.deepEqual(await s.unqueue({ uuid: U1 }), { cancelled: true });
+  assert.deepEqual(queries[0].calls.filter((c) => c[0] === 'cancelAsyncMessage'), [['cancelAsyncMessage', U1], ['cancelAsyncMessage', U1], ['cancelAsyncMessage', U1]]);
+  assert.deepEqual(events.at(-1)[2], { type: 'unqueued', uuid: U1 });
+  assert.equal(s.state, 'idle', 'a cancel in Claude Code\'s queue does not change the state');
+  assert.rejects(s.unqueue({ uuid: 'nope' }), /bad message id/);
+  mgr.closeAll();
+});
+
+test('unqueue: no process, or an SDK without cancelAsyncMessage: cancelled false', async () => {
+  const { mgr, queries } = manager();
+  const s = mgr.get(mgr.open({}).id);
+  s.prompt({ text: 'ping', uuid: U1 });
+  await tick(60);
+  delete queries[0].cancelAsyncMessage;
+  assert.deepEqual(await s.unqueue({ uuid: U2 }), { cancelled: false });
+  s.close();
+  assert.deepEqual(await s.unqueue({ uuid: U2 }), { cancelled: false });
+  mgr.closeAll();
+});

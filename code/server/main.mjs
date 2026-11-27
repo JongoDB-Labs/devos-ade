@@ -40,7 +40,7 @@ import { harnessOk, AGENT_TOOLS, HARNESSES } from './agents/tools.mjs';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 // what a failed WebSocket message was (its type): the sentence of ours its failure is told with — the operation, never
 // "stopped" for one that only did not go through (a reconnect, a switch)
-const NOT_DONE = { attach: 'the session was not opened here', prompt: 'the prompt was not sent', interrupt: 'Claude was not stopped',
+const NOT_DONE = { attach: 'the session was not opened here', prompt: 'the prompt was not sent', interrupt: 'Claude was not stopped', unqueue: 'the queued message was not cancelled',
   set_model: 'the model was not changed', set_mode: 'the mode was not changed', set_effort: 'the effort was not changed', set_budget: 'the budget was not set',
   watch_revert: 'nothing was put back', watch_check: 'the files were not checked', allow_blocked: 'it was not run', permission: 'the answer was not taken',
   commands: 'the commands were not listed', models: 'the models were not listed', mcp: 'the MCP servers were not listed',
@@ -833,6 +833,8 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
         return reply({});
       }
       case 'interrupt': await sessionOf(m).interrupt(); return reply({});
+      // a prompt queued behind a turn, cancelled: {cancelled: false} when it is already being answered (Stop ends the turn)
+      case 'unqueue': return reply(await sessionOf(m).unqueue({ uuid: m.uuid }));
       case 'set_model': await sessionOf(m).setModel(m.model); return reply({ model: m.model });
       case 'set_mode': {
         const s = sessionOf(m);

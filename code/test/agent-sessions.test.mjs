@@ -833,3 +833,28 @@ test('Open in the terminal for a session on another account: the sandbox is told
   const t1 = calls.filter((c) => c.op === 'terminal.resume')[1];
   assert.deepEqual([t1.plan, t1.account], [true, undefined]);
 });
+
+test('unqueue: an agent session\'s queued prompt is removed and never prompted; the one running is not cancellable', async () => {
+  const { mgr, events, asked, broker } = manager();
+  const { id } = mgr.open({ harness: 'copilot', cwd: '/workspace/app' });
+  const s = mgr.get(id);
+  await wait(() => s.state === 'idle');
+  const U1 = '11111111-1111-4111-8111-111111111111', U2 = '22222222-2222-4222-8222-222222222222', U3 = '33333333-3333-4333-8333-333333333333';
+  s.prompt({ text: 'running one', uuid: U1 });
+  await wait(() => asked.length === 1);   // (the turn waits for a permission answer)
+  s.prompt({ text: 'cancel me', uuid: U2 });
+  s.prompt({ text: 'keep me', uuid: U3 });
+  assert.deepEqual(await s.unqueue({ uuid: U1 }), { cancelled: false }, 'the running one');
+  assert.deepEqual(await s.unqueue({ uuid: U2 }), { cancelled: true });
+  assert.deepEqual(await s.unqueue({ uuid: U2 }), { cancelled: false }, 'already gone');
+  await assert.rejects(s.unqueue({ uuid: 'nope' }), /bad message id/);
+  assert.deepEqual(events.filter(([, ev]) => ev.type === 'unqueued').map(([, ev]) => ev.uuid), [U2]);
+  broker.answer(asked[0].id, 'once');
+  await wait(() => asked.length === 2);
+  broker.answer(asked[1].id, 'once');
+  await wait(() => s.state === 'idle' && events.filter(([, ev]) => ev.type === 'result').length === 2);
+  const said = events.filter(([, ev]) => ev.type === 'text').map(([, ev]) => ev.text).join('|');
+  assert.match(said, /keep me/);
+  assert.doesNotMatch(said, /cancel me/);
+  mgr.closeAll();
+});

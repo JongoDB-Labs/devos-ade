@@ -200,11 +200,22 @@ export class AgentSession {
     if (text.startsWith('/')) throw new SessionError(`${this.name} sessions have no slash commands here: type your request in words (its own commands work in the terminal)`);
     const id = /^[0-9a-f-]{36}$/.test(String(uuid)) ? uuid : crypto.randomUUID();
     if (!this.title) { this.title = short(text, 80); this.record(); }
-    this.queue.push({ text, images: images.map((im) => ({ media_type: im.media_type, data: im.data })) });
+    this.queue.push({ uuid: id, text, images: images.map((im) => ({ media_type: im.media_type, data: im.data })) });
     this.emit({ type: 'user', text: str(text, 200000), uuid: id, images: images.length });
     this.setState('busy');
     this.lastActive = Date.now();
     void this.drain();
+  }
+
+  /** Cancel a prompt still waiting behind the turn under way (the one running is not cancellable). -> {cancelled} */
+  async unqueue({ uuid } = {}) {
+    if (typeof uuid !== 'string' || !/^[0-9a-f-]{36}$/i.test(uuid)) throw new SessionError('bad message id');
+    const id = uuid.toLowerCase();
+    const i = this.queue.findIndex((e) => e.uuid === id);
+    if (i < 0) return { cancelled: false };
+    this.queue.splice(i, 1);
+    this.emit({ type: 'unqueued', uuid: id });
+    return { cancelled: true };
   }
 
   async drain() {
