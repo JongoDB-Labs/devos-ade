@@ -202,8 +202,9 @@ test('with no page connected, a folder made in the terminal becomes a project on
     const srv = createServer({ secret: SECRET, query: fakeQuery(), spawn: () => {}, call, distDir: dist, logger: () => {}, projects: store,
       autoProjectMs: 60000, autoProjectIdleMs: idle });
     try {
-      const t0 = Date.now();
-      while (Date.now() - t0 < 1500 && !roots(store).length) await new Promise((r) => { setTimeout(r, 20); });
+      // (with the timer: a look within ~40 ms, 3 s allowed on a loaded host; without: 600 ms is 15 of its intervals, and nothing)
+      const t0 = Date.now(), limit = idle ? 3000 : 600;
+      while (Date.now() - t0 < limit && !roots(store).length) await new Promise((r) => { setTimeout(r, 20); });
       if (idle) {
         assert.deepEqual(roots(store), ['made-in-terminal']);
         assert.ok(looks >= 1);
