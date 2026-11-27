@@ -78,8 +78,8 @@ test('handing the zip over: posted to the portal\'s origin only; its answer sett
   w2.dispatchEvent(ev('http://devos-ade.localhost', { type: 'bn-portal-export', id: id2, ok: false, error: 'Files (RustFS) refused the zip (HTTP 403, AccessDenied).' }, w2.parent));
   await assert.rejects(p2, /AccessDenied/);
   // not framed / no portal known
-  await assert.rejects(portalExport(blob, 'a.zip', new Win(false) as unknown as Window, 'http://devos-ade.localhost'), /not open in the portal/);
-  await assert.rejects(portalExport(blob, 'a.zip', new Win() as unknown as Window, null), /not open in the portal/);
+  await assert.rejects(portalExport(blob, 'a.zip', new Win(false) as unknown as Window, 'http://devos-ade.localhost'), /not open in the web app/);
+  await assert.rejects(portalExport(blob, 'a.zip', new Win() as unknown as Window, null), /not open in the web app/);
   // no answer
   await assert.rejects(portalExport(blob, 'a.zip', new Win() as unknown as Window, 'http://devos-ade.localhost', 10), /did not answer in time/);
   assert.equal(exportMessage('x', 'a.zip', blob).type, 'bn-code-export');
