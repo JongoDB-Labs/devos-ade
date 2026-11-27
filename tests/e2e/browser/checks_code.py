@@ -3565,6 +3565,7 @@ def handoff_into_existing(ctx):
         see(first).not_to_contain_text("I made this project")
         see(page.get_by_test_id("turn-end")).to_have_count(1, timeout=150000)
         sid = page.evaluate("JSON.parse(localStorage.getItem('bn.code.v1')).lastSession")
+        Code.on(page, c.rec, goto=False)   # (this page was opened at ?handoff=: the check's client again, as the journey does)
         st = state_of(c, sid)
         expect(st.get("project") == pid and st.get("cwd") == f"/workspace/{HOFF_ROOT}" and st.get("model") == HAIKU,
                f"the session that carries on: {({k: st.get(k) for k in ('project', 'cwd', 'model')})}")
@@ -3575,11 +3576,17 @@ def handoff_into_existing(ctx):
         c.rec.save(); hrec.save()
         expect(not probs, f"errors: {probs[:6]}")
     finally:
-        if sid:
-            c.api("DELETE", f"/api/sessions/{sid}")
-        _drop_projects(c, (HOFF_ROOT,))
-        if HOFF_ROOT in {e["name"] for e in (c.api("GET", "/api/fs?path=.")["json"] or {}).get("entries", [])}:
-            c.api("DELETE", f"/api/fs?path={HOFF_ROOT}")
+        # (what this check made: its session, the project's record and folder — tidying never fails the check or hides its error)
+        try:
+            if page.evaluate("() => !(window.__bn && window.__bn.api)"):
+                Code.on(page, c.rec, goto=not page.url.startswith(CODE))
+            if sid:
+                c.api("DELETE", f"/api/sessions/{sid}")
+            _drop_projects(c, (HOFF_ROOT,))
+            if HOFF_ROOT in {e["name"] for e in (c.api("GET", "/api/fs?path=.")["json"] or {}).get("entries", [])}:
+                c.api("DELETE", f"/api/fs?path={HOFF_ROOT}")
+        except Exception:  # noqa: BLE001
+            pass
     return (f"a hand-off ({marker}) continued in {HOFF_NAME} ({pid}): no project made; the project shown; a Haiku session there read the "
             "conversation (its first message) and answered")
 
