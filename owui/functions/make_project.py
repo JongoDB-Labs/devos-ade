@@ -1,7 +1,7 @@
 """
 title: Make it a project
 author: DevOS ADE
-description: A button under each answer that carries this chat over to the Code page as a new project (kept on your local git server), where Claude carries on from the conversation and writes the files. Chat itself still cannot touch your files. Installed and updated by ./stack setup.
+description: A button under each answer that carries this chat over to the Code page, as a new project (kept on your local git server) or into one you have, where Claude carries on from the conversation and writes the files; the chat is then filed here in a folder of that project's name. Chat itself still cannot touch your files. Installed and updated by ./stack setup.
 icon_url: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJjdXJyZW50Q29sb3IiIHN0cm9rZS13aWR0aD0iMS41IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGQ9Ik0zIDcuNUExLjUgMS41IDAgMCAxIDQuNSA2aDQuMmwyIDJIMTkuNUExLjUgMS41IDAgMCAxIDIxIDkuNXY4YTEuNSAxLjUgMCAwIDEtMS41IDEuNWgtMTVBMS41IDEuNSAwIDAgMSAzIDE3LjV6Ii8+PHBhdGggZD0iTTEyIDExLjV2NE0xMCAxMy41aDQiLz48L3N2Zz4=
 version: 1
 """
@@ -18,6 +18,14 @@ version: 1
 # conversation read-only and nothing is created until you confirm. So the most Open WebUI can do is put a chat in front of
 # you that you then open yourself, and a chat over MAX_CHARS is not sent at all (the dialog says it was too big).
 #
+# (JON-1158) The chat is then filed under the project it went to: once you confirm, the Code page tells the portal's page
+# the project's name, and that page tells this Chat page ({type: "bn-portal-chat-filed", id, project} — from the page that
+# frames it only, for this hand-off's own random id only, within FILE_WAIT_S). The Chat page then puts this chat in a
+# Chat folder of that name — the one at the top level if you have it, else a new one — through Open WebUI's own API, on
+# its own origin, with the sign-in Open WebUI already keeps (its cookie): the only calls it makes, and nothing of Chat's
+# reaches the portal or the Code page by them. A name is all that comes back; a reload of Chat meanwhile, or folders
+# turned off, and the chat just stays where it was.
+#
 # Self-contained on purpose: Open WebUI loads this file's text, so it may import only the standard library and pydantic
 # (which Open WebUI ships), plus Open WebUI's own chat model, tried once for the chat's title and optional.
 
@@ -31,6 +39,8 @@ from pydantic import BaseModel
 MAX_CHARS = 200_000      # as the portal's hand-off cap (portal/portal/chathandoff.py MAX_TEXT): over it, nothing is sent
 MAX_TITLE = 120
 ANSWER_WAIT_S = 20       # how long the Chat page waits for the portal page to say how it went
+FILE_WAIT_S = 30 * 60    # how long it waits to hear where the chat went, to file it there (the dialog can stay open a while)
+_CHAT_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]{0,63}")   # Open WebUI's ids (a UUID); not a temporary chat's "local:…"
 
 # What the cost filter (bedrock_cost.py) writes under an answer — "*≈ $0.0069 · 1,240 in / 380 out · Model · chat ≈ $0.04*", a
 # free model's, a subscription's — is not part of the conversation. Matched loosely on purpose: a line of only italics that
@@ -44,11 +54,33 @@ _FENCE_RE = re.compile(r"\n{3,}")
 # answer; the payload is a JSON string literal, parsed there, so nothing of the chat is ever code.
 _JS = """
 const msg = JSON.parse(%s);
+const chatId = JSON.parse(%s);
 if (window.parent === window) return { ok: false, error: 'This page is not inside DevOS ADE. Open Chat from its Chat tab to make a project.' };
 const to = (location.ancestorOrigins && location.ancestorOrigins[0]) || '*';
 const id = 'h' + Math.random().toString(36).slice(2, 12);
+const fileWhenTold = () => {
+  const told = async (e) => {
+    if (e.source !== window.parent || !e.data || e.data.type !== 'bn-portal-chat-filed' || e.data.id !== id) return;
+    window.removeEventListener('message', told);
+    clearTimeout(stop);
+    const name = String(e.data.project || '').replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 80);
+    if (!name) return;
+    const call = async (p, m, b) => {
+      const r = await fetch('/api/v1/' + p, { method: m, credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: b ? JSON.stringify(b) : undefined });
+      return r.ok ? r.json() : null;
+    };
+    try {
+      const list = await call('folders/', 'GET');
+      let f = Array.isArray(list) ? list.find((x) => x && x.name === name && !x.parent_id) : null;
+      if (!f) f = await call('folders/', 'POST', { name: name });
+      if (f && typeof f.id === 'string') await call('chats/' + encodeURIComponent(chatId) + '/folder', 'POST', { folder_id: f.id });
+    } catch (_) { /* not filed: the chat stays where it was */ }
+  };
+  const stop = setTimeout(() => window.removeEventListener('message', told), %d);
+  window.addEventListener('message', told);
+};
 return await new Promise((resolve) => {
-  const done = (v) => { window.removeEventListener('message', on); clearTimeout(t); resolve(v); };
+  const done = (v) => { window.removeEventListener('message', on); clearTimeout(t); if (v.ok && !v.tooBig && chatId) fileWhenTold(); resolve(v); };
   const on = (e) => { if (e.source === window.parent && e.data && e.data.type === 'bn-portal-chat-handoff' && e.data.id === id) done({ ok: e.data.ok === true, tooBig: e.data.tooBig === true, error: String(e.data.error || '').slice(0, 300) }); };
   const t = setTimeout(() => done({ ok: false, error: 'DevOS ADE did not answer. If it was just updated, reload DevOS ADE; and make sure Chat is open in its Chat tab and the Code page is on.' }), %d);
   window.addEventListener('message', on);
@@ -107,15 +139,17 @@ def fallback_title(messages):
     return ""
 
 
-def js_for(title, text):
-    """The code the Chat page runs for this hand-off (over MAX_CHARS: it says so and sends no text)."""
+def js_for(title, text, chat_id=None):
+    """The code the Chat page runs for this hand-off (over MAX_CHARS: it says so and sends no text); with the chat's id (one
+    Open WebUI keeps, not a temporary chat's), it files the chat where it went once it is told."""
     msg = {"title": title[:MAX_TITLE]}
     if len(text) > MAX_CHARS:
         msg["tooBig"] = True
         msg["text"] = ""
     else:
         msg["text"] = text
-    return _JS % (json.dumps(json.dumps(msg)), ANSWER_WAIT_S * 1000)
+    cid = chat_id if isinstance(chat_id, str) and _CHAT_ID_RE.fullmatch(chat_id) else None
+    return _JS % (json.dumps(json.dumps(msg)), json.dumps(json.dumps(cid)), FILE_WAIT_S * 1000, ANSWER_WAIT_S * 1000)
 
 
 async def _chat_title(chat_id, user_id):
@@ -160,14 +194,15 @@ class Action:
         if __event_emitter__:
             await __event_emitter__({"type": "status", "data": {"description": "Handing this chat to the Code page…", "done": False}})
         try:
-            res = await asyncio.wait_for(__event_call__({"type": "execute", "data": {"code": js_for(title, text)}}), ANSWER_WAIT_S + 10)
+            res = await asyncio.wait_for(__event_call__({"type": "execute", "data": {"code": js_for(title, text, (body or {}).get("chat_id"))}}),
+                                         ANSWER_WAIT_S + 10)
         except Exception:  # noqa: BLE001 — a page that is gone, a timeout
             res = None
         if __event_emitter__:
             await __event_emitter__({"type": "status", "data": {"description": "", "done": True, "hidden": True}})
         if isinstance(res, dict) and res.get("ok"):
             await say("success", "This chat is too big to hand over: the Code page says so." if res.get("tooBig")
-                      else "Opened in the Code page: check the project's name there, then create it.")
+                      else "Opened in the Code page: choose where it continues there. This chat is then filed here, in a folder of that project's name.")
         else:
             why = res.get("error") if isinstance(res, dict) and res.get("error") else "DevOS ADE did not answer."
             await say("error", "Could not hand this chat over. " + str(why))

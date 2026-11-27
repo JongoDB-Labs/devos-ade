@@ -4,6 +4,12 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Chat files a chat under the project it went to.** Once you choose where a chat continues on the Code page, Chat puts that chat in a folder of the project's name in its sidebar (the one you have, or a new one). Chat does it itself, with its own sign-in: only the project's name comes back from DevOS ADE, and Chat still has no way into the Code page or your files. A chat continued in the workspace stays where it was. (JON-1158)
+
 ## [0.70.0] - 2026-11-26
 
 ### Added

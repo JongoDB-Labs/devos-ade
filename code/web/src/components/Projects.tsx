@@ -621,7 +621,7 @@ export function ProjectDialogs() {
   if (d.kind === 'settings') return <SettingsDialog id={d.id} start={d.start} onClose={close} />;
   if (d.kind === 'import') return <ImportSheet id={d.id} onClose={close} />;
   if (d.kind === 'setup') return <SetupSheet project={d.id} tool={d.tool ?? null} onClose={close} />;
-  if (d.kind === 'handoff') return <HandoffDialog chat={d.chat} note={d.note} onClose={close} />;
+  if (d.kind === 'handoff') return <HandoffDialog chat={d.chat} note={d.note} id={d.id} onClose={close} />;
   return <FileDialog ids={d.ids} onClose={close} />;
 }
 

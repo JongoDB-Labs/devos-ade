@@ -109,3 +109,11 @@ export function handoffPrompt(h: Handoff, m?: string, into?: string): string {
 export function handoffTargets(projects: Project[]): Project[] {
   return projects.filter((p) => !p.gone && !p.leaving && p.pending !== 'add' && (p.folder === null || p.folder === 'dir'));
 }
+
+/** (JON-1158) What the Code page tells the portal once a chat from Chat went to a project: the hand-off's id (as the portal gave it)
+ *  and the project's name, which the Chat side files the chat under; null when there is nothing to say. */
+export function filedMessage(handoff: string | undefined, project: string): { type: 'bn-code-handoff-done'; handoff: string; project: string } | null {
+  const name = visible(project).replace(/\s+/g, ' ').trim().slice(0, 80);
+  if (!handoff || !/^[A-Za-z0-9_-]{32}$/.test(handoff) || !name) return null;
+  return { type: 'bn-code-handoff-done', handoff, project: name };
+}

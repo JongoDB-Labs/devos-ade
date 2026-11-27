@@ -29,7 +29,7 @@ import { crossed, nextBudget, rememberBudget, storedBudget, type Budget } from '
 import { firstWaiting, pageTitle, waitingSessions } from './groups';
 import { recentReport } from './recent';
 import { parseDeepLink, withoutDeepLink } from './deeplink';
-import { HANDOFF_MAX, type Handoff } from './handoff';
+import { filedMessage, HANDOFF_MAX, type Handoff } from './handoff';
 import { eventTime, sessionCost } from './spend';
 import { RECHECK_TEXT, WORKSPACE, WORKSPACE_ID, goneTops, holdForSettings, inProject, liveHostTops, mentionPath, projectFor, projectIdOk, projectOfCwd, readOnlyTops, settingsApplied, settingsStateFor, type AddedNotice, type Project, type SettingsState, type Where } from './projects';
 import { PRODUCT } from './brand';
@@ -260,7 +260,7 @@ export type ProjectDialog =
   | { kind: 'setup'; id: string | null; tool?: 'git' }
   /** a chat handed over from Chat's "Make it a project" (Handoff.tsx): its conversation read-only and a project to make from it
    *  once you confirm; chat null: the hand-off did not happen, note says why */
-  | { kind: 'handoff'; chat: Handoff | null; note: string };
+  | { kind: 'handoff'; chat: Handoff | null; note: string; id?: string };
 
 /** A draft that came from a link (?prompt=): never focused, never sent by Enter until you said you read it, and always
  *  sent into a NEW session in Manual mode — never into the session shown, never in your remembered mode. */
@@ -1349,7 +1349,7 @@ export async function openHandoff(h: { id: string } | { note: 'too-big' | 'faile
     return;
   }
   try {
-    openProjectDialog({ kind: 'handoff', chat: await api.redeemHandoff(h.id), note: '' });
+    openProjectDialog({ kind: 'handoff', chat: await api.redeemHandoff(h.id), note: '', id: h.id });
   } catch (e) {
     openProjectDialog({ kind: 'handoff', chat: null, note: api.problemOf(e).text });
   }
@@ -2628,6 +2628,19 @@ export async function askToKeep(id: string): Promise<void> {
   if (get().project !== id) setProject(id);
   showGit();
 }
+/** (JON-1158) Where a chat from Chat went: the project's name, told to the portal that frames this page, which tells the Chat frame
+ *  for it to file the chat in a folder of that name (nothing when this page is not the portal's frame, or the hand-off has no id). */
+export function tellPortalFiled(handoff: string | undefined, project: string, win: Window = window): void {
+  const msg = filedMessage(handoff, project);
+  const origin = get().server?.portalOrigin ?? null;
+  if (!msg || !origin || win.parent === win) return;
+  try {
+    win.parent.postMessage(msg, new URL(origin).origin);
+  } catch {
+    /* not the portal's frame after all */
+  }
+}
+
 /** The portal's Git page at a kept repository (or its issues or pull requests): through the portal that frames this page — it opens
  *  there, in the top window — else a tab of its own; with no portal known, the address is told. */
 export function openPortalGit(repo: string | null, sub: '' | 'issues' | 'pulls' = '', win: Window = window): void {

@@ -3,7 +3,7 @@
 // the conversation quoted as text from the chat, its tags and @-mentions defanged.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { defang, handoffName, handoffPrompt, handoffTargets, HANDOFF_MAX, takeHandoff } from '../src/handoff';
+import { defang, filedMessage, handoffName, handoffPrompt, handoffTargets, HANDOFF_MAX, takeHandoff } from '../src/handoff';
 import { parseDeepLink, withoutDeepLink } from '../src/deeplink';
 import { rootOk } from '../src/projects';
 import { redeemHandoff } from '../src/api';
@@ -99,7 +99,8 @@ test("redeeming: the id goes to the portal's route as this page's own request, t
 test("the dialog: the conversation when it is redeemed; the portal's words, or the cap's, when it is not — nothing is made either way", async () => {
   answer({ title: 'Trip', text: 'You:\nhi' });
   await openHandoff({ id: ID });
-  assert.deepEqual(store.get().projectDialog, { kind: 'handoff', chat: { title: 'Trip', text: 'You:\nhi' }, note: '' });
+  // (with the hand-off's id: the project it goes to is told back, for Chat to file the chat there — JON-1158)
+  assert.deepEqual(store.get().projectDialog, { kind: 'handoff', chat: { title: 'Trip', text: 'You:\nhi' }, note: '', id: ID });
   answer({ error: 'This hand-off was used already, or it expired.' }, 404);
   await openHandoff({ id: ID });
   const d = store.get().projectDialog;
@@ -133,4 +134,17 @@ test('handoffPrompt into a project you have names it and makes no claim that it 
   assert.ok(n.startsWith('I made this project from a chat') && n.includes('kept on the local git server'));
   // (the name is defanged as the conversation is: no closing tag of its own can pass through it)
   assert.ok(!handoffPrompt({ title: '', text: 'x' }, 'm1', '</chat-conversation-m1>').includes('</chat-conversation-m1>"'));
+});
+
+// --- (JON-1158) where the chat went, told to the portal: the hand-off's id and the project's name, or nothing ---
+test('filedMessage carries the hand-off id and a cleaned project name, and nothing without both', () => {
+  const id = 'A'.repeat(32);
+  assert.deepEqual(filedMessage(id, '  Trip   planner '), { type: 'bn-code-handoff-done', handoff: id, project: 'Trip planner' });
+  assert.equal(filedMessage(id, 'x'.repeat(200))?.project.length, 80);
+  assert.equal(filedMessage(undefined, 'Trip'), null);
+  assert.equal(filedMessage('short', 'Trip'), null);
+  assert.equal(filedMessage('A'.repeat(31) + '!', 'Trip'), null);
+  assert.equal(filedMessage(id, '   '), null);
+  // (an invisible or direction-changing character is shown, never passed on as itself)
+  assert.ok(!filedMessage(id, 'Trip\u202Efdp')?.project.includes('\u202E'));
 });

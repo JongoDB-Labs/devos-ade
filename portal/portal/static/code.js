@@ -200,11 +200,29 @@
   // once, ten minutes, in memory — portal/chathandoff.py) and the Code tab opens at ?handoff=<id>, where a dialog shows the
   // conversation read-only and creates nothing until you confirm. The frame is told how it went ({type: "bn-portal-chat-handoff",
   // id, ok, error?, tooBig?}). Open WebUI gets no key and no route to the Code page or the workspace by this: it only says a chat.
-  const HANDOFF_MAX = 200000, HANDOFF_ID = /^[A-Za-z0-9_-]{32}$/;
+  // (JON-1158) Then where it went: the Code page says the project the chat continued in ({type: "bn-code-handoff-done", handoff,
+  // project} — from the Code tab's own frame only, for a hand-off this page made in the last FILE_MS only, once), and the Chat
+  // frame is told that name for its own id ({type: "bn-portal-chat-filed", id, project}): it files the chat in a Chat folder of
+  // that name itself (owui/functions/make_project.py). A project's name is all that goes back to Chat.
+  const HANDOFF_MAX = 200000, HANDOFF_ID = /^[A-Za-z0-9_-]{32}$/, FILE_MS = 30 * 60 * 1000, FILE_KEPT = 20;
   function chatHandoff() {
-    let chatOrigin = "";
+    let chatOrigin = "", codeOrigin = "";
     try { chatOrigin = APP_URLS.chat ? new URL(appUrl("chat")).origin : ""; } catch (_) { return; }
     if (!chatOrigin) return;
+    try { codeOrigin = new URL(appUrl("code")).origin; } catch (_) { codeOrigin = ""; }
+    const filing = new Map();   // the portal's hand-off id -> { id: the Chat frame's own id for it, at }
+    window.addEventListener("message", (e) => {
+      const cf = document.querySelector('#frames iframe[data-app="code"]');
+      if (!codeOrigin || e.origin !== codeOrigin || !cf || e.source !== cf.contentWindow || !e.data || e.data.type !== "bn-code-handoff-done") return;
+      const h = e.data.handoff, name = e.data.project;
+      if (typeof h !== "string" || !HANDOFF_ID.test(h) || typeof name !== "string") return;
+      const p = filing.get(h);
+      filing.delete(h);
+      const project = name.replace(INVISIBLE, " ").replace(/\s+/g, " ").trim().slice(0, 80);
+      const f = document.querySelector('#frames iframe[data-app="chat"]');
+      if (!p || Date.now() - p.at > FILE_MS || !project || !f || !f.contentWindow) return;
+      try { f.contentWindow.postMessage({ type: "bn-portal-chat-filed", id: p.id, project }, chatOrigin); } catch (_) { /* gone */ }
+    });
     let busy = false;
     window.addEventListener("message", async (e) => {
       const f = document.querySelector('#frames iframe[data-app="chat"]');
@@ -225,7 +243,12 @@
         try { j = await r.json(); } catch (_) { /* not JSON */ }
         if (r.status === 413 || j.tooBig === true) tooBig();
         else if (!r.ok || typeof j.id !== "string" || !HANDOFF_ID.test(j.id)) reply({ ok: false, error: String(j.error || `The portal answered HTTP ${r.status}`).slice(0, 200) });
-        else { reply({ ok: true }); openLink({ handoff: j.id }); }
+        else {
+          filing.set(j.id, { id: d.id, at: Date.now() });
+          while (filing.size > FILE_KEPT) filing.delete(filing.keys().next().value);
+          reply({ ok: true });
+          openLink({ handoff: j.id });
+        }
       } catch (_) {
         reply({ ok: false, error: "The portal did not answer." });
       } finally {

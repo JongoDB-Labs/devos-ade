@@ -62,8 +62,11 @@ def test_the_code_the_chat_page_runs_carries_the_chat_as_data_only():
     # the text sits inside one JSON string literal, never in the code's own words
     assert "onerror" not in code.replace(json.dumps(json.dumps(p)), "")
     assert "bn-chat-handoff" in code and "window.parent.postMessage" in code and "ancestorOrigins" in code
-    # no fetch, no XHR, no network call from the page's side: it only talks to the page that frames it
-    assert "fetch(" not in code and "XMLHttpRequest" not in code and "WebSocket" not in code
+    # (JON-1158) one network call from the page's side, to Open WebUI's own API on its own origin (filing the chat), with the
+    # sign-in it keeps itself: no other address, no token read or sent by hand, no XHR or socket
+    assert code.count("fetch(") == 1 and "fetch('/api/v1/' + p, { method: m, credentials: 'same-origin'" in code
+    assert "http" not in code.replace("http://", "") and "//" not in re.sub(r"/\*.*?\*/", "", code.replace("'//'", ""))
+    assert "localStorage" not in code and "Authorization" not in code and "XMLHttpRequest" not in code and "WebSocket" not in code
 
 
 def test_a_chat_over_the_cap_sends_no_text():
@@ -153,3 +156,90 @@ def test_the_timeout_text_points_at_a_reload_after_an_update():   # JON-1127
     code = mp.js_for("T", "hello")
     assert ("DevOS ADE did not answer. If it was just updated, reload DevOS ADE; and make sure Chat is open in its "
             "Chat tab and the Code page is on.") in code
+
+
+# --- (JON-1158) the chat filed under the project it went to: the page's code run in Node against a stub window ---
+_HARNESS = r"""
+const code = require('fs').readFileSync(0, 'utf8');
+const sc = JSON.parse(process.argv[1]);
+const listeners = new Set(), posted = [], calls = [];
+const emit = (e) => { for (const f of [...listeners]) f(e); };
+const parent = { postMessage: (m) => { posted.push(m); setTimeout(() => emit({ source: parent, data: { type: 'bn-portal-chat-handoff', id: m.id, ...sc.reply } }), 0); } };
+const window = { parent, addEventListener: (t, f) => listeners.add(f), removeEventListener: (t, f) => listeners.delete(f) };
+const fetch = async (url, init) => {
+  calls.push([url, init.method, init.body ? JSON.parse(init.body) : null, init.credentials]);
+  if (url === '/api/v1/folders/' && init.method === 'GET') return { ok: true, json: async () => sc.folders };
+  if (url === '/api/v1/folders/' && init.method === 'POST') return sc.createFails ? { ok: false, json: async () => ({}) } : { ok: true, json: async () => ({ id: 'new1', name: JSON.parse(init.body).name }) };
+  return { ok: true, json: async () => ({}) };
+};
+const run = new Function('window', 'location', 'fetch', 'return (async () => {' + code + '})()');
+(async () => {
+  const res = await run(window, { ancestorOrigins: ['http://portal.example'] }, fetch);
+  const hid = posted.length ? posted[0].id : null;
+  for (const m of sc.msgs || []) {
+    emit({ source: m.other ? {} : parent, data: { type: m.type || 'bn-portal-chat-filed', id: m.id === '$' ? hid : m.id, project: m.project } });
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  console.log(JSON.stringify({ res, calls, left: listeners.size }));
+  process.exit(0);
+})();
+"""
+CID = "8f1c2d3e-aaaa-bbbb-cccc-111122223333"
+
+
+def _page(scenario, chat_id=CID):
+    node = shutil.which("node")
+    if not node:
+        return None
+    sc = {"reply": {"ok": True}, "folders": [], "msgs": [], **scenario}
+    r = subprocess.run([node, "-e", _HARNESS, json.dumps(sc)], input=mp.js_for("t", "hello", chat_id), capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, r.stderr
+    return json.loads(r.stdout)
+
+
+def test_told_where_it_went_the_chat_is_filed_in_a_new_folder_of_that_name():
+    out = _page({"msgs": [{"id": "$", "project": "Trip planner"}]})
+    if out is None:
+        return
+    assert out["res"] == {"ok": True, "tooBig": False, "error": ""}
+    assert out["calls"] == [["/api/v1/folders/", "GET", None, "same-origin"], ["/api/v1/folders/", "POST", {"name": "Trip planner"}, "same-origin"],
+                            [f"/api/v1/chats/{CID}/folder", "POST", {"folder_id": "new1"}, "same-origin"]]
+    assert out["left"] == 0   # (heard once: nothing listens after)
+
+
+def test_a_folder_of_that_name_at_the_top_is_used_not_a_nested_one():
+    out = _page({"folders": [{"id": "n1", "name": "Trip", "parent_id": "p0"}, {"id": "f1", "name": "Trip", "parent_id": None}],
+                 "msgs": [{"id": "$", "project": "  Trip\n"}]})
+    if out is None:
+        return
+    assert [c[:3] for c in out["calls"]] == [["/api/v1/folders/", "GET", None], [f"/api/v1/chats/{CID}/folder", "POST", {"folder_id": "f1"}]]
+
+
+def test_only_the_framing_page_saying_this_hand_offs_id_files_it_and_only_once():
+    out = _page({"msgs": [{"id": "$", "project": "X", "other": True}, {"id": "hzzzzzzzz", "project": "X"},
+                          {"id": "$", "project": "X", "type": "bn-portal-chat-handoff"}, {"id": "$", "project": "Real"},
+                          {"id": "$", "project": "Again"}]})
+    if out is None:
+        return
+    names = [c[2]["name"] for c in out["calls"] if c[:2] == ["/api/v1/folders/", "POST"]]
+    assert names == ["Real"] and len(out["calls"]) == 3
+
+
+def test_nothing_is_filed_for_a_temporary_chat_a_refused_hand_off_a_blank_name_or_a_folder_not_made():
+    for scenario, chat_id in (({"msgs": [{"id": "$", "project": "X"}]}, "local:abc"), ({"msgs": [{"id": "$", "project": "X"}]}, 'a"b'),
+                              ({"reply": {"ok": False, "error": "off"}, "msgs": [{"id": "$", "project": "X"}]}, CID),
+                              ({"reply": {"ok": True, "tooBig": True}, "msgs": [{"id": "$", "project": "X"}]}, CID),
+                              ({"msgs": [{"id": "$", "project": " \u0001 "}]}, CID)):
+        out = _page(scenario, chat_id)
+        if out is None:
+            return
+        assert out["calls"] == [], (scenario, chat_id, out)
+        assert out["left"] == 0
+    out = _page({"createFails": True, "msgs": [{"id": "$", "project": "X"}]})
+    assert [c[:2] for c in out["calls"]] == [["/api/v1/folders/", "GET"], ["/api/v1/folders/", "POST"]]   # (no move into nothing)
+
+
+def test_the_chat_id_goes_in_as_data_and_only_a_real_one():
+    assert f'JSON.parse("\\"{CID}\\"")' in mp.js_for("t", "h", CID)
+    for bad in ("local:x", "", None, "a\"b", "x" * 65, "../etc"):
+        assert "const chatId = JSON.parse(\"null\");" in mp.js_for("t", "h", bad), bad

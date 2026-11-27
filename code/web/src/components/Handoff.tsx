@@ -9,7 +9,7 @@
 // or a folder of this computer; a project that cannot start a session (its folder not there, not in the sandbox yet) is not offered.
 import { useEffect, useState } from 'preact/hooks';
 import { useSel } from '../store';
-import { store, createProject, newSession, renameSessionById, sendToSession, setProject, toast, type Problem } from '../app';
+import { store, createProject, newSession, renameSessionById, sendToSession, setProject, tellPortalFiled, toast, type Problem } from '../app';
 import * as api from '../api';
 import { boxShown, newProjectBody } from '../keep';
 import { handoffName, handoffPrompt, handoffTargets, type Handoff } from '../handoff';
@@ -30,7 +30,7 @@ export async function startHandoffSession(chat: Handoff, into?: string): Promise
   return true;
 }
 
-export function HandoffDialog({ chat, note, onClose }: { chat: Handoff | null; note: string; onClose: () => void }) {
+export function HandoffDialog({ chat, note, id, onClose }: { chat: Handoff | null; note: string; id?: string; onClose: () => void }) {
   if (!chat) {
     return (
       <Dialog title="Make it a project" onClose={onClose} testid="handoff-dialog">
@@ -45,10 +45,10 @@ export function HandoffDialog({ chat, note, onClose }: { chat: Handoff | null; n
       </Dialog>
     );
   }
-  return <HandoffForm chat={chat} onClose={onClose} />;
+  return <HandoffForm chat={chat} handoffId={id} onClose={onClose} />;
 }
 
-function HandoffForm({ chat, onClose }: { chat: Handoff; onClose: () => void }) {
+function HandoffForm({ chat, handoffId, onClose }: { chat: Handoff; handoffId?: string; onClose: () => void }) {
   const projects = useSel(store, (s) => s.projects);
   const taken = new Set(projects.map((p) => p.root));
   // where it continues: a new project made from the chat, or one you have (the one shown first, else the workspace)
@@ -90,6 +90,8 @@ function HandoffForm({ chat, onClose }: { chat: Handoff; onClose: () => void }) 
         setErr({ text: `The session did not start in ${chosen.name}: start one there, and paste the chat if you need it.`, said: null });
         return;
       }
+      // (the chat is filed in Chat under the project it went to — not under the workspace, which is everything)
+      if (!chosen.workspace) tellPortalFiled(handoffId, chosen.name);
       onClose();
       return;
     }
@@ -99,6 +101,7 @@ function HandoffForm({ chat, onClose }: { chat: Handoff; onClose: () => void }) 
       setErr(e);
       return;
     }
+    tellPortalFiled(handoffId, store.get().projects.find((p) => p.id === store.get().project)?.name ?? target);
     if (carry && !(await startHandoffSession(chat))) toast('The project is made, but the session did not start: start one in it, and paste the chat if you need it.', 'error');
     setBusy(false);
     onClose();

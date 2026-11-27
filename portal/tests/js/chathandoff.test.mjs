@@ -107,3 +107,50 @@ test("while the Code page is off here, nothing is deposited and the frame is tol
   assert.equal(p.posted[0][0].ok, false);
   assert.match(p.posted[0][0].error, /Code page is off/);
 });
+
+// --- (JON-1158) where the chat went: the Code page says the project, the Chat frame is told its name for its own id ---
+const done = (extra = {}) => ({ type: "bn-code-handoff-done", handoff: ID, project: "Trip planner", ...extra });
+
+test("the project a hand-off went to is told to the Chat frame, for its own id, once", async () => {
+  const p = page({ fetchReply: ok({ id: ID }) });
+  await p.send(msg());
+  p.posted.length = 0;
+  await p.send(done(), { origin: CODE, source: p.codeFrame.contentWindow });
+  assert.deepEqual(plain(p.posted), [[{ type: "bn-portal-chat-filed", id: "abc123", project: "Trip planner" }, CHAT]]);
+  await p.send(done({ project: "Again" }), { origin: CODE, source: p.codeFrame.contentWindow });
+  assert.equal(p.posted.length, 1);
+});
+
+test("only the Code tab's own frame, for a hand-off this page made, with a name, is heard", async () => {
+  const p = page({ fetchReply: ok({ id: ID }) });
+  await p.send(msg());
+  p.posted.length = 0;
+  await p.send(done(), { origin: "http://evil.example", source: p.codeFrame.contentWindow });
+  await p.send(done(), { origin: CODE, source: {} });
+  await p.send(done(), { origin: CHAT, source: p.chatWin });
+  await p.send(done({ handoff: "B".repeat(32) }), { origin: CODE, source: p.codeFrame.contentWindow });
+  await p.send(done({ handoff: "bad" }), { origin: CODE, source: p.codeFrame.contentWindow });
+  await p.send(done({ project: 7 }), { origin: CODE, source: p.codeFrame.contentWindow });
+  assert.equal(p.posted.length, 0);
+  await p.send(done({ project: " ‮\u0007 " }), { origin: CODE, source: p.codeFrame.contentWindow });
+  assert.equal(p.posted.length, 0);   // (a name of nothing visible: not filed, and the hand-off is used up)
+  await p.send(done(), { origin: CODE, source: p.codeFrame.contentWindow });
+  assert.equal(p.posted.length, 0);
+});
+
+test("the name told is cleaned and capped", async () => {
+  const p = page({ fetchReply: ok({ id: ID }) });
+  await p.send(msg());
+  p.posted.length = 0;
+  await p.send(done({ project: "  Trip‮\n  planner " + "x".repeat(200) }), { origin: CODE, source: p.codeFrame.contentWindow });
+  const told = p.posted[0][0].project;
+  assert.ok(told.startsWith("Trip planner x") && told.length === 80, told);
+});
+
+test("a refused hand-off is never filed", async () => {
+  const p = page({ fetchReply: ok({ error: "nope" }, 500) });
+  await p.send(msg());
+  p.posted.length = 0;
+  await p.send(done(), { origin: CODE, source: p.codeFrame.contentWindow });
+  assert.equal(p.posted.length, 0);
+});

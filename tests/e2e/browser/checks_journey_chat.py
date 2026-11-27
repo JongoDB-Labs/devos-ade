@@ -8,6 +8,7 @@ chat and one to write the file — all on the Haiku model, never Opus."""
 
 from __future__ import annotations
 
+import json
 import re
 import time
 
@@ -30,7 +31,7 @@ def chat_to_git(ctx):
     name = f"e2e-journey-{int(time.time())}"
     page, rec = ctx.page("journey-chat-to-git")
     login(page)
-    chat_id = c = None
+    chat_id = c = filed = None
     try:
         # 1. Chat, on Haiku: a short chat about the project
         fl, f = chat_frame(page, f"?models={HAIKU}")
@@ -79,6 +80,21 @@ def chat_to_git(ctx):
         # the project is made and kept; a session reads the chat (Haiku: the page's default) and waits
         proj = next((x for x in c.api("GET", "/api/projects")["json"]["projects"] if x.get("root") == name), None)
         expect(proj, f"no project {name} after Create")
+        # (JON-1158) and in Chat, the chat is filed under the project it went to: a folder of the project's name, at the top
+        if chat_id:
+            folder, t0 = None, time.time()
+            while time.time() - t0 < 30 and folder is None:
+                r = owui_api(f, f"/api/v1/chats/{chat_id}")
+                fid = (json.loads(r["body"]) or {}).get("folder_id") if r["status"] == 200 else None
+                if fid:
+                    fl_ = json.loads(owui_api(f, "/api/v1/folders/")["body"])
+                    folder = next((x for x in fl_ if x.get("id") == fid), {"id": fid, "name": None})
+                else:
+                    page.wait_for_timeout(1000)
+            expect(folder is not None, f"the chat was not filed in a Chat folder within 30 s of Create ({chat_id})")
+            expect(folder.get("name") == proj["name"] and not folder.get("parent_id"),
+                   f"the chat is filed in {folder.get('name')!r}, not a top-level folder named {proj['name']!r}")
+            filed = folder["id"]
         see(cf.get_by_test_id("turn-end")).to_have_count(1, timeout=150000)
         sid = cf.evaluate("JSON.parse(localStorage.getItem('bn.code.v1')).lastSession")
         s = next((x for x in c.api("GET", "/api/state")["json"]["sessions"] if x["id"] == sid), {})
@@ -134,7 +150,7 @@ def chat_to_git(ctx):
             shot(page, "journey-5-terminal-panel")
         finally:
             T.reset_layout(page)
-        return f"{HAIKU}: a chat about {name} → Make it a project → the dialog (read-only, nothing made) → Create → kept, a session read the chat → README.md in {owner}/{name} and in the Git tab → listed (kept) in the Terminal tab's Projects panel"
+        return f"{HAIKU}: a chat about {name} → Make it a project → the dialog (read-only, nothing made) → Create → kept, the chat filed in Chat under {name}, a session read the chat → README.md in {owner}/{name} and in the Git tab → listed (kept) in the Terminal tab's Projects panel"
     finally:
         # what this check made: its session, the project's record and folder, the repository, the chat
         try:
@@ -151,5 +167,7 @@ def chat_to_git(ctx):
             checks_git.forgejo(ctx, "DELETE", f"/api/v1/repos/{owner}/{name}")
             if chat_id:
                 owui_api(frame_of(page, "chat"), f"/api/v1/chats/{chat_id}", "DELETE")
+            if filed:   # (its folder, made for this chat: its contents kept, though there are none left)
+                owui_api(frame_of(page, "chat"), f"/api/v1/folders/{filed}?delete_contents=false", "DELETE")
         except Exception:  # noqa: BLE001
             pass
