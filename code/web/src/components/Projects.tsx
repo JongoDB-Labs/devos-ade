@@ -9,6 +9,7 @@
 // longer added" with its sessions, read only. Names, paths and titles come from the backend and the sandbox: shown as
 // text.
 import { bulkDeleteHeading, bulkTitles } from '../bulk';
+import { openMatches } from '../titles';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { useSel } from '../store';
 import {
@@ -341,15 +342,12 @@ export function ProjectsPanel() {
 
   const by = useMemo(() => sessionsByProject(projects, Object.keys(views), sessions, where), [projects, views, sessions, where]);
   const info = useMemo(() => new Map(sessions.map((x) => [x.id, x])), [sessions]);
-  const needle = q.trim().toLowerCase();
   // a title Claude Code gave the session (or you: Rename) over the first prompt the page saw
   const titleOf = (id: string, v: SessionView) => {
     const x = info.get(id);
     const listed = x?.title && x.title !== x.firstPrompt ? x.title : '';
     return label(listed || v.title || x?.title || x?.firstPrompt, 200);
   };
-  // a session open here whose words (not its title) the backend found for this search (JON-517): the list it sent is for this query
-  const inTalk = (id: string) => listedFor.trim().toLowerCase() === needle && info.has(id);
   const subOf = (v: SessionView) => [v.permissions.length ? 'waiting for you' : v.state === 'busy' ? 'working' : v.state === 'starting' ? 'starting' : v.unseen ? 'done — new' : v.state,
     modelLabel(models, v.model)].filter(Boolean).join(' · ');
   const isOpen = (p: Project) => expanded[p.id] ?? (!p.gone && (p.id === current || by[p.id].open.some((id) => groupOf(views[id]) !== 'done')));
@@ -384,7 +382,7 @@ export function ProjectsPanel() {
   const section = (p: Project) => {
     const mine = by[p.id];
     const groups: Record<Group, string[]> = { needs: [], working: [], done: [] };
-    for (const id of mine.open) if (!needle || titleOf(id, views[id]).toLowerCase().includes(needle) || inTalk(id)) groups[groupOf(views[id])].push(id);
+    for (const id of mine.open) if (openMatches(titleOf(id, views[id]), q, listedFor, info.has(id))) groups[groupOf(views[id])].push(id);
     const needs = mine.open.filter((id) => views[id].permissions.length > 0).length;
     const open = isOpen(p);
     const note = folderNote(p);

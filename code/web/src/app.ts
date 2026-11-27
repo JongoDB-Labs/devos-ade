@@ -1,5 +1,6 @@
 // The page's state and everything that changes it: sessions over the WebSocket, files over REST, layout prefs.
 // Components read with useSel(store, …) and call the actions exported here.
+import { titleAfter } from './titles';
 import * as api from './api';
 import type { BnModels, ConnStatus } from './api';
 import { createStore, type Store } from './store';
@@ -1040,7 +1041,7 @@ function handle(m: ServerMsg): void {
     case 'session_title': {
       // a short title was made for a session (JON-517): the one open here that is still named by its first prompt takes it; the
       // list is read again either way (the backend's order: Rename, Claude Code's own title, this one, the first prompt)
-      if (m.replaced) updateView(m.session, (v) => ({ ...v, title: m.title }));
+      if (m.replaced) updateView(m.session, (v) => ({ ...v, title: titleAfter(v.title, m) }));
       void refreshSessions();
       return;
     }

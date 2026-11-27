@@ -233,3 +233,13 @@ test('an unqueued event keeps a valid uuid (lower case) and nothing else', () =>
   assert.deepEqual(normEvent({ type: 'unqueued', uuid: 'AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE', extra: 1 }), { kind: 'unqueued', uuid: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee' });
   assert.equal(normEvent({ type: 'unqueued', uuid: '../x' }), null);
 });
+
+test('session_title: a short title made for a session — a clean session id and a title of a line, else nothing', () => {
+  assert.deepEqual(msg({ type: 'session_title', session: S, title: 'Retry budget of the export', replaced: true }), { kind: 'session_title', session: S, title: 'Retry budget of the export', replaced: true });
+  assert.deepEqual(msg({ type: 'session_title', session: S, title: 'x' }), { kind: 'session_title', session: S, title: 'x', replaced: false }, 'replaced only when it says true');
+  assert.equal((msg({ type: 'session_title', session: S, title: `a\nb${'z'.repeat(200)}`, replaced: true }) as { title: string }).title.includes('\n'), false, 'one line');
+  assert.match((msg({ type: 'session_title', session: S, title: 'z'.repeat(200), replaced: true }) as { title: string }).title, /^z{80} … \(120 more characters not shown\)$/, 'cut, as the page cuts a label');
+  for (const bad of [{ session: '../../etc', title: 'x' }, { session: S, title: '' }, { session: S, title: 7 }, { session: S }, { title: 'x' }]) {
+    assert.equal(msg({ type: 'session_title', ...bad }), null, JSON.stringify(bad));
+  }
+});
