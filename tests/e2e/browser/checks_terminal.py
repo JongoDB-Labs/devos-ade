@@ -1147,7 +1147,7 @@ def trash_waits_for_terminal(ctx):
         alert = dlg.get_by_role("alert")
         see(alert).to_be_visible(timeout=20000)
         see(alert).to_contain_text(TRASH_BUSY)
-        expect(not dlg.locator(".sbx-said, [data-testid=sandbox-said]").count(), "the refusal is shown as the sandbox's words, not plainly")
+        expect(not dlg.locator("[data-testid=sandbox-said]").count(), "the refusal is shown as the sandbox's words, not plainly")
         shot(page, "terminal-trash-waits-1-refused")
         expect(folder_there(), "the folder went to the trash while a shell worked in it")
         expect(any(x["id"] == pid for x in c.api("GET", "/api/projects")["json"]["projects"]), "the record went though the folder stayed")

@@ -3611,25 +3611,35 @@ export function pathsPlain(req, { now = Date.now } = {}) {
 // (/workspace/.devos-ade-trash/<time>-<random>/<name>). The entry is moved, not what a link points to. Refused while a
 // program of the sandbox works in it (JON-1158): the code container checks its own open sessions, but a shell of a
 // terminal window, Claude Code started there, a dev server, Run & test — any process whose working folder is it or one
-// below it — would be left working in the trash. Refused too when that cannot be told.
-export function projectTrash(req, { procDir = PROC_DIR } = {}) {
+// below it — would be left working in the trash. Refused too when that cannot be told. One that only passes through —
+// a git status of the Git panel, an rg of a search, bn-coded's own — is gone in a moment: a busy folder is looked at
+// again (`tries` looks, `gapMs` apart) before the refusal; a shell or a dev server stays. A best-effort guard: a shell
+// that goes there between the last look and the move is not stopped. The folder is checked after the waits, just
+// before the move, as before.
+export async function projectTrash(req, { procDir = PROC_DIR, tries = 5, gapMs = 200 } = {}) {
   const v = req?.root;
   const r = typeof v === 'string' && v.startsWith(`${WORKSPACE}/`) ? v.slice(WORKSPACE.length + 1) : null;
   if (!r || !rootRel(r)) throw new Error('not a project folder of the workspace');
-  const type = rootType(r);
-  if (type !== 'dir') throw new Error(type === 'missing' ? 'the project\'s folder is not there' : 'the project\'s folder is a link or not a folder: nothing was moved');
   const at = path.join(WORKSPACE, r);
-  const busy = workingIn(at, procDir);
+  let busy = workingIn(at, procDir);
+  for (let i = 1; busy === 'busy' && i < tries; i++) {
+    await new Promise((res) => { setTimeout(res, gapMs); });
+    busy = workingIn(at, procDir);
+  }
   if (busy === 'unknown') throw new Error('cannot tell whether a program in the terminal works in the project\'s folder: nothing was moved');
   if (busy) throw new Error('a program in the terminal works in the project\'s folder: close it, or leave the folder, first');
+  const type = rootType(r);
+  if (type !== 'dir') throw new Error(type === 'missing' ? 'the project\'s folder is not there' : 'the project\'s folder is a link or not a folder: nothing was moved');
   const dest = path.join(newTrashDir(path.join(WORKSPACE, TRASH)), path.basename(at));
   fs.renameSync(at, dest);
   return { trash: path.relative(WORKSPACE, dest) };
 }
 // workingIn(at, procDir) -> null when no process of the sandbox (but this bn-coded) has its working folder at `at` or
 // below it; 'busy' when one has; 'unknown' when that cannot be told: /proc not listed, more processes than looked at
-// (16,384), a working folder that cannot be read for another reason than the process's end (the sandbox's processes
-// are all its one user's: an unreadable one is not expected). Compared without case: a macOS workspace is
+// (16,384), a working folder that cannot be read for another reason than the process's end or its keeping others out.
+// A process that keeps others out of it, its own user too (not dumpable: ssh-agent, gpg-agent), cannot be read and is
+// not counted: such agents work in / (they leave the folder they were started in), and one running would otherwise hold
+// every removal while it runs. Compared without case: a macOS workspace is
 // case-insensitive, and a shell that went to /workspace/APP works in /workspace/app (on a case-sensitive one, a
 // sibling differing only in case is taken for it: the safe side, a removal refused).
 function workingIn(at, procDir) {
@@ -3641,7 +3651,7 @@ function workingIn(at, procDir) {
   for (const n of names) {
     if (Number(n) === process.pid) continue;
     let cwd;
-    try { cwd = fs.readlinkSync(path.join(procDir, n, 'cwd')); } catch (e) { if (gone(e)) continue; return 'unknown'; }
+    try { cwd = fs.readlinkSync(path.join(procDir, n, 'cwd')); } catch (e) { if (gone(e) || e?.code === 'EACCES' || e?.code === 'EPERM') continue; return 'unknown'; }
     const c = cwd.toLowerCase();
     if (c === top || c.startsWith(`${top}/`)) return 'busy';
   }
@@ -6127,7 +6137,9 @@ export function serve(sock) {
           projectCreate(req).then((r) => finish(T.RESULT, r), (e) => fail(e.message)).finally(() => { helpers.projectNew--; });
           return undefined;
         case 'project.check': return finish(T.RESULT, projectCheck(req));
-        case 'project.trash': return finish(T.RESULT, projectTrash(req));
+        case 'project.trash':
+          projectTrash(req).then((r) => finish(T.RESULT, r), (e) => fail(e.message));
+          return undefined;
         case 'project.settings': return finish(T.RESULT, projectSettings(req));
         case 'paths.plain': return finish(T.RESULT, pathsPlain(req));
         // the Git panel's remotes: no network for these two; a branch switch or a remote's URL is a change

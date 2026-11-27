@@ -308,16 +308,22 @@ test('project.create: a new folder of the workspace, git init without a template
     assert.ok(fs.existsSync(path.join(WS, 'doomed/inner')), cwd);
     unproc(pid);
   }
-  // cannot be told — the process list not there, or a working folder that cannot be read: refused, in its fixed text
+  // cannot be told — the process list not there: refused, in its fixed text
   const UNKNOWN = "cannot tell whether a program in the terminal works in the project's folder: nothing was moved";
-  assert.throws(() => coded.projectTrash({ root: `${WS}/doomed` }, { procDir: path.join(ROOT, 'no-proc') }), { message: UNKNOWN });
-  fs.mkdirSync(path.join(PROC, '30')); fs.chmodSync(path.join(PROC, '30'), 0);
-  if (process.getuid?.() !== 0) assert.equal((await call({ op: 'project.trash', root: `${WS}/doomed` })).error, UNKNOWN);
-  fs.chmodSync(path.join(PROC, '30'), 0o755); fs.rmSync(path.join(PROC, '30'), { recursive: true });
+  await assert.rejects(coded.projectTrash({ root: `${WS}/doomed` }, { procDir: path.join(ROOT, 'no-proc') }), { message: UNKNOWN });
   assert.ok(fs.existsSync(path.join(WS, 'doomed/inner')));
-  // this bn-coded's own working folder never holds it (here bn-coded runs in the test's process)
+  // not counted: this bn-coded's own working folder (here bn-coded runs in the test's process); a process that keeps
+  // others out (ssh-agent: not dumpable), whose working folder cannot be read (as root, one can: not made then); and one
+  // that passes through (a git status of bn-coded's), gone before the last look
   proc(process.pid, `${WS}/doomed`);
+  const shut = process.getuid?.() !== 0;
+  if (shut) { proc(30, `${WS}/doomed`); fs.chmodSync(path.join(PROC, '30'), 0); }
+  proc(31, `${WS}/doomed/inner`);
+  const passing = setTimeout(() => unproc(31), 300);
   const tr = await call({ op: 'project.trash', root: `${WS}/doomed` });
+  clearTimeout(passing);
+  if (shut) { fs.chmodSync(path.join(PROC, '30'), 0o755); unproc(30); }
+  assert.ok(!fs.existsSync(path.join(PROC, '31')), 'moved while the passing process was there');
   assert.match(tr.trash, /^\.devos-ade-trash\/[^/]+\/doomed$/);
   assert.ok(!fs.existsSync(path.join(WS, 'doomed')) && fs.existsSync(path.join(WS, tr.trash, 'inner')));
   fs.rmSync(path.join(WS, 'doomed-link'));
