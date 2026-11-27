@@ -117,6 +117,7 @@ export const SANDBOX_REFUSALS = Object.freeze([
   'that folder of this computer is not here (the sandbox restarts to see it)',
   'bad session id',
   'bad title',
+  'words to look for: 1 to 200 characters',
   'busy: another export is running, try again in a moment',
   'the compressor stopped',
   'not a transcript',

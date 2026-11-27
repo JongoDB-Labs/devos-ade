@@ -1037,6 +1037,13 @@ function handle(m: ServerMsg): void {
       announce();
       return;
     }
+    case 'session_title': {
+      // a short title was made for a session (JON-517): the one open here that is still named by its first prompt takes it; the
+      // list is read again either way (the backend's order: Rename, Claude Code's own title, this one, the first prompt)
+      if (m.replaced) updateView(m.session, (v) => ({ ...v, title: m.title }));
+      void refreshSessions();
+      return;
+    }
     case 'session_state': {
       if (!get().views[m.session]) {
         // a session another tab or device opened: it gets a view (attached, so its prompts reach this page too)

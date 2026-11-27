@@ -318,14 +318,16 @@ export const pluginsOf = (list) => objs(list, 200)
   .map((p) => ({ name: short(p.name, 200), version: short(p.version, 60) || null, source: short(p.source, 200) || null }))
   .filter((p) => p.name);
 
-/** Session rows from bn-coded (sessions.list) -> what /api/sessions lists; rows that do not check out are dropped. */
-export function sessionRow(r) {
+/** Session rows from bn-coded (sessions.list) -> what /api/sessions lists; rows that do not check out are dropped.
+ *  The title: your Rename (Claude Code's custom title), else Claude Code's own (ai-title, summary), else the short title
+ *  made for the session here (shortTitles: Map id -> title, titles.mjs), else its first prompt. */
+export function sessionRow(r, shortTitles = null) {
   if (!r || typeof r !== 'object') return null;
   const id = uuidOr(r.id);
   const mtimeMs = num(r.mtimeMs, 0, 1e14);
   if (!id || mtimeMs === null) return null;
   const firstPrompt = short(r.firstPrompt, 300), customTitle = short(r.customTitle, 200);
-  const title = customTitle || short(r.aiTitle, 200) || short(r.summary, 200) || firstPrompt;
+  const title = customTitle || short(r.aiTitle, 200) || short(r.summary, 200) || short(shortTitles?.get?.(id), 80) || firstPrompt;
   const gitBranch = short(r.gitBranch, 200);
   return { id, title, first_prompt: firstPrompt, branch: gitBranch, firstPrompt, lastPrompt: short(r.lastPrompt, 300), customTitle, gitBranch,
     modified: Math.floor(mtimeMs), size: int(r.size, 0, 1e13) ?? 0,

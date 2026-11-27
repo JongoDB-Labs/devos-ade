@@ -596,6 +596,9 @@ export type ServerMsg =
   | { kind: 'attached'; session: string; from: number; last: number; gap: boolean; epoch: string | null; now: number | null }
   /** the CLI reset the conversation (/clear, a plan exit with a fresh context): it goes on as `next` */
   | { kind: 'reset'; session: string; next: string }
+  /** a short title was made for a session (JON-517): `replaced` — it is open here and was still named by its first prompt, so
+   *  the page shows it at once; every page lists the sessions again (Rename and Claude Code's own title still come first) */
+  | { kind: 'session_title'; session: string; title: string; replaced: boolean }
   /** the answer to a message that carried `req` */
   | { kind: 'reply'; req: string; ok: boolean; error: string; data: unknown; said: SandboxWords | null }
   | { kind: 'hello'; pending: number; maxImages: number | null }

@@ -323,6 +323,7 @@ export function ProjectsPanel() {
   const where = useSel(store, (s) => s.where);
   const active = useSel(store, (s) => s.active);
   const loading = useSel(store, (s) => s.sessionsLoading);
+  const listedFor = useSel(store, (s) => s.sessionsQuery);
   const error = useSel(store, (s) => s.sessionsError);
   const projectsError = useSel(store, (s) => s.projectsError);
   const projectsSaid = useSel(store, (s) => s.projectsSaid ?? null);
@@ -347,6 +348,8 @@ export function ProjectsPanel() {
     const listed = x?.title && x.title !== x.firstPrompt ? x.title : '';
     return label(listed || v.title || x?.title || x?.firstPrompt, 200);
   };
+  // a session open here whose words (not its title) the backend found for this search (JON-517): the list it sent is for this query
+  const inTalk = (id: string) => listedFor.trim().toLowerCase() === needle && info.has(id);
   const subOf = (v: SessionView) => [v.permissions.length ? 'waiting for you' : v.state === 'busy' ? 'working' : v.state === 'starting' ? 'starting' : v.unseen ? 'done — new' : v.state,
     modelLabel(models, v.model)].filter(Boolean).join(' · ');
   const isOpen = (p: Project) => expanded[p.id] ?? (!p.gone && (p.id === current || by[p.id].open.some((id) => groupOf(views[id]) !== 'done')));
@@ -381,7 +384,7 @@ export function ProjectsPanel() {
   const section = (p: Project) => {
     const mine = by[p.id];
     const groups: Record<Group, string[]> = { needs: [], working: [], done: [] };
-    for (const id of mine.open) if (!needle || titleOf(id, views[id]).toLowerCase().includes(needle)) groups[groupOf(views[id])].push(id);
+    for (const id of mine.open) if (!needle || titleOf(id, views[id]).toLowerCase().includes(needle) || inTalk(id)) groups[groupOf(views[id])].push(id);
     const needs = mine.open.filter((id) => views[id].permissions.length > 0).length;
     const open = isOpen(p);
     const note = folderNote(p);

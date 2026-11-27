@@ -25,6 +25,7 @@ import { makeAutoProjects, AUTO_MS, AUTO_IDLE_MS } from './autoproj.mjs';
 import { makeTermLink, makeProjectAnswer } from './termlink.mjs';
 import { NEVER_ASKS, CLAUDE_SAID, sandboxWords } from './said.mjs';
 import { SandboxError } from './spawn-client.mjs';
+import { Titler, makeTitleMaker } from './titles.mjs';
 import { Projects, ProjectError, projectIdOk, WS, absOf } from './projects.mjs';
 import { UserPrefs, PrefsError } from './userprefs.mjs';
 import { makeTrust } from './trust.mjs';
@@ -140,11 +141,13 @@ export function ownOrigin(req) {
 // branches that moved (keep.mjs; 0: never). autoProjectMs: how often, while a page is connected, the workspace is looked at for
 // repositories and project folders made in the terminal (autoproj.mjs; the entry point below passes AUTO_MS; 0: only when the project list is asked for; null: never).
 // autoProjectIdleMs: how often while no page is connected (the entry point passes AUTO_IDLE_MS; null or 0: not then; nothing when autoProjectMs is null).
+// titles: a short title for a session when its first turn is over (titles.mjs; the entry point passes true: a test with a stand-in query
+// would count the helper's process); titleMaker: a test's own (prompt, answer) -> title.
 export function createServer({ secret, query, spawn, call, distDir = path.join(HERE, '../web/dist'), versions = {}, logger = log,
   reloadPollMs, reloadMaxMs, maxBufferedBytes = LIMITS.wsMaxBufferedBytes, maxSocketAgeMs = LIMITS.wsMaxAgeHours * 3600000, broker: brokerOpts = {},
   allowBypass = false, allowAuto = false, sandbox = {}, watch = true, gitHosts = null, openBroker = null, gitConnect = null, gitApps = {}, gitOAuthDelay = null,
   projects = null, imports = null, setup = null, spawnAgent = null, agentStore = null, planAllowed = false, subsStatus = null, userPrefs = null,
-  keepSweepMs = SWEEP_MS, autoProjectMs = null, autoProjectIdleMs = null }) {
+  keepSweepMs = SWEEP_MS, autoProjectMs = null, autoProjectIdleMs = null, titles = false, titleMaker = null }) {
   if (!/^[0-9a-f]{32,}$/.test(secret || '')) throw new Error('CODE_PROXY_SECRET missing or weak (32+ hex characters)');
   const want = Buffer.from(secret);
   const proxied = (req) => {
@@ -210,6 +213,23 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
   // Git hosts (githosts.mjs; the file made on first write): the Git panel's, Claude's own git's — and what every
   // session's process is told of them (gitnote.mjs)
   const hostStore = gitHosts || new GitHosts();
+  // a short title for a session once its first turn is over (titles.mjs): Claude Haiku, one request, kept here by session id;
+  // never Claude Code's own custom title (your Rename stays yours and wins). Claude Code's sessions only.
+  const titler = new Titler({
+    make: (prompt, answer) => (titleMaker ?? makeTitleMaker({ query: mgr.query, spawn: mgr.spawn, log: logger }))(prompt, answer),
+    has: (id) => proj().shortTitles().has(id),
+    save: (id, title) => proj().setShortTitle(id, title),
+    // (a session still listed by its first prompt, here and on a page that has not been given another: they follow)
+    onTitle: (id, title, turn) => {
+      const s = mgr.get(id);
+      const replaced = Boolean(s) && s.title === short(turn.prompt, 80);
+      if (replaced) s.title = title;
+      // (replaced: the session is open here and was still named by its first prompt — a page shows the new one at once; any page lists again)
+      toAll({ type: 'session_title', session: id, title, replaced });
+    },
+    skip: (s, turn) => (s.harness && s.harness !== 'bedrock' && s.harness !== 'claude') || Boolean(s.pendingTitle) || (Boolean(s.title) && s.title !== short(turn.prompt, 80)),
+    log: logger,
+  });
   const mgr = new SessionManager({
     query, spawn, broker, log: logger, allowBypass: allowBypass === true, allowAuto: allowAuto === true, watcher, watchRootOf, decideSettings: trust.decide,
     spawnAgent, agentStore: agents, planAllowed: planAllowed === true, versions: { server: versions.sdk || '0' },
@@ -222,6 +242,8 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
       toAttached(s.id, { type: 'event', session: s.id, epoch: s.epoch, seq, ev, ...(Number.isFinite(at) ? { at } : {}) });
       // a turn is over: a branch of the project may have moved — pushed to the built-in git server when it is kept there
       if (ev.type === 'result') keeper().turnEnded(s.cwd);
+      // a first turn is over: a short title for the session list, once (titles.mjs)
+      if (titles) titler.event(s, ev);
       // a title given before the session had a transcript: written once its first turn is over
       if (ev.type === 'result' && s.pendingTitle && s.hasTranscript) {
         const title = s.pendingTitle;
@@ -257,7 +279,7 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
   const api = makeApi({ call, sessions: mgr, projects: { list: () => proj().list(), get: (id) => proj().get(id), add: (b) => proj().add(b), rename: (id, n) => proj().rename(id, n),
     remove: (id, o) => proj().remove(id, o), file: (ids, pid) => proj().file(ids, pid), placer: () => proj().placer(), syncHosts: () => proj().syncHosts(),
       archive: (ids, on) => proj().archive(ids, on), archivedIds: () => proj().archivedIds(), forgetSession: (id) => proj().forgetSession(id), hosts: () => proj().hosts(),
-      removedRoots: () => proj().removedRoots(), notices: () => proj().notices(), dismissNotice: (id) => proj().dismissNotice(id), localgit: (id) => proj().localgit(id),
+      shortTitles: () => proj().shortTitles(), removedRoots: () => proj().removedRoots(), notices: () => proj().notices(), dismissNotice: (id) => proj().dismissNotice(id), localgit: (id) => proj().localgit(id),
       writeSummary: (o) => proj().writeSummary(o) },
     autoScan: autoProjectMs === null ? null : () => auto().scan(),
     reloadPollMs, reloadMaxMs, log: logger,
@@ -956,7 +978,7 @@ if (process.argv[1] && fs.realpathSync(process.argv[1]) === fileURLToPath(import
   const egress = (v) => { const s = String(v ?? '').trim().toLowerCase(); return s === 'host' ? 'host' : /^(false|0|no|off)$/.test(s) ? 'off' : 'internet'; };
   // which of your subscriptions' tools are signed in: one cache for the Code page and Chat
   const status = makeStatus({ call: sandboxCall, log });
-  const { server, mgr, closeGit } = createServer({ secret: process.env.CODE_PROXY_SECRET, query, spawn: sandboxProcess, call: sandboxCall, versions: readVersions(), openBroker: sandboxBroker, autoProjectMs: AUTO_MS, autoProjectIdleMs: AUTO_IDLE_MS,
+  const { server, mgr, closeGit } = createServer({ secret: process.env.CODE_PROXY_SECRET, query, spawn: sandboxProcess, call: sandboxCall, versions: readVersions(), openBroker: sandboxBroker, autoProjectMs: AUTO_MS, autoProjectIdleMs: AUTO_IDLE_MS, titles: true,
     // (a Git host sign-in reaches its provider through the sandbox's way out; Settings' application IDs, public values)
     gitConnect: (host, port) => sandboxTunnel({ host, port }),
     gitApps: { github: { clientId: process.env.GIT_GITHUB_CLIENT_ID || '', appSlug: process.env.GIT_GITHUB_APP_SLUG || '' }, gitlab: { clientId: process.env.GIT_GITLAB_CLIENT_ID || '' } },

@@ -59,7 +59,7 @@
 //                   over it itself (the certificate checked there), so only bytes this side cannot read pass here
 //   memory.read / memory.write
 //                   your user memory for Claude Code in the sandbox (~/.claude/CLAUDE.md): that one fixed file
-//   sessions.list / sessions.load / sessions.title / sessions.delete / sessions.running
+//   sessions.list / sessions.search / sessions.load / sessions.title / sessions.delete / sessions.running
 //                   this sandbox's Claude Code transcripts of the workspace and its folders (~/.claude/projects/
 //                   -workspace*/*.jsonl, each placed by the working folder it records — the folder names are lossy),
 //                   and whether a process other than this one's children runs a session now (the terminal, after Open
@@ -720,13 +720,9 @@ const humanPrompt = (e) => {
   return typeof t === 'string' && t && !t.startsWith('<') ? t : '';
 };
 
-// sessionsList -> the most recent transcripts of the workspace and its folders, with what a list shows: their head
-// (first prompt, start, branch, working folder) and tail (titles, last prompt, branch) read here — at most 64 KiB of
-// each end per file. The store's folders of the workspace (-workspace) and of folders in it (-workspace-…), never
-// through a link; each transcript's `cwd` is the working folder it records at its start — kept only when it is a folder
-// of the workspace whose store folder is the one the transcript is in (two folders' sessions sharing a store folder are
-// told apart this way); the workspace's own folder's are the workspace's.
-export function sessionsList(store) {
+// transcriptStats(store) -> [[store folder, file name, stat]] of the transcripts of the workspace and its folders, the most
+// recent first (the folders and files looked at are bounded: SESSION_DIRS, SESSION_FILES; none through a link)
+function transcriptStats(store) {
   const own = encodeCwd(WORKSPACE);
   // the store folders of the workspace and its folders, of the folders of this computer (their own names), and any
   // other (a folder of this computer no longer added: its sessions marked outside — read, never resumed)
@@ -735,7 +731,7 @@ export function sessionsList(store) {
   try {
     const all = fs.readdirSync(PROJECTS(store), { withFileTypes: true }).filter((d) => d.isDirectory() && d.name.startsWith('-')).map((d) => d.name).sort();
     dirs = [...all.filter(mine), ...all.filter((n) => !mine(n))].slice(0, SESSION_DIRS);
-  } catch { return []; }
+  } catch { return { own, stats: [] }; }
   const stats = [];
   for (const dir of dirs) {
     let names = [];
@@ -746,6 +742,16 @@ export function sessionsList(store) {
     }
   }
   stats.sort((a, b) => b[2].mtimeMs - a[2].mtimeMs);
+  return { own, stats };
+}
+// sessionsList -> the most recent transcripts of the workspace and its folders, with what a list shows: their head
+// (first prompt, start, branch, working folder) and tail (titles, last prompt, branch) read here — at most 64 KiB of
+// each end per file. The store's folders of the workspace (-workspace) and of folders in it (-workspace-…), never
+// through a link; each transcript's `cwd` is the working folder it records at its start — kept only when it is a folder
+// of the workspace whose store folder is the one the transcript is in (two folders' sessions sharing a store folder are
+// told apart this way); the workspace's own folder's are the workspace's.
+export function sessionsList(store) {
+  const { own, stats } = transcriptStats(store);
   const rows = [];
   for (const [dir, n, st] of stats) {
     if (rows.length >= MAX_SESSIONS) break;
@@ -780,6 +786,45 @@ export function sessionsList(store) {
     } catch { /* unreadable: left out */ } finally { if (fd !== undefined) fs.closeSync(fd); }
   }
   return rows;
+}
+
+// sessions.search {q, store}: the sessions whose conversation holds the words q — what the person typed and what Claude
+// answered (text only: no tool call, tool result or thinking). A plain, case-insensitive substring (never a pattern), in
+// the most recent transcripts first, bounded three ways: at most SEARCH_SESSIONS transcripts, SEARCH_BYTES of each (its
+// first and last half when it is longer: Claude Code's transcripts are appended), SEARCH_MS in all. -> {ids, scanned, cut}
+// (cut: a bound stopped it short — the ids are what it found). The code container matches them with the sessions it lists.
+export const SEARCH_SESSIONS = 80, SEARCH_BYTES = 256 << 10, SEARCH_MS = 2500, SEARCH_NEEDLE = 200;
+const bodyText = (c) => (typeof c === 'string' ? c : Array.isArray(c) ? c.filter((b) => b && b.type === 'text' && typeof b.text === 'string').map((b) => b.text).join('\n') : '');
+export function conversationText(entries) {
+  const out = [];
+  for (const e of entries) {
+    if (!e || e.isSidechain === true || e.isMeta === true || !e.message || typeof e.message !== 'object') continue;
+    if (e.type === 'user' || e.type === 'assistant') { const t = bodyText(e.message.content); if (t) out.push(t); }
+  }
+  return out.join('\n');
+}
+export function sessionsSearch(q, store, { sessions = SEARCH_SESSIONS, bytes = SEARCH_BYTES, ms = SEARCH_MS, now = Date.now } = {}) {
+  if (typeof q !== 'string') throw new Error('words to look for: 1 to 200 characters');
+  const needle = q.trim().toLowerCase().slice(0, SEARCH_NEEDLE);
+  if (!needle) throw new Error('words to look for: 1 to 200 characters');
+  const { stats } = transcriptStats(store);
+  const t0 = now();
+  const ids = [];
+  let scanned = 0, cut = stats.length > sessions;
+  for (const [dir, n, st] of stats.slice(0, sessions)) {
+    if (now() - t0 > ms) { cut = true; break; }
+    let fd;
+    try {
+      fd = fs.openSync(path.join(PROJECTS(store), dir, n), fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
+      const size = fs.fstatSync(fd).size, half = Math.floor(bytes / 2);
+      let entries;
+      if (size <= bytes) entries = lines(readSlice(fd, 0, size));
+      else { cut = true; entries = lines(readSlice(fd, 0, half)).concat(lines(readSlice(fd, size - half, half))); }
+      scanned++;
+      if (conversationText(entries).toLowerCase().includes(needle)) ids.push(n.slice(0, 36));
+    } catch { /* unreadable: not a match */ } finally { if (fd !== undefined) fs.closeSync(fd); }
+  }
+  return { ids, scanned, cut };
 }
 
 // One transcript's entries (the SDK's SessionStore.load shape): no symlink, at most its last 3 MiB. cwd: the session's
@@ -6190,6 +6235,7 @@ export function serve(sock) {
           return undefined;
         // (store: plan — Claude on your plan's transcripts, in its own folder)
         case 'sessions.list': return finish(T.RESULT, { sessions: sessionsList(storeArg(req.store)) });
+        case 'sessions.search': return finish(T.RESULT, sessionsSearch(req.q, storeArg(req.store)));
         case 'sessions.load': return finish(T.RESULT, sessionsLoad(req.id, req.cwd, storeArg(req.store)));
         case 'sessions.title': return finish(T.RESULT, sessionsTitle(req.id, req.title, req.cwd, storeArg(req.store)));
         case 'sessions.delete': return finish(T.RESULT, sessionsDelete(req.id, req.cwd, storeArg(req.store)));

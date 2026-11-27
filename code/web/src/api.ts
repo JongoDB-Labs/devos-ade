@@ -507,6 +507,10 @@ export function normServerMsg(raw: string): ServerMsg | null {
       const next = o.new_session ?? o.newSession;
       return session && isUuid(next) && next.toLowerCase() !== session ? { kind: 'reset', session, next: next.toLowerCase() } : null;
     }
+    case 'session_title': {
+      const title = label(o.title, 80);
+      return session && title ? { kind: 'session_title', session, title, replaced: o.replaced === true } : null;
+    }
     case 'reply': {
       const req = typeof o.req === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(o.req) ? o.req : null;
       return req ? { kind: 'reply', req, ok: o.ok === true, error: label(o.error, LIMITS.short), data: boundedJson(o.data), said: o.ok === true ? null : wordsOf(o) } : null;

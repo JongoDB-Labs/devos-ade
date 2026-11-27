@@ -110,11 +110,13 @@ export function makeApi({ call, sessions, projects = null, reloadPollMs = 1000, 
   async function listSessions(q) {
     const { result } = await call({ op: 'sessions.list' });
     let planned = [];
+    const stores = ['bedrock'];   // (the sandbox's stores of transcripts looked at: the content search asks each one)
     if (plan()) {
       // (the first account's store, then each other account's — the names the sandbox's own status list gives)
       let names = [];
       try { names = (await planAccounts()).filter((n) => typeof n === 'string' && /^[a-z0-9][a-z0-9-]{0,19}$/.test(n)).slice(0, 8); } catch { names = []; }
       for (const store of ['plan', ...names.map((n) => `plan:${n}`)]) {
+        stores.push(store);
         try {
           const got = (await call({ op: 'sessions.list', store })).result?.sessions ?? [];
           for (const x of Array.isArray(got) ? got.slice(0, SESSIONS_MAX) : []) planned.push([x, store]);
@@ -132,6 +134,11 @@ export function makeApi({ call, sessions, projects = null, reloadPollMs = 1000, 
     if (projects) {
       try { archived = projects.archivedIds(); } catch { archived = new Set(); }
     }
+    // (the short titles made for sessions: after Claude Code's own and your Rename, before the first prompt — titles.mjs)
+    let shortTitles = null;
+    if (projects?.shortTitles) {
+      try { shortTitles = projects.shortTitles(); } catch { shortTitles = null; }
+    }
     // (the folders of this computer no longer added: their sessions are listed there — read, never resumed)
     let gone = [];
     try { gone = projects ? projects.list().filter((p) => p.gone).map((p) => p.root) : []; } catch { gone = []; }
@@ -140,7 +147,7 @@ export function makeApi({ call, sessions, projects = null, reloadPollMs = 1000, 
     const both = [...(Array.isArray(result.sessions) ? result.sessions : []).slice(0, SESSIONS_MAX).map((x) => [x, 'bedrock']),
       ...planned.map(([x, store]) => [x, 'claude', store])];
     for (const [raw, harness, store] of both) {
-      const r = sessionRow(raw);
+      const r = sessionRow(raw, shortTitles);
       if (!r) continue;
       if (harness === 'claude') { if (planIds.size >= 5000) { planIds.clear(); planStores.clear(); } planIds.add(r.id); planStores.set(r.id, store); }
       // (a sandbox from before projects names no folder: its sessions are the workspace's, as they were)
@@ -160,9 +167,24 @@ export function makeApi({ call, sessions, projects = null, reloadPollMs = 1000, 
     rows.sort((a, b) => b.modified - a.modified);
     const open = new Map(sessions.list().map((s) => [s.id, s]));
     const needle = typeof q === 'string' ? q.trim().toLowerCase().slice(0, 200) : '';
-    const out = rows.filter((r) => !needle || `${r.title}\n${r.firstPrompt}\n${r.lastPrompt}`.toLowerCase().includes(needle))
+    // (the words in the conversation too — what you wrote and Claude answered — found in the sandbox, plain and bounded:
+    // bn-coded's sessions.search; a sandbox that cannot says so in the log and the title match stands alone)
+    const inTalk = needle.length >= 2 ? await searchTalk(needle, stores) : new Set();
+    const out = rows.filter((r) => !needle || inTalk.has(r.id) || `${r.title}\n${r.firstPrompt}\n${r.lastPrompt}`.toLowerCase().includes(needle))
       .map((r) => ({ ...r, state: open.get(r.id)?.state || null }));
     return { sessions: out };
+  }
+  /** searchTalk(needle, stores) -> the ids of the sessions whose conversation holds the words (each store of transcripts asked
+   *  once, side by side). Never fails the list: one that cannot be asked is left out, said in the log. */
+  async function searchTalk(needle, stores) {
+    const found = new Set();
+    await Promise.all(stores.map(async (store) => {
+      try {
+        const { result } = await call({ op: 'sessions.search', q: needle, ...(store === 'bedrock' ? {} : { store }) }, { timeoutMs: 8000 });
+        for (const id of Array.isArray(result?.ids) ? result.ids.slice(0, 1000) : []) if (isUuid(id)) found.add(id);
+      } catch (e) { log(`content search not made (${store}): ${short(e?.message || String(e), 200)}`); }
+    }));
+    return found;
   }
   /** harnessOf(id) -> who answers in a session: open here (its own), the page's record (an agent's), the last list of
    *  your plan's, else Claude Code on Bedrock */

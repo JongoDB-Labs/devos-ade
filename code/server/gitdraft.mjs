@@ -124,13 +124,13 @@ export function proposedMessage(answer) {
 }
 
 /** The SDK options of the helper's process (exported for the tests and the fake-API probe: exactly these). */
-export function draftOptions({ id, model, spawn, abortController, log = () => {} }) {
+export function draftOptions({ id, model, spawn, abortController, log = () => {}, system = DRAFT_SYSTEM }) {
   const options = {
     cwd: '/workspace',
     projectConfigRoot: '/workspace',   // (bn-coded starts no Claude Code without it; with settingSources [] it reads nothing anyway)
     pathToClaudeCodeExecutable: '/usr/local/bin/claude',
     env: {},
-    systemPrompt: DRAFT_SYSTEM,
+    systemPrompt: system,
     settingSources: [],
     tools: [],
     disallowedTools: [...DRAFT_DENY],
@@ -153,15 +153,17 @@ export class DraftError extends Error {
   constructor(message, status = 502, said = null) { super(message); this.status = status; this.said = said; }
 }
 /** runDraft({query, spawn, model, prompt}) -> {message, denied, turns}: one process, one prompt, its answer's message.
- *  spawn(options, extra) is the code container's sandbox spawn (mgr.spawn); a test passes its own query/spawn. */
-export async function runDraft({ query, spawn, model, prompt, timeoutMs = DRAFT_TIMEOUT, log = () => {}, signal }) {
+ *  spawn(options, extra) is the code container's sandbox spawn (mgr.spawn); a test passes its own query/spawn.
+ *  The same tool-less helper writes a session's short title (titles.mjs): its own `system` rules, and `extract(answer)`
+ *  for what to take of the answer (null: nothing usable); a commit message by default. */
+export async function runDraft({ query, spawn, model, prompt, timeoutMs = DRAFT_TIMEOUT, log = () => {}, signal, system = DRAFT_SYSTEM, extract = proposedMessage }) {
   const id = crypto.randomUUID();
   const abortController = new AbortController();
   const stop = () => abortController.abort();
   signal?.addEventListener('abort', stop, { once: true });
   const timer = setTimeout(stop, timeoutMs);
   timer.unref?.();
-  const options = draftOptions({ id, model, abortController, log,
+  const options = draftOptions({ id, model, abortController, log, system,
     spawn: spawn ? (o) => spawn(o, { litellmSession: id, onStderr: (s) => log(`draft ${id.slice(0, 8)} stderr: ${String(s).slice(0, 300)}`) }) : undefined });
   let q = null, flagged = Promise.resolve(), done = null;
   const finished = new Promise((r) => { done = r; });
@@ -207,7 +209,7 @@ export async function runDraft({ query, spawn, model, prompt, timeoutMs = DRAFT_
   }
   if (refused !== null) throw new DraftError('Claude Code offered the helper tools: stopped', 502, refused);
   if (!result) throw new DraftError(signal?.aborted ? 'cancelled' : 'Claude Code took too long to propose a message', signal?.aborted ? 499 : 504);
-  const message = proposedMessage(answer);
+  const message = extract(answer);
   if (!message) throw result.is_error ? new DraftError('Claude Code stopped', 502, String(result.subtype || 'error').slice(0, 60)) : new DraftError('Claude\'s answer had no commit message in it');
   return { message, denied, turns };
 }

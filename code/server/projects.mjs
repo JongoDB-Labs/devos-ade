@@ -126,7 +126,11 @@ export function localgitRecord(r) {
 // auto: the notices of the Projects tab, one per project added by itself — {id, at, tried}: tried — the automatic keeping on the
 // built-in git server was decided for it (done, or not applicable: it has a remote already), so it is not decided again every time
 export const REMOVED_MAX = 200, AUTO_MAX = 64;
-const empty = () => ({ version: 1, projects: [], filed: {}, archived: {}, hostTrust: {}, gone: [], seen: [], localgit: {}, removed: [], auto: [] });
+// titles: the short title Haiku made for a session (titles.mjs), by session id — page state: a label shown when Claude Code
+// wrote none and you gave none (Rename is Claude Code's own custom title, which always wins). At most TITLES_MAX; the oldest go.
+export const TITLES_MAX = 2000, SHORT_TITLE_MAX = 80;
+export const shortTitleOk = (v) => typeof v === 'string' && v.length >= 1 && v.length <= SHORT_TITLE_MAX && v.trim() === v && !ODD.test(v);
+const empty = () => ({ version: 1, projects: [], filed: {}, archived: {}, hostTrust: {}, gone: [], seen: [], localgit: {}, removed: [], auto: [], titles: {} });
 const WORKSPACE = Object.freeze({ id: WORKSPACE_ID, name: 'Workspace', root: '', created: null, workspace: true });
 
 // The one-way summary of the projects for the portal's Terminal page (JON-1158): the portal cannot reach this container, and
@@ -198,6 +202,9 @@ export class Projects {
     const archived = {};
     const ar = v.archived && typeof v.archived === 'object' && !Array.isArray(v.archived) ? v.archived : {};
     for (const [k, at] of Object.entries(ar).slice(0, FILED_MAX)) if (isUuid(k) && Number.isInteger(at) && at > 0) archived[k] = at;
+    const titles = {};
+    const tt = v.titles && typeof v.titles === 'object' && !Array.isArray(v.titles) ? v.titles : {};
+    for (const [k, t] of Object.entries(tt).slice(-TITLES_MAX)) if (isUuid(k) && shortTitleOk(t)) titles[k] = t;
     const localgit = {};
     const lg = v.localgit && typeof v.localgit === 'object' && !Array.isArray(v.localgit) ? v.localgit : {};
     for (const [k, r] of Object.entries(lg).slice(0, PROJECTS_MAX + HOSTS_MAX + 1)) {
@@ -209,7 +216,7 @@ export class Projects {
     for (const a of Array.isArray(v.auto) ? v.auto.slice(0, AUTO_MAX) : []) {
       if (a && ID.test(a.id) && projects.some((p) => p.id === a.id) && !auto.some((x) => x.id === a.id)) auto.push({ id: a.id, at: Number.isInteger(a.at) && a.at > 0 ? a.at : null, tried: a.tried === true });
     }
-    return { version: 1, projects, filed, archived, hostTrust, gone, seen, localgit, removed, auto };
+    return { version: 1, projects, filed, archived, hostTrust, gone, seen, localgit, removed, auto, titles };
   }
   write(v) {
     fs.mkdirSync(this.dir, { recursive: true, mode: 0o700 });
@@ -475,12 +482,23 @@ export class Projects {
   }
   /** archivedIds() -> the set of archived session ids */
   archivedIds() { return new Set(Object.keys(this.read().archived)); }
-  /** forgetSession(id) — a deleted session's labels (filed, archived) go with it */
+  /** shortTitles() -> Map(session id -> the short title made for it) */
+  shortTitles() { return new Map(Object.entries(this.read().titles)); }
+  /** setShortTitle(id, title) — keeps a session's short title (a checked one line; the oldest of more than TITLES_MAX go) */
+  setShortTitle(id, title) {
+    if (!isUuid(id) || !shortTitleOk(title)) throw new ProjectError(400, 'a session id and a title of 1 to 80 characters, one line');
+    this.update((v) => {
+      delete v.titles[id];   // (listed last: the newest)
+      v.titles[id] = title;
+      for (const k of Object.keys(v.titles).slice(0, Math.max(0, Object.keys(v.titles).length - TITLES_MAX))) delete v.titles[k];
+    });
+  }
+  /** forgetSession(id) — a deleted session's labels (filed, archived, short title) go with it */
   forgetSession(id) {
     if (!isUuid(id)) return;
     const v = this.read();
-    if (!(id in v.filed) && !(id in v.archived)) return;
-    this.update((w) => { delete w.filed[id]; delete w.archived[id]; });
+    if (!(id in v.filed) && !(id in v.archived) && !(id in v.titles)) return;
+    this.update((w) => { delete w.filed[id]; delete w.archived[id]; delete w.titles[id]; });
   }
   /** folderOf(cwd, v) -> the project whose folder holds a working folder (the deepest one; a folder of this computer, or
    *  one no longer added, too), else Workspace. */
