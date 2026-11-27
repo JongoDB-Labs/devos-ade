@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { boundedJson, deleteSession, normEvent, normOutcome, normServerMsg, overBudget, permissionInput, PERMISSION_SHOWN_CHARS, PERMISSION_SHOWN_STRING } from '../src/api';
+import { boundedJson, deleteSession, getSpend, normEvent, normOutcome, normServerMsg, overBudget, permissionInput, PERMISSION_SHOWN_CHARS, PERMISSION_SHOWN_STRING } from '../src/api';
 
 const S = '3f2a7c1e-9b4d-4e8a-a1c2-0d9e8f7a6b5c';
 const msg = (o: unknown) => normServerMsg(JSON.stringify(o));
@@ -206,5 +206,25 @@ test('Delete: the session\'s own id as confirm; a session with no prompt yet is 
     body = { ok: true, deleted: S, transcript: 'no' };
     assert.deepEqual(await deleteSession(S), { transcript: true }, 'only false says none');
     await assert.rejects(deleteSession('../x'));
+  } finally { globalThis.fetch = real; }
+});
+
+test('spend: LiteLLM\'s logs not answering is said in a 200 — no rows, no key, unavailable — never figures of nothing (JON-1400)', async () => {
+  const real = globalThis.fetch;
+  let body: unknown = { session: S, unavailable: 'LiteLLM did not answer (ReadTimeout)' };
+  globalThis.fetch = (async () => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })) as typeof fetch;
+  try {
+    assert.deepEqual(await getSpend(S), { rows: [], key: null, unavailable: 'LiteLLM did not answer (ReadTimeout)' });
+    body = { session: S, rows: [{ startTime: '2026-11-27T08:00:00Z', model: 'claude-haiku-5-5', spend: 0.25, tokens: 10 }], key: { spend: 1, max_budget: 5 } };
+    const ok = await getSpend(S);
+    assert.equal(ok.unavailable, null);
+    assert.equal(ok.rows.length, 1);
+    assert.equal(ok.key?.max, 5);
+    // (a hostile or odd reason is a short text, never markup to render)
+    body = { session: S, unavailable: 'x'.repeat(5000) };
+    const long = await getSpend(S);
+    assert.ok(typeof long.unavailable === 'string' && long.unavailable.length < 400, `capped: ${long.unavailable?.length}`);   // (cut, with the cap's marker)
+    body = { session: S, unavailable: 42 };
+    assert.equal((await getSpend(S)).unavailable, null, 'only a text says unavailable');
   } finally { globalThis.fetch = real; }
 });

@@ -183,12 +183,20 @@ def terminal_key(s: Settings) -> str:
 async def spend(client: httpx.AsyncClient, s: Settings, session: str) -> tuple[int, dict]:
     """A Code-page session's requests and their cost: LiteLLM's spend logs for session code-<uuid> (bn-coded tags
     every request of that session so), only those of the terminal's key, plus that key's budget. LiteLLM writes its
-    logs in batches: a turn's cost appears a few seconds after the turn."""
+    logs in batches: a turn's cost appears a few seconds after the turn.
+
+    The page asks in the background, after each turn (JON-1400): when the logs cannot be read now (LiteLLM slow under
+    load, down, or no key yet), it is said in a 200 — {session, unavailable: why}, no rows and no key — never an error
+    status, which the page would log as an error; the page keeps what it showed and asks again after the next turn."""
     if not isinstance(session, str) or not SESSION.fullmatch(session):
         return 400, {"error": "session: a session id (UUID)"}
+
+    def unavailable(why: str) -> tuple[int, dict]:
+        return 200, {"session": session, "unavailable": why}
+
     key = terminal_key(s)
     if not key:
-        return 503, {"error": "the terminal has no LiteLLM key yet (./stack code enable makes one)"}
+        return unavailable("the terminal has no LiteLLM key yet (./stack code enable makes one)")
     want = usage.key_hash(key)
     rows: list[dict] = []
     for page in range(1, 21):   # at most 2,000 requests
@@ -197,16 +205,16 @@ async def spend(client: httpx.AsyncClient, s: Settings, session: str) -> tuple[i
                                  params={"session_id": f"code-{session}", "page": page, "page_size": 100},
                                  headers={"Authorization": f"Bearer {s.litellm_master_key}"}, timeout=TIMEOUT)
         except httpx.HTTPError as e:
-            return 502, {"error": f"LiteLLM did not answer ({type(e).__name__})"}
+            return unavailable(f"LiteLLM did not answer ({type(e).__name__})")
         if r.status_code != 200:
-            return 502, {"error": f"LiteLLM answered HTTP {r.status_code}"}
+            return unavailable(f"LiteLLM answered HTTP {r.status_code}")
         try:
             body = r.json()
         except ValueError:
-            return 502, {"error": "LiteLLM's answer was not JSON"}
+            return unavailable("LiteLLM's answer was not JSON")
         data = body.get("data") if isinstance(body, dict) else None
         if not isinstance(data, list):
-            return 502, {"error": "LiteLLM's answer had no data"}
+            return unavailable("LiteLLM's answer had no data")
         rows += [_row(x) for x in data if isinstance(x, dict) and x.get("api_key") == want]
         pages = body.get("total_pages")
         if not isinstance(pages, int) or page >= pages:

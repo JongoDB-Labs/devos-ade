@@ -790,16 +790,28 @@ def test_spend_is_the_sessions_rows_of_the_terminal_key_only(cs):
             assert _guarded(c, f"/auth/code-spend?session={bad}", tok, ut).status_code == 400, bad
 
 
-def test_spend_says_when_litellm_fails(cs):
-    for resp in (httpx.Response(500, text="boom"), httpx.Response(200, text="not json"), httpx.Response(200, json={"nodata": 1})):
-        t = _litellm(lambda p, req, resp=resp: resp, [])
+def test_spend_says_when_litellm_fails_in_a_200_and_no_rows(cs):
+    # (JON-1400: the Code page asks in the background, after each turn; an error status there is a console error on the
+    # page, and LiteLLM's spend logs are slow under load. So a failure is said in a 200 — "unavailable", why — with no
+    # rows and no key, and the page keeps what it showed until the next time it asks)
+    def times_out(p, req):
+        raise httpx.ReadTimeout("slow", request=req)
+    for resp in (httpx.Response(500, text="boom"), httpx.Response(200, text="not json"), httpx.Response(200, json={"nodata": 1}), times_out):
+        t = _litellm(resp if callable(resp) else (lambda p, req, resp=resp: resp), [])
         with _client(cs, transport=t) as c:
             tok, ut = unlocked(c)
             r = _guarded(c, f"/auth/code-spend?session={SID}", tok, ut)
-            assert r.status_code == 502 and r.json()["error"]
+            assert r.status_code == 200, (resp, r.status_code)
+            d = r.json()
+            assert d["session"] == SID and d["unavailable"].startswith("LiteLLM") and "rows" not in d and "key" not in d, d
     with _client(replace(cs, keys=cs.keys[:-1])) as c:
         tok, ut = unlocked(c)
-        assert _guarded(c, f"/auth/code-spend?session={SID}", tok, ut).status_code == 503
+        r = _guarded(c, f"/auth/code-spend?session={SID}", tok, ut)
+        assert r.status_code == 200 and "no LiteLLM key yet" in r.json()["unavailable"] and "rows" not in r.json()
+    # a session id that is none is still the caller's mistake: 400
+    with _client(cs, transport=_litellm(lambda p, req: httpx.Response(500), [])) as c:
+        tok, ut = unlocked(c)
+        assert _guarded(c, "/auth/code-spend?session=not-a-uuid", tok, ut).status_code == 400
 
 
 def test_the_terminals_unlock_form_may_be_framed_by_the_code_page(settings, cs):

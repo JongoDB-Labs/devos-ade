@@ -896,10 +896,11 @@ def spend(ctx):
         r = c.api("GET", f"/.bn/spend?session={sid}")
         expect(r["status"] == 200, f"/.bn/spend {r['status']} {r['text'][:200]}")
         d = r["json"]
-        if d["requests"] >= 4:
+        # (LiteLLM's spend logs did not answer this time: said in a 200, no rows — JON-1400; asked again, as the page does)
+        if "unavailable" not in d and d["requests"] >= 4:
             break
         c.page.wait_for_timeout(3000)
-    expect(d["requests"] >= 1 and d["total"] > 0, f"spend {d}")
+    expect("unavailable" not in d and d["requests"] >= 1 and d["total"] > 0, f"spend {d}")
     expect(all("haiku" in x["model"] for x in d["rows"]), f"models {[x['model'] for x in d['rows']]}")
     expect(d["key"]["alias"] == "claude-code-terminal" and d["key"]["max_budget"], f"key {d['key']}")
     c.rec.save()
@@ -4006,9 +4007,11 @@ def settings_code_auto(ctx):
             r = c2.api("GET", f"/.bn/spend?session={sid}")
             expect(r["status"] == 200, f"/.bn/spend {r['status']} {r['text'][:200]}")
             d = r["json"]
-            if len([x for x in d["rows"] if "haiku" in x["model"]]) >= 3:
+            # (LiteLLM's spend logs did not answer this time: said in a 200, no rows — JON-1400; asked again)
+            if "unavailable" not in d and len([x for x in d["rows"] if "haiku" in x["model"]]) >= 3:
                 break
             c2.page.wait_for_timeout(3000)
+        expect("unavailable" not in d, f"LiteLLM's spend logs never answered in 90 s: {d}")
         sonnet = [x["model"] for x in d["rows"] if "sonnet" in x["model"]]
         expect(not sonnet, f"requests on Sonnet in the session's spend (the reviewer should run on Haiku): {sonnet}")
         expect(d["key"]["alias"] == "claude-code-terminal" and 0 < d["total"] < 0.10, f"spend {d.get('key')} {d.get('total')}")

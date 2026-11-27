@@ -4181,6 +4181,49 @@ def polish_budget(browser):
     p.close()
 
 
+@check("spend: LiteLLM's spend logs not answering — no console error, the meter keeps what it showed, then catches up (JON-1400)")
+def spend_unavailable(browser):
+    post(NORMAL + "/__mock/reset")
+    p = Page(browser, NORMAL, "spend-unavailable", **DESKTOP)
+    page = p.open()
+    page.get_by_role("button", name="Explain how this project is organised").click()
+    wait_turns(page, 1)
+    sid = first_session()[0]["id"]
+
+    def add_spend(usd):
+        # (a row of spend in the mock's logs; the session's total in them, shown as the meter shows money)
+        with urllib.request.urlopen(urllib.request.Request(f"{NORMAL}/__mock/spend?session={sid}&add={usd}", method="POST", data=b""), timeout=5) as r:
+            total = json.load(r)["total"]
+        return page.evaluate("t => '$' + t.toFixed(t < 1 ? 3 : 2)", total)
+
+    page.wait_for_timeout(1500)   # (the mock bills the turn itself 0.9 s after it ends)
+    first = add_spend(0.25)
+    cost = page.get_by_test_id("cost")
+    cost.click()
+    expect(cost).to_contain_text(first, timeout=10_000)
+    shown = cost.inner_text()
+    # the web app says LiteLLM's spend logs did not answer, in a 200 with no rows (portal/portal/code.py spend)
+    asked = []
+    def down(route):
+        asked.append(route.request.url)
+        route.fulfill(status=200, content_type="application/json",
+                      body=json.dumps({"session": sid, "unavailable": "LiteLLM did not answer (ReadTimeout)"}))
+    page.route("**/.bn/spend?*", down)
+    now = add_spend(0.5)
+    for _ in range(3):
+        cost.click()
+        page.wait_for_timeout(300)
+    assert len(asked) >= 3, asked
+    assert cost.inner_text() == shown, f"the meter changed while the spend logs did not answer: {cost.inner_text()!r} (was {shown!r})"
+    p.shot("spend-unavailable.png")
+    # the logs answer again: the next ask shows the session's spend as it is now
+    page.unroute("**/.bn/spend?*")
+    cost.click()
+    expect(cost).to_contain_text(now, timeout=10_000)
+    p.assert_clean()
+    p.close()
+
+
 @check("polish: Permissions — the sandbox's rules removable, the workspace's shown only, the modes' own; a changed file refused")
 def polish_permissions(browser):
     post(NORMAL + "/__mock/reset")

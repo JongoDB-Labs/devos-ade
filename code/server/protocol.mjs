@@ -254,7 +254,8 @@
 //                     scope, providers: {openrouter, explabs} (whether each has a key)}
 //   GET  /.bn/spend?session=ID  {session, rows: [{startTime, model, spend, tokens, input_tokens, output_tokens,
 //                     cache_read_tokens, cache_write_tokens, status}], requests, total, key: {alias, spend, max_budget,
-//                     reset_at, error}}
+//                     reset_at, error}}; when LiteLLM's spend logs cannot be read now: {session, unavailable: why}, still
+//                     a 200, no rows and no key (JON-1400; the page keeps what it showed)
 //
 // index.html (code/web/dist) is served no-store with <meta> tags added before </head>:
 //   bn-style-nonce (= bn-csp-nonce): the nonce Caddy's CSP allows for <style> (optional: style-src 'self' works)

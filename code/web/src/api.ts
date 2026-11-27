@@ -2042,9 +2042,13 @@ export function normModels(raw: unknown): BnModels {
   return { models, aliases, defaultModel: typeof o.default === 'string' ? label(o.default, 128) : null, settingsDefault, scope, providers };
 }
 
-export async function getSpend(session: string): Promise<{ rows: SpendRow[]; key: KeyBudget | null }> {
-  if (!isUuid(session)) return { rows: [], key: null };
+/** A session's spend from DevOS ADE's spend logs. `unavailable` (JON-1400): the logs could not be read this time (LiteLLM
+ *  slow under load, down, or no key yet) — said by the web app in a 200, never an error status for a background fetch;
+ *  the caller keeps what it showed. */
+export async function getSpend(session: string): Promise<{ rows: SpendRow[]; key: KeyBudget | null; unavailable: string | null }> {
+  if (!isUuid(session)) return { rows: [], key: null, unavailable: null };
   const o = await request('GET', '/.bn/spend' + q({ session }));
+  if (typeof o.unavailable === 'string') return { rows: [], key: null, unavailable: label(o.unavailable, 300) };
   const rows = arr(o.rows ?? o.items, 5000)
     .map((r): SpendRow | null => {
       const x = obj(r);
@@ -2057,7 +2061,7 @@ export async function getSpend(session: string): Promise<{ rows: SpendRow[]; key
     .filter((r): r is SpendRow => r !== null);
   const k = obj(o.key);
   const key = k ? { spend: nonneg(k.spend), max: nonneg(k.max_budget ?? k.maxBudget), resetAt: time(k.reset_at ?? k.resetAt) || null } : null;
-  return { rows, key };
+  return { rows, key, unavailable: null };
 }
 
 // ---------------------------------------------------------------- previews

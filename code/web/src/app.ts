@@ -814,7 +814,10 @@ function scheduleSpend(id: string, delays = [1500, 5000, 15000, 40000]): void {
 }
 export async function refreshSpend(id: string): Promise<void> {
   try {
-    const { rows, key } = await api.getSpend(id);
+    const { rows, key, unavailable } = await api.getSpend(id);
+    // (the spend logs could not be read this time: the meter keeps what it showed — never figures of nothing — and the
+    // next ask, after a turn or a click, catches up; JON-1400)
+    if (unavailable !== null) return;
     const total = sessionCost(rows);
     const before = get().views[id];
     updateView(id, (v) => ({ ...v, spend: rows, spendSeen: total }));
