@@ -198,7 +198,7 @@ export class AgentSession {
       if (im.data.length * 3 / 4 > LIMITS.maxImageBytes) throw new SessionError('image too large');
     }
     if (text.startsWith('/')) throw new SessionError(`${this.name} sessions have no slash commands here: type your request in words (its own commands work in the terminal)`);
-    const id = /^[0-9a-f-]{36}$/.test(String(uuid)) ? uuid : crypto.randomUUID();
+    const id = /^[0-9a-f-]{36}$/i.test(String(uuid)) ? String(uuid).toLowerCase() : crypto.randomUUID();
     if (!this.title) { this.title = short(text, 80); this.record(); }
     this.queue.push({ uuid: id, text, images: images.map((im) => ({ media_type: im.media_type, data: im.data })) });
     this.emit({ type: 'user', text: str(text, 200000), uuid: id, images: images.length });

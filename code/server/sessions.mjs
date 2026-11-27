@@ -147,7 +147,8 @@ export class Session {
     this.error = null;
     this.q = null;            // the SDK Query while a process runs
     this.unsent = new Set();  // uuids of prompts typed in the page that wait for the watch snapshot (not yet in the feed): Cancel can still withdraw them
-    this.delivered = 0;       // prompts given to the process since the session was last idle
+    this.sentBusy = false;    // busy only because a prompt was sent from idle, and Claude Code has been handed nothing since
+                              // (nor said it runs): withdrawing that prompt leaves nothing running (JON-626)
     this.feed = null;         // the prompts for the running process: {inbox, wake, closed}, one per process
     this.resetTo = null;      // Claude Code started a new conversation (conversation_reset): its id, handed over after the turn
     this.pluginsKey = null;   // what the process last reported loading (init, a reload)
@@ -238,7 +239,7 @@ export class Session {
   }
 
   setState(state, error = null) {
-    if (state === 'idle') this.delivered = 0;
+    if (state !== 'busy') this.sentBusy = false;
     if (this.state === state && this.error === error) return;
     this.state = state; this.error = error;
     this.mgr.onState(this);
@@ -434,7 +435,7 @@ export class Session {
     await feed.ready;
     while (!feed.closed) {
       if (!feed.inbox.length) await new Promise((r) => { feed.wake = r; });
-      while (feed.inbox.length && !feed.closed) yield feed.inbox.shift();
+      while (feed.inbox.length && !feed.closed) { this.sentBusy = false; yield feed.inbox.shift(); }
     }
   }
   endFeed() {
@@ -492,6 +493,7 @@ export class Session {
       for await (const m of q) {
         this.lastActive = Date.now();
         if (m?.type === 'system' && m.subtype === 'session_state_changed') {
+          this.sentBusy = false;   // (Claude Code tells its own state from here)
           if (m.state === 'idle') this.setState('idle'); else if (m.state === 'running') this.setState('busy');
         }
         this.observe(m);
@@ -584,7 +586,9 @@ export class Session {
     else if (this.open && startsTurn && this.modelRestart()) this.close('model');
     if (this.open) this.mgr.dropSettings(this.cwd);   // (no start: the decision made for one goes)
     if (!this.open) this.start({ resume: this.id });
-    const id = isUuid(uuid) ? uuid.toLowerCase() : crypto.randomUUID();
+    let id = isUuid(uuid) ? uuid.toLowerCase() : crypto.randomUUID();
+    if (this.unsent.has(id)) id = crypto.randomUUID();   // (the same id again while the first still waits: both are sent)
+    const fromIdle = this.state !== 'busy';
     // typed in the page: a human origin, stamped explicitly (absent, the CLI's strict trust gates fail closed)
     const feed = this.feed;
     this.preface = null;
@@ -594,7 +598,6 @@ export class Session {
     const deliver = () => {
       if (!this.unsent.delete(id)) return;   // (cancelled while it waited: it never reaches Claude Code)
       if (feed.closed) { this.emit({ type: 'local', text: 'That prompt was not delivered: the session\'s process ended meanwhile. Send it again.' }); return; }
-      this.delivered++;
       feed.inbox.push(msg); feed.wake?.(); feed.wake = null;
     };
     // A prompt that starts a turn waits (≤ WATCH_MS) for the watched files' snapshot: what the turn changes is told
@@ -608,6 +611,7 @@ export class Session {
     if (!this.title) this.title = short(text, 80);
     this.emit({ type: 'user', text: str(text, 200000), uuid: id, images: images.length });
     this.setState('busy');   // (prompts sent while busy wait in the CLI's queue: they run after the turn)
+    if (fromIdle) this.sentBusy = true;
   }
 
   /** Cancel a queued prompt before Claude Code answers it. Withdrawn here while it has not reached Claude Code (it waits for
@@ -619,7 +623,7 @@ export class Session {
     let withdrawn = this.unsent.delete(id);
     if (!withdrawn && this.feed) {
       const i = this.feed.inbox.findIndex((m) => m.uuid === id);
-      if (i >= 0) { this.feed.inbox.splice(i, 1); this.delivered--; withdrawn = true; }
+      if (i >= 0) { this.feed.inbox.splice(i, 1); withdrawn = true; }
     }
     let cancelled = withdrawn;
     if (!withdrawn) {
@@ -632,8 +636,9 @@ export class Session {
     }
     if (!cancelled) return { cancelled: false };
     this.emit({ type: 'unqueued', uuid: id });
-    // (a prompt that would have started the turn, withdrawn: nothing is running, so the session is not busy)
-    if (withdrawn && this.state === 'busy' && !this.unsent.size && !this.feed?.inbox.length && this.delivered === 0) this.setState('idle');
+    // (the prompts that made an idle session busy, all withdrawn before Claude Code got any: nothing runs. Busy for any
+    // other reason — Claude Code said it runs, or was handed a prompt — is Claude Code's to end)
+    if (withdrawn && this.state === 'busy' && this.sentBusy && !this.unsent.size && !this.feed?.inbox.length) this.setState('idle');
     return { cancelled: true };
   }
 

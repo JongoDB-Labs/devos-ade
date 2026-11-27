@@ -396,6 +396,58 @@ test('unqueue: a prompt Claude Code holds in its own queue is cancelled through 
   mgr.closeAll();
 });
 
+// a Claude Code that reads none of its prompts: they stay in the session's feed
+const deaf = () => {
+  const m = manager({ query: (a) => { const q = fakeQuery([])({ ...a, prompt: (async function* () { await new Promise(() => {}); })() }); m.queries.push(q); return q; } });
+  return m;
+};
+test('unqueue: a cancel ends "busy" only when the prompts that made an idle session busy reached nothing', async () => {
+  // Claude Code runs a prompt it took earlier (it says so): a later prompt cancelled in the feed leaves it running
+  {
+    const { mgr, queries } = deaf();
+    const s = mgr.get(mgr.open({}).id);
+    queries[0].emit({ type: 'system', subtype: 'session_state_changed', state: 'running' });
+    await tick(20);
+    assert.equal(s.state, 'busy');
+    s.prompt({ text: 'later', uuid: U2 });
+    assert.deepEqual(await s.unqueue({ uuid: U2 }), { cancelled: true });
+    assert.equal(s.state, 'busy', 'Claude Code still runs the earlier prompt');
+    mgr.closeAll();
+  }
+  // Claude Code said idle while a prompt still sat in the feed: that cancel, then a new prompt's, end busy each time
+  {
+    const { mgr, queries } = deaf();
+    const s = mgr.get(mgr.open({}).id);
+    s.prompt({ text: 'one', uuid: U1 });
+    queries[0].emit({ type: 'system', subtype: 'session_state_changed', state: 'idle' });
+    await tick(20);
+    assert.equal(s.state, 'idle');
+    assert.deepEqual(await s.unqueue({ uuid: U1 }), { cancelled: true });
+    assert.equal(s.state, 'idle');
+    s.prompt({ text: 'two', uuid: U2 });
+    assert.equal(s.state, 'busy');
+    assert.deepEqual(await s.unqueue({ uuid: U2 }), { cancelled: true });
+    assert.equal(s.state, 'idle', 'never stuck busy');
+    mgr.closeAll();
+  }
+});
+
+test('a prompt sent again with the same id while the first still waits for the snapshot: both reach Claude Code', async () => {
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const w = { snapshot: async () => { await gate; return { files: [] }; }, restore: async () => ({}) };
+  const { mgr, sent } = manager({ watcher: w });
+  const s = mgr.get(mgr.open({}).id);
+  s.prompt({ text: 'one', uuid: U1 });
+  s.prompt({ text: 'two', uuid: U1 });
+  release();
+  await tick(80);
+  assert.equal(sent.length, 2);
+  assert.equal(sent[0].uuid, U1);
+  assert.notEqual(sent[1].uuid, U1, 'the second gets an id of its own');
+  mgr.closeAll();
+});
+
 test('unqueue: no process, or an SDK without cancelAsyncMessage: cancelled false', async () => {
   const { mgr, queries } = manager();
   const s = mgr.get(mgr.open({}).id);

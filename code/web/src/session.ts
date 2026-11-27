@@ -224,11 +224,19 @@ export function applyEvent(v: SessionView, ev: Ev, now = Date.now()): SessionVie
       return startTurn(v, { text: ev.text, images: ev.images, uuid: ev.uuid }, now);
     }
     case 'unqueued': {
-      // a prompt of yours taken back before Claude answered it: gone from the queue, and from the list when it was
-      // already shown as waiting (a replay shows what the page saw then, in order)
+      // a prompt of yours taken back before Claude answered it: gone from the queue, and from the list — shown there as
+      // waiting, or already moved into the turn the page opened for it when the turn before ended (the cancel's answer
+      // came after that turn's result: Claude Code had not taken it yet). That turn goes with it when it was the turn's
+      // only prompt and nothing came after it, as in dropPrompt. (A prompt Claude Code folded into a turn was answered:
+      // never cancelled.) A replay shows what the page saw then, in order.
       const queued = v.queued.filter((q) => q.uuid !== ev.uuid);
-      const items = v.items.filter((it) => !(it.t === 'user' && it.queued && it.uuid === ev.uuid));
-      return queued.length === v.queued.length && items.length === v.items.length ? v : { ...v, queued, items };
+      const w = queued.length === v.queued.length ? v : { ...v, queued };
+      const i = w.items.findIndex((it) => it.t === 'user' && it.uuid === ev.uuid && !it.folded);
+      if (i < 0) return w;
+      const items = w.items.slice(0, i).concat(w.items.slice(i + 1));
+      const last = w.turns[w.turns.length - 1];
+      const alone = turnOpen(w) && i === w.items.length - 1 && (i === 0 || w.items[i - 1].t === 'result') && !(w.items[i] as Extract<Item, { t: 'user' }>).queued;
+      return alone && last ? { ...w, items, turns: w.turns.slice(0, -1), state: 'idle' } : { ...w, items };
     }
     case 'delta':
     case 'thinking_delta': {

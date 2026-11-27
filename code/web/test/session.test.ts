@@ -353,3 +353,30 @@ test('unqueued drops a queued message (and only that one), also after a replay o
   const flagged = { ...v, queued: [], items: [...v.items, { t: 'user' as const, k: 99, text: 'late', images: 0, uuid: U2, queued: true }] };
   assert.equal(applyEvent(flagged, { kind: 'unqueued', uuid: U2 }).items.some((i) => i.t === 'user' && i.uuid === U2), false);
 });
+
+test('unqueued after the turn ended: the prompt the page already moved into a new turn goes, and that turn with it when it was alone', () => {
+  // (the cancel was clicked while the turn ran; its answer came after the turn's result: Claude Code had not taken it)
+  const end: Ev = { kind: 'result', subtype: 'success', turns: 1, durationMs: 5, usage, isError: false };
+  const texts = (x: SessionView) => x.items.filter((i) => i.t === 'user').map((i) => (i.t === 'user' ? i.text : ''));
+  const base: Ev[] = [{ kind: 'user', text: 'first', uuid: U1, images: 0 }, { kind: 'user', text: 'second', uuid: U2, images: 0 }];
+  const ended = applyEvent(fold(base), end);
+  assert.equal(ended.state, 'busy', 'the page opened a turn for the waiting prompt');
+  const w = applyEvent(ended, { kind: 'unqueued', uuid: U2 });
+  assert.deepEqual(texts(w), ['first']);
+  assert.equal(w.state, 'idle', 'not left "working" with nothing running');
+  assert.equal(w.turns.length, 1);
+  assert.equal(applyEvent(w, { kind: 'unqueued', uuid: U2 }), w, 'the server\'s own event after the local one: nothing more');
+  // the same in a replay (the result before the cancel in the session's events)
+  assert.deepEqual(texts(fold([...base, end, { kind: 'unqueued', uuid: U2 }])), ['first']);
+  // two moved: whichever is cancelled, the other keeps the turn
+  const three = applyEvent(fold([...base, { kind: 'user', text: 'third', uuid: U3, images: 0 }]), end);
+  for (const [gone, kept] of [[U2, 'third'], [U3, 'second']] as const) {
+    const t = applyEvent(three, { kind: 'unqueued', uuid: gone });
+    assert.deepEqual(texts(t), ['first', kept]);
+    assert.equal(t.state, 'busy');
+    assert.equal(t.turns.length, 2);
+  }
+  // one Claude Code folded into the turn was answered: never taken out
+  const folded = applyEvent(fold(base), { ...end, consumed: [U2] } as Ev);
+  assert.equal(applyEvent(folded, { kind: 'unqueued', uuid: U2 }), folded);
+});
