@@ -112,7 +112,7 @@ code_models_rows() {
       # (a model id by the one rule above, valid_code_model_id: no "~" alias of OpenRouter, at most 128 characters)
       if (n >= ENVIRON["MAX"] + 0 || (id in seen) || id !~ /^[A-Za-z0-9][A-Za-z0-9._:\/-]*$/ || length(id) > 128) return
       seen[id] = 1; compat(id, tools, prov)
-      if (prov == "Local") { cs = LM_CS; cn = LM_CN }   # (the status and note of a local model: local_model_compat)
+      if (prov == "Local" || prov == "Remote") { cs = LM_CS; cn = LM_CN }   # (the status and note of a local model: local_model_compat)
       if ((cm == "" || cm == "-") && maxo != "" && maxo != "-") cm = maxo   # the provider limit OpenRouter names, unless a row of ours says
       if (cm !~ /^[1-9][0-9]*$/) cm = "-"
       n++; I[n] = id; N[n] = d(clean(name)); P[n] = prov; V[n] = d(clean(vend)); IN[n] = pin; OU[n] = pout; CR[n] = pcr; CW[n] = pcw
@@ -152,10 +152,12 @@ code_models_rows() {
       next
     }
     FILENAME == ENVIRON["F_LM"] {
-      # id name vendor compat note max_out context (local_models_code_rows): $0, on this computer — never spend
+      # id name vendor compat note max_out context [kind in out] (local_models_code_rows): $0, on this computer — never
+      # spend; a hosted model server (kind hosted, JON-849) is Remote, never free, at its prices (- while it has none)
       if ($1 == "" || $1 ~ /^#/) next
       LM_CS = ($4 ~ /^(works|chat-only|fails|untested)$/ ? $4 : "untested"); LM_CN = $5
-      add($1, $2, "Local", $3, 0, 0, "-", "-", 1, "", $6, $7)
+      if ($8 == "hosted") add($1, $2, "Remote", $3, num($9), num($10), "-", "-", 0, "", $6, $7)
+      else add($1, $2, "Local", $3, 0, 0, "-", "-", 1, "", $6, $7)
       next
     }
     FILENAME == ENVIRON["F_BX"] {
@@ -327,7 +329,7 @@ _code_json_str() { printf '"%s"' "$(printf '%s' "$1" | tr -d '\000-\037"\\')"; }
 
 # _code_prov_suffix PROVIDER -> " · OpenRouter" / " · Experiential Labs" after a model's name in /model; nothing for Bedrock
 # (a function: bash 3.2 cannot parse a case statement inside $(…))
-_code_prov_suffix() { case "$1" in OpenRouter | "Experiential Labs" | Local) printf ' · %s' "$1" ;; esac; }
+_code_prov_suffix() { case "$1" in OpenRouter | "Experiential Labs" | Local | Remote) printf ' · %s' "$1" ;; esac; }
 
 # code_picker_json [FILE] [AUTO_OFF(1|0)] -> the --settings JSON for devos-claude: Claude Code's /model menu lists the
 # listed models by their full ids with our names, prices and how they work (modelPicker, replacing its own lineup of

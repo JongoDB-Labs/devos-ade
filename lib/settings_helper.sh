@@ -29,6 +29,8 @@
 #                                        local-server {…,"op":"probe|save|models|key|remove","name":"…","url":"http(s)://…",
 #                                                      "trust":BOOL,"key":"<base64>","models":"id,id|*","ref":"<hex>"}
 #                                                      ./stack local-models server apply (the model-server form; lib/local_models.sh)
+#                                                      JON-849: the same with "kind":"self|hosted|" and "prices":"id=in;out,…" before "ref",
+#                                                      and op billing (change a saved server's kind and prices)
 #                                        local-probe  {…,"url":"http(s)://…","trust":BOOL,"key":"<base64>","ref":"<hex>"}
 #                                                      the form's "Check server" of THIS computer (localhost, 127.x, ::1): read-only, NO
 #                                                      "auth" (the portal writes it behind its session, CSRF and origin checks); the probe
@@ -67,7 +69,7 @@ PICK_MAX_PER_DAY="${PICK_MAX_PER_DAY:-10}"
 ACT_MAX_BYTES=3072   # (a project action carries a few more fields than a diagnostic; a local-model download a few more: its facts)
 # Local models (lib/local_models.sh): a download or a removal, started in the background (no stack lock while it downloads);
 # its progress is in .state/status/local-models.json. Every field fixed: a Hugging Face repo and quant name, never a path or URL.
-LOCAL_HELPER_ACTIONS="local-pull local-remove local-server local-probe local-discover local-stop local-runtime local-runtime-stop"
+LOCAL_HELPER_ACTIONS="local-pull local-remove local-server local-server-billing local-probe local-discover local-stop local-runtime local-runtime-stop"
 LOCAL_MIN_INTERVAL_S="${LOCAL_MIN_INTERVAL_S:-5}"
 LOCAL_MAX_PER_DAY="${LOCAL_MAX_PER_DAY:-200}"
 # The model-server check/add's own limits (local-server, local-probe): a probe is cheap and read-only, so more generous
@@ -347,8 +349,14 @@ act_check_request() {
   # optional groups and unbounded classes here and the lengths after)
   elif _sv_re "$body" '^\{"action":"(local-server)","requested_at":([0-9]{1,12}),"nonce":"([0-9a-f]{32})","auth":"([A-Za-z0-9+/]{4,}={0,2})","op":"(probe|save|models|key|remove)","name":"([a-z0-9][a-z0-9-]{0,23})?","url":"(https?://[]A-Za-z0-9._:[/~-]+)?","trust":(true|false),"key":"([A-Za-z0-9+/]*={0,2})","models":"([A-Za-z0-9._:/@+*,-]*)","ref":"([0-9a-f]{8,32})"\}$'; then
     action="${BASH_REMATCH[1]}"; ts="${BASH_REMATCH[2]}"; n="${BASH_REMATCH[3]}"; auth="${BASH_REMATCH[4]}"
-    project="${BASH_REMATCH[5]}|${BASH_REMATCH[6]}|${BASH_REMATCH[7]}|${BASH_REMATCH[8]}|${BASH_REMATCH[9]}|${BASH_REMATCH[10]}|${BASH_REMATCH[11]}"
+    project="${BASH_REMATCH[5]}|${BASH_REMATCH[6]}|${BASH_REMATCH[7]}|${BASH_REMATCH[8]}|${BASH_REMATCH[9]}|${BASH_REMATCH[10]}|${BASH_REMATCH[11]}||"
     [ "${#BASH_REMATCH[7]}" -le 200 ] && [ "${#BASH_REMATCH[9]}" -le 280 ] && [ "${#BASH_REMATCH[10]}" -le 1600 ] || { echo "a field is too long" >&2; return 1; }
+  # (the same with what the server is billed as and its prices, JON-849: kind self|hosted or empty, prices id=in;out,… or none; op billing
+  # changes only those. Packed as op|name|url|trust|key_b64|models|ref|kind|prices — the action stays local-server)
+  elif _sv_re "$body" '^\{"action":"(local-server)","requested_at":([0-9]{1,12}),"nonce":"([0-9a-f]{32})","auth":"([A-Za-z0-9+/]{4,}={0,2})","op":"(probe|save|models|key|remove|billing)","name":"([a-z0-9][a-z0-9-]{0,23})?","url":"(https?://[]A-Za-z0-9._:[/~-]+)?","trust":(true|false),"key":"([A-Za-z0-9+/]*={0,2})","models":"([A-Za-z0-9._:/@+*,-]*)","kind":"(self|hosted)?","prices":"([A-Za-z0-9._:/@+*,;=-]*)","ref":"([0-9a-f]{8,32})"\}$'; then
+    action="${BASH_REMATCH[1]}"; ts="${BASH_REMATCH[2]}"; n="${BASH_REMATCH[3]}"; auth="${BASH_REMATCH[4]}"
+    project="${BASH_REMATCH[5]}|${BASH_REMATCH[6]}|${BASH_REMATCH[7]}|${BASH_REMATCH[8]}|${BASH_REMATCH[9]}|${BASH_REMATCH[10]}|${BASH_REMATCH[13]}|${BASH_REMATCH[11]}|${BASH_REMATCH[12]}"
+    [ "${#BASH_REMATCH[7]}" -le 200 ] && [ "${#BASH_REMATCH[9]}" -le 280 ] && [ "${#BASH_REMATCH[10]}" -le 1600 ] && [ "${#BASH_REMATCH[12]}" -le 1600 ] || { echo "a field is too long" >&2; return 1; }
   # (the form's Check server: a probe of this computer's own addresses and nothing else, so no password — op probe-local, which
   # lib/local_models.sh refuses for any other address; another computer is checked through local-server, with the password.
   # auth is "-" from here on, which no password's base64 can be)
@@ -690,15 +698,15 @@ runtime_helper_start() {
 # local_server_start FIELDS — a model-server operation (op|name|url|trust|key_b64|models|ref), in the background: written to a
 # mode-600 file (the key is never on a command line) that ./stack local-models server apply reads and removes
 local_server_start() {
-  local f="$1" op name url trust key models ref rf
-  IFS='|' read -r op name url trust key models ref <<< "$f"
+  local f="$1" op name url trust key models ref kind prices rf
+  IFS='|' read -r op name url trust key models ref kind prices <<< "$f"
   if [ "$op" = discover ]; then   # (no request file: discover carries no address or key, only a ref; the ports are fixed in the stack)
     ( cd "$STACK_DIR" && exec env DEVOS_ADE_JOB_ORIGIN=helper DEVOS_ADE_NO_OPEN=1 NO_COLOR=1 "$STACK_DIR/stack" local-models server discover "$ref" ) \
       </dev/null > "$(helper_dir)/local-server.log" 2>&1 &
     return 0
   fi
   rf="$(mktemp "$(helper_dir)/server-req.XXXXXX")" || return 0; chmod 600 "$rf"
-  printf 'op=%s\nname=%s\nurl=%s\ntrust=%s\nkey=%s\nmodels=%s\nref=%s\n' "$op" "$name" "$url" "$trust" "$key" "$models" "$ref" > "$rf"
+  printf 'op=%s\nname=%s\nurl=%s\ntrust=%s\nkey=%s\nmodels=%s\nref=%s\nkind=%s\nprices=%s\n' "$op" "$name" "$url" "$trust" "$key" "$models" "$ref" "$kind" "$prices" > "$rf"
   ( cd "$STACK_DIR" && exec env DEVOS_ADE_JOB_ORIGIN=helper DEVOS_ADE_NO_OPEN=1 NO_COLOR=1 "$STACK_DIR/stack" local-models server apply "$rf" ) \
     </dev/null > "$(helper_dir)/local-server.log" 2>&1 &
 }

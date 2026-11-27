@@ -1281,3 +1281,163 @@ test_model_server_requests_are_counted_so_the_per_day_and_interval_caps_bite() {
   why="$(_act_limits local-server 2>&1)" && { echo "the interval did not bite" >&2; return 1; }
   assert_contains "$why" "too soon after the last one"
 }
+
+# --- JON-849: a model server is self-hosted (free, Local) or a hosted API (paid, Remote); the default comes from the address ---
+test_the_default_kind_follows_the_address_loopback_private_and_tailnet_are_self_hosted_a_public_host_is_hosted() {
+  local u
+  for u in http://localhost:11434 http://127.0.0.1:8000 'http://[::1]:8000' http://10.1.2.3 http://192.168.1.4:8000 http://172.16.0.9 http://172.31.255.1 \
+           http://169.254.1.1 http://100.64.0.1 http://100.127.255.254 'http://[fd12:3456::1]' 'http://[fc00::1]' 'http://[fe80::1]' 'http://[::ffff:10.0.0.1]' \
+           http://nas.local http://box.ts.net:8080 http://box.tail1234.ts.net http://printer.lan http://svc.internal http://vllm:8000 http://host.docker.internal:11434 http://NAS.LOCAL; do
+    [ "$(msrv_default_kind "$u")" = self ] || { echo "not self-hosted: $u -> $(msrv_default_kind "$u")"; return 1; }
+  done
+  for u in https://api.groq.com http://203.0.113.9:8000 http://8.8.8.8 http://172.15.0.1 http://172.32.0.1 http://100.63.255.255 http://100.128.0.1 'http://[2001:db8::1]' \
+           'http://[fe00::1]' https://api.together.xyz/v1 https://api.openai.com http://gpu.example.org:8000 http://notlocal.com; do
+    [ "$(msrv_default_kind "$u")" = hosted ] || { echo "not hosted: $u -> $(msrv_default_kind "$u")"; return 1; }
+  done
+  # the checked address (what the name resolved to) wins when it is known: a name that resolves to a private address is self-hosted
+  assert_eq "$(msrv_default_kind https://models.corp.example 10.0.0.7)" self
+  assert_eq "$(msrv_default_kind http://box.local 203.0.113.9)" hosted
+  assert_eq "$(msrv_default_kind http://localhost:1 127.0.0.1)" self
+}
+
+test_the_kind_and_price_lists_are_validated() {
+  valid_msrv_kinds ''; valid_msrv_kinds 'lab=self,groq=hosted'
+  ! valid_msrv_kinds 'lab=free'; ! valid_msrv_kinds 'lab'; ! valid_msrv_kinds 'Lab=self'
+  valid_msrv_prices ''; valid_msrv_prices 'groq:*=0.59;0.79,groq:llama-3.3-70b=1;2.5,oai:gpt-4o:2024=2.5;10'
+  ! valid_msrv_prices 'groq:*=0.59'; ! valid_msrv_prices 'groq:*=abc;1'; ! valid_msrv_prices 'groq:*=-1;1'; ! valid_msrv_prices 'groq=1;2'
+}
+
+test_a_server_saved_before_kinds_gets_the_default_for_its_address_and_a_saved_kind_wins() {
+  _lm_env "MODEL_SERVERS=lan=http://10.0.0.5:8000,pub=https://api.groq.com,mix=http://203.0.113.9:8000
+MODEL_SERVER_KINDS=mix=self
+"
+  _fake_srv 0 200 "$VLLM"
+  assert_eq "$(msrv_kind lan)" self                 # (no kind saved: a private address stays free, as before)
+  assert_eq "$(msrv_kind pub)" hosted               # (a public one becomes a hosted API: paid, never free)
+  assert_eq "$(msrv_kind mix)" self                 # (a saved kind wins over the address)
+}
+
+test_a_self_hosted_model_is_registered_at_zero_and_labelled_local_a_hosted_one_carries_its_prices_and_is_never_free() {
+  _lm_env "MODEL_SERVERS=lan=http://10.0.0.5:8000,groq=https://gpu.example.org
+MODEL_SERVER_MODELS=lan:*,groq:*
+MODEL_SERVER_KINDS=lan=self,groq=hosted
+MODEL_SERVER_PRICES=groq:*=0.59;0.79,groq:llama3:8b=1.5;2
+"
+  _fake_srv 0 200 "$VLLM"; msrv_probe_all
+  local y; y="$(local_models_yaml)"
+  # self-hosted: $0, exactly as before
+  assert_eq "$(printf '%s\n' "$y" | awk '/model_name: "ms\/lan\/qwen\/Qwen3-8B"/ { f = 1 } f && /input_cost_per_token/ { print $2; exit }')" 0
+  # hosted: the model's own price, else the server's, as plain decimals per token
+  assert_eq "$(printf '%s\n' "$y" | awk '/model_name: "ms\/groq\/llama3:8b"/ { f = 1 } f && /input_cost_per_token/ { print $2; exit }')" 0.0000015000
+  assert_eq "$(printf '%s\n' "$y" | awk '/model_name: "ms\/groq\/llama3:8b"/ { f = 1 } f && /output_cost_per_token/ { print $2; exit }')" 0.0000020000
+  assert_eq "$(printf '%s\n' "$y" | awk '/model_name: "ms\/groq\/qwen\/Qwen3-8B"/ { f = 1 } f && /input_cost_per_token/ { print $2; exit }')" 0.0000005900
+  assert_eq "$(printf '%s\n' "$y" | awk '/model_name: "ms\/groq\/qwen\/Qwen3-8B"/ { f = 1 } f && /output_cost_per_token/ { print $2; exit }')" 0.0000007900
+  # the YAML parses, and no hosted entry says $0
+  if command -v python3 >/dev/null && python3 -c 'import yaml' 2>/dev/null; then
+    printf 'model_list:\n%s\n' "$y" | python3 -c 'import sys, yaml; d = yaml.safe_load(sys.stdin); assert len(d["model_list"]) == 4, d'
+  fi
+  # the Code page rows: Local at $0 vs Remote at the prices; the kind and prices are the last three columns
+  local rows; rows="$(msrv_code_rows)"
+  assert_eq "$(printf '%s\n' "$rows" | awk -F'\t' '$1 == "ms/lan/llama3:8b" { print $8 " " $9 " " $10 }')" "self 0 0"
+  assert_eq "$(printf '%s\n' "$rows" | awk -F'\t' '$1 == "ms/groq/llama3:8b" { print $8 " " $9 " " $10 }')" "hosted 1.5 2"
+  assert_eq "$(printf '%s\n' "$rows" | awk -F'\t' '$1 == "ms/groq/qwen/Qwen3-8B" { print $8 " " $9 " " $10 }')" "hosted 0.59 0.79"
+  assert_contains "$(printf '%s\n' "$rows" | awk -F'\t' '$1 == "ms/groq/llama3:8b" { print $5 }')" "billed by its provider"
+  assert_not_contains "$(printf '%s\n' "$rows" | awk -F'\t' '$1 == "ms/groq/llama3:8b" { print $5 }')" "Free to use"
+  assert_contains "$(printf '%s\n' "$rows" | awk -F'\t' '$1 == "ms/lan/llama3:8b" { print $5 }')" "Free to use"
+}
+
+test_a_hosted_model_with_no_price_has_no_price_line_so_its_spend_is_unknown_never_zero() {
+  _lm_env "MODEL_SERVERS=oai=https://gpu.example.org
+MODEL_SERVER_MODELS=oai:*
+MODEL_SERVER_KINDS=oai=hosted
+"
+  _fake_srv 0 200 "$VLLM"; msrv_probe_all
+  local y; y="$(local_models_yaml)"
+  assert_contains "$y" 'model_name: "ms/oai/llama3:8b"'
+  assert_not_contains "$y" 'input_cost_per_token'
+  assert_not_contains "$y" 'output_cost_per_token'
+  local rows; rows="$(msrv_code_rows)"
+  assert_eq "$(printf '%s\n' "$rows" | awk -F'\t' '$1 == "ms/oai/llama3:8b" { print $8 " " $9 " " $10 }')" "hosted - -"
+  assert_contains "$(printf '%s\n' "$rows" | awk -F'\t' '$1 == "ms/oai/llama3:8b" { print $5 }')" "spend is unknown"
+}
+
+test_the_code_pages_rows_say_remote_not_free_for_a_hosted_server_and_unknown_when_it_has_no_price() {
+  _lm_env "MODEL_SERVERS=lan=http://10.0.0.5:8000,groq=https://gpu.example.org
+MODEL_SERVER_MODELS=lan:llama3:8b,groq:llama3:8b,groq:qwen/Qwen3-8B
+MODEL_SERVER_KINDS=lan=self,groq=hosted
+MODEL_SERVER_PRICES=groq:llama3:8b=1.5;2
+"
+  _fake_srv 0 200 "$VLLM"; msrv_probe_all
+  CATALOG="$TMP/cat.tsv"; printf 'claude-big\tchat\tbedrock/invoke/us.anthropic.big\t-\t-\n' > "$CATALOG"
+  CODE_COMPAT="$TMP/compat.tsv"; : > "$CODE_COMPAT"; CODE_DISPLAY_TSV=/dev/null; PRICES=/dev/null; export CODE_COMPAT CODE_DISPLAY_TSV PRICES CATALOG
+  local rows; rows="$(code_models_rows "")"
+  col() { printf '%s\n' "$rows" | awk -F'\t' -v i="$1" -v c="$2" '$1 == i { print $c }'; }
+  # provider, in, out, free
+  assert_eq "$(col ms/lan/llama3:8b 3) $(col ms/lan/llama3:8b 9) $(col ms/lan/llama3:8b 5)" "Local 1 0"
+  assert_eq "$(col ms/groq/llama3:8b 3) $(col ms/groq/llama3:8b 9) $(col ms/groq/llama3:8b 5) $(col ms/groq/llama3:8b 6)" "Remote 0 1.5 2"
+  assert_eq "$(col ms/groq/qwen/Qwen3-8B 3) $(col ms/groq/qwen/Qwen3-8B 9) $(col ms/groq/qwen/Qwen3-8B 5) $(col ms/groq/qwen/Qwen3-8B 6)" "Remote 0 - -"
+  assert_eq "$(_code_price "$(col ms/groq/qwen/Qwen3-8B 5)" "$(col ms/groq/qwen/Qwen3-8B 6)" "$(col ms/groq/qwen/Qwen3-8B 9)")" "price unknown"
+  assert_eq "$(_code_price "$(col ms/groq/llama3:8b 5)" "$(col ms/groq/llama3:8b 6)" "$(col ms/groq/llama3:8b 9)")" '$1.50/$2.00 per 1M'
+  assert_eq "$(_code_price "$(col ms/lan/llama3:8b 5)" "$(col ms/lan/llama3:8b 6)" "$(col ms/lan/llama3:8b 9)")" 'free ($0)'
+  # a hosted model is never the model Claude Code's own work follows for free
+  ! code_bg_follows ms/groq/qwen/Qwen3-8B claude-big
+}
+
+test_adding_a_server_stores_its_kind_by_address_or_as_asked_and_kind_and_price_commands_change_it_live() {
+  _lm_env ''; _fake_apply; _fake_srv 0 200 "$VLLM"
+  msrv_add lab 10.0.0.5:8000 >/dev/null 2>&1
+  assert_eq "$(get_env MODEL_SERVER_KINDS)" "lab=self"
+  msrv_add groq https://gpu.example.org >/dev/null 2>&1
+  assert_eq "$(get_env MODEL_SERVER_KINDS)" "lab=self,groq=hosted"                      # (public address: hosted by default)
+  msrv_add forced https://lab.example.org --self >/dev/null 2>&1
+  msrv_add paid 192.168.1.9:9000 --hosted >/dev/null 2>&1
+  assert_eq "$(get_env MODEL_SERVER_KINDS)" "lab=self,groq=hosted,forced=self,paid=hosted"
+  msrv_set_kind forced hosted >/dev/null 2>&1; assert_eq "$(msrv_kind forced)" hosted
+  ! ( msrv_set_kind forced bogus ) >/dev/null 2>&1
+  ! ( msrv_set_kind nope self ) >/dev/null 2>&1
+  msrv_set_price groq '*' 0.59 0.79 >/dev/null 2>&1;      assert_eq "$(get_env MODEL_SERVER_PRICES)" 'groq:*=0.59;0.79'
+  msrv_set_price groq llama3:8b 1 2 >/dev/null 2>&1;      assert_eq "$(get_env MODEL_SERVER_PRICES)" 'groq:*=0.59;0.79,groq:llama3:8b=1;2'
+  msrv_set_price groq '*' 0.6 0.8 >/dev/null 2>&1;        assert_eq "$(get_env MODEL_SERVER_PRICES)" 'groq:llama3:8b=1;2,groq:*=0.6;0.8'
+  ! ( msrv_set_price groq llama3:8b abc 2 ) >/dev/null 2>&1
+  assert_eq "$(msrv_price groq llama3:8b)" "1;2"; assert_eq "$(msrv_price groq other)" "0.6;0.8"; assert_eq "$(msrv_price lab x)" ""
+  msrv_set_price groq llama3:8b clear >/dev/null 2>&1;    assert_eq "$(get_env MODEL_SERVER_PRICES)" 'groq:*=0.6;0.8'
+  msrv_rm groq >/dev/null 2>&1
+  assert_eq "$(get_env MODEL_SERVER_PRICES)" ""; assert_eq "$(get_env MODEL_SERVER_KINDS)" "lab=self,paid=hosted,forced=hosted"
+}
+
+test_the_settings_form_saves_a_hosted_server_with_prices_and_the_billing_op_changes_them() {
+  _lm_env ''; _fake_apply; _fake_srv 0 200 "$VLLM"
+  msrv_apply_op save groq https://gpu.example.org 0 '' '*' hosted '*=0.59;0.79' >/dev/null 2>&1
+  assert_eq "$(get_env MODEL_SERVER_KINDS)" "groq=hosted"
+  assert_eq "$(get_env MODEL_SERVER_PRICES)" 'groq:*=0.59;0.79'
+  assert_contains "$(local_models_yaml)" 'model_name: "ms/groq/llama3:8b"'
+  # a save with no kind keeps the one it has; the address's default only for a new server
+  msrv_apply_op save lan http://10.0.0.5:8000 0 '' '*' '' '' >/dev/null 2>&1
+  assert_eq "$(get_env MODEL_SERVER_KINDS)" "groq=hosted,lan=self"
+  msrv_apply_op save groq https://gpu.example.org 0 '' '*' '' '' >/dev/null 2>&1
+  assert_eq "$(get_env MODEL_SERVER_KINDS)" "lan=self,groq=hosted"; assert_eq "$(get_env MODEL_SERVER_PRICES)" 'groq:*=0.59;0.79'
+  # billing: change the kind and the prices of a saved server; "none" removes the prices
+  msrv_apply_op billing lan '' 0 '' '' hosted 'llama3:8b=3;4' >/dev/null 2>&1
+  assert_eq "$(msrv_kind lan)" hosted; assert_eq "$(msrv_price lan llama3:8b)" "3;4"
+  msrv_apply_op billing lan '' 0 '' '' self none >/dev/null 2>&1
+  assert_eq "$(msrv_kind lan)" self; assert_eq "$(get_env MODEL_SERVER_PRICES)" 'groq:*=0.59;0.79'
+  ! ( msrv_apply_op billing lan '' 0 '' '' hosted 'llama3:8b=x;4' ) >/dev/null 2>&1
+  ! ( msrv_apply_op billing nope '' 0 '' '' hosted '' ) >/dev/null 2>&1
+  # the status file the page reads carries each server's kind and prices
+  msrv_probe_all; local_status_write
+  assert_contains "$(cat "$(local_status_file)")" '"kind":"hosted","prices":"*=0.59;0.79"'
+  assert_contains "$(cat "$(local_status_file)")" '"kind":"self","prices":""'
+}
+
+test_a_request_file_from_the_helper_carries_kind_and_prices_to_the_apply_and_an_old_one_still_works() {
+  _lm_env ''; _fake_apply; _fake_srv 0 200 "$VLLM"
+  local rf="$TMP/req"
+  printf 'op=save\nname=groq\nurl=https://gpu.example.org\ntrust=false\nkey=\nmodels=*\nref=0123456789abcdef\nkind=hosted\nprices=*=2;6\n' > "$rf"
+  msrv_apply "$rf" >/dev/null 2>&1
+  assert_eq "$(get_env MODEL_SERVER_KINDS)" "groq=hosted"; assert_eq "$(get_env MODEL_SERVER_PRICES)" '*=2;6' || true
+  assert_eq "$(msrv_price groq anything)" "2;6"
+  assert_contains "$(cat "$(local_dir)/server-result.json")" '"ok":true'
+  printf 'op=save\nname=lab\nurl=http://10.0.0.5:8000\ntrust=false\nkey=\nmodels=*\nref=0123456789abcdef\n' > "$rf"     # (no kind, no prices: the shape from before)
+  msrv_apply "$rf" >/dev/null 2>&1
+  assert_eq "$(msrv_kind lab)" self
+}

@@ -305,6 +305,7 @@
     const badges = el("span", { class: "mb-badges" });
     badges.append(el("span", { class: "badge mb-prov", "data-provider": r.provider, text: PROV[r.provider] }));
     if (r.local && r.provider === "server") badges.append(el("span", { class: "badge", text: r.vendor.replace(/^on /, "") }));
+    if (r.remote) badges.append(el("span", { class: "badge", "data-tone": "warn", text: "Remote" }));
     if (r.free) badges.append(el("span", { class: "badge", "data-tone": "on", text: "Free" }));
     if (r.tools === true) badges.append(el("span", { class: "badge", text: "Tools" }));
     if (r.images === true) badges.append(el("span", { class: "badge", text: "Images" }));

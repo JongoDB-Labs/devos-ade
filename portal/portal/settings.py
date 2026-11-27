@@ -88,7 +88,7 @@ SESSIONS = "sessions.json"                     # what DevOS ADE may read of your
 SESSIONS_TOOLS = ("claude", "claude-bedrock")   # (claude-bedrock: devos-claude's sessions, by its internal name)
 # Your AI subscriptions (lib/subscriptions.sh): ask the sandbox again, or a tool's own sign-out — by its id, never more
 # (…-chat: the same for Chat's sandbox, its own sign-ins: --chat — of the Chat models with a sign-out command)
-LOCAL_SERVER_OPS = ("probe", "save", "models", "key", "remove")
+LOCAL_SERVER_OPS = ("probe", "save", "models", "key", "remove", "billing")
 LOCAL_ACTIONS = ("local-pull", "local-remove")   # (lib/settings_helper.sh LOCAL_HELPER_ACTIONS: Local models, lib/local_models.sh)
 SUBS_ACTIONS = ("subscriptions-check", "subscriptions-signout", "subscriptions-check-chat", "subscriptions-signout-chat")
 SUBS_SIGNOUT_TOOLS = ("claude", "codex", "cursor", "grok")   # (Gemini CLI and Copilot sign out inside them)
@@ -272,7 +272,7 @@ def capability(status_dir: Path, now: float | None = None) -> dict:
     sessions = [a for a in d.get("sessions") or [] if a in SESSIONS_ACTIONS + SESSIONS_REQUESTS] if ok else []
     subs = [a for a in d.get("subscriptions") or [] if a in SUBS_ACTIONS] if ok else []
     local = [a for a in d.get("local") or [] if a in LOCAL_ACTIONS + ("local-server", "local-probe", "local-discover", "local-stop",
-                                                                      "local-runtime", "local-runtime-stop")] if ok else []
+                                                                      "local-runtime", "local-runtime-stop", "local-server-billing")] if ok else []
     return {"settings": ok, "diagnostics": acts, "projects": projects, "sessions": sessions, "subscriptions": subs, "local": local,
             "screen": ok and d.get("screen") is True}
 
@@ -962,26 +962,34 @@ def write_runtime_action(request_dir: Path, op: str, runtime: str, password: str
 _MSRV_NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,23}")
 _MSRV_REQ_URL = re.compile(r"https?://[]A-Za-z0-9._:[/~-]{1,200}")
 _MSRV_KEY = re.compile(r"[A-Za-z0-9._~+/=-]{1,200}")
+_MSRV_KIND = re.compile(r"self|hosted")
+# JON-849: id=IN;OUT entries (US dollars per million input / output tokens; id * is the server's default), or "none" to clear
+_MSRV_PRICES = re.compile(r"(\*|[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,127})=[0-9]{1,6}(\.[0-9]{1,6})?;[0-9]{1,6}(\.[0-9]{1,6})?"
+                          r"(,(\*|[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,127})=[0-9]{1,6}(\.[0-9]{1,6})?;[0-9]{1,6}(\.[0-9]{1,6})?)*|none")
 _MSRV_MODELS = re.compile(r"(\*|[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,127})(,(\*|[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,127}))*")
 
 
 def write_local_server_action(request_dir: Path, password: str, op: str, *, name: str = "", url: str = "", trust: bool = False,
-                              key: str = "", models: str = "", ref: str = "", now: float | None = None) -> str:
+                              key: str = "", models: str = "", ref: str = "", kind: str = "", prices: str = "",
+                              now: float | None = None) -> str:
     """REQUEST_DIR/act-<nonce>.json: one model-server operation for the helper, with the password — probe a candidate
     address (nothing saved), save it with the models to register, change a saved server's models or key (key "" removes
     it), or remove it. The API key travels base64 in this one owner-only file, like the password; it is never echoed
     anywhere. Every field is checked here and again by the helper. -> nonce"""
     if op not in LOCAL_SERVER_OPS or (name and not _MSRV_NAME.fullmatch(name)) or (url and not _MSRV_REQ_URL.fullmatch(url)) \
             or (key and not _MSRV_KEY.fullmatch(key)) or (models and not _MSRV_MODELS.fullmatch(models)) or len(models) > 1600 \
-            or not re.fullmatch(r"[0-9a-f]{8,32}", ref):
+            or not re.fullmatch(r"[0-9a-f]{8,32}", ref) or (kind and not _MSRV_KIND.fullmatch(kind)) \
+            or (prices and (not _MSRV_PRICES.fullmatch(prices) or len(prices) > 1600)):
         raise ValueError("bad request")
-    if op in ("save", "models", "key", "remove") and not name or op in ("probe", "save") and not url:
+    if op in ("save", "models", "key", "remove", "billing") and not name or op in ("probe", "save") and not url:
         raise ValueError("bad request")
     if len(password.encode("utf-8", "surrogatepass")) > MAX_AUTH:
         raise ValueError("password too long")
     nonce = secrets.token_hex(16)
     body = {"action": "local-server", "requested_at": int(time.time() if now is None else now), "nonce": nonce, "auth": _b64(password),
             "op": op, "name": name, "url": url, "trust": bool(trust), "key": _b64(key) if key else "", "models": models, "ref": ref}
+    if kind or prices:   # (what it is billed as, JON-849: the helper's second shape of this request, kind and prices before ref)
+        body = {**{k: v for k, v in body.items() if k != "ref"}, "kind": kind, "prices": prices, "ref": ref}
     raw = json.dumps(body, separators=(",", ":")).encode("ascii")
     if len(raw) > 3072:   # (the helper's limit: lib/settings_helper.sh ACT_MAX_BYTES)
         raise ValueError("too large")

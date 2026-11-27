@@ -186,3 +186,19 @@ test('JON-816: a local model (downloaded from Hugging Face, run on this computer
   assert.deepEqual(modelSections(bn.models, { all: true }).map((s) => s.group), ['anthropic', 'local']);
   assert.ok(modelMatches(m, 'local free'));
 });
+
+test('JON-849: a hosted model server\'s model is Remote, never free, in its own group; its price is its own or unknown (never $0)', () => {
+  const bn = normModels({ models: [
+    { id: 'ms/groq/llama-3.3-70b', name: 'llama-3.3-70b', provider: 'Remote', vendor: 'groq', compat: 'untested', listed: true, free: true, input_per_mtok: 0.59, output_per_mtok: 0.79 },
+    { id: 'ms/groq/mystery', name: 'mystery', provider: 'Remote', vendor: 'groq', compat: 'untested', listed: true },
+    { id: 'ms/nas/qwen', name: 'qwen', provider: 'Local', vendor: 'nas', compat: 'untested', listed: true },
+  ] });
+  const [priced, unknown, lan] = bn.models;
+  assert.deepEqual([priced.provider, priced.free, priced.input, priced.output], ['Remote', false, 0.59, 0.79]);   // (even a row that says free)
+  assert.deepEqual([unknown.provider, unknown.free, unknown.input, unknown.output], ['Remote', false, null, null]);   // unknown, not $0
+  assert.equal(groupOf(priced), 'remote');
+  assert.equal(groupOf(lan), 'local');
+  assert.deepEqual(modelSections(bn.models, { all: true }).map((s) => s.group), ['local', 'remote']);
+  assert.ok(modelMatches(priced, 'remote'));
+  assert.ok(!modelMatches(priced, 'free'));
+});

@@ -29,7 +29,7 @@
     "remote-preview": ["the web app", "the web server"] };
   // the settings the model gateway takes without a restart (lib/litellm_live.sh: only its model list changes): a badge
   // that says so, instead of what their apply class restarts for a key
-  const LIVE = new Set(["EXPLABS_MODELS", "OPENROUTER_MODELS", "OPENROUTER_MAX_MODELS", "OPENROUTER_INCLUDE_ALIASES", "CODE_MODELS", "CODE_DEFAULT_MODEL", "BEDROCK_MODELS", "LOCAL_MODELS", "MODEL_SERVERS", "MODEL_SERVER_MODELS"]);
+  const LIVE = new Set(["EXPLABS_MODELS", "OPENROUTER_MODELS", "OPENROUTER_MAX_MODELS", "OPENROUTER_INCLUDE_ALIASES", "CODE_MODELS", "CODE_DEFAULT_MODEL", "BEDROCK_MODELS", "LOCAL_MODELS", "MODEL_SERVERS", "MODEL_SERVER_MODELS", "MODEL_SERVER_KINDS", "MODEL_SERVER_PRICES"]);
   // what removing a key does, in each key's own words (the keys share one form; lib/settings.sh _cfg_post, _stt_apply)
   const REMOVE_KEY = {
     or_key: "OpenRouter's models disappear from Chat and the API; the model gateway and the web app restart (about 40 s).",
@@ -2462,7 +2462,8 @@
       else if (what.kind === "action") [r, d] = await post("/api/settings/action", { password: pw, action: what.action });
       else if (what.kind === "sessions") [r, d] = await post("/api/settings/sessions", { password: pw, action: what.action, project: what.project, tool: what.tool });
       else if (what.kind === "subscriptions") [r, d] = await post("/api/settings/subscriptions", { password: pw, action: what.action, ...(what.tool ? { tool: what.tool } : {}) });
-      else if (what.kind === "server") [r, d] = await post("/api/local-models/server", { password: pw, op: what.op, name: what.name || "", url: what.url || "", trust: what.trust === true, key: what.key || "", models: what.models || [] });
+      else if (what.kind === "server") [r, d] = await post("/api/local-models/server", { password: pw, op: what.op, name: what.name || "", url: what.url || "", trust: what.trust === true, key: what.key || "", models: what.models || [],
+        ...(what.skind ? { kind: what.skind } : {}), ...(what.prices ? { prices: what.prices } : {}) });
       else if (what.kind === "local") [r, d] = await post("/api/local-models/change", { password: pw, action: what.action, repo: what.repo, quant: what.quant });
       else if (what.kind === "runtime") [r, d] = await post("/api/local-models/runtime", { password: pw, op: what.op, id: what.id });
       else if (what.kind === "project") {

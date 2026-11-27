@@ -585,6 +585,10 @@ valid_msrv_list() {
 }
 valid_msrv_keys() { [ -z "$1" ] && return 0; ! printf '%s' "$1" | tr ',' '\n' | grep -vE '^[a-z0-9][a-z0-9-]{0,23}=([0-9a-f]{16}:)?[A-Za-z0-9._~+/=-]{1,200}$' >/dev/null; }
 valid_msrv_models() { [ -z "$1" ] || ! printf '%s' "$1" | tr ',' '\n' | grep -vE '^[a-z0-9][a-z0-9-]{0,23}:(\*|[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,127})$' >/dev/null; }
+# MODEL_SERVER_KINDS: name=self|hosted, comma separated (self: this network / self-hosted, free; hosted: a paid hosted API, JON-849).
+# MODEL_SERVER_PRICES: name:ID=IN;OUT (USD per million input / output tokens; ID may be * = the server's default), comma separated.
+valid_msrv_kinds() { [ -z "$1" ] || ! printf '%s' "$1" | tr ',' '\n' | grep -vE '^[a-z0-9][a-z0-9-]{0,23}=(self|hosted)$' >/dev/null; }
+valid_msrv_prices() { [ -z "$1" ] || ! printf '%s' "$1" | tr ',' '\n' | grep -vE '^[a-z0-9][a-z0-9-]{0,23}:(\*|[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,127})=[0-9]{1,6}(\.[0-9]{1,6})?;[0-9]{1,6}(\.[0-9]{1,6})?$' >/dev/null; }
 
 # msrv_norm_url URL -> the stored form (scheme://host[:port][/path], no /v1, no trailing slash), or fails: userinfo, query and
 # fragments are refused (a key in a URL would be logged)
@@ -663,6 +667,45 @@ msrv_reached_as() {
     http://*) [ "$g" = "$(msrv_url "$1")/v1" ] && printf '%s\n' "$g" || printf 'reached by the checked address %s (the name is kept for display)\n' "$a" ;;
     *) printf '%s (by name, re-checked about once a minute)\n' "$g" ;;
   esac
+}
+# --- what a server is billed as (JON-849): "self" (this network / self-hosted: free, labelled Local) or "hosted" (a paid
+# hosted API: labelled Remote, spend booked at its prices, never free). The default comes from the address.
+# _msrv_selfaddr ADDR -> 0 for an address on this computer or network: loopback, RFC 1918, link-local, 100.64.0.0/10 (tailnet), fc00::/7
+_msrv_selfaddr() {
+  _msrv_private "$1" && return 0
+  case "$1" in 169.254.* | fe[89ab]* | ::ffff:169.254.* | ::ffff:172.1[6-9].* | ::ffff:172.2[0-9].* | ::ffff:172.3[01].* | ::ffff:100.6[4-9].* | ::ffff:100.[7-9][0-9].* | ::ffff:100.1[01][0-9].* | ::ffff:100.12[0-7].*) return 0 ;; esac
+  return 1
+}
+# msrv_host URL -> the host part, lower case, without brackets and port
+msrv_host() {
+  local rest hp; rest="${1#*://}"; hp="${rest%%/*}"
+  case "$hp" in \[*\]*) hp="${hp%%]*}"; hp="${hp#\[}" ;; *) hp="${hp%%:*}" ;; esac
+  printf '%s\n' "$hp" | tr 'A-Z' 'a-z'
+}
+# msrv_default_kind URL [CHECKED_ADDRESS] -> self | hosted. The checked address (what the name resolved to) decides when known;
+# else the host as typed: loopback, private, link-local and tailnet literals, localhost, *.local, *.lan, *.internal,
+# *.home.arpa, *.localdomain, *.ts.net and a name with no dot (this stack's own host names) mean self; anything else hosted.
+msrv_default_kind() {
+  local h; h="$(msrv_host "$1")"
+  if [ -n "${2:-}" ]; then _msrv_selfaddr "$2" && echo self || echo hosted; return 0; fi
+  case "$h" in
+    localhost | *.local | *.lan | *.internal | *.home.arpa | *.localdomain | *.ts.net | host.docker.internal) echo self; return 0 ;;
+    [0-9]*.[0-9]*.[0-9]*.[0-9]*) _msrv_selfaddr "$h" && echo self || echo hosted; return 0 ;;
+    *:*) _msrv_selfaddr "$h" && echo self || echo hosted; return 0 ;;
+    *.*) echo hosted; return 0 ;;
+  esac
+  echo self
+}
+# msrv_kind NAME -> self | hosted: the one saved for it, else the default for its address (so a server saved before
+# kinds existed keeps working: a private address stays self-hosted, a public one becomes hosted)
+msrv_kind() {
+  local k; k="$(_msrv_items MODEL_SERVER_KINDS | awk -F= -v n="$1" '$1 == n && !d++ { print $2 }')"
+  case "$k" in self | hosted) printf '%s\n' "$k"; return 0 ;; esac
+  msrv_default_kind "$(msrv_url "$1")" "$(msrv_addr_of "$1")"
+}
+# msrv_price NAME ID -> "IN;OUT" (USD per million tokens) for that model: its own entry, else the server's (name:*); nothing without
+msrv_price() {
+  _msrv_items MODEL_SERVER_PRICES | awk -F= -v n="$1" -v i="$2" '{ k = $1; v = substr($0, length(k) + 2) } k == n ":" i { a = v } k == n ":*" { b = v } END { print (a != "" ? a : b) }'
 }
 # msrv_warn URL -> a plain-http warning for a public address (private ranges, localhost and *.local/ts.net are fine)
 msrv_warn() {   # msrv_warn URL [TRUST(1|0) [CHECKED_ADDRESS]]
@@ -798,29 +841,56 @@ msrv_enabled() {
     fi
   done | awk -F'\t' '!s[$1 "/" $2]++' | head -n "$LOCAL_MODELS_MAX"
 }
+# _msrv_per_token IN_PER_MILLION -> USD per token as a plain decimal (no exponent: YAML 1.1 reads 5e-07 as text)
+_msrv_per_token() { awk -v v="$1" 'BEGIN { printf "%.10f\n", v / 1000000 }'; }
+# msrv_cost_lines NAME ID -> the LiteLLM cost lines of a model: a self-hosted one is free ($0); a hosted one carries its
+# prices (per model, else per server); with none, no price line at all — LiteLLM then prices it from its own price map when it
+# knows the id, and otherwise records no price: the spend is unknown, never claimed to be $0
+msrv_cost_lines() {
+  local p
+  if [ "$(msrv_kind "$1")" = hosted ]; then
+    p="$(msrv_price "$1" "$2")"
+    [ -n "$p" ] || return 0
+    printf '      input_cost_per_token: %s\n      output_cost_per_token: %s\n' "$(_msrv_per_token "${p%%;*}")" "$(_msrv_per_token "${p#*;}")"
+  else
+    printf '      input_cost_per_token: 0\n      output_cost_per_token: 0\n'
+  fi
+}
 msrv_yaml() {
-  local n id ctx key base note
+  local n id ctx key base note ssl costs
   while IFS=$'\t' read -r n id ctx; do
     base="$(msrv_gateway_url "$n")" || continue; key="$(msrv_key "$n")"
     [ -n "$key" ] || { note="$(msrv_key_note "$n")"; [ -z "$note" ] || warn "model server $n: $note" >&2; }
-    printf '  - model_name: "ms/%s/%s"\n    litellm_params:\n      model: "openai/%s"\n      api_base: "%s"\n      api_key: "%s"\n%s      timeout: 600\n      input_cost_per_token: 0\n      output_cost_per_token: 0\n    model_info:\n      mode: "chat"\n' \
-      "$n" "$id" "$id" "$base" "${key:-none}" "$([ "$(msrv_trust "$n")" = 1 ] && printf '      ssl_verify: false\n')"
+    # ($(...) drops a trailing newline: each extra block is given its own, so the next line starts on a line of its own)
+    ssl=''; [ "$(msrv_trust "$n")" != 1 ] || ssl=$'      ssl_verify: false\n'
+    costs="$(msrv_cost_lines "$n" "$id")"; [ -z "$costs" ] || costs="$costs"$'\n'
+    printf '  - model_name: "ms/%s/%s"\n    litellm_params:\n      model: "openai/%s"\n      api_base: "%s"\n      api_key: "%s"\n%s      timeout: 600\n%s    model_info:\n      mode: "chat"\n' \
+      "$n" "$id" "$id" "$base" "${key:-none}" "$ssl" "$costs"
   done < <(msrv_enabled)
 }
-# msrv_code_rows -> rows for the Code page: id name vendor compat note max_out context
+# msrv_code_rows -> rows for the Code page: id name vendor compat note max_out context kind(self|hosted) in out (USD per
+# million; - when a hosted model has no price)
 msrv_code_rows() {
-  local n id ctx st mo note
+  local n id ctx st mo note kind p pin pout
   while IFS=$'\t' read -r n id ctx; do
     st="$(msrv_status_of "$n")"; mo="$LOCAL_MAX_OUT"; case "$ctx" in '' | 0 | *[!0-9]*) ctx=- ;; *) [ "$((ctx / 2))" -ge "$mo" ] || mo=$((ctx / 2)) ;; esac
-    note="On $n ($(msrv_reached_as "$n")). Tool use is not known: a self-hosted model may call tools wrongly or not at all; each answer is capped at $LOCAL_MAX_OUT tokens. Free to use."
+    kind="$(msrv_kind "$n")"; pin=0; pout=0
+    if [ "$kind" = hosted ]; then
+      p="$(msrv_price "$n" "$id")"; if [ -n "$p" ]; then pin="${p%%;*}"; pout="${p#*;}"; else pin=-; pout=-; fi
+      note="On $n, a hosted API ($(msrv_reached_as "$n")), billed by its provider: $([ "$pin" = - ] && echo 'no price is set here, so the spend is unknown (./stack local-models server price)' || echo "\$$pin in / \$$pout out per million tokens"). Tool use is not known; each answer is capped at $LOCAL_MAX_OUT tokens."
+    else
+      note="On $n ($(msrv_reached_as "$n")). Tool use is not known: a self-hosted model may call tools wrongly or not at all; each answer is capped at $LOCAL_MAX_OUT tokens. Free to use."
+    fi
     [ "${st%%$'\t'*}" != down ] || note="UNAVAILABLE at the last check: ${st#*$'\t'}. $note"
-    printf 'ms/%s/%s\t%s\t%s\tuntested\t%s\t%s\t%s\n' "$n" "$id" "$(printf '%s' "$id" | tr -d '\t"\\')" "$n" "$(printf '%s' "$note" | tr -d '\t"\\')" "$mo" "$ctx"
+    printf 'ms/%s/%s\t%s\t%s\tuntested\t%s\t%s\t%s\t%s\t%s\t%s\n' "$n" "$id" "$(printf '%s' "$id" | tr -d '\t"\\')" "$n" "$(printf '%s' "$note" | tr -d '\t"\\')" "$mo" "$ctx" "$kind" "$pin" "$pout"
   done < <(msrv_enabled)
 }
 # msrv_set_list KEY NEW — one settings change (live in LiteLLM)
 msrv_put() { CFG_ORDER=''; cfg_put "$1" "$2"; config_apply local cli ''; }
-msrv_add() {  # msrv_add NAME URL [--trust] — the key (if any) is given with ./stack local-models server key NAME
-  local n="${1:-}" u="${2:-}" trust="${3:-}" cur new ne r w
+msrv_add() {  # msrv_add NAME URL [--trust] [--hosted|--self] — the key (if any) is given with ./stack local-models server key NAME
+  local n="${1:-}" u="${2:-}" trust='' kind='' a cur new ne r w
+  shift 2 || true
+  for a in "$@"; do case "$a" in --trust) trust=--trust ;; --hosted) kind=hosted ;; --self | --self-hosted) kind=self ;; *) die "not an option: $a (use --trust, --hosted or --self)" ;; esac; done
   valid_msrv_name "$n" || die "the name is lowercase letters, digits and - (at most 24)"
   u="$(msrv_norm_url "$u")" || die "that is not a server address: use http(s)://host[:port] (no user:password@, no query)"
   [ -z "$(msrv_url "$n")" ] || die "there is already a server named $n (./stack local-models server rm $n first)"
@@ -830,8 +900,9 @@ msrv_add() {  # msrv_add NAME URL [--trust] — the key (if any) is given with .
   r="$(msrv_target "$u")"
   case "$r" in blocked* | numeric*) die "refused: ${r#*$'\t'}" ;; esac
   w="$(msrv_warn "$u" "$([ "$trust" = --trust ] && echo 1 || echo 0)" "$(printf '%s' "$r" | cut -f2)")"; [ -z "$w" ] || warn "$w"
-  CFG_ORDER=''; cfg_put MODEL_SERVERS "$new"; config_apply local cli ''
-  log "added $n ($(msrv_reached_as "$n")); probing"
+  [ -n "$kind" ] || kind="$(msrv_default_kind "$u" "$(printf '%s' "$r" | cut -f2)")"
+  CFG_ORDER=''; cfg_put MODEL_SERVERS "$new"; cfg_put MODEL_SERVER_KINDS "$(_msrv_kinds_for "$n" "$kind")"; config_apply local cli ''
+  log "added $n ($(msrv_reached_as "$n")), $(_msrv_kind_words "$kind"); probing"
   msrv_probe_all; local_status_write
   msrv_status_of "$n" | awk -F'\t' '{ printf "  %s: %s\n", $1, $2 }'
 }
@@ -841,9 +912,49 @@ msrv_rm() {
   while IFS= read -r e; do [ -n "$e" ] && [ "${e%%=*}" != "$n" ] && new="${new:+$new,}$e"; done < <(_msrv_items MODEL_SERVERS)
   while IFS= read -r e; do [ -n "$e" ] && [ "${e%%=*}" != "$n" ] && k2="${k2:+$k2,}$e"; done < <(_msrv_items MODEL_SERVER_KEYS)
   while IFS= read -r e; do [ -n "$e" ] && [ "${e%%:*}" != "$n" ] && keep="${keep:+$keep,}$e"; done < <(_msrv_items MODEL_SERVER_MODELS)
-  CFG_ORDER=''; cfg_put MODEL_SERVER_MODELS "$keep"; cfg_put MODEL_SERVER_KEYS "$k2"; cfg_put MODEL_SERVERS "$new"
+  CFG_ORDER=''; cfg_put MODEL_SERVER_MODELS "$keep"; cfg_put MODEL_SERVER_KEYS "$k2"; cfg_put MODEL_SERVER_KINDS "$(_msrv_kinds_for "$n" '')"
+  cfg_put MODEL_SERVER_PRICES "$(_msrv_prices_for "$n" '')"; cfg_put MODEL_SERVERS "$new"
   config_apply local cli ''      # (its models leave the gateway live)
   msrv_probe_all; local_status_write; log "removed $n and unregistered its models"
+}
+# _msrv_kinds_for NAME KIND ('' removes it) -> MODEL_SERVER_KINDS with NAME's entry replaced
+_msrv_kinds_for() {
+  local n="$1" kind="$2" e out=''
+  while IFS= read -r e; do [ -n "$e" ] && [ "${e%%=*}" != "$n" ] && out="${out:+$out,}$e"; done < <(_msrv_items MODEL_SERVER_KINDS)
+  [ -z "$kind" ] || out="${out:+$out,}$n=$kind"
+  printf '%s\n' "$out"
+}
+# _msrv_prices_for NAME LIST (id=in;out,id=in;out; '' removes them) -> MODEL_SERVER_PRICES with NAME's entries replaced
+_msrv_prices_for() {
+  local n="$1" list="$2" e out='' i
+  while IFS= read -r e; do [ -n "$e" ] && [ "${e%%:*}" != "$n" ] && out="${out:+$out,}$e"; done < <(_msrv_items MODEL_SERVER_PRICES)
+  while IFS= read -r i; do [ -n "$i" ] && out="${out:+$out,}$n:$i"; done < <(printf '%s\n' "$list" | tr ',' '\n')
+  printf '%s\n' "$out"
+}
+_msrv_kind_words() { case "$1" in hosted) echo "a hosted API (paid: models labelled Remote, spend at the prices you set)" ;; *) echo "self-hosted (free: models labelled Local)" ;; esac; }
+# msrv_set_kind NAME self|hosted — change what a server is billed as; its models change label and price in the gateway live
+msrv_set_kind() {
+  local n="${1:-}" kind="${2:-}"
+  [ -n "$(msrv_url "$n")" ] || die "no server named $n"
+  case "$kind" in self | hosted) ;; self-hosted) kind=self ;; *) die "the kind is self (this network, free) or hosted (a paid hosted API)" ;; esac
+  CFG_ORDER=''; cfg_put MODEL_SERVER_KINDS "$(_msrv_kinds_for "$n" "$kind")"; config_apply local cli ''
+  msrv_probe_all; local_status_write; log "$n is $(_msrv_kind_words "$kind")"
+}
+# msrv_set_price NAME ID|* IN OUT | msrv_set_price NAME ID|* clear — USD per million input / output tokens of one model or the server's default
+msrv_set_price() {
+  local n="${1:-}" id="${2:-}" in="${3:-}" out="${4:-}" cur new
+  [ -n "$(msrv_url "$n")" ] || die "no server named $n"
+  [[ $id =~ ^(\*|[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,127})$ ]] || die "not a model id: $id (use * for the whole server)"
+  cur="$(_msrv_items MODEL_SERVER_PRICES | awk -F: -v n="$n" '$1 == n { sub(/^[^:]*:/, ""); print }' | paste -sd, -)"
+  new="$(printf '%s\n' "$cur" | tr ',' '\n' | awk -F= -v id="$id" 'NF && $1 != id' | paste -sd, -)"
+  if [ "$in" != clear ]; then
+    [[ $in =~ ^[0-9]{1,6}(\.[0-9]{1,6})?$ && $out =~ ^[0-9]{1,6}(\.[0-9]{1,6})?$ ]] || die "prices are dollars per million tokens, e.g. 0.59 0.79 (input, then output), or clear"
+    new="${new:+$new,}$id=$in;$out"
+  fi
+  valid_msrv_prices "$(_msrv_prices_for "$n" "$new")" || die "unusable price list"
+  CFG_ORDER=''; cfg_put MODEL_SERVER_PRICES "$(_msrv_prices_for "$n" "$new")"; config_apply local cli ''
+  msrv_probe_all; local_status_write
+  if [ "$in" = clear ]; then log "price for $n $id removed"; else log "price for $n $id: \$$in in / \$$out out per million tokens"; fi
 }
 msrv_enable() {  # msrv_enable NAME ID|* | msrv_disable NAME ID|*
   local n="${1:-}" id="${2:-}" cur new
@@ -892,10 +1003,11 @@ _msrv_models_for() {
   printf '%s\n' "$out"
 }
 msrv_apply() {
-  local rf="${1:-}" op name url trust key models ref k='' u tr_=0 r st detail addr warn n lockd i=0 msg rc=0 out
+  local rf="${1:-}" op name url trust key models ref kind prices k='' u tr_=0 r st detail addr warn n lockd i=0 msg rc=0 out
   [ -f "$rf" ] || die "no request file"
   op="$(_msrv_field op "$rf")"; name="$(_msrv_field name "$rf")"; url="$(_msrv_field url "$rf")"; trust="$(_msrv_field trust "$rf")"
-  key="$(_msrv_field key "$rf")"; models="$(_msrv_field models "$rf")"; ref="$(_msrv_field ref "$rf")"; rm -f "$rf"
+  key="$(_msrv_field key "$rf")"; models="$(_msrv_field models "$rf")"; ref="$(_msrv_field ref "$rf")"
+  kind="$(_msrv_field kind "$rf")"; prices="$(_msrv_field prices "$rf")"; rm -f "$rf"
   [[ $ref =~ ^[0-9a-f]{8,32}$ ]] || ref=0
   [ "$trust" != true ] || tr_=1
   [ -z "$key" ] || k="$(printf '%s' "$key" | base64 -d 2>/dev/null || true)"
@@ -914,16 +1026,16 @@ msrv_apply() {
       r="$(msrv_probe_url "$u" "$k" "$tr_" "$([ "$op" = probe-local ] && echo loopback)")"; IFS=$'\t' read -r st detail addr <<< "$r"
       msrv_result "$ref" probe "$name" true "" "$st" "$detail" "$(msrv_warn "$u" "$tr_" "$addr")" "" "$([ -n "$k" ] && echo true || echo false)" "$([ "$tr_" = 1 ] && echo true || echo false)" "$u" ;;
     *)
-      out="$( ( msrv_apply_op "$op" "$name" "$url" "$tr_" "$k" "$models" ) 2>&1 )" || rc=$?
+      out="$( ( msrv_apply_op "$op" "$name" "$url" "$tr_" "$k" "$models" "$kind" "$prices" ) 2>&1 )" || rc=$?
       msg="$(printf '%s\n' "$out" | tail -n 1 | sed -e 's/^xx  //' -e 's/^[[:space:]]*//')"
       if [ "$rc" = 0 ]; then msrv_result "$ref" "$op" "$name" true "$msg"; else msrv_result "$ref" "$op" "$name" false "${msg:-that did not work}"; fi ;;
   esac
   rmdir "$lockd" 2>/dev/null || true
   local_status_write 2>/dev/null || true
 }
-# msrv_apply_op OP NAME URL TRUST(1|0) KEY MODELS — run in a subshell by msrv_apply (a die ends only it)
+# msrv_apply_op OP NAME URL TRUST(1|0) KEY MODELS [KIND PRICES] — run in a subshell by msrv_apply (a die ends only it)
 msrv_apply_op() {
-  local op="$1" n="$2" url="$3" tr_="$4" k="$5" models="$6" u ne cur new old e r st detail addr keys keyout=''
+  local op="$1" n="$2" url="$3" tr_="$4" k="$5" models="$6" kind="${7:-}" prices="${8:-}" u ne cur new old e r st detail addr keys keyout=''
   case "$op" in
     save)     # a new server, or (the name is taken) a changed address for one: its key then goes unless a new one comes with it
       valid_msrv_name "$n" || die "the name is lowercase letters, digits and - (at most 24)"
@@ -948,7 +1060,13 @@ msrv_apply_op() {
       if [ -z "$addr" ]; then die "that address could not be checked"; fi
       mkdir -p "$(local_dir)"                                                # (its checked address is known before it registers: models need it)
       { { grep -v "^$n"$'\t' "$(msrv_state_file)" 2>/dev/null || true; }; printf '%s\t%s\t%s\t%s\t%s\n' "$n" "$st" "$detail" "$(date +%s)" "$addr"; } | _local_put "$(msrv_state_file)"
+      # (what it is billed as: the one asked for, else the one it had, else the default for its address — the checked one)
+      case "$kind" in self | hosted) ;; *) kind=''; [ -z "$old" ] || kind="$(_msrv_items MODEL_SERVER_KINDS | awk -F= -v n="$n" '$1 == n && !d++ { print $2 }')" ;; esac
+      [ -n "$kind" ] || kind="$(msrv_default_kind "$u" "$addr")"
+      valid_msrv_prices "$(_msrv_prices_for "$n" "$prices")" || die "unusable price list"
       CFG_ORDER=''; cfg_put MODEL_SERVERS "$new"; cfg_put MODEL_SERVER_KEYS "$keys"
+      cfg_put MODEL_SERVER_KINDS "$(_msrv_kinds_for "$n" "$kind")"
+      [ -z "$prices" ] && [ -n "$old" ] || cfg_put MODEL_SERVER_PRICES "$(_msrv_prices_for "$n" "$prices")"
       cfg_put MODEL_SERVER_MODELS "$(_msrv_models_for "$n" "$models")"
       config_apply local cli ''
       msrv_probe_all; log "saved $n: $st$keyout" ;;
@@ -960,6 +1078,16 @@ msrv_apply_op() {
     key)
       [ -n "$(msrv_url "$n")" ] || die "no server named $n"
       msrv_store_key "$n" "$k" ;;
+    billing)   # what a saved server is billed as and its prices (kind: self|hosted, '' keeps it; prices: id=in;out,… replaces them)
+      [ -n "$(msrv_url "$n")" ] || die "no server named $n"
+      [ -z "$prices" ] || [ "$prices" = none ] || valid_msrv_prices "$(_msrv_prices_for "$n" "$prices")" || die "unusable price list"   # (all checked before anything changes)
+      case "$kind" in self | hosted | '') ;; *) die "the kind is self or hosted" ;; esac
+      case "$kind" in self | hosted) msrv_set_kind "$n" "$kind" ;; esac
+      if [ -n "$prices" ]; then
+        [ "$prices" != none ] || prices=''
+        CFG_ORDER=''; cfg_put MODEL_SERVER_PRICES "$(_msrv_prices_for "$n" "$prices")"; config_apply local cli ''; msrv_probe_all; local_status_write
+      fi
+      log "billing for $n changed" ;;
     remove)
       msrv_rm "$n" ;;
     *) die "not an operation: $op" ;;
@@ -1227,7 +1355,7 @@ local_status_write() {
   local sv='' ssep='' n u tr_ st
   while IFS=$'\t' read -r n u tr_; do
     [ -n "$n" ] || continue; st="$(msrv_status_of "$n")"
-    sv="$sv$ssep{\"name\":$(_local_q "$n" 24),\"url\":$(_local_q "$u" 200),\"reached_as\":$(_local_q "$(msrv_reached_as "$n")" 240),\"trust\":$([ "$tr_" = 1 ] && echo true || echo false),\"key\":$([ -n "$(msrv_key "$n")" ] && echo true || echo false),\"status\":$(_local_q "${st%%$'\t'*}" 8),\"detail\":$(_local_q "${st#*$'\t'}" 2000),\"warning\":$(_local_q "$(msrv_warn "$u" "$tr_" "$(msrv_addr_of "$n")")" 200),\"key_note\":$(_local_q "$(msrv_key_note "$n")" 120),\"enabled\":$(_local_q "$(_msrv_items MODEL_SERVER_MODELS | awk -F: -v n="$n" '$1 == n { sub(/^[^:]*:/, ""); printf "%s%s", s, $0; s = ";" }')" 1500)}"
+    sv="$sv$ssep{\"name\":$(_local_q "$n" 24),\"url\":$(_local_q "$u" 200),\"reached_as\":$(_local_q "$(msrv_reached_as "$n")" 240),\"trust\":$([ "$tr_" = 1 ] && echo true || echo false),\"key\":$([ -n "$(msrv_key "$n")" ] && echo true || echo false),\"status\":$(_local_q "${st%%$'\t'*}" 8),\"detail\":$(_local_q "${st#*$'\t'}" 2000),\"warning\":$(_local_q "$(msrv_warn "$u" "$tr_" "$(msrv_addr_of "$n")")" 200),\"key_note\":$(_local_q "$(msrv_key_note "$n")" 120),\"enabled\":$(_local_q "$(_msrv_items MODEL_SERVER_MODELS | awk -F: -v n="$n" '$1 == n { sub(/^[^:]*:/, ""); printf "%s%s", s, $0; s = ";" }')" 1500),\"kind\":\"$(msrv_kind "$n")\",\"prices\":$(_local_q "$(_msrv_items MODEL_SERVER_PRICES | awk -F: -v n="$n" '$1 == n { sub(/^[^:]*:/, ""); printf "%s%s", s, $0; s = ","}')" 1500)}"
     ssep=','
   done < <(msrv_rows)
   printf '{"at":%s,"runtime":{"kind":"%s","dmr":"%s","ollama":"%s","mlx":"%s","llamacpp":"%s","lmstudio":"%s","vllm":"%s","how":%s,"command":"./stack local-models enable"},"gpu":%s,"memory_bytes":%s,"disk_bytes":%s,"installed":[%s],"servers":[%s],"result":%s,"job":%s}\n' \
@@ -1558,6 +1686,8 @@ cmd_local_models() {
       case "$ssub" in
         add) msrv_add "$@" ;;
         rm) msrv_rm "$@" ;;
+        kind) msrv_set_kind "$@" ;;
+        price) msrv_set_price "$@" ;;
         key) msrv_set_key "$@" ;;
         apply) msrv_apply "$@" ;;
         enable) msrv_enable "${1:-}" "${2:-}" on ;;
@@ -1565,7 +1695,7 @@ cmd_local_models() {
         probe | list) msrv_probe_all; local_status_write
           msrv_rows | while IFS=$'\t' read -r n u t; do printf '%s  %s  %s\n    %s\n' "$n" "$u" "$(msrv_reached_as "$n")" "$(msrv_status_of "$n" | awk -F'\t' '{ print $1 ": " $2 }')"; done ;;
         discover) msrv_discover "${1:-0}"; [ -n "${1:-}" ] || cat "$(msrv_discover_file)" 2>/dev/null ;;   # (the update helper passes a ref; a bare call prints what it found)
-        *) die "usage: ./stack local-models server [list | add NAME URL [--trust] | apply FILE | key NAME | enable NAME ID|* | disable NAME ID|* | rm NAME | probe | discover]" ;;
+        *) die "usage: ./stack local-models server [list | add NAME URL [--trust] [--hosted|--self] | kind NAME self|hosted | price NAME ID|* IN OUT|clear | apply FILE | key NAME | enable NAME ID|* | disable NAME ID|* | rm NAME | probe | discover]" ;;
       esac ;;
     uninstall) local_mlx_uninstall "$@"; log "MLX server and environment removed$([ "${1:-}" = --models ] && echo ", and its models")" ;;
     pull) [ -f "$ENV_FILE" ] || die "run ./stack setup first"; guard_project; local_pull "$@" ;;

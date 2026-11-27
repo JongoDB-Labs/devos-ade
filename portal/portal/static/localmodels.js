@@ -405,7 +405,7 @@
   // password and goes through the update helper, like the rest of Settings; the key is never shown again and never comes back.
   const NAME_OK = /^[a-z0-9][a-z0-9-]{0,23}$/;
   const FAIL = { down: "Not reachable", blocked: "Refused", numeric: "Not an address it will use", dns: "Name does not resolve" };
-  let srv = { url: "", name: "", key: "", trust: false, probe: null, picked: null, wait: null, note: "", staged: {}, keyFor: null, keyText: "",
+  let srv = { url: "", name: "", key: "", trust: false, skind: "", pin: "", pout: "", billFor: null, bill: null, probe: null, picked: null, wait: null, note: "", staged: {}, keyFor: null, keyText: "",
     discoverTried: false, discoverRef: "", discoverSince: 0 };   // auto-detect of servers already running here (JON-1262)
 
   const nameFrom = (url) => {
@@ -443,8 +443,9 @@
       srv.picked = new Set(r.models.map((m) => m.id));     // (all on by default)
       srv.note = r.ok ? "" : (r.message || "That did not work.");
     } else if (r.ok) {
-      if (w.op === "save") srv = { ...srv, url: "", name: "", key: "", trust: false, probe: null, picked: null, note: `Added ${w.name}.${/key cleared: the address changed/.test(r.message || "") ? " Key cleared: the address changed." : ""}` };
+      if (w.op === "save") srv = { ...srv, url: "", name: "", key: "", trust: false, skind: "", pin: "", pout: "", probe: null, picked: null, note: `Added ${w.name}.${/key cleared: the address changed/.test(r.message || "") ? " Key cleared: the address changed." : ""}` };
       else if (w.op === "remove") srv.note = `Removed ${w.name}.`;
+      else if (w.op === "billing") { srv.billFor = null; srv.bill = null; srv.note = `Billing for ${w.name} updated.`; }
       else if (w.op === "key") { srv.keyFor = null; srv.keyText = ""; srv.note = `Key for ${w.name} updated.`; }
       else { delete srv.staged[w.name]; srv.note = `Models on ${w.name} updated.`; }
     } else srv.note = r.message || "That did not work.";
@@ -458,6 +459,26 @@
     const host = u.replace(/^[a-z]+:\/\//i, "").replace(/^(\[[^\]]*\]|[^/:?#]*).*$/, "$1").replace(/^\[|\]$/g, "").toLowerCase();
     return host === "localhost" || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host) || host === "::1" || /^::ffff:127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host);
   };
+
+  // What a server is billed as (JON-849). The default follows the address, as lib/local_models.sh msrv_default_kind does:
+  // loopback, private (RFC 1918, fc00::/7), link-local, tailnet (100.64.0.0/10, *.ts.net), *.local and the like, and a name with
+  // no dot mean "self" (this network / self-hosted: free, Local); anything else is "hosted" (a paid API: Remote, never free).
+  const defaultKind = (u) => {
+    const host = String(u || "").trim().replace(/^[a-z]+:\/\//i, "").replace(/^(\[[^\]]*\]|[^/:?#]*).*$/, "$1").replace(/^\[|\]$/g, "").toLowerCase();
+    if (!host) return "self";
+    const v4 = /^(?:::ffff:)?(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+    if (v4) { const a = +v4[1], b = +v4[2]; return a === 127 || a === 10 || (a === 192 && b === 168) || (a === 172 && b >= 16 && b <= 31) || (a === 169 && b === 254) || (a === 100 && b >= 64 && b <= 127) ? "self" : "hosted"; }
+    if (host.includes(":")) return host === "::1" || /^f[cd]/.test(host) || /^fe[89ab]/.test(host) ? "self" : "hosted";
+    if (host === "localhost" || /\.(local|lan|internal|localdomain|ts\.net)$/.test(host) || host.endsWith(".home.arpa")) return "self";
+    return host.includes(".") ? "hosted" : "self";
+  };
+  const KIND_WORDS = { self: "This network / self-hosted (free)", hosted: "Hosted API (paid)" };
+  const priceNum = (v) => { const t = String(v == null ? "" : v).trim(); return /^\d{1,6}(\.\d{1,6})?$/.test(t) ? Number(t) : null; };
+  const usd = (n) => `$${Number(Number(n).toFixed(4))}`;
+  // the price of a model of a status server: its own entry, else the server's (*)
+  const priceOf = (s, id) => (s.prices || []).find((p) => p.id === id) || (s.prices || []).find((p) => p.id === "*") || null;
+  // the kind the Add form asks for: what was chosen, else the default for its address
+  const formKind = () => srv.skind || defaultKind(srv.probe ? srv.probe.url : srv.url);
 
   // "Check server" of this computer: read-only, so no password (the portal's session, CSRF and origin checks still apply, and the helper keeps
   // refusing cloud-metadata and link-local addresses); the answer is read from the status like any other, matched by ref
@@ -483,8 +504,20 @@
     keyNote.hidden = !(state.servers || []).length;
     const trust = el("input", { type: "checkbox", id: "ms-trust" }); trust.checked = srv.trust;
     const trustRow = el("label", { class: "lm-trust", id: "ms-trust-row" }, trust, " Trust this server's certificate (it is self-signed)");
-    const sync = () => { srv.url = url.value; srv.name = name.value.trim().toLowerCase(); srv.key = key.value; srv.trust = trust.checked; trustRow.hidden = !/^https:\/\//i.test(url.value.trim()); };
-    for (const i of [url, name, key, trust]) i.addEventListener("input", sync);
+    const kindSel = el("select", { id: "ms-kind", "aria-label": "How this server is billed" },
+      el("option", { value: "self", text: KIND_WORDS.self }), el("option", { value: "hosted", text: KIND_WORDS.hosted }));
+    const pin = el("input", { type: "text", inputmode: "decimal", id: "ms-price-in", class: "lm-price", placeholder: "$ per million input tokens", "aria-label": "Price per million input tokens, dollars", autocomplete: "off", value: srv.pin });
+    const pout = el("input", { type: "text", inputmode: "decimal", id: "ms-price-out", class: "lm-price", placeholder: "$ per million output tokens", "aria-label": "Price per million output tokens, dollars", autocomplete: "off", value: srv.pout });
+    const priceRow = el("div", { class: "lm-add-row", id: "ms-price-row" }, pin, pout,
+      el("span", { class: "note", text: "Optional. Without a price its spend shows as unknown, never $0 (LiteLLM prices ids it already knows)." }));
+    const billRow = el("div", { class: "lm-add-row", id: "ms-kind-row" }, el("label", { class: "note", for: "ms-kind", text: "Billed as " }), kindSel);
+    const sync = () => {
+      srv.url = url.value; srv.name = name.value.trim().toLowerCase(); srv.key = key.value; srv.trust = trust.checked; trustRow.hidden = !/^https:\/\//i.test(url.value.trim());
+      srv.pin = pin.value; srv.pout = pout.value;
+      kindSel.value = srv.skind || defaultKind(url.value); priceRow.hidden = kindSel.value !== "hosted";
+    };
+    for (const i of [url, name, key, trust, pin, pout]) i.addEventListener("input", sync);
+    kindSel.addEventListener("change", () => { srv.skind = kindSel.value; sync(); });
     sync();
     const go = el("button", { type: "submit", class: "action primary", id: "ms-check", text: srv.wait && srv.wait.op === "probe" ? "Checking…" : "Check server" });
     go.disabled = !state.can_change || !!srv.wait;
@@ -495,7 +528,7 @@
       q.addEventListener("click", () => { url.value = addr; sync(); url.focus(); });
       quick.append(q);
     }
-    const form = el("form", { class: "lm-add", id: "ms-add" }, el("div", { class: "lm-add-row" }, url), quick, el("div", { class: "lm-add-row" }, name, key), keyNote, trustRow,
+    const form = el("form", { class: "lm-add", id: "ms-add" }, el("div", { class: "lm-add-row" }, url), quick, el("div", { class: "lm-add-row" }, name, key), keyNote, trustRow, billRow, priceRow,
       el("div", { class: "lm-add-row" }, go, el("span", { class: "note", text: state.can_change ? "Nothing is saved until you add it. Localhost needs no password; another computer asks for it." : state.why_not })));
     form.addEventListener("submit", (ev) => {
       ev.preventDefault(); sync();
@@ -537,17 +570,32 @@
     saveBtn.addEventListener("click", () => {
       const name = uniqueName(p.url, srv.name);
       const models = p.status === "ok" ? [...srv.picked] : ["*"];       // (a server that is down: whatever it serves once it answers)
-      ask({ op: "save", name, url: p.url, key: srv.key, trust: p.trust, models }, `Add ${name}?`,
-        `${p.url} joins the model gateway${p.status === "ok" ? ` with ${models.length} model${models.length === 1 ? "" : "s"}` : ", though it is not answering yet"}. ${p.status === "ok" ? "They show" : "Its models show, once it answers,"} in Chat, the Code page and the terminal marked Local, at $0.${p.warning ? ` ${p.warning}` : ""}`, "Add server");
+      const kind = formKind(), pi = priceNum(srv.pin), po = priceNum(srv.pout);
+      if (kind === "hosted" && (srv.pin.trim() || srv.pout.trim()) && (pi === null || po === null)) { srv.note = "Prices are dollars per million tokens, as numbers: both input and output, or neither."; render(); return; }
+      const prices = kind === "hosted" && pi !== null && po !== null ? [{ id: "*", in: pi, out: po }] : null;
+      const billed = kind === "hosted"
+        ? `marked Remote${prices ? `, at ${usd(pi)} in / ${usd(po)} out per million tokens` : ", with no price set (its spend shows as unknown, never $0)"}`
+        : "marked Local, at $0";
+      ask({ op: "save", name, url: p.url, key: srv.key, trust: p.trust, models, skind: kind, ...(prices ? { prices } : {}) }, `Add ${name}?`,
+        `${p.url} joins the model gateway${p.status === "ok" ? ` with ${models.length} model${models.length === 1 ? "" : "s"}` : ", though it is not answering yet"}. ${p.status === "ok" ? "They show" : "Its models show, once it answers,"} in Chat, the Code page and the terminal ${billed}.${p.warning ? ` ${p.warning}` : ""}`, "Add server");
     });
     pbox.append(el("p", {}, saveBtn));
     return pbox;
   }
 
+  // a hosted server's price in words: the server-wide one, "per model" when some have their own, or unknown (never $0)
+  function hostedPrice(s) {
+    const all = (s.prices || []).find((p) => p.id === "*"), own = (s.prices || []).filter((p) => p.id !== "*");
+    if (all && !own.length) return `${usd(all.in)} in / ${usd(all.out)} out per 1M`;
+    if (own.length) return "prices set per model";
+    return "price unknown";
+  }
+
   function serverRow(s) {
     const staged = srv.staged[s.name] || null;
     const isOn = (id) => (staged ? staged.has(id) : s.all || s.enabled.includes(id));
-    const head = el("p", { class: "lm-name" }, el("b", { text: s.name }), " ", badge(s.up ? "reachable" : "unavailable", s.up ? "on" : "warn"), badge("Local"), badge("$0"),
+    const head = el("p", { class: "lm-name" }, el("b", { text: s.name }), " ", badge(s.up ? "reachable" : "unavailable", s.up ? "on" : "warn"),
+      ...(s.kind === "hosted" ? [badge("Remote", "warn"), badge(hostedPrice(s))] : [badge("Local"), badge("$0")]),
       s.key ? badge("key set") : "", s.trust ? badge("self-signed trusted", "warn") : "");
     const main = el("div", { class: "lm-item-main" }, head, el("p", { class: "note", text: `${s.url}${s.reached_as && !s.reached_as.startsWith("http") ? ` · ${s.reached_as}` : ""}` }));
     if (s.warning) main.append(el("p", { class: "lm-warn warn", text: s.warning }));
@@ -563,7 +611,9 @@
           if (cb.checked) cur.add(m.id); else cur.delete(m.id);
           srv.staged[s.name] = cur; render();
         });
-        ul.append(el("li", {}, el("label", {}, cb, " ", el("code", { text: m.id }), m.context ? el("span", { class: "note", text: ` · ${ctxk(m.context)} context` }) : "")));
+        const pr = s.kind === "hosted" ? priceOf(s, m.id) : null;
+        ul.append(el("li", {}, el("label", {}, cb, " ", el("code", { text: m.id }), m.context ? el("span", { class: "note", text: ` · ${ctxk(m.context)} context` }) : "",
+          s.kind === "hosted" ? el("span", { class: "note", text: pr ? ` · ${usd(pr.in)} in / ${usd(pr.out)} out per 1M` : " · price unknown" }) : "")));
       }
       main.append(ul);
       if (s.up) main.append(el("p", { class: "note", text: "Tool use is not known: a small or self-hosted model may call tools wrongly or not at all." }));
@@ -584,7 +634,40 @@
     const rm = el("button", { type: "button", class: "action", "data-act": "server-remove", text: "Remove" });
     rm.disabled = !state.can_change;
     rm.addEventListener("click", () => ask({ op: "remove", name: s.name, models: [] }, `Remove ${s.name}?`, `Its models leave Chat, the Code page and the terminal at once. Nothing on the server itself changes.`, "Remove"));
-    acts.append(ek, rm);
+    const eb = el("button", { type: "button", class: "action", "data-act": "server-billing", text: "Billing" });
+    eb.disabled = !state.can_change;
+    eb.addEventListener("click", () => {
+      if (srv.billFor === s.name) { srv.billFor = null; srv.bill = null; } else {
+        srv.billFor = s.name;
+        const all = (s.prices || []).find((p) => p.id === "*");
+        srv.bill = { kind: s.kind, pin: all ? String(all.in) : "", pout: all ? String(all.out) : "" };
+      }
+      render();
+    });
+    acts.append(eb, ek, rm);
+    if (srv.billFor === s.name && srv.bill) {
+      const b = srv.bill;
+      const ks = el("select", { id: "ms-bill-kind", "aria-label": `How ${s.name} is billed` },
+        el("option", { value: "self", text: KIND_WORDS.self }), el("option", { value: "hosted", text: KIND_WORDS.hosted }));
+      ks.value = b.kind;
+      const bi = el("input", { type: "text", inputmode: "decimal", id: "ms-bill-in", class: "lm-price", placeholder: "$ per million input tokens", "aria-label": "Price per million input tokens, dollars", value: b.pin });
+      const bo = el("input", { type: "text", inputmode: "decimal", id: "ms-bill-out", class: "lm-price", placeholder: "$ per million output tokens", "aria-label": "Price per million output tokens, dollars", value: b.pout });
+      const prow = el("span", {}, bi, " ", bo);
+      prow.hidden = b.kind !== "hosted";
+      ks.addEventListener("change", () => { b.kind = ks.value; prow.hidden = b.kind !== "hosted"; });
+      bi.addEventListener("input", () => { b.pin = bi.value; }); bo.addEventListener("input", () => { b.pout = bo.value; });
+      const sv = el("button", { type: "button", class: "action primary", id: "ms-bill-save", text: "Save billing" });
+      sv.addEventListener("click", () => {
+        const pi = priceNum(b.pin), po = priceNum(b.pout);
+        if (b.kind === "hosted" && (b.pin.trim() || b.pout.trim()) && (pi === null || po === null)) { srv.note = "Prices are dollars per million tokens, as numbers: both input and output, or neither."; render(); return; }
+        const prices = b.kind === "hosted" ? (pi !== null && po !== null ? [{ id: "*", in: pi, out: po }] : "none") : null;
+        ask({ op: "billing", name: s.name, models: [], skind: b.kind, ...(prices ? { prices } : {}) }, `Change how ${s.name} is billed?`,
+          b.kind === "hosted" ? `${s.name}'s models show as Remote${prices && prices !== "none" ? `, at ${usd(pi)} in / ${usd(po)} out per million tokens` : ", with no price set (spend shows as unknown, never $0)"}, and budgets apply to them.`
+            : `${s.name}'s models show as Local, at $0.`, "Save billing");
+      });
+      main.append(el("div", { class: "lm-keyrow", id: "ms-bill" }, el("label", { class: "note", for: "ms-bill-kind", text: "Billed as " }), ks, prow, sv));
+      main.append(el("p", { class: "note", text: "A price per model: ./stack local-models server price NAME MODEL-ID IN OUT." }));
+    }
     if (srv.keyFor === s.name) {
       const ki = el("input", { type: "password", class: "lm-keyin", "aria-label": `New API key for ${s.name}`, placeholder: s.key ? "New key (the old one is never shown)" : "API key", autocomplete: "new-password", value: srv.keyText });
       ki.addEventListener("input", () => { srv.keyText = ki.value; });
@@ -651,7 +734,7 @@
     const fb = foundBlock();
     if (fb) sec.append(fb);
     sec.append(...(part === "server" ? [] : [el("h4", { class: "lm-h", id: "ms-add-h", text: "Add a model server" })]),
-      el("p", { class: "note", text: "A model server is any OpenAI-compatible server — Ollama, LM Studio, vLLM, llama.cpp, or another computer on your network. Add one and its models show in Chat, the Code page and the Terminal, marked Local, at $0." }),
+      el("p", { class: "note", text: "A model server is any OpenAI-compatible server — Ollama, LM Studio, vLLM, llama.cpp, or another computer on your network. Add one and its models show in Chat, the Code page and the Terminal, marked Local, at $0. A paid hosted API with an OpenAI-compatible endpoint (Groq, Together, Fireworks, OpenAI, a company gateway) goes here too: choose Hosted API, and its models are marked Remote and billed at the prices you enter." }),
       addForm(), probeResult());
     if (srv.wait) sec.append(el("p", { class: "note", role: "status", id: "ms-wait", text: srv.wait.op === "probe" ? "Checking the server…" : "Waiting for the update helper…" }));
     if (srv.note) sec.append(el("p", { class: `note ${/did not|not |refused|cannot/i.test(srv.note) ? "lm-warn warn" : ""}`, id: "ms-note", role: "status", text: srv.note }));
@@ -712,12 +795,14 @@
           const cur = new Set(s.all ? s.models.map((x) => x.id) : s.enabled);
           if (act === "add") cur.add(m.id); else cur.delete(m.id);
           askPw({ kind: "server", op: "models", name: s.name, models: [...cur] }, `${act === "add" ? "Add" : "Remove"} ${m.id}?`,
-            act === "add" ? `${m.id} on ${s.name} shows in every picker: Chat, the Code page and the terminal, free.` : `${m.id} leaves every picker. Nothing on ${s.name} itself changes.`, act === "add" ? "Add" : "Remove");
+            act === "add" ? `${m.id} on ${s.name} shows in every picker: Chat, the Code page and the terminal, ${hosted ? "marked Remote and billed by its provider" : "free"}.` : `${m.id} leaves every picker. Nothing on ${s.name} itself changes.`, act === "add" ? "Add" : "Remove");
         };
-        out.push({ id: `ms/${s.name}/${m.id}`, source_id: m.id, name: m.id, vendor: `on ${s.name}`, provider: "server", free: true, tools: null, images: null, in: 0, out: 0,
+        const hosted = s.kind === "hosted", pr = hosted ? priceOf(s, m.id) : null;
+        out.push({ id: `ms/${s.name}/${m.id}`, source_id: m.id, name: m.id, vendor: `on ${s.name}`, provider: "server", remote: hosted, free: !hosted, tools: null, images: null,
+          in: hosted ? (pr ? pr.in : null) : 0, out: hosted ? (pr ? pr.out : null) : 0,
           context: m.context, compat: "untested", enabled: on && s.up, chosen: false, builtin: false, can: can && s.up ? (on ? "remove" : "add") : null, canChange: can && s.up,
           why: s.up ? (can ? "" : state.why_not) : `${s.name} is not answering${s.reason ? `: ${s.reason}` : ""}`,
-          note: `${s.url}. Tool use is not known: a small or self-hosted model may call tools wrongly or not at all.`, local: toggle });
+          note: `${s.url}. ${hosted ? "A hosted API: billed by its provider" + (pr ? "" : "; no price is set here, so its spend is unknown") + ". " : ""}Tool use is not known: a small or self-hosted model may call tools wrongly or not at all.`, local: toggle });
       }
     }
     return out;

@@ -129,7 +129,7 @@ test_config_list_follows_the_pages_sections() {
   # every key that adds models in Models & providers: Bedrock's, OpenRouter's (its models under it), Experiential Labs',
   # and the Claude plan switch of Your AI subscriptions; then Search: Claude Code's WebSearch and its backends
   assert_eq "$(printf '%s\n' "$out" | awk '/^Models & providers$/ { f = 1; next } /^[A-Z]/ { f = 0 } f && NF { print $1 }' | tr '\n' ' ')" \
-    "AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY BEDROCK_MODELS OPENROUTER_API_KEY OPENROUTER_MODELS OPENROUTER_MAX_MODELS OPENROUTER_INCLUDE_ALIASES EXPLABS_API_KEY EXPLABS_MODELS CODE_CLAUDE_PLAN WEBSEARCH_BACKEND WEBSEARCH_SEARXNG_BUILTIN WEBSEARCH_AGENTCORE_GATEWAY WEBSEARCH_TAVILY_API_KEY WEBSEARCH_BRAVE_API_KEY WEBSEARCH_PERPLEXITY_API_KEY WEBSEARCH_SEARXNG_URL LOCAL_MODELS LOCAL_RUNTIME MODEL_SERVERS MODEL_SERVER_KEYS MODEL_SERVER_MODELS HF_TOKEN "
+    "AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY BEDROCK_MODELS OPENROUTER_API_KEY OPENROUTER_MODELS OPENROUTER_MAX_MODELS OPENROUTER_INCLUDE_ALIASES EXPLABS_API_KEY EXPLABS_MODELS CODE_CLAUDE_PLAN WEBSEARCH_BACKEND WEBSEARCH_SEARXNG_BUILTIN WEBSEARCH_AGENTCORE_GATEWAY WEBSEARCH_TAVILY_API_KEY WEBSEARCH_BRAVE_API_KEY WEBSEARCH_PERPLEXITY_API_KEY WEBSEARCH_SEARXNG_URL LOCAL_MODELS LOCAL_RUNTIME MODEL_SERVERS MODEL_SERVER_KEYS MODEL_SERVER_MODELS MODEL_SERVER_KINDS MODEL_SERVER_PRICES HF_TOKEN "
   assert_contains "$out" "    CODE_ALLOW_BYPASS            (blank)   (less protection: this computer only)"
   assert_contains "$(printf '%s\n' "$out" | awk '/^Spending & budgets$/ { f = 1; next } /^[A-Z]/ { f = 0 } f')" "  BUDGET_TERMINAL                50   (less protection: this computer only)"
   assert_contains "$out" "    AWS_SECRET_ACCESS_KEY        (set)   (this computer only)"

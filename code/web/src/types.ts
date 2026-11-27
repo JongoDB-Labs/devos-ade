@@ -191,7 +191,7 @@ export interface BnModel {
   output: number | null;
   cacheWrite: number | null;
   cacheRead: number | null;
-  /** Bedrock, OpenRouter, Experiential Labs or Local (a model downloaded from Hugging Face, run on this computer: $0) */
+  /** Bedrock, OpenRouter, Experiential Labs, Local (a model on this computer or network: $0) or Remote (a hosted model server's model: paid, at the price set for it, "price unknown" without one) */
   provider: string;
   /** who makes it: Anthropic, Meta, Mistral … ('' when unknown) */
   vendor: string;

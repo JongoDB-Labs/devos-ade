@@ -202,7 +202,7 @@ def test_sections_hold_what_their_task_needs():
             assert table[k][3] == "derived", k
     editable = [k for k, t in table.items() if t[3] in ("edit", "local", "on-only", "widen-local", "regen")]
     assert all(rows[k]["place"] in ("main", "more") or k in ("AWS_SECRET_ACCESS_KEY", "STT_API_KEY", "STT_MODEL", "RUSTFS_SECRET_KEY", "GIT_GITHUB_APP_SLUG",
-                                                            "CODE_CLAUDE_PLAN", "HF_TOKEN", "MODEL_SERVERS", "MODEL_SERVER_KEYS", "MODEL_SERVER_MODELS")
+                                                            "CODE_CLAUDE_PLAN", "HF_TOKEN", "MODEL_SERVERS", "MODEL_SERVER_KEYS", "MODEL_SERVER_MODELS", "MODEL_SERVER_KINDS", "MODEL_SERVER_PRICES")
                for k in editable)
     # the Claude plan switch on Claude's card in Your AI subscriptions (where each tool is connected), not a row of its
     # own

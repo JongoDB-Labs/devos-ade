@@ -337,13 +337,33 @@ def parse_models(detail: str) -> list:
     return out
 
 
+_PRICE = re.compile(r"(\*|[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,127})=([0-9]{1,6}(?:\.[0-9]{1,6})?);([0-9]{1,6}(?:\.[0-9]{1,6})?)")
+
+
+def parse_prices(raw) -> list:
+    """lib/local_models.sh's "id=in;out,id=in;out" (US dollars per million input / output tokens; id * = the server's default)
+    -> [{"id", "in", "out"}], field by field."""
+    out = []
+    for e in _text(raw, 1600).split(",")[:200]:
+        m = _PRICE.fullmatch(e)
+        if m:
+            out.append({"id": m.group(1), "in": float(m.group(2)), "out": float(m.group(3))})
+    return out
+
+
+def price_of(server: dict, model_id: str) -> dict | None:
+    """The prices of one model of a status server: its own entry, else the server's (*); None when it has none."""
+    by = {p["id"]: p for p in server.get("prices") or []}
+    return by.get(model_id) or by.get("*")
+
+
 def clean_result(r) -> dict | None:
     """The last model-server form answer (server-result.json, in the status file): a probe's finding, or what a save, a
     toggle, a key change or a removal came to. Field by field; there is no field a key could be in."""
     if not isinstance(r, dict) or not re.fullmatch(r"[0-9a-f]{8,32}", r.get("ref") or ""):
         return None
     st = r.get("status") if r.get("status") in ("ok", "down", "blocked", "numeric", "dns") else ""
-    return {"ref": r["ref"], "op": r.get("op") if r.get("op") in ("probe", "save", "models", "key", "remove") else "",
+    return {"ref": r["ref"], "op": r.get("op") if r.get("op") in ("probe", "save", "models", "key", "remove", "billing") else "",
             "name": _text(r.get("name"), 24) if re.fullmatch(r"[a-z0-9][a-z0-9-]{0,23}", r.get("name") or "") else "",
             "ok": r.get("ok") is True, "message": _text(r.get("message"), 400), "status": st,
             "models": parse_models(r.get("detail")) if st == "ok" else [],
@@ -383,7 +403,10 @@ def read_status(status_dir: Path, now: float | None = None) -> dict:
         servers.append({"name": s["name"], "url": _text(s.get("url"), 200), "reached_as": _text(s.get("reached_as"), 240),
                         "trust": s.get("trust") is True, "key": s.get("key") is True, "up": up,
                         "reason": "" if up else _text(s.get("detail"), 300), "warning": _text(s.get("warning"), 200),
-                        "key_note": _text(s.get("key_note"), 120), "models": models, "all": "*" in en, "enabled": [x for x in en if x != "*"][:200]})
+                        "key_note": _text(s.get("key_note"), 120), "models": models, "all": "*" in en, "enabled": [x for x in en if x != "*"][:200],
+                        # what it is billed as (JON-849): self = this network / self-hosted, free, Local; hosted = a paid API, Remote,
+                        # never free. A file from before kinds: by the address, as lib/local_models.sh msrv_default_kind would say.
+                        "kind": s.get("kind") if s.get("kind") in ("self", "hosted") else "self", "prices": parse_prices(s.get("prices"))})
     return {"known": at is not None, "at": at, "servers": servers, "result": clean_result(d.get("result")), "stale": at is None or now - at > MAX_AGE_S,
             "runtime": {"kind": kind, "how": _text(rt.get("how"), 400), "command": "./stack local-models enable",
                         "dmr": _text(rt.get("dmr"), 20), "ollama": _text(rt.get("ollama"), 20), "mlx": _text(rt.get("mlx"), 20),

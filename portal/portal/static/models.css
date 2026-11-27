@@ -134,6 +134,8 @@
 .lm-add-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .lm-add-row input { flex: 1 1 12rem; min-width: 0; }
 .lm-add-row input#ms-url { flex: 2 1 18rem; }
+.lm-add-row[hidden], .lm-keyrow span[hidden] { display: none; }
+.lm-price { max-width: 14rem; }
 .lm-trust { font-size: 13px; }
 .lm-keyrow { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
 .lm-keyrow input { flex: 1 1 14rem; min-width: 0; }

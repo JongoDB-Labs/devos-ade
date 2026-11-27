@@ -52,6 +52,8 @@ LOCAL_RUNTIME	providers	more	-	Where local-model downloads go (auto, mlx, dmr, o
 MODEL_SERVERS	providers	more	-	Model servers, as text: the Local models form above adds and removes them; this is the same list for ./stack config.
 MODEL_SERVER_KEYS	providers	more	-	Model servers' API keys (secret): the form above sets them.
 MODEL_SERVER_MODELS	providers	more	-	Which of each server's models are on: the ticks in the form above.
+MODEL_SERVER_KINDS	providers	more	-	Whether each model server is free (self-hosted) or a paid hosted API: the form above sets it.
+MODEL_SERVER_PRICES	providers	more	-	Prices (per million tokens) of a hosted server's models: the form above sets them.
 HF_TOKEN	providers	more	-	Hugging Face token for gated models (secret): used only by downloads.
 
 @aws	Bedrock (AWS)	The AWS region Bedrock runs in, and which models your AWS key can use.	README.md#models--access

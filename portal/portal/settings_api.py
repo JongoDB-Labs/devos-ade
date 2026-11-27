@@ -80,6 +80,11 @@ KEY_VALIDATORS = ("or_key", "xl_key", "stt_key", "ws_key")
 CHECK_BODY = 2048
 
 
+def _dec(x: float) -> str:
+    """A price as a plain decimal with at most 6 places ("0.59", "10"): what lib/local_models.sh reads."""
+    return f"{x:.6f}".rstrip("0").rstrip(".") or "0"
+
+
 def routes(ctx: Ctx) -> list[Route]:
     s = ctx.settings
     apply_rate = RateLimit(5, 30)
@@ -926,10 +931,32 @@ def routes(ctx: Ctx) -> list[Route]:
         if url and "://" not in url:
             url = "http://" + url
         trust = data.get("trust") is True and url.startswith("https://")   # (a certificate only exists for https)
+        # what it is billed as and its prices (JON-849): kind self|hosted (blank: the default for its address, or as it was),
+        # prices [{"id": "model-id" or "*", "in": USD per million input tokens, "out": the same for output}] or "none"
+        kind = data.get("kind") or ""
+        prices_in = data.get("prices")
+        if not isinstance(kind, str) or kind not in ("", "self", "hosted") or not (prices_in is None or prices_in == "none" or isinstance(prices_in, list)):
+            return err(400, "bad request")
+        prices = ""
+        if prices_in == "none":
+            prices = "none"
+        elif prices_in:
+            parts = []
+            for p in prices_in[:200]:
+                nums = [p.get("in"), p.get("out")] if isinstance(p, dict) else [None, None]
+                if not isinstance(p, dict) or not isinstance(p.get("id"), str) or not all(isinstance(x, (int, float)) and not isinstance(x, bool) and 0 <= x <= 999999 for x in nums):
+                    return err(400, "Prices are dollars per million tokens, as numbers (0 to 999999).")
+                parts.append(f"{p['id']}={_dec(nums[0])};{_dec(nums[1])}")
+            prices = ",".join(parts)
+        can_bill = "local-server-billing" in st.capability(s.status_dir)["local"]
+        if not can_bill and kind == "self" and not prices and op != "billing":
+            kind = ""   # (an older helper: self-hosted is what it always did)
+        if (kind or prices) and not can_bill:
+            return err(503, "This update helper does not set what a server is billed as yet: ./stack helper install refreshes it.")
         ref = secrets.token_hex(8)
         try:
             nonce = st.write_local_server_action(s.request_dir, password, op, name=name, url=url, trust=trust, key=key.strip(),
-                                                 models=",".join(models), ref=ref)
+                                                 models=",".join(models), ref=ref, kind=kind, prices=prices)
         except ValueError as e:
             if "password" in str(e):
                 return err(413, f"The web app password is longer than {st.MAX_AUTH} bytes: set a shorter one with ./stack config set PORTAL_PASSWORD.")
