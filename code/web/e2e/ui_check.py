@@ -93,6 +93,9 @@ class Page:
                      and self.errors.append("console: " + m.text))
         self.page.on("dialog", lambda d: (self.dialogs.append(d.message), d.dismiss()))
         self.page.on("request", lambda r: self.requests.append(r.url))
+        # (the URLs of answers of 400 and over, said beside "page errors": a console line does not name the request)
+        self.failed = []
+        self.page.on("response", lambda r: r.status >= 400 and self.failed.append(f"{r.status} {r.request.method} {r.url}"))
 
     def open(self):
         self.page.goto(self.base + "/")
@@ -108,7 +111,7 @@ class Page:
         # (and the 401s of an expired unlock)
         errs = [e for e in self.errors if "ERR_CONNECTION_REFUSED" not in e and "WebSocket" not in e and "status of 409" not in e and "status of 401" not in e]
         assert not csp, f"CSP violations: {csp[:5]}"
-        assert not errs, f"page errors: {errs[:5]}"
+        assert not errs, f"page errors: {errs[:5]} (answers of 400 and over: {self.failed[:8]})"
         assert not self.dialogs, f"dialogs: {self.dialogs}"
 
     def close(self):
@@ -5124,8 +5127,6 @@ def projects_hostile(browser):
     bad = [u for u in p.requests if "project=" in u and not re.search(r"project=(ws|p_[0-9a-f]{8})(&|$)", u)]
     assert not bad, bad[:3]
     p.shot("projects-hostile.png")
-    # (expected: the hostile record's folder is not in the mock's workspace — its listing is a 404, said in the tree)
-    p.errors = [e for e in p.errors if "status of 404" not in e]
     p.assert_clean()
     p.close()
 
@@ -6198,8 +6199,6 @@ def project_chip_long(browser):
         assert r["overlap"] <= 0, f"{w}px: the project chip {r['chip']} overlaps the model picker {r['pick']} by {r['overlap']:.0f} px"
         assert not r["spill"], f"{w}px: parts of the chip stick out of it: {r['spill']} ({r['name']!r})"
         assert r["scroll"], f"{w}px: horizontal overflow"
-        # (the mock has no /api/projects/ws/keep: the chip's menu asks for it and gets a 404, as in the projects check)
-        p.errors = [e for e in p.errors if "status of 404" not in e]
         p.assert_clean()
         p.close()
     # a phone: the chip is compact (no folder), and still fits

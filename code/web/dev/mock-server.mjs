@@ -746,6 +746,7 @@ const sessions = new Map(); // id -> Session (open)
 const saved = new Map(); // id -> {id, title, firstPrompt, branch, modified, transcript, cwd}
 // projects: [{id, name, root, created}]; the sessions filed by hand (id -> project id); the project folders that are
 // repositories of their own (root -> {remote: url | null}); what the project endpoints were asked
+const keepDeclined = new Set();   // projects the owner said "Not for this project" to (keep.mjs)
 let projectsMock = [];
 const filedMock = new Map();
 const archivedMock = new Set();   // sessions archived by hand (the item menus)
@@ -822,6 +823,7 @@ const projectRoot = (url, body) => {
   const id = (url.searchParams.get('project') ?? body?.project) || 'ws';
   if (id === 'ws') return '';
   const p = projectsMock.find((x) => x.id === id) ?? hostMock.find((x) => x.id === id && !x.gone);
+  if (!p && HOSTILE_MODE && id === 'p_0bad0baf') return 'hostile';   // (the hostile record projectsView() adds: its folder is there, empty)
   return p ? p.root : null;
 };
 const isDir = (d) => d === '' || dirs().has(d) || extraDirs.has(d);
@@ -2360,6 +2362,18 @@ async function api(req, res, url) {
     projectLog.push(`add ${b.kind} ${folder}${git ? ' (git)' : ''}`);
     return json(res, 200, { project: projectView(pr), git, gitError: null });
   }
+  // keeping a project on the built-in git server (the backend's keep.mjs): this mock has no git server connected, so it answers the
+  // "not kept" view the backend gives then (available false, nothing asked yet; "Not for this project" is remembered), and refuses to keep
+  const km = /^\/api\/projects\/(ws|p_[0-9a-f]{8})\/keep(?:\/(push|auto|autocommit|decline))?$/.exec(p);
+  if (km) {
+    const kp = km[1] === 'ws' ? { id: 'ws', name: 'Workspace' } : projectsMock.find((x) => x.id === km[1]) ?? hostMock.find((x) => x.id === km[1] && !x.gone) ?? (HOSTILE_MODE && km[1] === 'p_0bad0baf' ? { id: km[1], name: 'hostile' } : null);
+    if (!kp) return json(res, 404, { error: 'no such project (it was removed?)' });
+    const kview = () => ({ available: false, owner: null, suggested: String(kp.name).replace(/[^A-Za-z0-9_.-]+/g, '-').replace(/^[^A-Za-z0-9]+|[-.]+$/g, '').slice(0, 100) || 'project', state: keepDeclined.has(km[1]) ? 'declined' : null });
+    if (!km[2] && m === 'GET') return json(res, 200, kview());
+    if (km[2] === 'decline' && m === 'POST') { keepDeclined.add(km[1]); return json(res, 200, kview()); }
+    if (!km[2] && m === 'DELETE') return json(res, 409, { error: 'this project is not kept on the local git server' });
+    return json(res, 409, { error: 'the local git server is not connected as a Git host' });
+  }
   let pm = /^\/api\/projects\/(ws|p_[0-9a-f]{8})(?:\/(sessions|terminal|git-init|settings|trust))?$/.exec(p);
   if (pm) {
     const id = pm[1], what = pm[2] || '';
@@ -3228,7 +3242,7 @@ const server = http.createServer(async (req, res) => {
       if (url.pathname === '/__mock/reset') {
         importMock.clear(); importRequests.clear(); importLog.length = 0; importHelper = true; suggestionsMock = null;
         setupMock.index = null; setupMock.staged.clear(); setupMock.copied.clear(); setupMock.listMs = 0;
-        projectsMock = [];
+        projectsMock = []; keepDeclined.clear();
         for (const k of [...fsState.keys()]) if (k.startsWith('/')) fsState.delete(k);
         for (const h of hostMock) for (const [k, v] of [...saved]) if (v.cwd === h.root || v.cwd?.startsWith(`${h.root}/`)) saved.delete(k);
         hostMock = [];

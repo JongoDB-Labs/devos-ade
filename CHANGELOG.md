@@ -13,6 +13,7 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 ### Fixed
 
 - **A long project name no longer runs over the model picker** in the Code page's top bar: the project's name and folder stay inside their chip, cut short with an ellipsis. (JON-1425)
+- **The Code page's own browser checks pass as a whole again**: the mock answers where a project is kept, as the Code page has asked since v0.56.0, and knows the hostile and Folder-of-this-computer projects; the two checks that hid its 404s no longer drop them. (JON-1427)
 
 ## [0.71.0] - 2026-11-27
 
