@@ -15,7 +15,7 @@ this is the one shape an install would hand to a collector: small counts and Doc
 never what the person was doing. The collector registers DevOS ADE as its own source (an "ADE adapter"); it is not
 the Apple/TestFlight monitor and shares nothing with it except the redaction rules below.
 
-Local first: everything an event says is already recorded and shown on this computer, in the portal's Activity feed,
+Local first: everything an event says is already recorded and shown on this computer, in the web app's Activity feed,
 with no network (JON-440 G4; `lib/health.sh`, `.state/status/container-health.json`). The schema describes how those
 local facts would be wrapped, if and only if sharing is ever opted in.
 
@@ -124,7 +124,7 @@ the code):
 - `Open WebUI image`
 - `Open WebUI syncs (models, prices, banner)`
 - `Open WebUI with your subscriptions`
-- `Portal sign-in and Chat's API key`
+- `Web app sign-in and Chat's API key`
 - `Ports and settings in .env`
 - `Prices`
 - `Services run the pinned images`
@@ -185,7 +185,7 @@ and the next contract review updates this table. If a future version adds any fr
 through `Redact` before it leaves the computer **by calling the shared implementation or a port that reads the same
 corpus**, with the corpus pinned here; a third implementation is not an option.
 
-What ADE already has is for display on this computer only and is **not** the redaction for transmission: the portal's
+What ADE already has is for display on this computer only and is **not** the redaction for transmission: the web app's
 `_clean` (control characters and length, for text shown in Activity) and `./stack config report`'s `_report_scrub`
 (for a status report a person pastes into an issue by hand).
 
@@ -198,7 +198,7 @@ What ADE already has is for display on this computer only and is **not** the red
 
 with local kinds `restart`, `unhealthy`, `exit` and `oom`. An emitter, when one exists, would map them to
 `container.<kind>` with `subject` = `service`, taking `at`, `count` and `exit_code` unchanged. The local file is
-read-only to the portal, never leaves the computer today, and holds Docker's own numbers and words only.
+read-only to the web app, never leaves the computer today, and holds Docker's own numbers and words only.
 
 ## Notes for later work (not enabled, not built)
 

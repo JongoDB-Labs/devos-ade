@@ -14,10 +14,10 @@ Back to the [README](../README.md#security-model).
 - The `stt` container (Bedrock speech-to-text, only while `STT_PROVIDER=bedrock`) holds no AWS credentials and
   no key of its own: it forwards the caller's LiteLLM key (Open WebUI's), so LiteLLM checks it and books the
   spend on it. Its only network is an **internal** Docker network (`stt`) shared with LiteLLM and Caddy: no
-  internet access and no published port. Open WebUI and the portal reach it only through Caddy's internal
+  internet access and no published port. Open WebUI and the web app reach it only through Caddy's internal
   `:8090` site (not published; it removes `X-Portal-*` and cookies and passes two paths), a one-way hop: the
-  stt container cannot reach Open WebUI (see the next point) or the portal directly. It can reach Caddy's main
-  listener, where it is treated like a browser on this computer: every site there needs a portal session, and
+  stt container cannot reach Open WebUI (see the next point) or the web app directly. It can reach Caddy's main
+  listener, where it is treated like a browser on this computer: every site there needs a web app session, and
   the identity headers it might send are removed. On Linux, a container on an internal network can still reach
   the host through the network's gateway address, so services on your computer that listen on `0.0.0.0` are
   reachable from it (Docker Desktop on macOS has no such path). It runs as an unprivileged user with
@@ -30,10 +30,10 @@ Back to the [README](../README.md#security-model).
   request; no audio or transcripts are logged. ffmpeg comes from Alpine's repository: the image build passes
   the ISO week (`APK_REFRESH`), so the ffmpeg layer is reinstalled at most weekly at setup / `./stack update`,
   with Alpine's security fixes; offline, the previous week's layer is reused.
-- **Open WebUI trusts `X-Portal-User` from any container that can reach it** (that is how the portal's login
+- **Open WebUI trusts `X-Portal-User` from any container that can reach it** (that is how the web app's login
   reaches it, `WEBUI_AUTH_TRUSTED_EMAIL_HEADER`): whoever can send it a request on its network can act as any
   user, including the admin. Browsers only reach it through Caddy, which deletes a client-sent header and sets
-  it only for a valid portal session. The containers that share its network (`default`) are Caddy, the portal,
+  it only for a valid web app session. The containers that share its network (`default`) are Caddy, the web app,
   LiteLLM, Postgres, RustFS and shared-mcp — all part of the stack. The stt container (ffmpeg parsing untrusted
   audio), the built-in SearXNG (parsing search engines' pages) and the Tailscale sidecar do not.
 - Open WebUI's only model connection is LiteLLM. Ollama, web search and community sharing are off.
@@ -44,13 +44,13 @@ Back to the [README](../README.md#security-model).
 - LiteLLM does **not** store prompt or response text, only metadata and spend. To store it, set
   `LITELLM_STORE_PROMPTS=true` (Settings → Account & security, or `./stack config set LITELLM_STORE_PROMPTS`). Spend logs are kept for 90 days (LiteLLM's
   built-in cleanup job, `maximum_spend_logs_retention_period`).
-- The portal's daily update check asks GitHub's public releases API for the project's recent releases, one request
+- The web app's daily update check asks GitHub's public releases API for the project's recent releases, one request
   (unauthenticated, https only, answers capped at 2 MB, release notes shown as plain text; no redirect followed but
   one: GitHub's for the project's renamed repository — the same host, the same request, the project's repository
   under its other name (owner and name in any ASCII case) or `api.github.com/repositories/<its numeric id>`, pinned
   in the code; release links are kept only when they stay inside the repository: no `.` or `..` segment);
   opening Home asks again when the last check is more than 3 hours old (at most every 15 minutes), and so does a
-  click on **Check for updates** (`POST /api/update/check`: a session, `X-Requested-With` and the portal's own Origin;
+  click on **Check for updates** (`POST /api/update/check`: a session, `X-Requested-With` and the web app's own Origin;
   at most every 30 seconds and 20 times an hour, one check at a time, not within an hour of GitHub refusing one —
   sooner when its rate limit says so). It
   sends nothing about your install; `UPDATE_CHECK=false` turns the daily and Home checks off (a click still asks).
@@ -60,32 +60,32 @@ Back to the [README](../README.md#security-model).
 ## How the single login works
 
 Caddy is the only thing that publishes a browser UI, on `127.0.0.1` only. Before every request to any of the
-four host names it asks the portal whether the `bn_session` cookie is valid (Caddy `forward_auth`). Without a
+four host names it asks the web app whether the `bn_session` cookie is valid (Caddy `forward_auth`). Without a
 session you get the login page.
 
-- The cookie is signed with `PORTAL_SECRET`, `HttpOnly`, `SameSite=Strict`, scoped to the portal host name and
+- The cookie is signed with `PORTAL_SECRET`, `HttpOnly`, `SameSite=Strict`, scoped to the web app host name and
   its subdomains, and valid for 30 days; it is never passed on to the apps.
-- Open WebUI signs you in from an `X-Portal-User` header that only Caddy sets, after the portal confirmed the
+- Open WebUI signs you in from an `X-Portal-User` header that only Caddy sets, after the web app confirmed the
   session; any `X-Portal-User` a client sends is deleted first, and Open WebUI publishes no port, so the header
   can't be forged.
-- The login form only accepts a POST from the portal itself, sends you back only to a portal address (no open
+- The login form only accepts a POST from the web app itself, sends you back only to a web app address (no open
   redirect), checks the password against `PORTAL_PASSWORD_HASH` (PBKDF2-HMAC-SHA256, 600,000 rounds, written by
-  `./stack` from `PORTAL_PASSWORD`; the portal never receives the password itself) with a constant-time compare,
+  `./stack` from `PORTAL_PASSWORD`; the web app never receives the password itself) with a constant-time compare,
   and slows down after five wrong attempts; a login body over 8 KB is refused (Caddy caps it at 16 KB before it
-  reaches the portal). A session carries a fingerprint of that hash, so a new password ends every session.
-- **Sign out** on Home ends every session, and that survives a restart of the portal: the time of the last
-  sign-out is kept in the small `portal-state` volume (the portal's only writable storage besides `/tmp`, the
+  reaches the web app). A session carries a fingerprint of that hash, so a new password ends every session.
+- **Sign out** on Home ends every session, and that survives a restart of the web app: the time of the last
+  sign-out is kept in the small `portal-state` volume (the web app's only writable storage besides `/tmp`, the
   price files in `litellm/prices/` and the update check's answer in `.state/update-check/`).
-- Chat, Admin and Files may be framed only by the portal (`Content-Security-Policy: frame-ancestors
-  <portal>`); the portal can't be framed at all. Host names other than the four answer 404: the portal's "not an
-  address of DevOS ADE" page, which links to the portal (Caddyfile `unknown_host`). Every page load under such a name
+- Chat, Admin and Files may be framed only by the web app (`Content-Security-Policy: frame-ancestors
+  <portal>`); the web app can't be framed at all. Host names other than the four answer 404: the web app's "not an
+  address of DevOS ADE" page, which links to the web app (Caddyfile `unknown_host`). Every page load under such a name
   — any path, any query — is rewritten to that one page (`/auth/unknown-host`), so none reaches another route of the
-  portal; no cookie, `Authorization` or sign-in header is passed on, no proxy secret is added, and nothing the portal
+  web app; no cookie, `Authorization` or sign-in header is passed on, no proxy secret is added, and nothing the web app
   sets comes back. The page shows nothing of the request (a DNS-rebinding page names itself), has no script
   (`default-src 'none'`, styles, fonts and images from itself only, `frame-ancestors 'none'`, `no-store`), and gets
   the sign-in page's public style sheets, fonts and logo under that name — the same files, by name, as before login;
   any other method is 405. A DNS-rebinding page gets nothing of the stack: a fixed page and public files.
-- A portal page that is not there is a 404 page of the same design, with Go to Home and Search, and the same
+- A web app page that is not there is a 404 page of the same design, with Go to Home and Search, and the same
   policy; nothing of the address is shown back. A request that is not a page load keeps a plain `Not Found`.
 - The sign-in page's **Show** button (`static/login.js`, public like the page: it only switches the field between
   hidden and shown, and back to hidden as the form posts) and its hint: the command that prints the password,
@@ -93,43 +93,43 @@ session you get the login page.
   nothing of the install over remote access. A wrong password says only that.
 - Open WebUI answers cross-origin requests only from Chat's own origin (`CORS_ALLOW_ORIGIN`: `CHAT_ORIGIN`, which
   `./stack` writes like `PORTAL_ORIGIN`, and the remote chat host while remote access is on). Its default, `*`, is
-  answered with credentials allowed for any `Origin`: a page on another of the portal's hosts — the terminal's
+  answered with credentials allowed for any `Origin`: a page on another of the web app's hosts — the terminal's
   among them — could otherwise have read your chats with your cookies.
-- Admin and Files sign you in from the portal session too (next section). Their own sign-ins, folded away under
-  **Credentials** on Home, come from the portal's API with copy buttons; the values never appear in the page source.
+- Admin and Files sign you in from the web app session too (next section). Their own sign-ins, folded away under
+  **Credentials** on Home, come from the web app's API with copy buttons; the values never appear in the page source.
 
 ## Automatic sign-in to Admin and Files
 
-LiteLLM's UI and RustFS's console cannot take a trusted header the way Open WebUI does, so the portal signs in to
+LiteLLM's UI and RustFS's console cannot take a trusted header the way Open WebUI does, so the web app signs in to
 them for you, server-side, with the sign-ins it already holds (`LITELLM_UI_USER` / `LITELLM_UI_PASSWORD`, and
 `RUSTFS_ACCESS_KEY` / `RUSTFS_SECRET_KEY`), and hands the app's own session to your browser on that app's own host
 name (`portal/portal/appsso.py`).
 
 Why not OIDC: LiteLLM 1.105.0's generic SSO refuses to sign anyone in once there are more than five users without an
-Enterprise license, and would make the portal an identity provider (signing keys, discovery, a token endpoint) for
+Enterprise license, and would make the web app an identity provider (signing keys, discovery, a token endpoint) for
 one person; RustFS's OIDC hands the console its credentials in the URL fragment, which stays in the browser's
-history. Each app's own sign-in call already yields exactly the session its UI uses, so the portal makes that call
+history. Each app's own sign-in call already yields exactly the session its UI uses, so the web app makes that call
 and delivers the result.
 
 - **When.** Caddy's check (`/auth/verify`) acts on page loads only (`Sec-Fetch-Mode: navigate`; a browser that sends
   no `Sec-Fetch-*` headers is never handed off and gets the app's own form — `Accept: text/html` counts only for
-  the redirect to the portal's login); a script's requests are never redirected. Admin: a page under `/ui` with
-  no LiteLLM session in the browser (its `token` cookie), or one handed out for an earlier portal session or other
+  the redirect to the web app's login); a script's requests are never redirected. Admin: a page under `/ui` with
+  no LiteLLM session in the browser (its `token` cookie), or one handed out for an earlier web app session or other
   credentials, or LiteLLM's sign-in page — except right after LiteLLM's own Logout: a page load started by LiteLLM's
   own page (`Sec-Fetch-Site: same-origin`) without its `token` cookie but with a valid marker that has more than an
   hour left goes to its form (`/ui/login/?sso=off`) instead. (Its Logout goes there itself once its UI has fetched
   `PROXY_LOGOUT_URL`; before that, it reloads the page it is on. In the marker's last hour such a load is signed in
   again: a browser clock that runs fast makes LiteLLM's own expiry check end its session early, the same way.)
-  Opening Admin again is a load by the portal, a link or the address bar, and signs in as before; a browser reload of
-  an Admin window may count as LiteLLM's own (its form then: reopen Admin from the portal). Which session and
+  Opening Admin again is a load by the web app, a link or the address bar, and signs in as before; a browser reload of
+  an Admin window may count as LiteLLM's own (its form then: reopen Admin from the web app). Which session and
   credentials an Admin session came from is in a signed
-  `bn_sso` marker (`HttpOnly`, `SameSite=Strict`, host-only), bound to the portal session's start, the Tailscale
+  `bn_sso` marker (`HttpOnly`, `SameSite=Strict`, host-only), bound to the web app session's start, the Tailscale
   login and a keyed fingerprint of the credentials, so a new sign-in, a new LiteLLM password or a regenerated
   RustFS pair takes effect at the next page load. Files: every console page load, because the console keeps its
   session in `localStorage`, which no server sees (its own Logout clears it, and it goes back to its form without
   asking the server). Such a page load is redirected to `/.bn/sso?next=<path>` on the same host, which Caddy routes to
-  the portal after its session check (no session: the portal's login). For Files that first page checks the
-  browser's own credentials, in the browser: if they carry the mark of this portal session and key pair (an HMAC kept
+  the web app after its session check (no session: the web app's login). For Files that first page checks the
+  browser's own credentials, in the browser: if they carry the mark of this web app session and key pair (an HMAC kept
   next to them) and are good for ten more minutes, it opens the console; only otherwise does it ask for new ones
   (`?mint=1`). Its next page load passes on a `bn_sso_pass` cookie that lasts 15 seconds.
 - **What.** `/auth/app-sso` answers `GET` only (a `HEAD` gets 405) and checks the session, the Tailscale login, and
@@ -143,9 +143,9 @@ and delivers the result.
     remote site, expiring with the session, and not `HttpOnly` because LiteLLM's dashboard reads it from its script
     (LiteLLM sets it the same way). Caddy never passes that cookie on to LiteLLM: the dashboard sends the session as
     `Authorization` itself, but LiteLLM 1.105 also accepts the cookie as a credential on a few browser routes (MCP
-    OAuth's `authorize`/`token`, BYOK sessions), which a page on another of the portal's hosts could drive with your
+    OAuth's `authorize`/`token`, BYOK sessions), which a page on another of the web app's hosts could drive with your
     cookies. The cost: those LiteLLM browser-redirect flows, which DevOS ADE does not use, need an
-    `Authorization` header. The portal's own HTTP client keeps no cookies, so the cookie LiteLLM sets on its
+    `Authorization` header. The web app's own HTTP client keeps no cookies, so the cookie LiteLLM sets on its
     `/v2/login` answer goes nowhere.
   - Files: STS `AssumeRole` on `rustfs:9000`, signed (SigV4) with the key pair — the call the console makes — for
     12-hour temporary credentials with the root pair's rights, and a `no-store` page on the files host whose only
@@ -153,38 +153,38 @@ and delivers the result.
     (`localStorage["auth.credentials"]`) with the mark, and opens the console page. The credentials exist only in that
     page's body. RustFS keeps a small identity record per pair (`.rustfs.sys/config/iam/sts/<id>/identity.json` in
     the data volume) and drops it after it expires; because of the check above, there is a new pair only when this
-    browser has none from this portal session and key pair.
+    browser has none from this web app session and key pair.
   - Nothing secret is ever in a URL (only `next=<path>`, which must stay inside the app, never be its sign-in page,
     and read the same once normalised: no `//`, `\`, `.` or `..`), a `Referer` (`no-referrer`) or the log.
 - **Stored files are inert on the files host.** That host also answers RustFS's S3 API (the console signs its
   requests for this name), so a stored HTML or SVG file opened there would run on the console's origin, next to the
-  credentials it keeps. Everything there but the console and the portal's own `/.bn/` pages is sent with
+  credentials it keeps. Everything there but the console and the web app's own `/.bn/` pages is sent with
   `Content-Security-Policy:
   sandbox; default-src 'none'; frame-ancestors <portal>` and `X-Content-Type-Options: nosniff`: no scripts, an
-  origin of its own, framed only by the portal. Downloads and the console's own requests are unaffected. The shared
+  origin of its own, framed only by the web app. Downloads and the console's own requests are unaffected. The shared
   MCP server stores `.html`, `.svg`, `.xml` and similar files as `text/plain` as well.
-- **Limits.** At most 20 sign-ins a minute per portal session (its start and Tailscale login, so one browser in a
+- **Limits.** At most 20 sign-ins a minute per web app session (its start and Tailscale login, so one browser in a
   loop never holds up another). One that comes back to the same host five times within seconds (a refused cookie,
-  blocked site data, an app version the portal does not know) stops with an explanation, as does any refusal
+  blocked site data, an app version the web app does not know) stops with an explanation, as does any refusal
   (LiteLLM or RustFS not running, a password changed inside LiteLLM, a key pair edited by hand): the page says why
   and links the app's own form.
-- **Trust.** A browser with a portal session opens Admin and Files as their administrator, which is what it could
+- **Trust.** A browser with a web app session opens Admin and Files as their administrator, which is what it could
   already do with the sign-ins Home shows it. Every request to those hosts, `/.bn/sso` included, passes the
-  portal's session check first. The portal used to hold LiteLLM's admin password and the RustFS root pair only to
+  web app's session check first. The web app used to hold LiteLLM's admin password and the RustFS root pair only to
   show them; it now also signs in with them, from inside the stack.
-- **Sign out** ends the portal session everywhere, so every request to the app hosts goes to the login again;
+- **Sign out** ends the web app session everywhere, so every request to the app hosts goes to the login again;
   page loads on Admin and Files are never taken from the browser's cache without that check (Caddy adds
   `Cache-Control: no-cache` where the app sends none, as LiteLLM's UI does). It also deletes every LiteLLM UI session
-  key of the Admin user made before it (the `litellm-dashboard` team: the portal's sign-ins and LiteLLM's own form
+  key of the Admin user made before it (the `litellm-dashboard` team: the web app's sign-ins and LiteLLM's own form
   alike, found with `/spend/keys` — LiteLLM's `/key/list` leaves them out — and deleted with the master key) — those keys work on LiteLLM's API at
-  `127.0.0.1:4000` too. **Sign out other devices** and a new `PORTAL_PASSWORD` (noticed when the portal starts; it
+  `127.0.0.1:4000` too. **Sign out other devices** and a new `PORTAL_PASSWORD` (noticed when the web app starts; it
   keeps only a hash of the password fingerprint) do the same, and so does Sign out from a session that ended
-  meanwhile (expired, or signed out elsewhere) as long as its cookie is one this portal issued. The time to sweep up
+  meanwhile (expired, or signed out elsewhere) as long as its cookie is one this web app issued. The time to sweep up
   to is kept in the `portal-state` volume and retried with back-off until LiteLLM has done it, also across a
   restart. LiteLLM itself deletes expired UI keys once a day (`LITELLM_EXPIRED_UI_SESSION_KEY_CLEANUP_ENABLED`). The
   console's temporary credentials stay in that browser's storage until they expire (up to 12 hours); they are no use
-  without a portal session (RustFS publishes no port; its only way in is the files host), and the next sign-in to
-  the portal replaces them.
+  without a web app session (RustFS publishes no port; its only way in is the files host), and the next sign-in to
+  the web app replaces them.
 - **The fallback.** `?sso=off` on an app's sign-in page shows its own form (Home → Credentials links it); LiteLLM's
   own Logout goes there (`PROXY_LOGOUT_URL`), RustFS's shows its form by itself. Caddy strips the marker, pass and
   loop cookies before the apps, like the session cookie.
@@ -194,35 +194,35 @@ and delivers the result.
 ## Settings
 
 The **Settings** tab shows every key of `.env` and changes the ones listed in
-[README › Settings](../README.md#settings). The portal still has no `.env`, no Docker socket and no shell:
+[README › Settings](../README.md#settings). The web app still has no `.env`, no Docker socket and no shell:
 
-- **What the page sees.** `./stack` writes `.state/status/settings.json` (read-only in the portal) whenever `.env`
+- **What the page sees.** `./stack` writes `.state/status/settings.json` (read-only in the web app) whenever `.env`
   changes: plain values as they are, secrets only as *set* with at most a short hint (the last four characters
   of a generated key, the two ends of the AWS key ID, the host of the webhook URL; nothing of a password, the AWS
   secret or the Cloudflare token), each key's description and policy from `catalog/settings.tsv`, for plain keys
   only `.env.example`'s value as their default (Settings › *Changed from default*; secrets are never compared), and
-  the SHA-256 of `.env` (`base`). Reveal/Copy returns only what the portal already holds for Home and its own work
+  the SHA-256 of `.env` (`base`). Reveal/Copy returns only what the web app already holds for Home and its own work
   (the Admin and Files sign-ins, the three LiteLLM keys, `SHARED_MCP_TOKEN`), after the password again.
   Where the page shows each key (`catalog/settings-layout.tsv`: sections, *More*, which switch a setting belongs to)
-  is presentation only: the portal reads it from its read-only catalog mount, type-checks every field, and nothing in
+  is presentation only: the web app reads it from its read-only catalog mount, type-checks every field, and nothing in
   it decides what may change, from where, or how — that stays in `catalog/settings.tsv` and the helper.
 - **The front door.** A change, a Reveal, a diagnostic and "Sign out other devices" need a session,
-  `X-Requested-With`, the portal's own `Origin`, the portal password typed again (wrong ones count toward the
+  `X-Requested-With`, the web app's own `Origin`, the web app password typed again (wrong ones count toward the
   login's lock-out), and, for a remote session, `REMOTE_ADMIN_ACTIONS=true`. A body over 12 KB is refused (Caddy:
-  16 KB). The portal checks each value with the same rules as `./stack` (`portal/portal/settings.py` mirrors
+  16 KB). The web app checks each value with the same rules as `./stack` (`portal/portal/settings.py` mirrors
   `lib/settings.sh`; one table of cases tests both) and allows one change every 5 seconds, 30 an hour.
-- **A key checked in its form.** Before the password, a provider key typed in Settings is checked by the portal
+- **A key checked in its form.** Before the password, a provider key typed in Settings is checked by the web app
   (`POST /api/settings/check-key`, `portal/portal/keycheck.py`): its shape by the same rule, then, for OpenRouter,
   Experiential Labs and the speech-to-text providers, the free call `./stack` makes for it — OpenRouter's `GET
   /api/v1/key`, the gateway's `GET /v1/models`, OpenAI's or Groq's `GET /models` — with the key as a Bearer token, to
   that provider's fixed https address (nothing in the request names it), no redirect followed, an answer read up to
-  2 MB, within 8 seconds in all. It needs a session, `X-Requested-With` and the portal's own `Origin` (no password:
+  2 MB, within 8 seconds in all. It needs a session, `X-Requested-With` and the web app's own `Origin` (no password:
   nothing changes), follows the remote rule and the key's own (a key that could send data elsewhere: this computer
   only), and runs at most once a second and 60 times an hour. The answer says only accepted, rejected (with where keys
   come from) or no answer; never the provider's words, which may quote the key. The key is not stored or logged, and
   the helper checks it again before anything is saved. Web search keys have no free check (a search costs) and the
   AWS key's needs STS: their forms check the shape only.
-- **The request.** For an allowed change the portal writes `.state/requests/cfg-<nonce>.req`: at most 8 KB of
+- **The request.** For an allowed change the web app writes `.state/requests/cfg-<nonce>.req`: at most 8 KB of
   ASCII lines (`devos-ade-settings 1`, `nonce`, `requested_at`, `base`, `origin local|remote`, `auth`,
   then `set KEY BASE64` or `regen KEY` for 1-20 keys, `end`), mode 640, renamed into place. `regen` asks for a new
   random value that `./stack` makes itself (the RustFS key pair, the shared MCP token): those keys never take a
@@ -230,7 +230,7 @@ The **Settings** tab shows every key of `.env` and changes the ones listed in
   AWS key of another account through. Diagnostics are `act-<nonce>.json`: one line with one action from a fixed
   list (check-aws, models-recheck, backup, test, report, restart of litellm, open-webui, shared-mcp, stt, rustfs or
   caddy) and the password again (`auth`), which the helper checks like a change's. Requests the helper has not
-  taken after 150 seconds (it is not running) are deleted by the portal itself: they carry the password.
+  taken after 150 seconds (it is not running) are deleted by the web app itself: they carry the password.
 - **The helper checks everything again.** It moves the file into its private inbox, reads it without blocking or
     following links (as `latest.txt`: [bounded reads](#the-update-helper)), refuses symlinks, other owners, more
   than 8 KB, any other line, a nonce used before and requests older than 2 minutes; then it deletes the file and
@@ -238,7 +238,7 @@ The **Settings** tab shows every key of `.env` and changes the ones listed in
   reach an app's API), whatever its key. The password in `auth` (a control character never counts: `openssl`
   reads only its first line) must match **the helper's own hash**,
   `.state/helper/portal-password` (600, in a 700 folder no container mounts), which `./stack` writes from `.env`
-  — never `PORTAL_PASSWORD_HASH`, which the portal can read. Five wrong passwords in 15 minutes (or 20 in a day)
+  — never `PORTAL_PASSWORD_HASH`, which the web app can read. Five wrong passwords in 15 minutes (or 20 in a day)
   stop all settings requests until they age out. Each key must be in its allowlist (`catalog/settings.tsv` in
   the checkout, not something the request says), allowed for the request's origin, and pass its validator. It
   has its own rate limits (changes at least 15 s apart, at most 60 a day; diagnostics 10 s and 60 a day; the
@@ -257,8 +257,8 @@ The **Settings** tab shows every key of `.env` and changes the ones listed in
   with the old settings — also when `.env` itself could not be written. `./stack up`, `./stack backup` and the
   other commands that write `.env` (`rotate-aws`, `openrouter`, `models --recheck`) take the same lock, so none of
   them undoes a change, or recreates a database under a backup, while it runs (`./stack serve` releases it once
-  the stack is up). A subshell never releases its parent's lock or runs its parent's exit hooks. A portal password
-  longer than 300 bytes cannot travel in a request: the portal says so (413).
+  the stack is up). A subshell never releases its parent's lock or runs its parent's exit hooks. A web app password
+  longer than 300 bytes cannot travel in a request: the web app says so (413).
 - **Keys that could send data elsewhere** — the AWS key, the OpenRouter key, the Experiential Labs key, the
   speech-to-text provider and key, the alert webhook, web search's backend, keys, gateway and SearXNG URL — are taken
   only from a local session (`origin local`); so is turning `REMOTE_ADMIN_ACTIONS`
@@ -271,9 +271,9 @@ The **Settings** tab shows every key of `.env` and changes the ones listed in
   Read-only, whatever a request says: hosts and ports, `HELPER_*`, `DEVOS_ADE_*`, `REMOTE_MODE`, the Tailscale
   and Cloudflare keys, and the internal secrets (`PORTAL_SECRET`, `POSTGRES_PASSWORD`, `LITELLM_MASTER_KEY`,
   `LITELLM_SALT_KEY`, `WEBUI_SECRET_KEY`, the LiteLLM keys, `OPENWEBUI_API_KEY`).
-- **A portal password change** sends the new password and the hash the portal computed for it; the helper
+- **A web app password change** sends the new password and the hash the web app computed for it; the helper
   accepts the hash only if it matches the new password. The browser that made the change gets a second cookie
-  (`bn_session_next`, same scope and flags) signed for the new hash: the running portal rejects it, the restarted
+  (`bn_session_next`, same scope and flags) signed for the new hash: the running web app rejects it, the restarted
   one accepts it once and swaps it for a normal session. Every other session ends with the restart. Caddy strips
   that cookie before the apps too.
 - **The record.** Each change, failure and refusal is one line in `.state/helper/settings-audit.log` (600): time,
@@ -284,7 +284,7 @@ The **Settings** tab shows every key of `.env` and changes the ones listed in
   owner (`.state/config/owui-owner`, its Open WebUI id), never another admin —, delete an empty `pending` Chat
   account that holds the owner email (what a bare `.env` edit creates), and reset the Admin password from `.env`
   with the master key, or warn. Emails are compared and stored in lowercase, as Open WebUI keeps them.
-- **Backups and reports from the portal.** Back up now writes `backups/<time>-portal/` and keeps the newest 5;
+- **Backups and reports from the web app.** Back up now writes `backups/<time>-portal/` and keeps the newest 5;
   every backup (yours, nightly, before an update) is refused when the disk could not hold it twice. The status
   report (`.state/status/report.txt`, 640) has the secrets of `.env`, emails and logins, tailnet names and AWS
   account numbers removed.
@@ -298,10 +298,10 @@ The **Settings** tab shows every key of `.env` and changes the ones listed in
   release installs. Not counted in the diagnostics' rate limits; the heartbeat goes on during every job. The backup list Settings shows
   (`.state/status/backups.json`) holds names, kinds, sizes and dates only, never anything inside a backup.
 
-**What a compromised portal container can still do.** It already holds the LiteLLM master key, the RustFS root
+**What a compromised web app container can still do.** It already holds the LiteLLM master key, the RustFS root
 pair, the LiteLLM keys and the MCP token, and it sits on the network next to Open WebUI (which trusts the sign-in
 header from its peers): it can act as admin of LiteLLM, RustFS and Chat and spend Bedrock money within the
-budgets — Settings adds nothing to that. It can no longer read the portal password (only its hash: it would have to
+budgets — Settings adds nothing to that. It can no longer read the web app password (only its hash: it would have to
 crack PBKDF2 or catch your next sign-in), so it cannot pass the helper's password check, and it cannot read the
 AWS key, the Cloudflare token, the speech-to-text key or the Experiential Labs key. It does hold the OpenRouter key (Home shows that
 account's credit with it). With your password (caught at a sign-in)
@@ -313,7 +313,7 @@ or MCP token — it is restarted with them, as it holds the current ones), and c
 
 ## HTTPS on this computer
 
-With `PORTAL_HTTPS` on (`./stack https on`, or Settings), the portal is served over HTTPS from a certificate authority
+With `PORTAL_HTTPS` on (`./stack https on`, or Settings), the web app is served over HTTPS from a certificate authority
 made for this install ([advanced](advanced.md#https-for-the-portal-stack-https) has the commands).
 
 - **The CA can only vouch for your install.** It is an EC P-256 CA with `CA:TRUE, pathlen:0` and a critical *name
@@ -329,7 +329,7 @@ made for this install ([advanced](advanced.md#https-for-the-portal-stack-https) 
   `./stack` to sign the site certificate. Caddy gets the site certificate and its key only: a copy in `.state/tls/serve`
   (mode 644 in a folder under `.state`, which is 700, as the built-in git server's certificate is), mounted read-only.
   The site key can vouch for the install's addresses only and expires within 397 days.
-- **The session cookie becomes `Secure`,** and every origin the portal allows (CSP `frame-ancestors`, Chat's CORS, the
+- **The session cookie becomes `Secure`,** and every origin the web app allows (CSP `frame-ancestors`, Chat's CORS, the
   built-in git server's root URL, `wss://` for terminals and the Code page) follows the scheme.
 - **Undo.** `./stack https off` (or the Settings switch) removes the CA from the login keychain / NSS database (it asks
   first), deletes `.state/tls` and serves http again. If something went wrong, `security delete-certificate -Z <SHA-1>`
@@ -337,10 +337,10 @@ made for this install ([advanced](advanced.md#https-for-the-portal-stack-https) 
 
 ## Activity and search
 
-The portal's notification centre (the bell, `static/activity.js`) and its global search (Ctrl/⌘+K, `static/search.js`)
-only read what the portal already has, and **nothing new is sent outside your stack**: nothing goes to a third party,
+The web app's notification centre (the bell, `static/activity.js`) and its global search (Ctrl/⌘+K, `static/search.js`)
+only read what the web app already has, and **nothing new is sent outside your stack**: nothing goes to a third party,
 no push service is used, and there is no new store — the server keeps no list of its own. (Over remote access, what
-you type into the search travels from your device to the portal, as every request there does.)
+you type into the search travels from your device to the web app, as every request there does.)
 
 - **What Activity reads.** `GET /api/activity` (a session and `X-Requested-With`, like every `/api/*`) derives its
   items, each time it is asked, from files that exist already, read-only through the same reader as Home (no
@@ -350,82 +350,82 @@ you type into the search travels from your device to the portal, as every reques
   turned the Code page on), the release check's `latest.json` and `version.json`, and the last model check
   (`litellm/probe-results.tsv`). Budgets and failed OpenRouter requests come from `/api/summary`, which Home loads
   anyway (Activity asks it at most every 5 minutes while Home is not shown); Code sessions that wait for you come
-  from the Code tab's frame's status message (below). An item carries a place in the portal to go to
+  from the Code tab's frame's status message (below). An item carries a place in the web app to go to
   (`#home`, `#settings/<KEY>`, a waiting Code session's `#code/<session id>` — checked on both sides; never a URL).
 - **What the browser keeps.** Read, unread and dismissed: `localStorage["bn.activity"]`, this browser only, holding
   item ids and times — never a title or a text (an id names a key alias, a job id, a release tag, a Code session's
   UUID); entries older than 45 days are dropped. A Code page notice kept with the old Home banner's **Keep** stays
   kept (`bn.code.defaultNotice`).
 - **Browser notifications** are off until you turn them on in the panel, which asks the browser's permission; then
-  only items that appear while a portal tab is open and not focused raise one, at most three at a time, never for
+  only items that appear while a web app tab is open and not focused raise one, at most three at a time, never for
   what was there when the page opened. A notification says **fixed words only** — what kind of thing happened ("A
   Code session needs you", "A job failed", "A DevOS ADE update is available"; for a budget its key's label from
   this stack and the percentage) and "Details in Activity" — never an item's title or text: a Code session's title
   (sandbox text, often the prompt), a job's message, a model name or an error could otherwise show on a lock screen,
-  in the system's notification history or on a paired watch. The details stay in the panel, behind the portal's
+  in the system's notification history or on a paired watch. The details stay in the panel, behind the web app's
   sign-in. There is no Web Push: no subscription, no push service, no server-sent notification.
-  `sw.js` only handles a click on one (it focuses the portal, and for a Code session that waits hands the page that
-  session's place, `#code/<session id>` — checked in both, nothing else taken; with no portal window it opens `/` at
+  `sw.js` only handles a click on one (it focuses the web app, and for a Code session that waits hands the page that
+  session's place, `#code/<session id>` — checked in both, nothing else taken; with no web app window it opens `/` at
   that place); on Android Chrome, which allows notifications only through a service worker, it shows them.
 - **The needs-you banner (phones).** A Code session that waits for you and is unread in Activity is also a banner at
-  the top of the portal's other tabs: fixed words, and the session's title as text (sandbox text, like the panel's).
+  the top of the web app's other tabs: fixed words, and the session's title as text (sandbox text, like the panel's).
   *Answer* marks it read and opens that session in the Code tab; ✕ marks it read. It is built from Activity's own
   items (the Code tab's checked report), keeps nothing of its own and sends nothing anywhere.
-- **The Code tab's frame and the portal** talk by `postMessage`, and each side checks the other's origin *and*
-  window: the portal takes messages only from the code host's origin and from its own Code tab's frame
-  (`e.source === frame.contentWindow`), the Code page only from the portal origin it was given (`/api/state`'s
+- **The Code tab's frame and the web app** talk by `postMessage`, and each side checks the other's origin *and*
+  window: the web app takes messages only from the code host's origin and from its own Code tab's frame
+  (`e.source === frame.contentWindow`), the Code page only from the web app origin it was given (`/api/state`'s
   `portal_origin`) and from `window.parent`; each answers to that one origin only (never `"*"`). The messages:
-  - Code page → portal `{type: "bn-code-status", pending, busy, bypass, waiting, sessions: [{id, title, state}], git,
+  - Code page → web app `{type: "bn-code-status", pending, busy, bypass, waiting, sessions: [{id, title, state}], git,
     hosts}` (as before: the badge and Home's Continue row); Activity uses the same checked copy (ids that are UUIDs, known
     states, at most 8, titles cut to 120 characters with invisible and direction-changing characters shown as
     `⟨U+…⟩`). `hosts` is how many Git hosts are connected — a number only (0–99, else nothing), never a host's name,
     URL or credential —, which the walkthrough's *Connect a git host* step uses to tick itself off.
-  - portal → Code page `{type: "bn-portal-search", id, q}` (id: 1–32 letters and digits; q: at most 64 characters,
+  - web app → Code page `{type: "bn-portal-search", id, q}` (id: 1–32 letters and digits; q: at most 64 characters,
     control characters dropped), and back `{type: "bn-code-search", id, sessions: [{id, title}] (≤ 20), files:
     [path] (≤ 30), truncated}`: the session list's own fuzzy match and the @ picker's bounded walk (`/api/fs/find`).
-    The portal takes only the answer to its last request, ids that are UUIDs, and workspace-relative file paths
+    The web app takes only the answer to its last request, ids that are UUIDs, and workspace-relative file paths
     (no `..`, `.`, empty part, leading `/` or NUL; folders left out), shown as text like the titles.
-  - portal → Code page `{type: "bn-portal-open", path}`: the Code page opens that file in its editor only if the path
+  - web app → Code page `{type: "bn-portal-open", path}`: the Code page opens that file in its editor only if the path
     passes its own checks (`exactPath` and `cleanPath`, as every open there) — it reads a file of the workspace the
     page can already read; it never runs anything.
-  - portal → Code page `{type: "bn-portal-git", dialog}` (Settings › Claude Code › Git hosts, an Activity item, the
+  - web app → Code page `{type: "bn-portal-git", dialog}` (Settings › Claude Code › Git hosts, an Activity item, the
     walkthrough's *Open Git hosts* and *Clone a repository*): the Code page opens its Git panel with that dialog, only
     `hosts` or `clone`, empty — nothing else of the message is used, nothing is cloned, added or changed. It is sent
     only to a Code tab whose page has reported since it loaded (so it is unlocked and listening), and asks in place:
-    the page is not reloaded, so unsaved edits in its editor stay. Otherwise (not loaded, locked) the portal
+    the page is not reloaded, so unsaved edits in its editor stay. Otherwise (not loaded, locked) the web app
     opens `code.<host>/?git=hosts` or `?git=clone` instead, a deep link kept through the unlock (below).
-  - portal → Code page `{type: "bn-portal-shown"}` (the Code tab shown again on a phone): the Code page shows the
+  - web app → Code page `{type: "bn-portal-shown"}` (the Code tab shown again on a phone): the Code page shows the
     session that waits for you, its card in view with no sheet over it — one of its own open sessions, chosen by the
-    page; nothing of the message is used. portal → Code page `{type: "bn-portal-session", id}` (Home's Continue
-    row, Activity's *Answer*, the banner, search, the portal's `#code/<id>`): the Code page shows or resumes that session as
+    page; nothing of the message is used. web app → Code page `{type: "bn-portal-session", id}` (Home's Continue
+    row, Activity's *Answer*, the banner, search, the web app's `#code/<id>`): the Code page shows or resumes that session as
     its own deep link `?session=` would — a lowercase session id only, else nothing. Both go only to a Code tab whose
-    page has reported since it loaded; otherwise the portal loads `code.<host>/?session=<id>`.
+    page has reported since it loaded; otherwise the web app loads `code.<host>/?session=<id>`.
   A frame that is locked or not loaded (a browser that never opened Code) answers nothing:
   the search then says where to look instead.
-- **Chat conversations** come from Open WebUI's own search API, asked by the portal server (`GET /api/search/chats`):
+- **Chat conversations** come from Open WebUI's own search API, asked by the web app server (`GET /api/search/chats`):
   it signs in to Open WebUI the way the Chat tab does — `POST /api/v1/auths/signin` with `X-Portal-User: <owner email>`
   on the stack's internal network (Open WebUI trusts that header from the containers on its network; see *What stays
   local*) — and keeps the owner's session token in memory only, for at most an hour (dropped at the first 401; the
-  portal's HTTP client keeps no cookies), never logged, never on disk, never sent to the browser. Only the chat's id
+  web app's HTTP client keeps no cookies), never logged, never on disk, never sent to the browser. Only the chat's id
   (a UUID), its title and Open WebUI's snippet go to the page, as text (capped, control characters dropped, at most
   20). The query is at most 64 characters; a few searches a second at most. If it fails, the page offers Chat's own
   search box instead.
 - **Git** (repositories, issues and pull requests of the built-in git server) comes from Forgejo's search API, asked by the
-  portal server (`GET /api/search/git`) with a read-only token that only the portal container has; [The built-in git
+  web app server (`GET /api/search/git`) with a read-only token that only the web app container has; [The built-in git
   server](#the-built-in-git-server-forgejo) says how it gets there and what is searched. If it fails, the page offers
   one *Search in Git* entry, which opens the Git tab.
 - **Settings and docs.** `GET /api/search/index` returns the Settings page's sections and settings (titles and
   one-line summaries from `catalog/settings-layout.tsv` and `catalog/settings.tsv`: never a value of `.env`) and an
-  index of README.md and `docs/*.md` (headings, GitHub's anchors, a line of text each) built when the portal's image
+  index of README.md and `docs/*.md` (headings, GitHub's anchors, a line of text each) built when the web app's image
   is built (`portal/Dockerfile`, stage `docs`; `compose.portal-docs.yaml` gives BuildKit this checkout as a named
   context, and BuildKit sends only the files the Dockerfile names — never `.env`, `.state` or `backups/`). `./stack`
   adds that file wherever Docker Compose reads `additional_contexts` (2.17 or newer: every Compose this version runs
-  with, since it needs 2.24.4 — `./stack setup` and `./stack update` stop on an older one); a portal built without it
+  with, since it needs 2.24.4 — `./stack setup` and `./stack update` stop on an older one); a web app built without it
   has an empty docs index, and the search says so. A docs result opens the section on github.com in a new tab
   (`noopener,noreferrer`) — a link you click, like the release notes' — at your release's tag.
 - **Matching is linear.** Every query and candidate is capped (64 and 256 characters, 5,000 candidates per search)
   and matched by one greedy pass plus a Knuth–Morris–Pratt substring search (`static/fuzzy.js`, the Code palette's
-  algorithm); no regular expression is built from input (a test checks the portal's scripts for `new RegExp`), and
+  algorithm); no regular expression is built from input (a test checks the web app's scripts for `new RegExp`), and
   unit tests time hostile inputs (5,000 near-miss candidates of 1 KiB, a 200,000-character title); so does the e2e
   suite in Chromium. The docs index is built from this repository's files with string operations only.
 - **Over remote access** Activity and search work as locally (they read nothing a remote session could not see on
@@ -448,7 +448,7 @@ An optional gateway (`lib/explabs.sh`; README › *Optional: Experiential Labs*)
   background while it has a list read with the key `.env` holds, else waiting, up to about 100 s; the check of a new
   key makes the first alone):
   - `GET https://api.experientiallabs.ai/v1/models` **with the key** (on curl's stdin): the ids of the models this key
-    may call — the OpenAI list, which carries nothing else. The portal makes this one too, once, for a new key typed
+    may call — the OpenAI list, which carries nothing else. The web app makes this one too, once, for a new key typed
     in Settings, before the password ([a key checked in its form](#settings));
   - `GET https://api.experientiallabs.ai/api/models/<id>` **without the key**, one for each model `EXPLABS_MODELS`
     picks that the key may call (at most 40), side by side: that model in the gateway's public catalog — its
@@ -474,8 +474,8 @@ An optional gateway (`lib/explabs.sh`; README › *Optional: Experiential Labs*)
   reaches LiteLLM's environment (the config names `os.environ/EXPLABS_API_KEY`, never the value) and, when `./stack`
   reads the model list, curl's stdin (`curl_auth`: never a command line, a URL or a log). Nothing shows it back: the
   settings snapshot marks it set without any hint (secret code `S`), `./stack config get` refuses it, and no status
-  line, error message, audit line, cache or file the portal reads holds it. `.state/explabs-key.sha256` (600) keeps a
-  SHA-256 of it, only to tell whether the cached list was read with the key `.env` holds now. The portal, Open WebUI and
+  line, error message, audit line, cache or file the web app reads holds it. `.state/explabs-key.sha256` (600) keeps a
+  SHA-256 of it, only to tell whether the cached list was read with the key `.env` holds now. The web app, Open WebUI and
   the Code page never get it; an `EXPLABS_*` in your shell never reaches Docker Compose.
 - **What is kept, and where.** LiteLLM keeps its usual metadata and spend for these calls (no prompt text unless
   `LITELLM_STORE_PROMPTS=true`). At the gateway, what is kept follows your Experiential Labs account's own settings:
@@ -499,31 +499,31 @@ An optional gateway (`lib/explabs.sh`; README › *Optional: Experiential Labs*)
 
 **Browse models** (Settings › Models & providers › *Browse models*; `portal/portal/model_browser.py`,
 `lib/model_browser.sh`) searches what each provider offers. Every provider list is read **on the computer running DevOS
-ADE, never in your browser, and never with a provider key held in the portal**:
+ADE, never in your browser, and never with a provider key held in the web app**:
 
 - **Bedrock.** `ListFoundationModels`, `ListInferenceProfiles` and `GetInferenceProfile` run in a one-off container of
   the model gateway's image with the AWS sign-in LiteLLM itself uses (`.env`'s key or the instance role) — the same way
   the model check and the web-search probe already call AWS. All are read-only and free; the AWS key never reaches the
-  portal. A key that may not list them is told so (the browser then shows the built-in catalog instead). The other
+  web app. A key that may not list them is told so (the browser then shows the built-in catalog instead). The other
   regions are read the same way (`ListFoundationModels` in each region Bedrock has, in parallel, a few seconds each and
   45 seconds in all); a region your account has not turned on answers so and is counted, never retried. A model only
   another region offers is called in that region (its row says so: your prompts go there), so a policy that limits
   where data goes should leave it out, or not grant `bedrock:InvokeModel` there.
-- **Your application inference profiles.** Their ARN names your AWS account, so it never reaches the portal: the stack
+- **Your application inference profiles.** Their ARN names your AWS account, so it never reaches the web app: the stack
   keeps each one in `.state/bedrock/app-profiles.tsv` (its folder mode 700, the file 600, not mounted into any
-  container) and writes it only into the model gateway's config when you add the profile. The page and the portal see
+  container) and writes it only into the model gateway's config when you add the profile. The page and the web app see
   `app/<id>` and the profile's name; a profile id the stack has no ARN for is not rendered. Prices, context, tool use and
   image input come from the model gateway's own price map, not a network call.
 - **Experiential Labs.** `GET /v1/models` with the key (on `curl`'s stdin, never a command line, URL or log — as
   `lib/explabs.sh` always reads it) gives the ids the key may call; the public catalog (`/api/models`, keyless, so
   nothing about you is sent) gives each model's price, context, tools and image input. The key stays in `.env` and
   reaches only LiteLLM and the gateway.
-- **OpenRouter** is a public list (`GET https://openrouter.ai/api/v1/models`, no key), read by the portal server-side.
+- **OpenRouter** is a public list (`GET https://openrouter.ai/api/v1/models`, no key), read by the web app server-side.
 
-The stack writes the Bedrock and Experiential Labs lists to `.state/status/model-browser/` (read-only in the portal)
-and the portal reads them field by field; each is cached about an hour and re-read in the background by the update
+The stack writes the Bedrock and Experiential Labs lists to `.state/status/model-browser/` (read-only in the web app)
+and the web app reads them field by field; each is cached about an hour and re-read in the background by the update
 helper when the page asks (a free, read-only refresh, no password). **Adding or removing** a model is an ordinary
-settings change: it goes through the same front door as every other (the portal password typed again, the update
+settings change: it goes through the same front door as every other (the web app password typed again, the update
 helper, `./stack config apply`, the remote-access rules), writing `EXPLABS_MODELS`, `OPENROUTER_MODELS` or
 `BEDROCK_MODELS`; only the model gateway is re-rendered and restarted. **Try it** makes one capped call on the setup key
 (its budget counts it), shows the cost first, and refuses an expensive model — Opus included — without an explicit
@@ -535,18 +535,18 @@ Local models (`./stack local-models`, Settings › Models & providers › Local 
 Face and run them in Docker Model Runner, Ollama, llama.cpp, LM Studio or vLLM on the computer (an Ollama of yours, or
 DevOS ADE's own Ollama, llama.cpp, LM Studio or vLLM: Runtimes, below).
 
-- **Only Hugging Face.** Repo and quantization names are validated (`org/name`, a quant tag) in the portal, the update
-  helper and the CLI before anything runs; a URL or path is refused. The portal works out a download's size, license and
+- **Only Hugging Face.** Repo and quantization names are validated (`org/name`, a quant tag) in the web app, the update
+  helper and the CLI before anything runs; a URL or path is refused. The web app works out a download's size, license and
   tool support itself from Hugging Face's public API, never from the page, and the helper request has fixed, regex-checked
-  fields (`local-pull`, `local-remove`) behind the portal password, with rate limits.
+  fields (`local-pull`, `local-remove`) behind the web app password, with rate limits.
 - **Pause and Cancel** need no password: they only ever stop the running download (Cancel also deletes an unfinished
   download's part, never a model that downloaded whole: that is Remove's, with the password). `POST
-  /api/local-models/stop` keeps every other door of a change (the portal session, `X-Requested-With`, same origin, the
+  /api/local-models/stop` keeps every other door of a change (the web app session, `X-Requested-With`, same origin, the
   remote-admin rule, a bounded body, a rate limit) and writes a `local-stop` request whose only field is the op (`pause` or
   `cancel`); the helper accepts it with no `auth` and nothing else in it, counts it on its own (one a second at most), and
   runs `./stack local-models pause|cancel`. Resume is a download again, with the password.
 - **The token.** The optional Hugging Face token is a secret like the others. It is only given to the runtime's
-  environment on the host for a download: never an argument, a URL, a log or the portal. For an MLX download,
+  environment on the host for a download: never an argument, a URL, a log or the web app. For an MLX download,
   `lib/hf_fetch.py` hands it to curl on stdin as an `Authorization` header for huggingface.co; curl does not send a custom
   `Authorization` header on to the other host a download redirects to (Hugging Face's CDN), and https is required for every
   hop (`--proto =https --proto-redir =https`). Whether Docker's `docker model
@@ -582,10 +582,10 @@ DevOS ADE's own Ollama, llama.cpp, LM Studio or vLLM: Runtimes, below).
   with its gate only). There it listens on the container's addresses, which turns Ollama's own Host check off, so
   `ollama-gate` (the pinned Caddy, unprivileged, read-only, `caddy/ollama-gate.caddy`) publishes 127.0.0.1:11434 and
   forwards only requests for 127.0.0.1 or localhost; any other name is 403 (`tests/caddy-validate.sh` runs it in front
-  of a stub). Install, Start, Update and Uninstall take the portal password and go through the update helper as a
+  of a stub). Install, Start, Update and Uninstall take the web app password and go through the update helper as a
   `local-runtime` request with fixed, regex-checked fields (the op, and the id `ollama`); Stop, Cancel and the log are a
-  password-less `local-runtime-stop` request (they only stop something or read its log), each with the portal's other
-  doors and its own rate limit. The log the portal shows is the last lines of Ollama's own log, printable characters
+  password-less `local-runtime-stop` request (they only stop something or read its log), each with the web app's other
+  doors and its own rate limit. The log the web app shows is the last lines of Ollama's own log, printable characters
   only. An Ollama that already answers on 127.0.0.1:11434 and is not this stack's is never installed over, stopped or
   removed. Uninstall deletes its folder (or its container and volume) with every model in it, after taking those models
   out of the model gateway.
@@ -598,7 +598,7 @@ DevOS ADE's own Ollama, llama.cpp, LM Studio or vLLM: Runtimes, below).
   you, or ./stack runs as root), and publishing no port: its only network is "llamacpp" (internal: the model gateway and
   it), and its models and settings are mounted read-only. llama.cpp does not check the Host a request names, so neither
   way relies on that: it requires an **API key** for everything but `/health` (`--api-key-file`; 32 random bytes made at
-  install in `.state/runtimes/llamacpp/etc`, mode 700, never in the plist, an argument, a log or the portal), which a web
+  install in `.state/runtimes/llamacpp/etc`, mode 700, never in the plist, an argument, a log or the web app), which a web
   page pointing a name at this computer (DNS rebinding) cannot know. The model gateway's generated config carries it as
   that model's `api_key` (readable by that config's readers on this computer); `./stack`'s own requests send it from a
   mode-600 header file (`curl -H @file`). Its web UI is off (`--no-ui`), CORS is limited to localhost
@@ -667,7 +667,7 @@ DevOS ADE's own Ollama, llama.cpp, LM Studio or vLLM: Runtimes, below).
   address is allowed with a warning; a self-signed certificate is trusted per server (`ssl_verify: false` for that
   server's models only, never global). Everything a server answers is untrusted data. Servers are probed about once a
   minute from the update helper (a GET of `/v1/models`).
-- **The Settings form.** A candidate address is probed by the update helper on the host (never by the portal's container). **Check server of this computer** (localhost, `127.x.x.x`, `::1`) is read-only and carries no password: it is a `local-probe` request (`POST /api/local-models/probe`: the portal session, `X-Requested-With`, same-origin and remote-admin rules and the one-a-second rate limit, one owner-only request file with an address, trust, key and ref and no `auth`; the helper accepts no password-less request of any other kind, and a `local-server` request without a password is refused in every op), and every address guard below applies to it unchanged. It reaches this computer only: the portal refuses any other host, and the helper judges the address the probe is pinned to (so a name cannot resolve to loopback for the check and elsewhere for the request) and refuses anything but loopback. Checking another computer is a `local-server` probe, with the password — without it, a stolen portal session could use the host to map which addresses and ports on your network answer. Saving, removing, a key change and a model toggle are `local-server` requests: session and password, as before. The API key travels base64 in that one file, is read by `./stack local-models server apply` from a mode-600 file (never an argument), and is in no answer, status file or log. A stored key is sent only to that server's own saved address, whatever changed the address: `MODEL_SERVER_KEYS` stores `name=<16 hex>:key`, the hex being the start of the sha256 of the server's stored address (and `;trust`, so turning trust on for the same address also unbinds it). `msrv_key` returns the key only when that matches the server's current entry, so `./stack config set MODEL_SERVERS`, the portal's generic Settings row or a hand-edited `.env` that repoints a server leaves its key unused, out of the probe's curl config and out of the gateway's generated config; setup/apply logs "key cleared: the address changed" and the form shows it. A key saved before this binding (`name=key`) cannot be proven to belong to the address it has now, so it is not used: it is ignored and reported ("enter it again") rather than silently tied to whatever the address is today. `MODEL_SERVERS` stays changeable from the portal (policy `edit`): the form that owns it is itself password-gated, the binding closes the credential-redirect, and what an address change can still do (point the gateway at another private or public host, with no key) is the same as adding a server.
+- **The Settings form.** A candidate address is probed by the update helper on the host (never by the web app's container). **Check server of this computer** (localhost, `127.x.x.x`, `::1`) is read-only and carries no password: it is a `local-probe` request (`POST /api/local-models/probe`: the web app session, `X-Requested-With`, same-origin and remote-admin rules and the one-a-second rate limit, one owner-only request file with an address, trust, key and ref and no `auth`; the helper accepts no password-less request of any other kind, and a `local-server` request without a password is refused in every op), and every address guard below applies to it unchanged. It reaches this computer only: the web app refuses any other host, and the helper judges the address the probe is pinned to (so a name cannot resolve to loopback for the check and elsewhere for the request) and refuses anything but loopback. Checking another computer is a `local-server` probe, with the password — without it, a stolen web app session could use the host to map which addresses and ports on your network answer. Saving, removing, a key change and a model toggle are `local-server` requests: session and password, as before. The API key travels base64 in that one file, is read by `./stack local-models server apply` from a mode-600 file (never an argument), and is in no answer, status file or log. A stored key is sent only to that server's own saved address, whatever changed the address: `MODEL_SERVER_KEYS` stores `name=<16 hex>:key`, the hex being the start of the sha256 of the server's stored address (and `;trust`, so turning trust on for the same address also unbinds it). `msrv_key` returns the key only when that matches the server's current entry, so `./stack config set MODEL_SERVERS`, the web app's generic Settings row or a hand-edited `.env` that repoints a server leaves its key unused, out of the probe's curl config and out of the gateway's generated config; setup/apply logs "key cleared: the address changed" and the form shows it. A key saved before this binding (`name=key`) cannot be proven to belong to the address it has now, so it is not used: it is ignored and reported ("enter it again") rather than silently tied to whatever the address is today. `MODEL_SERVERS` stays changeable from the web app (policy `edit`): the form that owns it is itself password-gated, the binding closes the credential-redirect, and what an address change can still do (point the gateway at another private or public host, with no key) is the same as adding a server.
 - **Where a model server may not be (SSRF).** The probe runs on the host, so it must not become a way to reach cloud metadata
   (ADE also runs on cloud VMs). One place judges an address (`lib/msrv_target.py`, `python3 -I`, standard library; no python3
   means refused): a canonical IP literal is used as it is, a numeric-looking host that is not in standard form (octal,
@@ -694,9 +694,9 @@ DevOS ADE's own Ollama, llama.cpp, LM Studio or vLLM: Runtimes, below).
   proxy that refuses metadata): its access to 169.254.169.254 is NOT blocked by this stack. The owner chose the name;
   on EC2 enforce IMDSv2 with a hop limit of 1 (the default for new instances), which a container cannot cross. The response
   body of a probe is never shown: only its status class and the model ids parsed from it. Only the signed-in owner can
-  add or change a server (the settings API: a session, the `X-Requested-With` header, a same-site origin and the portal
+  add or change a server (the settings API: a session, the `X-Requested-With` header, a same-site origin and the web app
   password; `portal/tests/test_settings.py` test_apply_needs_session_header_origin_and_password and
-  `portal/tests/test_local_models.py`); the Code and Chat sandboxes have no portal session or password.
+  `portal/tests/test_local_models.py`); the Code and Chat sandboxes have no web app session or password.
 - **The gateway** reaches the runtime at `host.docker.internal` (a host-gateway entry on the litellm service only), or
   DevOS ADE's own Ollama on Linux as `ollama:11434` and llama.cpp as `llamacpp:8080`, each on an internal network of
   their own. A local model costs nothing and is capped
@@ -722,7 +722,7 @@ searched, and the hook (`lib/litellm-hooks/bn_hooks.py`) has WebSearch say so.
 - **The keys and URLs.** `WEBSEARCH_TAVILY_API_KEY`, `WEBSEARCH_BRAVE_API_KEY`, `WEBSEARCH_PERPLEXITY_API_KEY`: in
   `.env` (600), changed only from this computer (policy `local`; `./stack config set` asks without echo), shown back as
   set with their last 4 characters at most. They reach LiteLLM's environment only (the config names
-  `os.environ/WEBSEARCH_…`, never the value); a `WEBSEARCH_*` in your shell never reaches Docker Compose. The portal,
+  `os.environ/WEBSEARCH_…`, never the value); a `WEBSEARCH_*` in your shell never reaches Docker Compose. The web app,
   Open WebUI and the sandbox never get them. `WEBSEARCH_AGENTCORE_GATEWAY` takes nothing but an AgentCore gateway's MCP
   URL; `WEBSEARCH_SEARXNG_URL` https, or http to a host of your own network (the webhook's rule).
   The SearXNG URL is shown only as `scheme://host/…` (Settings, `./stack websearch status`, what to do when it fails):
@@ -742,7 +742,7 @@ searched, and the hook (`lib/litellm-hooks/bn_hooks.py`) has WebSearch say so.
 - **The checks.** Setup, a settings change and `./stack websearch check` make at most one search, through LiteLLM's
   `/v1/search` with the setup key (booked there); their answers (`.state/websearch/`, 700) hold the status, the
   account id, the IAM user or role name and the gateway — never a key — and `litellm/web-search.json` (644, read by
-  LiteLLM's hook and the portal) the backend, its price, the status and what to do.
+  LiteLLM's hook and the web app) the backend, its price, the status and what to do.
 - **Costs.** Each search is booked on the key of the request that searched, at the backend's price per search (the
   hook registers it with LiteLLM: AgentCore's $0.007005, the list prices of the others, $0 for SearXNG, yours or the
   built-in one), and counts against that key's budget like model spend.
@@ -766,16 +766,16 @@ The default search backend: the official SearXNG image, pinned by digest (`compo
   resolver or autocomplete; the limiter is off (only LiteLLM reaches it) and so are its metrics. Each engine gets 4 s,
   a search 8 s at most, and LiteLLM gives up after 15 s.
 - **Who reaches it.** No published port and no Caddy site: nothing outside Docker reaches it. Its one inbound network,
-  `websearch`, is internal and has two members, LiteLLM and SearXNG. The portal, Open WebUI, Caddy, the browser
+  `websearch`, is internal and has two members, LiteLLM and SearXNG. The web app, Open WebUI, Caddy, the browser
   terminal and its gateway, the Code page, Chat's sandbox, shared-mcp and the data services are on no network with it.
   The sandbox reaches it only the way it reaches LiteLLM: through its gateway's `/v1/messages`, where a WebSearch is
   intercepted — never `/v1/search` (the gateway forwards only Claude Code's paths). The end-to-end suite checks this
   from the terminal, the Code page's container and Chat's sandbox, and that LiteLLM gets real results from it.
 - **What Home shows of it.** Home's Services list it while it is on (its state and health, like the other services),
-  without any new way to it: the portal does not ask SearXNG, it reads `./stack`'s record of the containers,
+  without any new way to it: the web app does not ask SearXNG, it reads `./stack`'s record of the containers,
   `.state/status/services.json` (each service `./stack status` lists, with Docker Compose's own words for its state
-  and health, and when; mode 644, read-only in the portal like the other status files). `./stack status`, `up`,
-  setup, `./stack restart` and the switch write it, and the update helper once a minute; the portal shows only
+  and health, and when; mode 644, read-only in the web app like the other status files). `./stack status`, `up`,
+  setup, `./stack restart` and the switch write it, and the update helper once a minute; the web app shows only
   Docker's words from it and says how old a record is once nobody rewrote it for 5 minutes. Off: the record lists no
   SearXNG, and Home no row. `./stack restart searxng` (Settings › Diagnostics too, while it is on) and `./stack logs
   searxng` work as for the other services.
@@ -816,26 +816,26 @@ Off by default; `./stack remote enable tailscale` turns it on ([docs/remote.md](
   is logged in, and the container is recreated so it is gone from `docker inspect` too.
 - **Only Caddy can speak for the remote site.** Caddy deletes client-sent `X-Portal-Proxy`, `X-Portal-Remote`
   and `Tailscale-User-*` headers on every site and adds `X-Portal-Proxy: <PORTAL_PROXY_SECRET>` (random, in
-  `.env`; stripped before the apps). The portal honours `X-Portal-Remote` and `Tailscale-User-Login` only with
+  `.env`; stripped before the apps). The web app honours `X-Portal-Remote` and `Tailscale-User-Login` only with
   that secret, so another container calling `portal:8000` directly is treated as local. A missing or short
-  secret (under 32 characters) is regenerated by `./stack up`; the portal logs a warning at start meanwhile.
+  secret (under 32 characters) is regenerated by `./stack up`; the web app logs a warning at start meanwhile.
 - **A separate site.** Remote site blocks delete any client-sent `X-Portal-User` and `X-Portal-Remote`, then set
-  `X-Portal-Remote: 1`; the local blocks always delete it. The portal uses that marker to pick the remote
+  `X-Portal-Remote: 1`; the local blocks always delete it. The web app uses that marker to pick the remote
   cookie, the remote origin for its CSRF check and login redirects (https on the remote names only), and the
-  remote app addresses. The apps may be framed only by the remote portal origin on the remote names.
+  remote app addresses. The apps may be framed only by the remote web app origin on the remote names.
 - **Host-only cookies.** Every remote cookie is `__Host-bn_session` (`Secure`, `HttpOnly`, `SameSite=Strict`,
   `Path=/`, no `Domain`), so no other machine under `<tailnet>.ts.net` (or your domain) ever receives one; Caddy
-  strips it before the apps. The portal host's cookie comes from the login; each app host gets its own through a
-  **hand-off**: `/auth/handoff` (portal host, signed in, the target must be one of the three app hosts) mints a
+  strips it before the apps. The web app host's cookie comes from the login; each app host gets its own through a
+  **hand-off**: `/auth/handoff` (web app host, signed in, the target must be one of the three app hosts) mints a
   token — signed with `PORTAL_SECRET` under its own salt, 60 seconds, a random nonce that is accepted once (kept
   in memory until it expires), bound to one host and to the Tailscale login — and redirects to
-  `https://<app host>/.bn/callback`, which Caddy forwards to the portal. The callback checks host, expiry, nonce
-  and login, re-checks the session (so a sign-out in between wins), sets that host's cookie with the portal
+  `https://<app host>/.bn/callback`, which Caddy forwards to the web app. The callback checks host, expiry, nonce
+  and login, re-checks the session (so a sign-out in between wins), sets that host's cookie with the web app
   session's start time (same 30-day end, same `not_before` revocation) and redirects to a path on the same host
   only. Responses carrying tokens are `no-store` with `Referrer-Policy: no-referrer`; tokens are never logged.
 - **Your Tailscale login.** Tailscale deletes client-sent `Tailscale-User-*` headers and adds
   `Tailscale-User-Login` for devices signed in as a user (also on Services traffic, per its source). With
-  `TAILSCALE_ALLOWED_LOGIN` set, the portal requires it: a remote request without it or with another login is
+  `TAILSCALE_ALLOWED_LOGIN` set, the web app requires it: a remote request without it or with another login is
   refused (login page, sign-in, hand-off and every app request), and remote sessions are bound to it. Tagged
   devices get no header and are therefore refused; `./stack remote status` says what it saw. Left blank, the
   password is the only gate for any device your tailnet policy admits (`enable`, `status`, `test` warn). In
@@ -844,7 +844,7 @@ Off by default; `./stack remote enable tailscale` turns it on ([docs/remote.md](
 - **Your tailnet policy decides who connects.** The printed grant limits access only if the policy has no
   allow-all rule (a new tailnet's default allows everything); remove or narrow it.
 - **Hand-off tokens** also carry the password fingerprint (a new `PORTAL_PASSWORD` voids them) and are refused
-  if minted before the portal last started (their nonces are kept in memory). A browser that keeps refusing an
+  if minted before the web app last started (their nonces are kept in memory). A browser that keeps refusing an
   app host's cookie gets an explanation after four hand-offs a minute instead of a redirect loop.
 - **App cookies.** Open WebUI keeps `WEBUI_AUTH_COOKIE_SECURE=false` (the local site is http); Caddy appends
   `Secure` to every cookie the apps set on the remote https site. The automatic sign-in to Admin and Files sets its
@@ -863,7 +863,7 @@ Off by default; `./stack remote enable tailscale` turns it on ([docs/remote.md](
 site* — and DevOS ADE's hosts share one: `*.devos-ade.localhost` here (`localhost` is not on the public suffix
 list, so a `.localhost` name's last two labels are its site), every Service of a tailnet over Tailscale (`ts.net` is on
 it: the whole `<tailnet>.ts.net` is one site, the remote preview host and your other machines' web apps included), and
-everything under your domain in own-domain mode. A page on any of those hosts could send requests to the portal, Chat,
+everything under your domain in own-domain mode. A page on any of those hosts could send requests to the web app, Chat,
 Admin, Files, the terminal or the Code page that carry your cookies — form posts, `no-cors` fetches, WebSockets — and,
 where an app's CORS answers its `Origin` (Open WebUI's default is `*`; DevOS ADE limits it to Chat's own origin),
 read the answers. The remote preview host shows whatever the sandbox serves, so over remote access this is not
@@ -871,7 +871,7 @@ hypothetical: `tests/e2e/remote/run.sh` shows a preview reading a stand-in Chat'
 WebUI's default) and posting a form to it as you once the guard is taken out.
 
 So every app host — here and on the remote sites — starts with `not_from_preview` (`caddy/Caddyfile`), before the
-portal's check and before the app:
+web app's check and before the app:
 
 - [x] **A preview's `Origin` is refused**: any host under `PREVIEW_DOMAIN` here, `REMOTE_PREVIEW_HOST` remotely — its
   fetches, form posts and WebSockets, also from a browser that sends no `Sec-Fetch-*` headers (Safari before 16.4).
@@ -888,22 +888,22 @@ portal's check and before the app:
   image, a style sheet, a classic script — answers no page can read). Everything else is refused: `fetch` and XHR
   (no reading another host's answers, even where its CORS would allow it), WebSockets, and every `POST`, `PUT`,
   `DELETE` … (no changing anything). The stack's own traffic between its hosts is exactly such page loads and assets:
-  the portal frames the apps, the hand-offs (`/auth/handoff`, `/.bn/callback`, the Code page → terminal and → preview
-  hand-offs) are redirects, and the unlock and sign-in pages load the portal's logo and style sheet; each app's own
+  the web app frames the apps, the hand-offs (`/auth/handoff`, `/.bn/callback`, the Code page → terminal and → preview
+  hand-offs) are redirects, and the unlock and sign-in pages load the web app's logo and style sheet; each app's own
   requests are same-origin. The e2e suite runs every app's flows with the guard on (here the stack's hosts are
   same-site with each other), and `browser/same-site-guard` sends fetches, a no-cors `POST` and a form post from a page
   of another host of the site with no policy of its own (Caddy's `/caddy-health` answer on such a name) to the other hosts — each with
-  the session cookie, each refused; from the Chat page, Chat's own policy stops them — and a style sheet from the portal
+  the session cookie, each refused; from the Chat page, Chat's own policy stops them — and a style sheet from the web app
   — before they are sent, while an image of Open WebUI's own loads.
 - [x] **A refusal says so**: `403` with a body naming the guard and `X-Bn-Refused` (shown in the browser's developer
   tools). Requests without `Sec-Fetch-Site` (curl, `./stack`, old browsers) and requests from other sites are left to
-  what handled them before — the cookies' `SameSite`, the portal's own `Origin` checks, the apps' own.
+  what handled them before — the cookies' `SameSite`, the web app's own `Origin` checks, the apps' own.
 
 Remaining risks:
 - **A page load is still a page load — with your cookies, by design.** Page loads and plain `no-cors` `GET`s from the
-  same site carry the site's `SameSite` cookies; that is what lets the portal frame the apps. So a preview (or another
+  same site carry the site's `SameSite` cookies; that is what lets the web app frame the apps. So a preview (or another
   same-site page) can open DevOS ADE's pages in a frame or a tab and load their images: the pages refuse to be framed
-  by anything but the portal (and the Code page for the terminal), and nothing changes on a `GET` except the automatic
+  by anything but the web app (and the Code page for the terminal), and nothing changes on a `GET` except the automatic
   sign-in to Admin and Files (`/.bn/sso`): a preview loading it over and over spends that session's sign-in budget (a
   nuisance: the app's own sign-in form still works). Open WebUI's sign-out (v0.12.0, the pinned version) is a `POST`,
   which the guard refuses, so a preview cannot sign you out of Chat.
@@ -922,17 +922,17 @@ Setup asks *Turn on one-click updates from Home? (Y/n)* (default yes), and so do
 `./stack update` of an install without it; a "no" (or `./stack helper uninstall`) is remembered in
 `.state/helper-declined` and not asked again. `--yes` runs install it only with `DEVOS_ADE_HELPER=1`;
 `./stack helper install` works any time. It gives Home one-click **Update**, **Rollback** and **Clean up**
-buttons, and optional **automatic updates**, without giving the portal Docker access or a shell. The portal
+buttons, and optional **automatic updates**, without giving the web app Docker access or a shell. The web app
 cannot install it itself (that would need exactly the access it must not have), hence the one terminal step.
 
-**How it works.** The portal stays read-only, with no Docker socket. For a button click it writes one small file,
+**How it works.** The web app stays read-only, with no Docker socket. For a button click it writes one small file,
 `.state/requests/req-<nonce>.json` = `{"action": …, "requested_at": …, "nonce": …}`, into the only folder it may
 write for this purpose (Settings and Diagnostics add `cfg-<nonce>.req` and `act-<nonce>.json`: [Settings](#settings)). The helper is a user-level launchd agent (macOS, `~/Library/LaunchAgents/io.devos-ade.helper.<project>.plist`)
 or systemd user unit (Linux, `~/.config/systemd/user/devos-ade-helper-<project>.service`). It runs as you,
 outside Docker, polls that folder every 3 seconds, and runs **only** `./stack update --yes`, `./stack rollback
 --yes` or `./stack clean --yes` in its own checkout, or `./stack helper auto on|off` for the automatic-updates
 switch (it writes `AUTO_UPDATE` to `.env`; nothing else). It reports progress in `.state/status/helper-status.json`
-and a heartbeat in `.state/status/helper.json`; both are read-only in the portal (as is
+and a heartbeat in `.state/status/helper.json`; both are read-only in the web app (as is
 `.state/status/terminal-job.json`, the record a `./stack` command run in a terminal leaves for Home). Once a minute it
 also writes `.state/status/services.json` again (one `docker compose ps`: each service's state and health, for Home's
 Services; [the built-in SearXNG](#the-built-in-searxng)). After each update, rollback or
@@ -953,10 +953,10 @@ request says beyond the three fields, or run as root.
 - [x] **Fresh and single-use.** A request older than 2 minutes, or dated in the future, is refused. Each nonce
   is used once; the helper keeps the last 1000 in its private `.state/helper/nonces`.
 - [x] **No tricks with the file.** The helper first *moves* the request into a fresh private folder
-  (`.state/helper/inbox/r.XXXXXX`, under a 700 folder that is not mounted anywhere), so the portal cannot swap
+  (`.state/helper/inbox/r.XXXXXX`, under a 700 folder that is not mounted anywhere), so the web app cannot swap
   it afterwards. Then it refuses symlinks and anything that is not a regular file (so the one bounded read that
   follows cannot block), files it cannot read (reported as "unreadable", never as a size problem), and files
-  owned by anyone but you or the portal's container user on Linux: uid 10102, or under rootless Docker the host
+  owned by anyone but you or the web app's container user on Linux: uid 10102, or under rootless Docker the host
   uid it maps to (read from `/etc/subuid`); `HELPER_PORTAL_UID` in `.env` overrides both.
 - [x] **No surprises in your checkout.** If tracked files have local changes, the helper refuses (like
   `./stack update` itself) and says so on Home. It refuses an **update** of a checkout that follows a branch
@@ -965,13 +965,13 @@ request says beyond the three fields, or run as root.
 - [x] **One at a time.** `./stack update`, `rollback`, `clean`, `restore` and `setup` take the lock
   `.state/lock/` (owner pid and command; a lock whose process is gone, or whose pid now belongs to a program other than ./stack, is moved aside and taken over). While a terminal command
   holds it, the helper answers "Busy" instead of starting.
-- [x] **Fresh authentication.** The portal accepts a request only with a valid session, `X-Requested-With`, an
-  `Origin` of the portal itself, **and the portal password typed again**. Wrong passwords there count toward the
+- [x] **Fresh authentication.** The web app accepts a request only with a valid session, `X-Requested-With`, an
+  `Origin` of the web app itself, **and the web app password typed again**. Wrong passwords there count toward the
   same lock-out as the login form: five in a row lock *both* the login and the buttons for a while (up to five
   minutes), also for you.
-- [x] **Rate limits, twice.** The portal accepts at most one request every 30 seconds and 6 an hour, nothing new
+- [x] **Rate limits, twice.** The web app accepts at most one request every 30 seconds and 6 an hour, nothing new
   while a job is running, and a rollback only when there is an update to roll back. Those limits only stop a
-  hijacked browser session. The helper enforces its own, which also hold if the portal container itself is
+  hijacked browser session. The helper enforces its own, which also hold if the web app container itself is
   compromised: jobs at least 60 seconds apart, at most 12 a day, and at most one rollback per recorded update
   (state in `.state/helper/`).
 - [x] **Remote access.** Requests marked as remote (`X-Portal-Remote: 1`) are refused unless
@@ -982,9 +982,9 @@ request says beyond the three fields, or run as root.
 - [x] **Permissions.** `.state/` is 700. `.state/requests/` is 700 on macOS, and 2770 (setgid, group
   `PORTAL_GID`, your primary group; under rootless Docker group 0 in the container, which is your group on the
   host) on Linux. Request files are 640, so on Linux you read them through that group while they belong to the
-  portal's uid. The helper's logs (`.state/helper/last-<action>.log`) are 600; its service log
+  web app's uid. The helper's logs (`.state/helper/last-<action>.log`) are 600; its service log
   `.state/helper/helper.log` is 600 and trimmed to 200 KB when it passes 1 MB.
-- [x] **Bounded reads that never block.** Everything the helper and `./stack` read from folders the portal can write
+- [x] **Bounded reads that never block.** Everything the helper and `./stack` read from folders the web app can write
   is read with a size cap (requests 513 bytes, settings requests 8 KB, diagnostics 513 bytes, the release check's
   answer 256 bytes). Requests are first moved into the helper's private folder and checked to be regular files;
   settings and diagnostics requests are then read like `latest.txt` below. The release check's answer (`latest.txt`) is opened
@@ -1011,11 +1011,11 @@ request says beyond the three fields, or run as root.
   `AUTO_UPDATE_HOUR` (default 3, this computer's local time), within its own limits (one job a minute, 12 a day),
   and only when all of these hold: this checkout is detached at an exact release tag (as `install.sh` leaves it;
   never a branch, whatever `DEVOS_ADE_HELPER_ALLOW_BRANCH` says); the last update finished (an unfinished one waits
-  for Update now or Roll back); the portal's daily check (`latest.txt`, read once per window as above) names a
+  for Update now or Roll back); the web app's daily check (`latest.txt`, read once per window as above) names a
   release newer than the installed version; and the newest release tag of **origin** after fetching it (this
   project's GitHub repository for an `install.sh` install) is exactly that version. So it fetches only what a manual
   `./stack update` would fetch, release tags of the same repository with the same trust (and
-  `UPDATE_REQUIRE_SIGNED_TAGS=true` applies to it the same way). `latest.txt` is written by the portal, so it is only
+  `UPDATE_REQUIRE_SIGNED_TAGS=true` applies to it the same way). `latest.txt` is written by the web app, so it is only
   a trigger: a version that is not origin's newest release tag is never installed. The fetch cannot ask for a
   password or hang (ssh in batch mode, a connect timeout, and the whole fetch ended after two minutes). Each release
   is tried at most once (`.state/helper/auto-last`, written before the job starts; if it cannot be written, the job
@@ -1029,16 +1029,16 @@ request says beyond the three fields, or run as root.
   `AUTO_UPDATE=off` in `.env`; `./stack helper uninstall` stops everything.
 - [x] **Easy to turn off.** `./stack helper uninstall` removes the agent or unit; `./stack uninstall` does too, and
   so does a `./stack rollback` to a version that has no helper. Without the helper, the buttons disappear (the
-  portal only offers them while the heartbeat is fresh; Home then shows the one command that turns them on) and
+  web app only offers them while the heartbeat is fresh; Home then shows the one command that turns them on) and
   `./stack update` keeps working in a terminal.
 
-**Threat model.** Someone who takes over the portal container, or steals a session *and* the password, can at
+**Threat model.** Someone who takes over the web app container, or steals a session *and* the password, can at
 most ask for an update to the newest release, a rollback to the recorded previous version, an image clean-up, or
 switch automatic updates on or off, within the helper's limits above. Switched on, automatic updates install
 only origin's newest release tag, once, at night: the same as asking for that update. Each of these is something
 you can already do, and each is backed up or reversible: update takes a backup first, rollback takes one before it restores, and clean keeps the previous
 version. They cannot choose a version, a backup or a command. The worst they can cause is a few minutes of
-downtime, at most twelve times a day. Apart from the requests, the only file the helper reads from the portal is the
+downtime, at most twelve times a day. Apart from the requests, the only file the helper reads from the web app is the
 release check's `latest.txt`: inside the automatic-update window, once, without blocking, and only as a trigger (see
 above). Its own code is the checkout's: whoever can change your checkout could already run anything as you (see Code provenance below).
 
@@ -1055,7 +1055,7 @@ character; `./stack helper install` refuses such a path. `%` and `$` are escaped
 
 ## The browser terminal
 
-`./stack terminal enable` puts Claude Code and a shell into the portal's Terminal tab. Earlier versions refused to
+`./stack terminal enable` puts Claude Code and a shell into the web app's Terminal tab. Earlier versions refused to
 offer this at all: a shell in the browser is one stolen session away from running commands. It is now offered as a
 **sandbox** with the checks below, so a stolen session cookie alone opens nothing, and what a successful attacker
 reaches is the container — with the three exceptions under *Threat model*.
@@ -1070,8 +1070,8 @@ reaches is the container — with the three exceptions under *Threat model*.
     addresses through its egress proxy (ports 80, 443 and 22) — not this computer's own services, your local network
     or private addresses, which the proxy refuses (*Out* below). Settings › Claude Code › *Sandbox internet access*
     (`TERMINAL_EGRESS`) turns the internet off, or opens this computer's services too (`host`, as v0.10.0 did). And two
-    more host names on `127.0.0.1` behind the portal (`terminal.` and `code.`), each needing the portal session
-    **and** the portal password again (12 hours per browser). Anything that later opens the workspace on your
+    more host names on `127.0.0.1` behind the web app (`terminal.` and `code.`), each needing the web app session
+    **and** the web app password again (12 hours per browser). Anything that later opens the workspace on your
     computer runs what Claude wrote there (threat 1).
   - *Does not add:* nothing listens beyond `127.0.0.1`; no access over remote access (`REMOTE_TERMINAL` stays off
     unless you set it, and it is not a Settings switch); no Bypass permissions or Auto mode (each off until allowed
@@ -1085,7 +1085,7 @@ reaches is the container — with the three exceptions under *Threat model*.
     turned off since. `TERMINAL_EGRESS` keeps its default (internet, public addresses only: Claude Code needs npm, pip,
     git and documentation).
   - *Unattended:* an update nobody watched (Home's **Update now** or the nightly automatic update, both run by the
-    update helper without a terminal) that turns them on leaves a one-time item in Activity (the portal's bell) — the
+    update helper without a terminal) that turns them on leaves a one-time item in Activity (the web app's bell) — the
     workspace folder and whether the sandbox has internet, **Keep** or **Turn off** — besides the line in the update's
     *What's new*.
     Headless or scripted installs (`--yes` on a server) that should not run it put `CODE_ENABLED=false` (or
@@ -1115,7 +1115,7 @@ reaches is the container — with the three exceptions under *Threat model*.
 - [x] **Its own key.** It holds `claude-code-terminal`, a LiteLLM key of its own with its own monthly budget
   (`BUDGET_TERMINAL`, $50: `./stack config set BUDGET_TERMINAL`, in Settings → Spending & budgets; a meter on Home, a
   line in `./stack costs`), never the `claude-code` key of
-  `devos-claude` on your computer, the master key, the portal password or AWS credentials. The key itself may
+  `devos-claude` on your computer, the master key, the web app password or AWS credentials. The key itself may
   call only Claude Code's LiteLLM routes — `/v1/messages` (with `…/count_tokens`), `/v1/models`, `/key/info`,
   `/model/info` (LiteLLM's `allowed_routes`, set when the key is made and again at every enable, setup and update,
   so older keys get it too): wherever the sandbox reaches LiteLLM, its pass-through, `/v1/chat/completions` and the
@@ -1154,9 +1154,9 @@ reaches is the container — with the three exceptions under *Threat model*.
   credentials, past the Anthropic API's checks. So is any path with a `.` or `..` segment or `//`, also
   %-encoded: Caddy matches the cleaned path but forwards it as sent, so `/bedrock/…/../../v1/messages` would
   otherwise pass the list and reach the pass-through. The gateway's other network, `terminal-link` (internal as
-  well), holds only what it talks to: LiteLLM, shared-mcp and the main Caddy. The main Caddy (the portal and its
-  login form, the speech-to-text site), the portal, Open WebUI (which trusts `X-Portal-User` from its network),
-  Postgres, RustFS and the speech-to-text container share no network with the terminal, and the portal, Open
+  well), holds only what it talks to: LiteLLM, shared-mcp and the main Caddy. The main Caddy (the web app and its
+  login form, the speech-to-text site), the web app, Open WebUI (which trusts `X-Portal-User` from its network),
+  Postgres, RustFS and the speech-to-text container share no network with the terminal, and the web app, Open
   WebUI, Postgres, RustFS and speech-to-text none with the gateway either. `./stack test` and the e2e suite probe
   all of this from inside the container (and the gateway's neighbours from the gateway).
 - [x] **Out: public internet addresses only, through an egress proxy (since the release after v0.10.0).** The sandbox
@@ -1209,7 +1209,7 @@ reaches is the container — with the three exceptions under *Threat model*.
   the sandbox itself on `terminal-out` (no proxy): any address, any port, any protocol. On Docker Desktop the internet
   then includes your Mac itself through Docker's host address: services on its loopback — LiteLLM on `127.0.0.1:4000`
   directly, past the gateway's list (but not past its key's: the routes above, 403 for the rest, which `./stack test`
-  checks), shared-mcp on `:8765` (with the token it has anyway), the portal and its login on `127.0.0.1:PORTAL_PORT`
+  checks), shared-mcp on `:8765` (with the token it has anyway), the web app and its login on `127.0.0.1:PORTAL_PORT`
   (it needs the password), dev servers, and the Docker API if *Expose daemon on tcp://localhost:2375* is on (that
   would be the whole machine). The login's lock-out after wrong passwords is global, not per client: Docker Desktop
   delivers your browser's requests and the sandbox's from the same address (its bridge gateway; checked), so
@@ -1219,22 +1219,22 @@ reaches is the container — with the three exceptions under *Threat model*.
   unroutable address — a speed bump only: the address itself stays reachable. On Linux a container can reach the host
   through its network's gateway address (services listening on `0.0.0.0`), and the machines of your network are
   reachable too. *Internet only* (the default) or *Off* closes these paths again.
-- [x] **A fresh password to open it.** The terminal host (`terminal.PORTAL_HOST`) needs the portal session **and**
-  an unlock: the portal password typed again on that host's own page (`POST /.bn/unlock`; same lock-out as the
+- [x] **A fresh password to open it.** The terminal host (`terminal.PORTAL_HOST`) needs the web app session **and**
+  an unlock: the web app password typed again on that host's own page (`POST /.bn/unlock`; same lock-out as the
   login form: five wrong ones lock both for a while). The unlock is a signed cookie, host-only on the terminal
   host (`bn_terminal`; remote `__Host-bn_terminal`, `Secure`), `HttpOnly`, `SameSite=Strict`, valid 12 hours,
   bound to the password (a new `PORTAL_PASSWORD` voids it) and to your Tailscale login where sessions are.
-  **Sign out** revokes it with every session. Caddy asks the portal on every request with
+  **Sign out** revokes it with every session. Caddy asks the web app on every request with
   `/auth/verify?app=terminal`, fixed in the Caddyfile, so no request header can turn it into another app's
   check; the unlock form posts only with the terminal host's own `Origin`.
 - [x] **No other website can drive it, nothing else can reach it.** A WebSocket handshake — recognised by its
   `Sec-WebSocket-Key`/`Upgrade` headers or any spelling of the `/ws` path — must come with the terminal host's own
-  `Origin`, checked twice: by the portal before Caddy proxies anything (a missing, foreign, portal or app Origin
+  `Origin`, checked twice: by the web app before Caddy proxies anything (a missing, foreign, web app or app Origin
   is refused), and by ttyd itself (`--check-origin`). ttyd has no TCP listener at all: it listens on a UNIX socket
   (mode 700 folder) in the `terminal-socket` volume, mounted only into the terminal and, read-only, its gateway,
   which runs as the terminal's user to reach it. The gateway passes a request to it only with
   `X-Bn-Terminal-0<TERMINAL_PROXY_SECRET>` (128 random bits in `.env`, mode 600, new at every
-  `./stack terminal enable`), which only the main Caddy adds after the portal's yes — a forged `X-Portal-User` or
+  `./stack terminal enable`), which only the main Caddy adds after the web app's yes — a forged `X-Portal-User` or
   a request from any other container gets 407, and without a real secret in its environment it answers 503 —
   and only on its `terminal-link` address (`bind terminal-upstream`). The secret lives in the two Caddys'
   environments only: never on a command line (ttyd and its health check run without it; `/proc/*/cmdline` is
@@ -1242,7 +1242,7 @@ reaches is the container — with the three exceptions under *Threat model*.
   never in either Caddy's log (both drop request headers, which Caddy otherwise logs with a failed request — the
   headers it sent upstream, every secret one among them: `X-Bn-Code-Proxy`, `X-Portal-Proxy`, the preview's and the git
   server's too; the main Caddy's log had them until v0.55.0, JON-1011). Caddy
-  strips all cookies and any client-sent `X-Bn-Terminal-*` before ttyd. It may be framed only by the portal.
+  strips all cookies and any client-sent `X-Bn-Terminal-*` before ttyd. It may be framed only by the web app.
 - [x] **The terminal host's page policy is the main Caddy's, whoever answers.** Code in the sandbox runs as
   ttyd's user and could replace the listener on ttyd's socket; the gateway would pass it the unlocked browser's
   requests. So every answer from there gets the main Caddy's headers (`terminal_page` in `caddy/Caddyfile`): a
@@ -1251,26 +1251,26 @@ reaches is the container — with the three exceptions under *Threat model*.
   (`ttyd-clipboard.js`, `ttyd-keys.js`: each pinned the same way; the keys script reads a message only from the window that
   frames the page, from its origin, and acts on a fixed table of keys or up to 4 KB of printable text), talks only to the terminal
   host, posts forms only to its unlock, loads nothing else (`default-src 'none'`, `base-uri 'none'`,
-  `object-src 'none'`) and is framed only by the portal; and none of the upstream's `Set-Cookie`,
+  `object-src 'none'`) and is framed only by the web app; and none of the upstream's `Set-Cookie`,
   `Clear-Site-Data`, `Refresh`, `Link`, `Location`, `Service-Worker-Allowed`, CORS or reporting headers. A page
-  from a stand-in can show text but cannot run script with your cookies, plant or clear cookies on the portal's
+  from a stand-in can show text but cannot run script with your cookies, plant or clear cookies on the web app's
   domain, or send a typed password anywhere but the real unlock; the e2e suite starts such a stand-in and checks
-  it. (The unlock page and the unlock itself are the portal's own answers, with the portal's headers.) Framed by
-  the portal, its `frame-src` keeps the frame on the portal's own hosts; opened full screen, a stand-in could still
+  it. (The unlock page and the unlock itself are the web app's own answers, with the web app's headers.) Framed by
+  the web app, its `frame-src` keeps the frame on the web app's own hosts; opened full screen, a stand-in could still
   navigate the tab to another site, visible in the address bar. It can also serve ttyd's own (allowed) script
   and send it options over the WebSocket, e.g. turn on ttyd's file transfer and push a file download to your
-  browser: a download you see and choose to open, not script running on the portal's origin.
+  browser: a download you see and choose to open, not script running on the web app's origin.
 - [x] **Remote access: off for the terminal.** The remote sites route the terminal's name only when
-  `REMOTE_TERMINAL` is on in `.env` (true/1/yes/on, read the same by `./stack` and the portal; another value is
+  `REMOTE_TERMINAL` is on in `.env` (true/1/yes/on, read the same by `./stack` and the web app; another value is
   named as off), then `./stack up`: `lib/terminal.sh` writes `REMOTE_TERMINAL_HOST`
   (`<base>-terminal.<tailnet>.ts.net`, a fifth Tailscale Service, or `terminal.<your domain>`), and otherwise the
-  remote blocks match nothing. The portal refuses remote terminal requests without it as well.
+  remote blocks match nothing. The web app refuses remote terminal requests without it as well.
 - [x] **Easy to turn off.** `./stack terminal disable` removes the container, its gateway, their networks and the
   socket volume (LiteLLM and shared-mcp are restarted off the gateway's network); the folder, the `terminal-home`
   volume and the key stay (`docker volume rm <project>_terminal-home` forgets Claude Code's history).
   `./stack uninstall` removes the volumes, the networks and the image too, also while the terminal is off.
 
-**Threat model.** Someone with your portal session cookie but not the password gets the unlock page. Someone with
+**Threat model.** Someone with your web app session cookie but not the password gets the unlock page. Someone with
 both (or with your unlocked browser), or a malicious package or prompt that Claude Code runs in there, gets a shell
 in the container: your workspace folder, the terminal's key within its budget, the shared store, the internet
 through its egress proxy (and with `TERMINAL_EGRESS=host` also your Mac's loopback services through Docker Desktop and
@@ -1284,7 +1284,7 @@ weigh:
    when you open the folder there with the tool that reads it (git, your editor, direnv, npm, `devos-claude`).
    Use a workspace you only open in the terminal, or review it like code from someone else.
 2. **Your Mac's own services** (only with `TERMINAL_EGRESS=host`, on Docker Desktop): see above — LiteLLM directly
-   (its key still limited to Claude Code's routes), shared-mcp, the portal's login (wrong guesses can keep it locked
+   (its key still limited to Claude Code's routes), shared-mcp, the web app's login (wrong guesses can keep it locked
    for you), dev servers, an exposed Docker API.
 3. **The knowledge bases.** `write_file(…, ingest_to=…)` through the shared MCP server can put text into a
    knowledge base that Chat later answers from (a prompt-injection route into Chat sessions).
@@ -1295,7 +1295,7 @@ Prefer SSH ([docs/phone-claude-code.md](phone-claude-code.md)) when you need you
 
 `./stack code enable` (on by default since the release after v0.9.0, with the terminal: [above](#the-browser-terminal);
 or Settings › Claude Code, see the last item below) puts Claude Code into the
-portal's Code tab as an IDE-like page: streamed answers, tool cards, permission prompts, models, sessions, the
+web app's Code tab as an IDE-like page: streamed answers, tool cards, permission prompts, models, sessions, the
 workspace's files in an explorer and an editor, plugins and MCP servers. It adds no new place where code runs:
 Claude Code runs in the browser terminal's sandbox (above), with its workspace, key, budget, internet and remote
 switches. What is new is a page that shows what the sandbox says and lets you answer it, and the page's own
@@ -1304,17 +1304,17 @@ spawn server, Claude Code or any file at will.
 
 **Trust boundaries.**
 
-1. *Browser ⇄ main Caddy*: the portal session **and** a fresh unlock of its own, and the code host's own `Origin`
+1. *Browser ⇄ main Caddy*: the web app session **and** a fresh unlock of its own, and the code host's own `Origin`
    (its terminal panel: that unlock, handed to the terminal's host once — below).
 2. *Caddy ⇄ code container*: the `code-link` network (internal; Caddy and the code container only) and the
    `X-Bn-Code-Proxy` header (`CODE_PROXY_SECRET`, 128 random bits, new at every `./stack code enable`), which only
-   the main Caddy adds, after the portal's yes. Cookies never reach the code container.
+   the main Caddy adds, after the web app's yes. Cookies never reach the code container.
 3. *Code container ⇄ sandbox*: one UNIX socket in the `code-socket` volume (the terminal's: the spawn server always
    runs there, idle until the code container — the only other container mounting it, read-only — connects);
    everything inbound is untrusted data.
 4. *Sandbox ⇄ LiteLLM and shared-mcp*: the terminal's gateway, key routes and budget — unchanged.
 5. *Open WebUI → code container*: your subscriptions as Chat models — through the main Caddy's internal site (`:8098`,
-   not published; two paths, `/v1/models` and `/v1/chat/completions`, the portal's and the proxy's headers taken off),
+   not published; two paths, `/v1/models` and `/v1/chat/completions`, the web app's and the proxy's headers taken off),
    which reaches the code container's `:8096` over `code-link`, and `CODE_CHAT_KEY` (new at every `./stack code
    enable`), which Open WebUI's connection carries ([Your AI subscriptions](#your-ai-subscriptions)). A one-way hop, as
    the speech-to-text site's: the code container shares no network with Open WebUI, which signs in by `X-Portal-User`
@@ -1327,13 +1327,13 @@ spawn server, Claude Code or any file at will.
   Code — 0.3.N ↔ 2.1.N, a test enforces it — and `ws`; no peer dependencies and no bundled Claude Code binaries,
   which the image build checks) runs as your user id, read-only, `cap_drop: ALL`, `no-new-privileges`, 768 MB, 128
   processes. It holds **no LiteLLM key** (not the terminal's, not the master key), **mounts no folder of yours**
-  and is on **no network but `code-link`**: no internet, no LiteLLM, no portal, no Open WebUI, no sandbox network (a Git host
+  and is on **no network but `code-link`**: no internet, no LiteLLM, no web app, no Open WebUI, no sandbox network (a Git host
   sign-in's requests go through the sandbox's way out in a tunnel, with TLS from end to end in the code container:
   [below](#signing-in-to-a-git-host-oauth)). Its secrets
-  are `CODE_PROXY_SECRET` and `CODE_CHAT_KEY`, in its environment only. Prices and spend come from the portal (`/.bn/models`,
-  `/.bn/spend` on the code host, answered after the same check; the master key stays in the portal, and a
+  are `CODE_PROXY_SECRET` and `CODE_CHAT_KEY`, in its environment only. Prices and spend come from the web app (`/.bn/models`,
+  `/.bn/spend` on the code host, answered after the same check; the master key stays in the web app, and a
   session's spend is filtered to the terminal key's rows). It can reach the main Caddy (its only peer): with no
-  cookie, only the portal's login page and Caddy's internal speech-to-text site — the same reach as Open WebUI's — and
+  cookie, only the web app's login page and Caddy's internal speech-to-text site — the same reach as Open WebUI's — and
   Chat's internal site (`caddy:8098`), which leads back to itself.
 - [x] **Files only through the sandbox.** The editor, the file tree, uploads, downloads and the session history are
   ops of the spawn server (`bn-coded`), which resolves paths in the sandbox's own view and keeps them under
@@ -1433,13 +1433,13 @@ spawn server, Claude Code or any file at will.
   host, images also `data:`/`blob:`, audio and video only from `blob:`, workers only from the code host, frames only
   the terminal host, itself (the terminal panel starts at `/.bn/terminal`, which redirects there) and the dev-server
   previews' hosts ("Previews of dev servers in the sandbox", below), no forms, no plugins, `base-uri 'none'`, framed
-  only by the portal, and **Trusted Types**
+  only by the web app, and **Trusted Types**
   (`require-trusted-types-for 'script'; trusted-types bn-worker`: no HTML-string sink can run at all, in browsers that
   enforce it, and the one policy allowed only starts the page's own workers — see the previews below); the workers'
   scripts get the same policy (Caddy sets it on every answer); plus `nosniff`, `Referrer-Policy: same-origin`, and
   none of the upstream's `Set-Cookie`, `Clear-Site-Data`, `Refresh`, `Link`, `Location`, `Service-Worker-Allowed`,
   CORS or reporting headers. The page renders sandbox text with `textContent` only, never as HTML, and keeps it
-  inside messages and cards (never in its chrome); it never asks for a password (the unlock is the portal's page).
+  inside messages and cards (never in its chrome); it never asks for a password (the unlock is the web app's page).
 - [x] **File previews draw the workspace's files; nothing in them runs on DevOS ADE's pages.** Every file in
   `/workspace` is untrusted (the sandbox writes whatever it likes there), so the page previews on its own origin only
   formats it can turn into DOM or canvas from plain data, under the policy above; what needs a file's own script or an
@@ -1632,23 +1632,23 @@ spawn server, Claude Code or any file at will.
   hours, signed with a salt of its own — the terminal's unlock never opens the Code page; the Code page's opens the
   terminal only through the single-use hand-off below; voided by Sign out and by a new password). Caddy asks
   `/auth/verify?app=code`, fixed in the Caddyfile. A WebSocket and every request that changes something must carry the
-  code host's own `Origin` — checked by the portal and again by the code container; client copies of the headers only
+  code host's own `Origin` — checked by the web app and again by the code container; client copies of the headers only
   Caddy may set are deleted first.
 - [x] **One unlock for the page and its terminal panel, handed over once.** The panel (and "open in a new tab")
-  starts at `/.bn/terminal` on the code host, which Caddy sends to the portal after the code host's check; the portal
+  starts at `/.bn/terminal` on the code host, which Caddy sends to the web app after the code host's check; the web app
   checks the session, the Code page's unlock and the request's fetch metadata: `Sec-Fetch-Site: same-origin` (the
   Code page itself), or `none` together with `Sec-Fetch-Mode: navigate`, `Sec-Fetch-Dest: document` and
   `Sec-Fetch-User: ?1` — the address typed, or opened from a bookmark or the history, which browsers send only for a
   navigation the person started. A link opened from another app (mail, chat, a PDF reader) counts as typed: it
   opens your terminal page or its *Open … here?* question, never a launch (that needs the panel's own launch token).
   A link on another website gets the sign-in (the session cookie is `SameSite=Strict`) or, from another of the
-  portal's hosts (`same-site`), the card; `cross-site`, `same-site` and a request without the headers are refused. A
+  web app's hosts (`same-site`), the card; `cross-site`, `same-site` and a request without the headers are refused. A
   refused one gets a card (403: "Open the terminal from the Code page", a button to the Code page), never the
   hand-off. Safari may not send `Sec-Fetch-User`, so a typed address there can show the card: that fails closed and
   only costs convenience. Then it redirects to the terminal host's `/.bn/unlock-callback` with a token: signed with a salt
   of its own, for exactly this site's terminal host, valid 60 seconds, single-use (its nonce is remembered), void
-  after a portal restart or a new password, carrying the Code page unlock's time and the Tailscale login. Caddy
-  sends that path to the portal before the terminal host's check; the portal redeems the token there and sets the
+  after a web app restart or a new password, carrying the Code page unlock's time and the Tailscale login. Caddy
+  sends that path to the web app before the terminal host's check; the web app redeems the token there and sets the
   terminal's own unlock cookie (host-only, `HttpOnly`, `SameSite=Strict`) **with the Code page unlock's time** — so
   it ends when that one does (12 hours after the password was typed; Sign out and a new password end both) and is
   not a fresh 12 hours. Both redirects send no `Referer` and are never cached. The unlock goes one way only: the
@@ -1656,7 +1656,7 @@ spawn server, Claude Code or any file at will.
   the session hand-off does), only while `REMOTE_TERMINAL` is on, and only for the same Tailscale login.
 - [x] **Remote: with the terminal's switch.** The remote sites route the code host only while `REMOTE_TERMINAL` is
   on (one switch for "the sandbox from outside"): `lib/code.sh` writes `REMOTE_CODE_HOST` (`<base>-code.<tailnet>`,
-  a sixth Tailscale Service, or `code.<your domain>`); otherwise the remote blocks match nothing and the portal
+  a sixth Tailscale Service, or `code.<your domain>`); otherwise the remote blocks match nothing and the web app
   refuses it.
 - [x] **Orphans and resumes.** A killed spawn server leaves its Claude Code processes running (reparented to the
   container's init): they finish what was already approved, but nothing new can be approved. The spawn server
@@ -1692,7 +1692,7 @@ folder; they run in the sandbox either way.
 
 **What a compromised code container gains** (a bug in the SDK, `ws` or the page): it can drive the sandbox (as
 above) and serve script on the code origin — the same standing as the other app hosts: the cookies it could
-target are `HttpOnly`, the portal checks the Origin of every change, and only the portal may frame it. Pinning the
+target are `HttpOnly`, the web app checks the Origin of every change, and only the web app may frame it. Pinning the
 page's script hashes in Caddy's CSP would take even that away (an open question).
 
 ### Projects
@@ -1703,11 +1703,11 @@ is always there and has no record). The records are kept by the code container i
 sandbox. At most 64; a folder is 1 to 4 names, none starting with `.`, at most 160 bytes, no control or
 direction-changing character; a record that does not fit (a file someone changed) is dropped, never trusted.
 
-The Terminal page's Projects panel lists them too (JON-1158). The portal cannot reach the code container (no shared network),
+The Terminal page's Projects panel lists them too (JON-1158). The web app cannot reach the code container (no shared network),
 and `code-state` holds Git tokens and keys, so the code container writes a one-way summary into a volume of its own
 (`<project>_code-projects-public`, `projects-summary.json`: mode 644, written whole by a rename; read-write in `code`,
 read-only in `portal` at `/data/code-projects`). It holds only `id`, `name`, `root`, `path`, `host`, `mode`, `gone`, `folder`
-and `kept` of each project: no token, key, remote or setting. The portal treats it as untrusted (`settings.code_projects`:
+and `kept` of each project: no token, key, remote or setting. The web app treats it as untrusted (`settings.code_projects`:
 at most 64 rows, the id `ws` or `p_` and 8 hex, a one-line name of at most 80 characters, a path that is the workspace, a folder
 of it as `folder_ok` takes it, or a folder of this computer outside the workspace; a row that does not fit is dropped; a
 missing, old or corrupt file means no list, and the panel says so).
@@ -1902,7 +1902,7 @@ only (never one of Claude Code's aliases, at most 128 characters), anything else
 - [x] **A budget's stop is Claude Code's own, and a convenience, not a boundary.** A session's budget (`set_budget`:
   USD 0.01–999, checked) lives in the code container and in your browser. With its stop on, every Claude Code process
   of the session starts with `maxBudgetUsd` — what is left: the amount less the larger of the page's figure (LiteLLM's
-  spend logs, through the portal) and Claude Code's own estimate (its results' `total_cost_usd`, which counts the
+  spend logs, through the web app) and Claude Code's own estimate (its results' `total_cost_usd`, which counts the
   session's earlier processes; sandbox data, used only to stop sooner, never shown). Probed with a fake API (Claude Code
   2.1.296, SDK 0.3.296): the SDK passes it as `--max-budget-usd` (on bn-coded's allowlist, `^[0-9]{1,3}(\.[0-9]{1,6})?$`),
   it is checked after every request — a turn ends mid-way with `error_max_budget_usd` — later prompts in that process
@@ -1954,18 +1954,18 @@ only (never one of Claude Code's aliases, at most 128 characters), anything else
   "Trojan Source" text), parsed in linear time (the query looked at only up to 64 KiB; unit tests time hostile inputs),
   and both parameters leave the address bar at once (`history.replaceState`), so a reload or a shared screenshot does
   not carry them on. The Code page's unlock form carries such a link through the password (a hidden field), and the
-  portal rebuilds it from what checks out — the root path, `session` (a UUID), `prompt` (≤ 4,000 characters, no NUL)
+  web app rebuilds it from what checks out — the root path, `session` (a UUID), `prompt` (≤ 4,000 characters, no NUL)
   `git` (only `hosts` or `clone`: the Git panel's dialog, empty — nothing is cloned, added or changed by a link), `new`
   (only `1`: a new session's start, nothing started until you send) and `project` (an id's shape: one of the page's
   list, a link never makes one), once each, at most 6,000 characters encoded (a longer one keeps its session) — so the redirect after the unlock
   never goes elsewhere (another host, another path, `//…`, `javascript:` all end at `/`). The terminal's unlock form
   carries none. Phishing remains possible in the sense that a link can suggest a harmful prompt: the banner and the
   rule that you send it yourself are the defence — read a draft from a link before you send it.
-- [x] **Home's Continue row shows only what the Code page reports, and the portal still never reaches the code
-  container.** The framed page posts its open sessions to the portal's origin only, with the badge's status message
-  (above). For Home on any device — a phone frames no Code tab — the page also tells the portal itself: `POST
-  /.bn/recent` on the code host, which the main Caddy routes to the portal (`/auth/code-recent`) after the code host's
-  check, and the portal checks again: the code host's own name, a session and a fresh Code page unlock, the code host's
+- [x] **Home's Continue row shows only what the Code page reports, and the web app still never reaches the code
+  container.** The framed page posts its open sessions to the web app's origin only, with the badge's status message
+  (above). For Home on any device — a phone frames no Code tab — the page also tells the web app itself: `POST
+  /.bn/recent` on the code host, which the main Caddy routes to the web app (`/auth/code-recent`) after the code host's
+  check, and the web app checks again: the code host's own name, a session and a fresh Code page unlock, the code host's
   Origin, `X-Requested-With: bn-code` (no other site can send it without a preflight, never allowed) and
   `Sec-Fetch-Site: same-origin`; at most 16 KB (Caddy caps it too) and one a second, 600 an hour. What it keeps: at most
   8 sessions — ids that are UUIDs, states it knows (waiting, working, idle, closed), times, titles cut to 120
@@ -1974,7 +1974,7 @@ only (never one of Claude Code's aliases, at most 128 characters), anything else
   disk or in a log, one report per sign-in (the Tailscale login remotely), forgotten at Sign out and a new password.
   `GET /api/continue` (a session and the custom header, as every `/api/` route) answers it only where the Code page is
   on for that site, with Chat's newest conversations from Open WebUI's own list, asked as the global search asks it
-  (the owner's token stays in the portal; at most 5, id, title and time, kept 20 s). Home draws it all as text; *Answer*,
+  (the owner's token stays in the web app; at most 5, id, title and time, kept 20 s). Home draws it all as text; *Answer*,
   *Resume* and *New session* only open the Code page with a deep link (`?session=`, `?new=1&project=`, kept through the
   unlock: below). The code container gets no new peer and no new secret: the page in your browser is what reports.
 
@@ -2092,12 +2092,12 @@ policy). The path chosen is the one that gives Open WebUI **no new reach**:
    "bn-chat-handoff", id, title, text}, <the framing origin>)`. The chat is a JSON string literal in that snippet, parsed
    there; it is never code. The action holds **no key and no address**, and the snippet's one network use is step 5's,
    to Open WebUI itself (a unit test checks the file and the snippet for every other way out); Open WebUI never reaches the
-   portal or the Code page, and the Code page and the portal gain no route into Open WebUI beyond step 5's one name.
+   web app or the Code page, and the Code page and the web app gain no route into Open WebUI beyond step 5's one name.
    A chat over 200,000 characters is not sent at all.
-2. The portal page (`static/code.js`) takes the message **only from the Chat tab's own frame and Chat's origin** (Chat can be
-   framed by the portal alone: `frame-ancestors`), one at a time, and POSTs it to `/api/chat-handoff` — the portal session and
+2. The web app page (`static/code.js`) takes the message **only from the Chat tab's own frame and Chat's origin** (Chat can be
+   framed by the web app alone: `frame-ancestors`), one at a time, and POSTs it to `/api/chat-handoff` — the web app session and
    `X-Requested-With`, the same-origin guard, at most 5 in 10 s, at most 1 MB on the wire (Caddy) and 200,000 characters
-   (the portal) — and tells the frame how it went. The portal (`portal/chathandoff.py`) keeps the title and text **in memory
+   (the web app) — and tells the frame how it went. The web app (`portal/chathandoff.py`) keeps the title and text **in memory
    only**, never on disk or in a log, under a random 192-bit id, for the sign-in that made it, for **10 minutes**, at most 8 at
    once, and forgets them all at Sign out.
 3. The Code tab opens at `?handoff=<id>` (kept through the Code page's unlock like the other deep links, rebuilt from what
@@ -2119,8 +2119,8 @@ policy). The path chosen is the one that gives Open WebUI **no new reach**:
    every role-like tag and every `@`-mention in it (`@~/.codex/auth.json` would otherwise attach a file) — the same rules as
    the other quoted conversations (`code/server/agents/quote.mjs`).
 5. (JON-1158) **Filed under its project in Chat.** Once a chat has gone to a project (made, or one you have; never the
-   workspace), the Code page tells the portal page `{type: "bn-code-handoff-done", handoff, project}` — the hand-off's id
-   and the project's name, to the portal's origin only. The portal page takes it **only from the Code tab's own frame and
+   workspace), the Code page tells the web app page `{type: "bn-code-handoff-done", handoff, project}` — the hand-off's id
+   and the project's name, to the web app's origin only. The web app page takes it **only from the Code tab's own frame and
    origin**, for a hand-off **it** deposited in the last 30 minutes (20 kept), once, and tells the Chat frame, at Chat's
    origin, `{type: "bn-portal-chat-filed", id, project}`: the Chat frame's own id for that hand-off and the name, every
    invisible or direction-changing character a space, 80 at most. The Chat page listens for that once, for 30 minutes, **only
@@ -2128,8 +2128,8 @@ policy). The path chosen is the one that gives Open WebUI **no new reach**:
    Open WebUI keeps (no token read or sent): `GET /api/v1/chats/<this chat>` (a chat already in a folder stays there),
    `GET /api/v1/folders/`, `POST /api/v1/folders/` `{name}` when there is no top-level folder of that name (in any case), and
    `POST /api/v1/chats/<this chat>/folder` `{folder_id}` — never a move without a folder. A temporary chat is never filed.
-   So the most the portal page (or a Code page that fakes its message) can cause in Chat is a folder of some name and this
-   one chat in it; nothing reaches the Code page or the portal from Chat by this.
+   So the most the web app page (or a Code page that fakes its message) can cause in Chat is a folder of some name and this
+   one chat in it; nothing reaches the Code page or the web app from Chat by this.
 
 What a compromised or prompt-injected Chat can therefore do: put a chat of the signed-in user's in a dialog that user must
 read and confirm, up to 8 times in 10 minutes. It cannot create a project, start a session, read or write a file, or learn
@@ -2151,8 +2151,8 @@ isolation: the code container gets no route to RustFS, and the Code page's host 
   files) is refused before a byte is sent, saying how big the project is. The zip is deflated one file at a time with
   data descriptors and passed through the code server to the page with back-pressure at every hop: nothing holds a whole
   tree but the page's own copy (once, within the cap).
-- [x] **Browser to portal to RustFS.** The page checks the zip is whole, hands it to the portal that frames it
-  (`bn-code-export`, from this frame and to that origin only; `bn-portal-export` back, likewise), and the portal's
+- [x] **Browser to web app to RustFS.** The page checks the zip is whole, hands it to the web app that frames it
+  (`bn-code-export`, from this frame and to that origin only; `bn-portal-export` back, likewise), and the web app's
   `POST /api/code-export` (session, `X-Requested-With`, same origin, Code and Files on) streams it to RustFS with the
   key pair it already holds — only into the `code-exports` bucket (made when missing; the stack's buckets are never
   touched), only under a name of `[A-Za-z0-9._-]` ending `.zip`, only a body that starts as a zip and is exactly as long
@@ -2368,7 +2368,7 @@ operation you started, sent only where you saw it go.
 
 - [x] **The credentials live in the code container, never in the sandbox.** Git hosts are one JSON file of mode 600 in
   a folder of mode 700 in the code container's own volume (`code-state`, `/var/lib/bn-code/git`; compose.code.yaml):
-  not in `.env`, not in the portal or the update helper's requests (the secrets never pass them), not in backups or
+  not in `.env`, not in the web app or the update helper's requests (the secrets never pass them), not in backups or
   diagnostic reports, and no other container mounts it — the sandbox has no path to it. A token is entered once and
   never shown again (*Replace it* takes a new one; replace-only); an SSH key is an ed25519 key made there, whose
   private half never leaves it — the page sees the public half and the fingerprint. Adding a host, a sign-in, a token
@@ -2384,7 +2384,7 @@ operation you started, sent only where you saw it go.
   environment: the stored login only), on the computer running DevOS ADE. The shell keeps it in a variable and hands
   it to `code/server/import-host.mjs` in the code container on the stdin of `docker compose exec -T` — never a command
   line (proven: in none of docker's, gh's or glab's arguments, nor docker's environment), a file, the browser or the
-  portal; nothing prints it. Before it is kept, the account and the scopes (from the CLI's own `gh api` / `glab api`)
+  web app; nothing prints it. Before it is kept, the account and the scopes (from the CLI's own `gh api` / `glab api`)
   and what the token reaches are shown, and you confirm (`--yes`: no question; no terminal and no `--yes`: refused).
   It is then an access token like the others, with its source, account, scopes, kind and expiry shown in the host's
   row — only `import-host.mjs` can say so: the page's own *Connect a git host* request cannot claim an imported login.
@@ -2508,7 +2508,7 @@ operation you started, sent only where you saw it go.
   added or removed, the switch, a sign-in that ended) restarts the session's process at its next prompt that starts a
   turn.
 - [x] **Activity.** Each operation and each use by Claude's git is an entry of Git hosts' file (the last 200: who, what,
-  the host's name and the URL — never a credential). The Code page shows them; framed by the portal it reports the
+  the host's name and the URL — never a credential). The Code page shows them; framed by the web app it reports the
   last 10 of the past week to Activity (`bn-code-status`, checked by code.js: ids, times and a few words, shown as
   text), Claude's uses and failures as items to look at.
 - **What remains.** The sandbox is one user: a process there that runs while an operation of yours runs — and can
@@ -2554,19 +2554,19 @@ operation you started, sent only where you saw it go.
 1000), pinned by digest, read-only file system, no capabilities, `no-new-privileges`, memory and process limits, SQLite, no
 SSH server, no registration, no mail, no Actions, no federation, repositories private by default (`ENABLE_PUSH_CREATE_USER`
 lets a push to a missing repository of the owner create it). What it keeps — repositories, its database and its own
-secrets (`app.ini`, made at its first start) — is the `gitdata` volume: not in `.env`, the portal, the update helper's
+secrets (`app.ini`, made at its first start) — is the `gitdata` volume: not in `.env`, the web app, the update helper's
 requests or a backup file. Its owner account `devos` is a site admin whose password is `.env`'s
 `LOCALGIT_ADMIN_PASSWORD` (set on the server again at each `./stack up`; it is only ever in the environment of the
 one command that sets it, never on a command line).
 
 - **No way out.** Its one network, `localgit`, is **internal** (no internet) and shared with Caddy and the terminal's gateway
-  alone. The portal (which reaches it only through Caddy's internal `:8099` site, below), Open WebUI, LiteLLM, the databases and the sandbox are not on it. (A mirror's way out to GitHub or
+  alone. The web app (which reaches it only through Caddy's internal `:8099` site, below), Open WebUI, LiteLLM, the databases and the sandbox are not on it. (A mirror's way out to GitHub or
   GitLab will be a network of its own, added only while one is set up.)
-- **The web UI** is a site of the main Caddy (`git.<portal host>`) behind the same portal check and same-site guard as
-  Admin and Files, framed by the portal only; its session cookie is never given to Forgejo. **The portal signs you in**
+- **The web UI** is a site of the main Caddy (`git.<portal host>`) behind the same web app check and same-site guard as
+  Admin and Files, framed by the web app only; its session cookie is never given to Forgejo. **The web app signs you in**
   through Forgejo's reverse-proxy authentication: after `portal_auth` has said yes, Caddy sets a header whose NAME is a
   random secret (`LOCALGIT_SSO_HEADER`, `X-Bn-Git-<32 hex>`, made once in `.env`, given only to the Caddy and Forgejo
-  containers) to `devos` in that site's proxy block (route order: a request the portal refused never gets it, and a client's
+  containers) to `devos` in that site's proxy block (route order: a request the web app refused never gets it, and a client's
   own copies of it and of `X-Webauth-*` are removed). Forgejo's `REVERSE_PROXY_TRUSTED_PROXIES` does NOT limit this header
   (it only governs X-Forwarded-For; the e2e proved a forged `X-Webauth-User` from another container on the network still
   signed in), so the secret name is the control: a peer on the `localgit` network that does not know it cannot sign in.
@@ -2582,7 +2582,7 @@ one command that sets it, never on a command line).
   terminal and `LOCALGIT` on), bound to the sandbox's own network. It forwards one family of paths to Forgejo —
   `/<owner>/<repo>.git/info/refs`, `…/git-upload-pack`, `…/git-receive-pack` — and answers 404 for everything else: no web
   UI, no API, no raw files, no sign-in page; `.`/`..` and empty path segments are refused; cookies and the identity
-  headers of the portal, Tailscale and a reverse proxy (`X-Webauth-*`) are removed before Forgejo. It is the same kind of
+  headers of the web app, Tailscale and a reverse proxy (`X-Webauth-*`) are removed before Forgejo. It is the same kind of
   carve-out as LiteLLM's paths on `:8091`, not general egress: with `TERMINAL_EGRESS=off`, `host` or `internet` alike the
   sandbox reaches this one service and no more (the git operations of the Code page never use the egress proxy for it, which
   would refuse a container's name by design).
@@ -2597,18 +2597,18 @@ one command that sets it, never on a command line).
   runs it, never the page). From there it follows the Git hosts rules above: the sandbox gets it for one operation,
   through the fd-3 channel, only for the host of the URL you confirmed, at most three times, and it is in no `.git/config`,
   environment, event or answer.
-- **The Git page and its search** (`static/git.js`, `portal/gitsearch.py`). The portal's **Git** tab frames the web UI above
-  (the portal's CSP names the git host in `frame-src`; the git host's own `frame_by_portal_only` allows only the portal to
+- **The Git page and its search** (`static/git.js`, `portal/gitsearch.py`). The web app's **Git** tab frames the web UI above
+  (the web app's CSP names the git host in `frame-src`; the git host's own `frame_by_portal_only` allows only the web app to
   frame it) and opens a place from an address (`#git/…`) only in the shapes `<owner>/<repo>`, `/issues[/N]`, `/pulls[/N]`
   and `/src/(branch|tag|commit)/…` (no `.`/`..`, no encoded separator, none of Forgejo's own first segments such as `admin`
-  or `user`). The global search's **Git** group is asked by the portal *server*, not the browser: `GET /api/search/git?q=` (a
+  or `user`). The global search's **Git** group is asked by the web app *server*, not the browser: `GET /api/search/git?q=` (a
   session, `X-Requested-With`, a few a second) calls Forgejo's `GET /api/v1/repos/search` and `/api/v1/repos/issues/search`
   with a **second token** of the owner account scoped to `read:repository` and `read:issue` — the narrowest that works
   (`LOCALGIT_READ_TOKEN`: made by `forgejo admin user generate-access-token` in `./stack up`, written to `.env` with mode 600
   like the other generated secrets, checked against the server at each `./stack up` and made again if refused). It is passed
-  to the **portal container's environment alone** (no other service, overlay or `env_file`; `dc()` ignores a shell's value),
+  to the **web app container's environment alone** (no other service, overlay or `env_file`; `dc()` ignores a shell's value),
   is sent only in the `Authorization` header of those two requests and is in no answer, error text, log, page or static
-  file. The portal is not on the `localgit` network and does not join it: it reaches Forgejo through Caddy's internal `:8099`
+  file. The web app is not on the `localgit` network and does not join it: it reaches Forgejo through Caddy's internal `:8099`
   site, which passes those two GET paths in addition to the mirroring ones (that site's other peers on Caddy's networks can
   call them too, but get nothing without a token, since the server requires sign-in). Results are untrusted text (titles
   and descriptions are other people's, or Claude's): capped, control characters dropped on the server, direction-changing
@@ -2619,7 +2619,7 @@ one command that sets it, never on a command line).
   computer only, by the code container — the holder of the connected hosts' credentials — through a second internal Caddy site
   (`:8099`, not published; reachable on Caddy's container networks) that passes a handful of API paths of the one service
   (the owner's repository list and one repository's record as reads, a migration, a repository's push mirrors and their
-  sync), one POST of a branch protection to one repository (`/api/v1/repos/O/R/branch_protections`, Caddy's `@protect`: the Code page protects the default branch of every kept repository, which Forgejo 17.0.1 then refuses to force-push or delete for every account, an admin's too; the rule has no allow-list, so the token's ordinary pushes still work; it needs `write:repository` and the repository's owner, both the built-in host's, so the token is not widened; no read, change or delete of a rule is passed), one git request — a `POST …/git-receive-pack` of the content type git uses, with no commands in it, which makes the empty private repository of a project kept on the server (JON-1058; the server's push-to-create, as the sandbox's own first push does through the gateway, so `write:user` is still not needed) — and, for the portal's Git search, two GET searches, and nothing else: no delete of a repository, no admin or account API, no web UI, no cookies, no sign-in headers.
+  sync), one POST of a branch protection to one repository (`/api/v1/repos/O/R/branch_protections`, Caddy's `@protect`: the Code page protects the default branch of every kept repository, which Forgejo 17.0.1 then refuses to force-push or delete for every account, an admin's too; the rule has no allow-list, so the token's ordinary pushes still work; it needs `write:repository` and the repository's owner, both the built-in host's, so the token is not widened; no read, change or delete of a rule is passed), one git request — a `POST …/git-receive-pack` of the content type git uses, with no commands in it, which makes the empty private repository of a project kept on the server (JON-1058; the server's push-to-create, as the sandbox's own first push does through the gateway, so `write:user` is still not needed) — and, for the web app's Git search, two GET searches, and nothing else: no delete of a repository, no admin or account API, no web UI, no cookies, no sign-in headers.
   Forgejo needs the owner's own repository-scoped token for each (`write:repository`; creating a repository for a mirror is
   a push or a migration, so `write:user` is not needed). The remote credential is a connected host's **access token** —
   never a sign-in's, whose token lasts hours and cannot be renewed inside Forgejo — handed to Forgejo, which keeps it
@@ -2821,14 +2821,14 @@ your browser. The design keeps that script away from DevOS ADE's cookies and pag
 sandbox, and opens nothing on any network.
 
 ```
-browser ─ http://p5173-<capability>.<PREVIEW_DOMAIN>:<PORTAL_PORT>/   (another site than the portal's)
-        ─ remote: https://<REMOTE_PREVIEW_HOST>/ + its __Host-bn_preview cookie (the same site as the portal's)
+browser ─ http://p5173-<capability>.<PREVIEW_DOMAIN>:<PORTAL_PORT>/   (another site than the web app's)
+        ─ remote: https://<REMOTE_PREVIEW_HOST>/ + its __Host-bn_preview cookie (the same site as the web app's)
    └─ main Caddy: the local listener (caddy/preview-on.caddy), or the remote one (remote_preview, remote-*.caddy)
-        forward_auth → portal /auth/verify?app=preview: the capability (remote: the cookie and your Tailscale login),
+        forward_auth → web app /auth/verify?app=preview: the capability (remote: the cookie and your Tailscale login),
                        no Origin but the preview's own → the port
         towards the sandbox: Host and Origin = localhost:5173, no DevOS ADE cookie, no Referer, no Tailscale identity,
                              the preview's secret header
-        back: + CSP frame-ancestors (the Code page, the portal) and frame-src, Set-Cookie without Domain= (and none
+        back: + CSP frame-ancestors (the Code page, the web app) and frame-src, Set-Cookie without Domain= (and none
               with DevOS ADE's names), Referrer-Policy same-origin
    └─ terminal gateway :7682 (terminal-link only): requires and removes X-Bn-Preview-0<PREVIEW_PROXY_SECRET>
    └─ bn-preview on a UNIX socket in the sandbox (preview-socket volume) → 127.0.0.1:5173 (or [::1]:5173)
@@ -2836,21 +2836,21 @@ browser ─ http://p5173-<capability>.<PREVIEW_DOMAIN>:<PORTAL_PORT>/   (another
 
 - [x] **Another site, so no cookie of DevOS ADE reaches a preview.** Browsers count a `.localhost` name's last two
   labels as its site (`localhost` is not on the public suffix list): a page on `preview.devos-ade.localhost` would
-  be *same-site* with the portal — it would receive the portal's session cookie (`Domain=PORTAL_HOST`) and the code
+  be *same-site* with the web app — it would receive the web app's session cookie (`Domain=PORTAL_HOST`) and the code
   host's `SameSite=Strict` unlock cookie on its requests to them, and could plant `Domain=devos-ade.localhost`
   cookies (verified in Chromium 140). So previews live on a site of their own, `PREVIEW_DOMAIN`, which `lib/code.sh`
   derives from `PORTAL_HOST` (`devos-ade.localhost` → `devos-ade-preview.localhost`). Names on a
   `*-preview.localhost` site are the previews' alone: `./stack` refuses a `PORTAL_HOST` or an app host (`CHAT_HOST`,
   `CODE_HOST` …) there, a project named `<x>-preview` gets `<x>-preview-portal.localhost` (a second install named
   `devos-ade-preview` would otherwise be the first one's previews' site and get their requests with its cookies),
-  and the portal turns previews off unless `PREVIEW_DOMAIN` is `<name>-preview.localhost` and none of its own hosts is
-  on such a site. From a preview, requests to the portal, Chat, Admin, Files, the terminal and the Code page are
+  and the web app turns previews off unless `PREVIEW_DOMAIN` is `<name>-preview.localhost` and none of its own hosts is
+  on such a site. From a preview, requests to the web app, Chat, Admin, Files, the terminal and the Code page are
   *cross-site*: no cookie goes with them, and `Domain=` cookies for those hosts are refused. The e2e suite checks
   exactly this from inside a preview (`Sec-Fetch-Site: cross-site`, no `Cookie`, tossed cookies refused), against a
   control request of the Code page itself that does carry its cookie.
 - [x] **A capability in the host name instead of a cookie.** A preview's host is `p<port>-<capability>`: the
   Code page's unlock time and an HMAC-SHA256 (120 bits) over the port, that time and the password fingerprint, with a
-  key of its own derived from `PORTAL_SECRET`. The portal mints it on the code host (`/.bn/preview`, after the code
+  key of its own derived from `PORTAL_SECRET`. The web app mints it on the code host (`/.bn/preview`, after the code
   host's check, only for a request from the Code page itself: `Sec-Fetch-Site: same-origin`) and checks it on every
   request to the preview site. A link names **one port**, lives exactly as long as the unlock it came from (12 hours),
   and ends with **Sign out** or a **new password** (or `PORTAL_SECRET`); a missing, forged, expired or other-port
@@ -2873,7 +2873,7 @@ browser ─ http://p5173-<capability>.<PREVIEW_DOMAIN>:<PORTAL_PORT>/   (another
   `referrerpolicy="no-referrer"`. `allow-same-origin` is safe because the origin is foreign: the preview keeps its own
   storage and cookies on its own site. The Code page reads nothing from the frame and listens to no message from it.
   Caddy adds a CSP of its own to every preview answer (beside the app's, both apply): `frame-ancestors` the Code page
-  and the portal only, and `frame-src 'self' https: data: blob: http://*.<PREVIEW_DOMAIN>:*` — a preview cannot frame
+  and the web app only, and `frame-src 'self' https: data: blob: http://*.<PREVIEW_DOMAIN>:*` — a preview cannot frame
   DevOS ADE's hosts or anything on this computer's `localhost`. It drops `X-Frame-Options`, `Clear-Site-Data`,
   `Service-Worker-Allowed` and reporting headers (bn-preview drops the app's own `frame-ancestors`, e.g. helmet's
   `'self'`, which would keep it out of the pane), makes every `Set-Cookie` host-only (`Domain=` in any spelling goes)
@@ -2882,11 +2882,11 @@ browser ─ http://p5173-<capability>.<PREVIEW_DOMAIN>:<PORTAL_PORT>/   (another
   `Origin: null` for those). All previews share one site, so a preview's *script* can still set a cookie for the
   preview domain that the others receive: they all come from the same sandbox, so sites of their own per preview are
   not needed for now. The Code page's own CSP gains one `frame-src` source, `http://*.<PREVIEW_DOMAIN>:<PORTAL_PORT>`
-  (the portal's port only: those names resolve to this computer's loopback — see "The artifact viewer").
+  (the web app's port only: those names resolve to this computer's loopback — see "The artifact viewer").
 - [x] **No new way into the sandbox.** The gateway's preview listener (`:7682`, on `terminal-link` only) passes
   nothing to bn-preview without `X-Bn-Preview-0<PREVIEW_PROXY_SECRET>` (128 random bits, new at every
   `./stack code enable`, in the two Caddys' environments only — never in the sandbox, the code container or the
-  portal) and removes it on the way; without a real secret it answers 503. The sandbox cannot reach `:7682` (tested).
+  web app) and removes it on the way; without a real secret it answers 503. The sandbox cannot reach `:7682` (tested).
   bn-preview (`terminal/bin/bn-preview.mjs`, Node built-ins) listens only on its UNIX socket (mode 700) and connects
   only to the sandbox's own `127.0.0.1` / `::1`: the servers started in there. It caps connections (256) and ends
   idle ones; bn-terminal restarts it like bn-coded. Like everything in the sandbox, it is not a boundary for the
@@ -2977,12 +2977,12 @@ browser ─ http://p5173-<capability>.<PREVIEW_DOMAIN>:<PORTAL_PORT>/   (another
   unlock's time and the Tailscale login. It is set by a **hand-off**: `/.bn/preview` on the code host (the page itself
   only, `Sec-Fetch-Site: same-origin`; session and unlock checked) mints a token — its own salt, 60 seconds, one use
   (its nonce is remembered until it expires), for that preview host only, with the unlock's time, the port and the
-  login, the password fingerprint, refused if minted before the portal last started — and the browser takes it to the
-  preview host's `/.bn/preview-callback`, which Caddy hands to the portal before the host's check. The portal sets the
+  login, the password fingerprint, refused if minted before the web app last started — and the browser takes it to the
+  preview host's `/.bn/preview-callback`, which Caddy hands to the web app before the host's check. The web app sets the
   cookie for the rest of the unlock's 12 hours and sends the browser on to a path on the same host (`Cache-Control:
   no-store`, `Referrer-Policy: no-referrer`). Every request to the preview host then needs that cookie (valid for the
   login Tailscale names, the unlock not ended by **Sign out**, the password unchanged) and the preview's own `Origin`,
-  like the local capability. `SameSite=Strict` holds in the Code page's pane: the portal, the Code page and the preview
+  like the local capability. `SameSite=Strict` holds in the Code page's pane: the web app, the Code page and the preview
   are one site there (checked in Chromium by `tests/e2e/remote/run.sh`). The preview's script cannot read the cookie
   (`HttpOnly`) or replace it (a script cannot overwrite an `HttpOnly` cookie, and the dev server's own `Set-Cookie` with
   DevOS ADE's names is dropped by Caddy); Caddy strips it, with every other `bn_*` cookie and your Tailscale identity
@@ -2991,7 +2991,7 @@ browser ─ http://p5173-<capability>.<PREVIEW_DOMAIN>:<PORTAL_PORT>/   (another
   the port, the unlock and Sign out on that origin, and would see the hand-off's links). This computer's previews keep
   their workers: an origin per port and unlock.
 - [x] **Same-site over remote access, so the apps refuse it.** Unlike here, the remote preview host is on the same site
-  as the portal and the apps, whose `SameSite=Strict` cookies therefore go with its requests: every app host refuses a
+  as the web app and the apps, whose `SameSite=Strict` cookies therefore go with its requests: every app host refuses a
   preview's `Origin` and any other host's script requests ([the same-site guard](#the-same-site-guard)). In own-domain
   mode `REMOTE_PREVIEW_DOMAIN` puts the previews on a registrable domain of their own instead — another site again, as
   here: no cookie of DevOS ADE goes with their requests, and their script cannot set cookies for your domain. Their
@@ -2999,7 +2999,7 @@ browser ─ http://p5173-<capability>.<PREVIEW_DOMAIN>:<PORTAL_PORT>/   (another
   browsers that block third-party cookies need **Open in a new tab**).
 
 Remaining risks:
-- **Over remote access a preview shares the portal's site** — and that of every other app of your tailnet or domain
+- **Over remote access a preview shares the web app's site** — and that of every other app of your tailnet or domain
   (Tailscale; own domain without `REMOTE_PREVIEW_DOMAIN`), which is why it is off unless `REMOTE_PREVIEW=true`. Its
   script can open DevOS ADE's pages (as any link can), send your other apps there requests with their cookies, set
   cookies for the whole site (never the `__Host-` session cookies; Open WebUI's `token` could be shadowed, but not
@@ -3018,7 +3018,7 @@ Remaining risks:
 - **A link can reach DNS.** Browsers answer `*.localhost` names themselves, but Safari on macOS 15, `curl`, `wget`
   and Python ask the system's resolver, which may pass the name — the capability with it — to your DNS server. Paste
   a link (*Copy address*) only into a browser that resolves `.localhost` itself (Chrome, Firefox, Safari on macOS 26).
-- **Every request asks the portal** (as for every app host): the e2e suite measures it on each run (a few ms per
+- **Every request asks the web app** (as for every app host): the e2e suite measures it on each run (a few ms per
   request; its result line says how much).
 - **The app's cookies in the pane.** In the pane a preview is a frame from another site. Even where third-party
   cookies are allowed (default Chrome), its requests are cross-site there, so cookies the app sets without
@@ -3049,24 +3049,24 @@ file's last diagram leaves the page.
 Code page (code.<PORTAL_HOST>) ── <iframe sandbox="allow-scripts" src="http://a<capability>.artifact.<PREVIEW_DOMAIN>:<port>/artifact/html.html">
    │  posts the bytes (postMessage, to a fresh frame that has only run the viewer's script)
    └─ main Caddy, local listener only (caddy/artifact-on.caddy)
-        forward_auth → portal /auth/verify?app=artifact: the capability; GET/HEAD; framed, never a page of its own
+        forward_auth → web app /auth/verify?app=artifact: the capability; GET/HEAD; framed, never a page of its own
         → code container, marked X-Bn-Artifact: 1 (Caddy removes a client's copy everywhere): /artifact/* only
         back: the viewer's CSP (below), nosniff, Referrer-Policy no-referrer, no Set-Cookie
 ```
 
 - [x] **Another site, sandboxed twice, no network.** The viewer's host is under the previews' site (`PREVIEW_DOMAIN`:
-  another site than the portal's, so no cookie of DevOS ADE reaches it and its requests to DevOS ADE's hosts would
+  another site than the web app's, so no cookie of DevOS ADE reaches it and its requests to DevOS ADE's hosts would
   be cross-site). Its documents are sandboxed by their CSP (`sandbox allow-scripts`) and by the frame
   (`sandbox="allow-scripts"`, `allow=""`, `referrerpolicy="no-referrer"`): an opaque origin — no cookies, no storage,
   no reading anything of another frame — with no forms, popups, dialogs, downloads, top navigation or pointer lock.
   The CSP gives them no network at all: `default-src 'none'; connect-src 'none'` (no fetch, XHR, WebSocket,
   EventSource, beacon), images, fonts and media only `data:`/`blob:`, `frame-src`, `worker-src`, `object-src`,
-  `form-action`, `base-uri` and `manifest-src` `'none'`, and `frame-ancestors` the Code page (and the portal, whose
+  `form-action`, `base-uri` and `manifest-src` `'none'`, and `frame-ancestors` the Code page (and the web app, whose
   Code tab frames the Code page: the browser checks every ancestor). The HTML runner
   (`artifact/html.html`) lets the document it is handed run its inline scripts (`'unsafe-inline' 'unsafe-eval'` —
   that is what an HTML preview is for) under exactly that policy; the diagram page runs only its own script
   (`script-src 'self'`). A frame that tries to navigate itself elsewhere is stopped by the Code page's own
-  `frame-src`: only DevOS ADE's terminal host and the previews' site, **on the portal's port** (`PORTAL_PORT`) — those
+  `frame-src`: only DevOS ADE's terminal host and the previews' site, **on the web app's port** (`PORTAL_PORT`) — those
   names resolve to this computer's loopback, so with any port a framed page could send a blind GET to any service
   listening there; a navigation to another port is refused (tested). Tested in Chromium with a page that tries
   fetch, XHR, WebSocket, EventSource, `sendBeacon`, images, stylesheets, prefetch, `<base>`, iframes, forms, popups,
@@ -3076,7 +3076,7 @@ Code page (code.<PORTAL_HOST>) ── <iframe sandbox="allow-scripts" src="http:
 - [x] **A capability in the host name, like the previews'.** `a<capability>.artifact.<PREVIEW_DOMAIN>`: the Code
   page's unlock time and an HMAC-SHA256 (120 bits) over "artifact", that time and the password fingerprint — the
   previews' scheme (`PreviewCaps`), with "artifact" where a preview names its port, so a preview's capability never
-  opens the viewer and the viewer's never opens a preview. The portal mints it on the code host (`/.bn/artifact`, for
+  opens the viewer and the viewer's never opens a preview. The web app mints it on the code host (`/.bn/artifact`, for
   the page itself: `Sec-Fetch-Site: same-origin`) and checks it on every request: it lives as long as the unlock
   (12 hours) and ends with Sign out or a new password; a missing, forged, expired or misplaced one gets 403, as do
   methods other than GET/HEAD, a load as a page of its own (`Sec-Fetch-Dest: document`) and an `Origin` other than
@@ -3094,7 +3094,7 @@ Code page (code.<PORTAL_HOST>) ── <iframe sandbox="allow-scripts" src="http:
   has run only the viewer's own script. Mermaid runs with `securityLevel: 'strict'` and labels as SVG text; a
   diagram's own `%%{init}%%` cannot change that, the theme or the labels (`secure`).
 - [x] **Local only, for now.** The viewer's site exists only on the local listener, like the previews; over remote
-  access the portal answers `available: false` and the page says so — an HTML file shows its source, a diagram its
+  access the web app answers `available: false` and the page says so — an HTML file shows its source, a diagram its
   code, a notebook's HTML output stays behind its button (everything else previews as usual).
 
 Remaining risks:
@@ -3131,7 +3131,7 @@ action, including those a file, a web page or a tool's output talks Claude into.
   you use it there), the sandbox's internet access (`TERMINAL_EGRESS`; unless it is off, anything in the workspace can
   be sent anywhere — and with `host` this computer's services can be reached too), and the key's budget, spent without
   pauses.
-- **Visible while on**: a red strip above the prompt box with *Switch to Manual*, ⏵⏵ in the tab title, the portal's
+- **Visible while on**: a red strip above the prompt box with *Switch to Manual*, ⏵⏵ in the tab title, the web app's
   Code badge red.
 - **Never kept.** Not remembered for new sessions (they start in your usual mode); it ends with the session's
   process — an idle stop, a resume, a new conversation go on in *Manual* — and the page can only start a session in
@@ -3145,7 +3145,7 @@ action, including those a file, a web page or a tool's output talks Claude into.
   command writing the same files does not ask — the watchlist flags it after the turn. A speed bump, not a wall.
 - **Over remote access too — a decision.** The setting itself can only be turned on at the computer running
   DevOS ADE; once it is, a session can be switched to Bypass from a phone or laptop over remote access as well
-  (that browser has passed the portal sign-in, the Tailscale login or your domain's, and the Code page's own password
+  (that browser has passed the web app sign-in, the Tailscale login or your domain's, and the Code page's own password
   unlock — and the owner on a phone is the main remote user). The dialog then says you are using DevOS ADE remotely:
   everything still runs on the computer at home, in its sandbox and folder. Caddy tells the code container which it is
   (`X-Bn-Remote`: 1 from the remote sites, 0 from the local one, a client's own copy deleted first; `/api/state`'s
@@ -3293,7 +3293,7 @@ container's memory (the last 10 cards per session, 4 MiB), gone with a restart.
 ## Projects and the coding tools on your computer
 
 What widens what the sandbox sees is decided on the computer running DevOS ADE: in its terminal, or in a dialog on
-its screen. Nothing a page, the portal or the sandbox sends names a folder of yours.
+its screen. Nothing a page, the web app or the sandbox sends names a folder of yours.
 
 ### Folders of this computer
 
@@ -3301,12 +3301,12 @@ A folder of this computer can be a Code page project: `./stack project add DIR` 
 (README: [Folders of this computer](../README.md#folders-of-this-computer)).
 
 - [x] **Added one by one, on this computer.** In a terminal (`./stack project add DIR`), or by Settings › Claude Code
-  › Project folders › *Choose on this computer…*: the portal writes the update helper a request with fixed fields only
+  › Project folders › *Choose on this computer…*: the web app writes the update helper a request with fixed fields only
   (`project-pick`, when to restart, read-only or not, hide its path or not, `origin: local`; the password again, at
   most 768 bytes) — never a path; a request from another device is refused (403), and so is one with any other field.
   The helper opens the system's folder chooser on this computer's screen (macOS `choose folder`, `zenity` or
   `kdialog`) with fixed text saying what the folder is for, then runs `./stack project add` on the folder you chose.
-  At most one dialog a minute and 10 a day; without a screen it says to use the terminal. A taken-over portal can at
+  At most one dialog a minute and 10 a day; without a screen it says to use the terminal. A taken-over web app can at
   most open a dialog that you cancel.
 - [x] **Checked before it is mounted, and at every `./stack up`.** The folder is resolved to its physical path first
   (a link counts as what it leads to; on a Mac case and `/private` spellings are one folder) and refused when it is
@@ -3387,9 +3387,9 @@ A folder of this computer can be a Code page project: `./stack project add DIR` 
   `.state/projects/public/roots.json` (ids, names, paths in the sandbox, read-only or not: no secret; mode 644, its
   folder 755 and mounted read-only — the code container runs as the terminal's user) and checks every path it sends
   bn-coded against it, never the sandbox's word; bn-coded checks them again (absolute, plain, real folders not reached
-  through a link, none around the workspace or another, no `.claude` part). The portal reads
+  through a link, none around the workspace or another, no `.claude` part). The web app reads
   `.state/status/projects.json` (also this computer's paths), written like its other status files: mode 644 in the
-  status folder, which is the portal's group's.
+  status folder, which is the web app's group's.
 - [x] **What is applied is Docker's word, and said until it is.** A change is written to the list at once, but the
   sandbox has it only once it restarted with it. After every change and every `./stack up`, ./stack asks Docker —
   never the sandbox — what the running terminal container has: its `BN_CODE_ROOTS` and its mounts (`docker
@@ -3459,15 +3459,15 @@ that trusts nothing in them, and what it read is untrusted data all the way to t
   store folders it reads read-only; nothing else of DevOS ADE opens them. A copy goes into the sandbox's own Claude
   Code configuration (`/home/claude/.claude/projects/…`), written by bn-coded inside the sandbox; a later import reads
   the computer's store again (a later change on the computer comes along); nothing of the sandbox's goes back.
-- [x] **Asked through the portal, which checks the password; the Code page's backend never sees it.** A look, a read,
-  suggestions and a copy that keeps a possible secret need the portal password again. The Import sheet sends them to
-  the portal (`POST /.bn/sessions` on the code host: Caddy hands only that path to the portal, its body capped at
+- [x] **Asked through the web app, which checks the password; the Code page's backend never sees it.** A look, a read,
+  suggestions and a copy that keeps a possible secret need the web app password again. The Import sheet sends them to
+  the web app (`POST /.bn/sessions` on the code host: Caddy hands only that path to the web app, its body capped at
   16 KB), which checks the code host, your session and its unlock, the request's Origin, and the password (counted by
   the login throttle with the login form), decides itself whether the request came over remote access, and writes the
   update helper's request into its request folder: `ses-<nonce>.json`, one line, every field fixed — the action, a
   project's id, a tool, a look's nonce and row numbers, a session's id, a digest, the tokens of findings to keep —
   never a path, at most 8 KB. The helper takes it as it takes Settings' requests (moved into its private inbox, then:
-  not a link, a regular file, owned by you or the portal's user, a bounded read, the line against fixed patterns, the
+  not a link, a regular file, owned by you or the web app's user, a bounded read, the line against fixed patterns, the
   password against the helper's own hash with its own lock-out, single use, an age limit, its own rate limits). The page
   follows the request by its id only: the helper says how it went in fixed words (`./stack sessions` → `docker compose
   exec code … request --id … --state …`), and the code container keeps that, a copy's results with it.
@@ -3476,7 +3476,7 @@ that trusts nothing in them, and what it read is untrusted data all the way to t
   sessions consent --project NAME --always`, or the question `./stack sessions import` asks), or in the dialog the
   update helper shows **on this computer's screen** (fixed text naming the tool and your folder: *Don't allow* — the
   default, and what an unanswered dialog means after 2 minutes, whatever shows it —, *Allow once*, *Always for this
-  folder*). *Once* holds for that look and the reads that follow it for an hour. Over remote access the portal refuses
+  folder*). *Once* holds for that look and the reads that follow it for an hour. Over remote access the web app refuses
   a look and suggestions (403), and the helper never shows a dialog for a request it was told is remote: from there
   you may only read and copy sessions of a look already allowed here. At most one dialog a minute and 10 a day. The
   grants are in `.state/sessions/consent.tsv` (mode 600 in a folder of 700, no container mounts it; not in backups:
@@ -3551,7 +3551,7 @@ that trusts nothing in them, and what it read is untrusted data all the way to t
   the outputs is your choice per import — **Include tool outputs** on the sheet, `--with-tool-outputs` in a terminal,
   `"outputs":"in"` in the helper's request (a fixed field it checks again) — and then the known output fields are
   kept, scanned and redacted like the rest, while a kind of record the allowlist does not know is still dropped. From
-  another device, the outputs are never shown (a preview with them is refused) and come only through the portal with
+  another device, the outputs are never shown (a preview with them is refused) and come only through the web app with
   its password (the update helper makes that copy), as a kept finding does. The redaction below is a safety net,
   never a guarantee.
 - [x] **Possible secrets redacted by default, and shown.** Before anything reaches the sandbox, the code container
@@ -3592,8 +3592,8 @@ that trusts nothing in them, and what it read is untrusted data all the way to t
   `<token>` (a placeholder, and a tag with a value after it), and a URL's span holding `://` (no `mailto:`, port,
   image-tag or placeholder exemption then). Findings that overlap become one, their union. Each finding is listed with its kind, where and its length — and, only for a token whose start is everyone's
   (`ghp_`, `AKIA`, `sk-ant-` …), that start: nothing of a password, a value, a cookie, a header or a URL's password, on any
-  device — and replaced by `[REDACTED:<kind>]`; redaction is idempotent. **Keeping one** needs the portal password (the
-  sheet asks; the portal hands the copy to the helper): a keep names the file the finding is in and a keyed hash of its
+  device — and replaced by `[REDACTED:<kind>]`; redaction is idempotent. **Keeping one** needs the web app password (the
+  sheet asks; the web app hands the copy to the helper): a keep names the file the finding is in and a keyed hash of its
   kind and value (the key is the waiting session's own, never shown — so the page holds no hash anyone could test
   guesses against), never a position; the check shows a digest of what is waiting — its files and the id of that key —
   and a copy is refused when the session was read again since, even unchanged. The scan is linear on hostile text and
@@ -3628,14 +3628,14 @@ that trusts nothing in them, and what it read is untrusted data all the way to t
   continued here since comes in as a new session (a fork: new ids). *Continue in this project* forks the same way (the
   Agent SDK's `forkSession`) and rewrites the old folder's path to the new one only where it stands as a path (bounded
   by separators: `/a/app` never turns `/a/apple` into something else).
-- [x] **The folders, one direction each.** The portal writes the helper's requests; ./stack and the helper write only
+- [x] **The folders, one direction each.** The web app writes the helper's requests; ./stack and the helper write only
   folders no container can write, or folders a container gets read-only:
 
   | Folder (on this computer) | Written by | Read by | Mounted | Shape |
   |---|---|---|---|---|
-  | `.state/requests/` (`ses-<nonce>.json`, `act-<nonce>.json` with `sessions-revoke`) | the portal (after it checked the password) | the helper: each file moved into its private inbox, then checked (not a link, a regular file, owned by you or the portal's user, a bounded read, one line against fixed patterns, the password against the helper's own hash, limits) | rw into the portal only | a container writes, the host reads |
+  | `.state/requests/` (`ses-<nonce>.json`, `act-<nonce>.json` with `sessions-revoke`) | the web app (after it checked the password) | the helper: each file moved into its private inbox, then checked (not a link, a regular file, owned by you or the web app's user, a bounded read, one line against fixed patterns, the password against the helper's own hash, limits) | rw into the web app only | a container writes, the host reads |
   | `.state/projects/public/` (755): `roots.json`, `helper.json` | ./stack and the helper (a temporary file in that folder, then renamed; never followed) | the code container | `:ro` into the code container (`/etc/bn-code/projects`) | the host writes, a container reads |
-  | `.state/status/sessions.json`, `helper-settings.json` | ./stack and the helper (likewise) | the portal (Settings' list; what the helper takes) | `:ro` into the portal, with the other status files | the host writes, a container reads |
+  | `.state/status/sessions.json`, `helper-settings.json` | ./stack and the helper (likewise) | the web app (Settings' list; what the helper takes) | `:ro` into the web app, with the other status files | the host writes, a container reads |
   | `.state/sessions/` (`consent.tsv`, `scans/`), `.state/helper/` | ./stack and the helper | them only | none | host-only |
   | `~/.claude/projects/<folder>`, `~/.claude-bedrock/projects/<folder>` | your tools on this computer | the reader | read-only into the reader's throwaway container, for one look or read | yours: never written |
   | code-state volume `imports/`, tmpfs `/run/bn-import-stage` | the code container (from ./stack's stdin) | the code container | the code container only | the container's own |
@@ -3643,13 +3643,13 @@ that trusts nothing in them, and what it read is untrusted data all the way to t
 
   The code container has no folder to write the helper's requests in, and never sees the password. The folders of the
   projects (P1, P2) are as they were: `.state/projects/` stays 700 with `folders.tsv` host-only, its `public/` folder
-  read-only in the code container, `.state/status` read-only in the portal. Tests: a request that is a link is never
+  read-only in the code container, `.state/status` read-only in the web app. Tests: a request that is a link is never
   read through, and a link planted at the name of the helper's file for the code container is replaced, never
   followed, its target and mode unchanged (`tests/test_sessions.sh`); the code container's compose file mounts
-  `public/` read-only and nothing else of the stack's (`tests/test_code.sh`); the portal's route, its checks and the
+  `public/` read-only and nothing else of the stack's (`tests/test_code.sh`); the web app's route, its checks and the
   request it writes (`portal/tests/test_code.py`).
 - [x] **Over remote access.** The Import sheet works from a phone or another computer for what was allowed here: it
-  shows a look's list, reads picked rows of it (while its *once* holds, or *always*), checks and copies. The portal
+  shows a look's list, reads picked rows of it (while its *once* holds, or *always*), checks and copies. The web app
   never starts a look or a suggestion from there, and nothing allows one from there.
 - [ ] **Not covered.** A transcript that tells the model something when resumed (it is history the model reads: the
   first open in Manual is the guard, and the sheet shows it first); a secret the scan does not know; Claude Code
@@ -3661,7 +3661,7 @@ that trusts nothing in them, and what it read is untrusted data all the way to t
 *Bring your setup* copies items of your Claude Code setup (`~/.claude`, `~/.claude-bedrock`) and your Git name and
 email (`~/.gitconfig`) into the sandbox's own configuration (README: [Your Claude Code setup from this
 computer](../README.md#your-claude-code-setup-from-this-computer)). It is the sessions' import's sibling — the same
-consent on this computer, the same throwaway reader, the same request path through the portal, the same secret scan
+consent on this computer, the same throwaway reader, the same request path through the web app, the same secret scan
 — and it carries more weight in two ways: what it copies **runs** in the sandbox (hooks, a status line, an MCP
 server's command, a skill's scripts, `permissions.allow` rules that let commands run without asking), and a setup is
 where people keep keys (an MCP server's `env`, a hook's `Authorization` header). So it offers an allowlist and nothing
@@ -3705,7 +3705,7 @@ else, says what each item brings before it is copied, and never copies a secret-
   `consent.tsv`), per tool — Claude Code, `devos-claude`, Git — *Allow once* (that look and its opens, an hour) or
   *Always*, in the update helper's dialog on this computer's screen (*Don't allow* the default; unanswered after 2
   minutes, the same) or in its terminal. A look and an open are refused for a request over remote access, by the
-  portal (403) and by the helper again; from another device the page shows a look made here and copies what was
+  web app (403) and by the helper again; from another device the page shows a look made here and copies what was
   opened here. *Take back* (Settings › Claude Code › *What DevOS ADE may read on this computer*, or `./stack
   sessions config consent --revoke`) removes the grant and has the code container forget the look and the items
   waiting; what was copied into the sandbox stays.
@@ -3745,7 +3745,7 @@ else, says what each item brings before it is copied, and never copies a secret-
   value, anything longer than 4 KiB; so a capability URL (a secret path, no name saying so) and the URL an
   `mcp-remote` argument carries keep their server out. A plugin's marketplace URL with a query, a fragment, a user or
   any of the above is not added unless you keep it. Every such URL is shown masked to every device (`https://host/…/•••
-  /mcp?key=•••`). Keeping one needs the portal password: the page asks the portal (`setup-copy`: the units' keys, a
+  /mcp?key=•••`). Keeping one needs the web app password: the page asks the web app (`setup-copy`: the units' keys, a
   digest, the choices, the keep tokens — never a path), the update helper checks it all again and makes that copy. A
   preview never holds a secret (it is made with every finding redacted and every secret left out; a kept one is said,
   masked); a keep names the item's part and a keyed hash, never a position.
@@ -3753,7 +3753,7 @@ else, says what each item brings before it is copied, and never copies a secret-
   allowed (`Bash`, `Edit`, `WebFetch`, `mcp__*` …), a front matter's grant (`allowed-tools`, a permission mode that
   asks less, `hooks`, `mcpServers`, front matter that cannot be read), hooks or a status line is refused by the Code
   page's own copy (`POST /api/setup/copy`) when the request came over remote access; the page sends it through the
-  portal with the password instead (`setup-copy` with nothing kept), and the update helper makes the copy. On this
+  web app with the password instead (`setup-copy` with nothing kept), and the update helper makes the copy. On this
   computer such a copy is the page's warning and your *Copy*.
 - [x] **Preview is the copy.** The preview and the copy come from one function over the same inputs: the item as
   staged, your choices, and the sandbox's destination as bn-coded reads it now (`setup.read`: a file's SHA-256 and
@@ -3794,7 +3794,7 @@ else, says what each item brings before it is copied, and never copies a secret-
   |---|---|---|---|---|
   | `~/.claude/{CLAUDE.md, settings.json, keybindings.json, skills, agents, commands, output-styles, plugins/installed_plugins.json, plugins/known_marketplaces.json, plugins/cache}`, `~/.claude.json`, the same of `~/.claude-bedrock`, `~/.gitconfig` | your tools on this computer | the reader | each alone, read-only, into the reader's throwaway container, for one look or open | yours: never written |
   | `.state/sessions/setup/<nonce>.tsv`, `.state/sessions/consent.tsv` | ./stack and the helper | them only | none | host-only |
-  | `.state/requests/ses-<nonce>.json` (`setup-scan`, `setup-fetch`, `setup-copy`) | the portal (after it checked the password) | the helper (as the sessions' requests) | rw into the portal only | a container writes, the host reads |
+  | `.state/requests/ses-<nonce>.json` (`setup-scan`, `setup-fetch`, `setup-copy`) | the web app (after it checked the password) | the helper (as the sessions' requests) | rw into the web app only | a container writes, the host reads |
   | code-state volume `imports/setup-index.json`, `imports/setup-copied.json`; tmpfs `/run/bn-import-stage/setup/` | the code container (from ./stack's stdin) | the code container | the code container only | the container's own |
   | the sandbox's `/home/claude/.claude/…` above, `/home/claude/.claude.json` (MCP), `/home/claude/.gitconfig`, `~/.claude/.devos-ade-trash/` (what a copy replaced: files, folders, `mcp__<name>.json`) | bn-coded (`setup.write`, `setup.git`, `setup.trash`), Claude Code's CLI in the sandbox | the sandbox | the terminal container only | the sandbox's own |
 
@@ -3802,7 +3802,7 @@ else, says what each item brings before it is copied, and never copies a secret-
   made at run time); hostile homes (links, a FIFO, huge, binary and deep files); the reader's mounts and the helper's
   request shapes (`tests/test_sessions_config.sh`); bn-coded's destinations, links and digests
   (`code/test/bn-coded-setup.test.mjs`); merges, conflicts, keeps and digests end to end against a real bn-coded
-  (`code/test/import-setup.test.mjs`); the portal's route (`portal/tests/test_code.py`); the sheet in a browser,
+  (`code/test/import-setup.test.mjs`); the web app's route (`portal/tests/test_code.py`); the sheet in a browser,
   hostile too (`code/web/e2e/ui_check.py`); and a throwaway stack (`tests/e2e/run.sh --host-config`).
 - [ ] **Not covered.** What you copy runs in the sandbox as you chose it: a hook, a status line or a skill's script
   of yours can do anything the sandbox can, and an MCP server's command is fetched from the internet (`npx`) — the
@@ -3865,7 +3865,7 @@ never reads, copies, keeps, passes on or relays a login.**
   command: whether their login file exists is looked at, never its content (and Gemini's own settings file for the
   sign-in method it names). Copilot keeps its login in the file with its other state: not opened — "not known here".
   The sandbox's answer is untrusted: `./stack` keeps a line only when every field is one of its words
-  (`lib/subscriptions.sh subs_parse`), the portal checks them again (`portal/portal/answers.py`), and a hostile sandbox
+  (`lib/subscriptions.sh subs_parse`), the web app checks them again (`portal/portal/answers.py`), and a hostile sandbox
   can at most claim "signed in".
 - [x] **Sign-in and sign-out where you are.** Signing in happens in the terminal like any terminal use (remotely only
   with `REMOTE_TERMINAL`); `./stack subscriptions login TOOL` on this computer runs the same sign-in in the sandbox and
@@ -3880,15 +3880,15 @@ never reads, copies, keeps, passes on or relays a login.**
   Gemini CLI and Copilot sign out inside their own screens); it does not revoke the login at the provider.
 - [x] **Nothing starts from an address alone.** The Terminal tab's *Open*, the Code page's terminal panel and the Chat
   tab's embedded tool load the terminal with `?arg=MODE&arg=TOOL&arg=TOKEN[&arg=FOLDER]`; ttyd (`--url-arg`) hands
-  those words to `bn-session` as arguments, never through a shell. TOKEN is a **launch token** the portal makes only on
-  your click — in its own page (`POST /api/terminal/launch`: the session, `X-Requested-With`, the portal's Origin), in
+  those words to `bn-session` as arguments, never through a shell. TOKEN is a **launch token** the web app makes only on
+  your click — in its own page (`POST /api/terminal/launch`: the session, `X-Requested-With`, the web app's Origin), in
   the Code page's terminal menu (`POST /.bn/terminal-launch`: its unlock, its Origin, `X-Requested-With`; the hand-off
   address then carries the token — the same address without one, a link in an answer or a preview, only shows the
   question below), or on the terminal host's own *Open … here?* page
   (`POST /.bn/launch`: that host's Origin, or without one its Referer; a `Sec-Fetch-Site` other than same-origin is refused when sent) — an HMAC over the login, exactly those words
-  and when it was made, keyed by the portal's secret and the password (a new password voids them all), refused if made
+  and when it was made, keyed by the web app's secret and the password (a new password voids them all), refused if made
   before the last *Sign out everywhere*, fresh for 10 minutes, then valid only for reconnecting the terminal it opened
-  (12 hours, while the portal runs). The portal's check of every request to the terminal host refuses an address that
+  (12 hours, while the web app runs). The web app's check of every request to the terminal host refuses an address that
   carries words (as ttyd reads them: fragments split at `&` and `;`, URL-decoded, `arg%3D…` included) without a valid
   token for exactly those words, written exactly one way, with a folder that is `/workspace`, a folder of it like the
   Code page's projects or a project folder of this computer (at most 251 bytes — what ttyd still hands on whole —, no control, invisible or
@@ -4236,7 +4236,7 @@ never reads, copies, keeps, passes on or relays a login.**
   `CODE_CLAUDE_PLAN` is on. Its usage counts against your plan; the meter shows tokens and the plan's own limit
   messages, never Claude Code's dollar estimate.
 - [ ] **Whoever reaches Chat uses your plans.** A Chat model on your plan answers anyone who can use Open WebUI here —
-  the portal is single-user, so that is you; sign out of a tool to take it out of the list.
+  the web app is single-user, so that is you; sign out of a tool to take it out of the list.
 - [ ] **Anything in the sandbox can read those files.** Claude, a command it runs, a web page it reads, a plugin or an
   MCP server there runs as the same user and can copy a login out and use your plan elsewhere until you sign out **and
   revoke it at the provider** (your account's settings at Anthropic, OpenAI, GitHub, Cursor or xAI). The sandbox
@@ -4294,7 +4294,7 @@ or no update will go through.
 
 ## Supply chain
 
-Every image version is pinned in `compose.yaml` (Caddy also by digest); the portal, shared-mcp and stt Python
+Every image version is pinned in `compose.yaml` (Caddy also by digest); the web app, shared-mcp and stt Python
 dependencies are hash-locked, and the stt image's base (`python:3.12-alpine`) is pinned by digest (its ffmpeg
 comes from that Alpine release's repository). The optional terminal image's base (`node:…-trixie-slim`) is pinned
 by digest, Claude Code by version and SHA-512 (`npm ci` with `terminal/claude-code/package-lock.json`) and ttyd by

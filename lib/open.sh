@@ -143,7 +143,7 @@ _install_tip() {
     app:* | bundle:* | bin:*) menu="(or ⋮ → Cast, save and share → Install page as app)" ;;
     *) menu="in Chrome or Edge (Safari: File → Add to Dock)" ;;
   esac
-  log "tip: click \"Install app\" in the portal's sidebar $menu"
+  log "tip: click \"Install app\" in the web app's sidebar $menu"
   log "     to give $PRODUCT_NAME its own window and Dock icon; ./stack open then opens the app"
   { mkdir -p "$STATE_DIR" && : > "$mark"; } 2>/dev/null || true
 }

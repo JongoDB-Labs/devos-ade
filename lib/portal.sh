@@ -68,7 +68,7 @@ ensure_portal_reachable() {
   warn "port $(portal_port) on this computer does not reach Caddy, although Caddy answers in its container (Docker's port forward): recreating Caddy"
   dc up -d --no-deps --force-recreate --wait caddy >/dev/null 2>&1 || true
   if _portal_port_answers; then
-    log "Caddy recreated: the portal answers again"
+    log "Caddy recreated: the web app answers again"
   else
     PORTAL_FORWARD_BROKEN=1
     warn "port $(portal_port) still does not reach Caddy: restart Docker (on a Mac: quit Docker Desktop and open it again), then ./stack up"
@@ -182,7 +182,7 @@ check_app_hosts() {
         die "$k=$v does not end in .localhost (same rule as PORTAL_HOST; DEVOS_ADE_ALLOW_PUBLIC_HOST=1 allows it)" ;; esac
     fi
     v="$(app_host "$(printf '%s' "${k%_HOST}" | tr '[:upper:]' '[:lower:]')")"
-    case "$seen" in *" $v "*) die "$k=$v is the same host name as another app or the portal — each needs its own (their cookies would collide)" ;; esac
+    case "$seen" in *" $v "*) die "$k=$v is the same host name as another app or the web app — each needs its own (their cookies would collide)" ;; esac
     seen="$seen$v "
   done
 }
@@ -196,10 +196,10 @@ check_portal_host() {
   # <x>-preview.localhost is where the Code page shows sandbox content (lib/code.sh code_preview_domain): a portal on
   # such a site — this install's or another's — would share a site with those previews, and get their requests with
   # its session cookie
-  ! preview_site "$h" || die "PORTAL_HOST=$h is on a *-preview.localhost site: names ending in -preview.localhost are where the Code page shows previews of sandbox content, and a portal there would share a site (and its cookies) with them. Use another name (e.g. ${h%-preview.localhost}-portal.localhost)"
+  ! preview_site "$h" || die "PORTAL_HOST=$h is on a *-preview.localhost site: names ending in -preview.localhost are where the Code page shows previews of sandbox content, and a web app there would share a site (and its cookies) with them. Use another name (e.g. ${h%-preview.localhost}-portal.localhost)"
   case "$h" in *.localhost) return 0 ;; esac
   [ "${DEVOS_ADE_ALLOW_PUBLIC_HOST:-$(get_env DEVOS_ADE_ALLOW_PUBLIC_HOST)}" = 1 ] ||
-    die "PORTAL_HOST=$h does not end in .localhost. The portal is plain HTTP, so its session cookie has no Secure flag and is sent to $h and every *.$h — a name anything else can answer for could collect it. Use a name ending in .localhost (e.g. devos-ade.localhost), or set DEVOS_ADE_ALLOW_PUBLIC_HOST=1 in .env if $h is yours and resolves only to this machine."
+    die "PORTAL_HOST=$h does not end in .localhost. The web app is plain HTTP, so its session cookie has no Secure flag and is sent to $h and every *.$h — a name anything else can answer for could collect it. Use a name ending in .localhost (e.g. devos-ade.localhost), or set DEVOS_ADE_ALLOW_PUBLIC_HOST=1 in .env if $h is yours and resolves only to this machine."
   warn "PORTAL_HOST=$h does not end in .localhost (allowed by DEVOS_ADE_ALLOW_PUBLIC_HOST=1) — make sure $h and chat./admin./files.$h resolve to 127.0.0.1 (e.g. in /etc/hosts); the session cookie is not Secure (plain HTTP)"
 }
 
@@ -226,12 +226,12 @@ resolve_portal_port() {
   else why="port 80 is in use"; fi
   port="$(free_port_near PORTAL_PORT "$PORTAL_FALLBACK_PORT")" || die "$why, and no port from $PORTAL_FALLBACK_PORT to $((PORTAL_FALLBACK_PORT + 99)) is free — set PORTAL_PORT in .env"
   if [ "${ASSUME_YES:-0}" != 1 ] && _have_tty; then
-    warn "$why, so the portal cannot have the address $(_portal_url_at 80): it needs another port (its address then ends in :PORT)"
+    warn "$why, so the web app cannot have the address $(_portal_url_at 80): it needs another port (its address then ends in :PORT)"
     port="$(ask_port PORTAL_PORT "$port")" || exit 1   # (its die ended only the $(...))
   fi
   set_env PORTAL_PORT "$port"
   save_portal_origin
-  warn "$why → using $port for the portal (PORTAL_PORT): $(portal_url)"
+  warn "$why → using $port for the web app (PORTAL_PORT): $(portal_url)"
 }
 
 # _portal_url_at PORT [SUB] -> the portal's (or an app's) address on PORT
@@ -248,7 +248,7 @@ migrate_direct_ports() {
     grep -q "^$k=" "$ENV_FILE" 2>/dev/null || continue
     unset_env "$k"; removed="$removed $k"
   done
-  [ -z "$removed" ] || log "Open WebUI and the RustFS console are now reached through the portal — removed${removed} from .env"
+  [ -z "$removed" ] || log "Open WebUI and the RustFS console are now reached through the web app — removed${removed} from .env"
 }
 
 # --- curl through Caddy with a portal session ---

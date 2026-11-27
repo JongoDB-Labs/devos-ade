@@ -192,9 +192,9 @@ localgit_after_up() {
   localgit_register_host || { code_ready && warn "could not connect the Code page to the built-in git server — ./stack up tries again"; }
   if localgit_read_token_ensure; then
     # (the portal takes its environment at its start: recreated, a few seconds, only when the token is new)
-    [ -z "$_LG_READ_TOKEN_NEW" ] || { up_services --no-deps portal >/dev/null 2>&1 || warn "the portal did not restart for the git search — ./stack up"; }
+    [ -z "$_LG_READ_TOKEN_NEW" ] || { up_services --no-deps portal >/dev/null 2>&1 || warn "the web app did not restart for the git search — ./stack up"; }
   else
-    warn "could not make the token the portal's Git search uses — ./stack up tries again (search finds nothing in Git until then)"
+    warn "could not make the token the web app's Git search uses — ./stack up tries again (search finds nothing in Git until then)"
   fi
   return 0
 }

@@ -48,10 +48,10 @@ code_usage() {
 Usage: ./stack code <command>
 
   status                      On or off, its address, the container and the sandbox it uses
-  enable [--workspace DIR]    A Code tab in the portal: Claude Code with a chat, permission prompts, model
+  enable [--workspace DIR]    A Code tab in the web app: Claude Code with a chat, permission prompts, model
                               switching and your workspace's files. It runs in the browser terminal's sandbox
                               (turned on too when it is off; DIR as for ./stack terminal enable) and asks for
-                              the portal password again
+                              the web app password again
   disable                     Removes the Code page (the terminal, its folder and Claude Code's history stay)
 
   Remote access: with REMOTE_TERMINAL=true in .env (the terminal's switch), then ./stack up.
@@ -177,12 +177,12 @@ code_enable() {
     run_phase "Terminal (with the Code page's spawn server)" terminal _code_terminal_again
   fi
   run_phase "Code page image (build; the first one takes a few minutes)" code code_build
-  run_phase "Code page + portal + Caddy" "code portal caddy" _code_up
+  run_phase "Code page + web app + Caddy" "code portal caddy" _code_up
   code_default_forget_failures
   localgit_after_up   # lib/localgit.sh: the built-in git server's host in Git hosts, now that the Code page runs
   [ "$own" = 0 ] || stack_unlock
   printf '\n'; code_status
-  printf '\nOpen the Code tab on Home (%s) and unlock it with the portal password.\n' "$(portal_url)"
+  printf '\nOpen the Code tab on Home (%s) and unlock it with the web app password.\n' "$(portal_url)"
 }
 
 code_disable() {
@@ -201,7 +201,7 @@ code_disable() {
   ! declare -F chat_proxy_rm >/dev/null || chat_proxy_rm   # (Chat's own egress proxy too, with host egress: lib/terminal.sh)
   set_env CODE_ENABLED false
   code_remote_sync
-  run_phase "Portal, Open WebUI + Caddy (Code page off)" "portal open-webui caddy" _code_front
+  run_phase "Web app, Open WebUI + Caddy (Code page off)" "portal open-webui caddy" _code_front
   code_network_cleanup
   [ "$own" = 0 ] || stack_unlock
   log "the Code page is off: no Code tab, no code host, no code container (the terminal and its workspace stay)"
@@ -462,8 +462,8 @@ code_default_settle() {
   [ "$both" = 0 ] || set_env TERMINAL_ENABLED ''
   terminal_remote_sync
   code_remote_sync
-  if [ "$both" = 1 ]; then _terminal_front >/dev/null 2>&1 || warn "could not restart the portal and Caddy without the terminal — ./stack up"
-  else _code_front >/dev/null 2>&1 || warn "could not restart the portal and Caddy without the Code page — ./stack up"; fi
+  if [ "$both" = 1 ]; then _terminal_front >/dev/null 2>&1 || warn "could not restart the web app and Caddy without the terminal — ./stack up"
+  else _code_front >/dev/null 2>&1 || warn "could not restart the web app and Caddy without the Code page — ./stack up"; fi
   code_network_cleanup
   [ "$both" = 0 ] || terminal_network_cleanup
   if declare -F _record_set >/dev/null && [ -n "$(_record_get code_default)" ]; then _record_set code_default ''; fi
@@ -508,7 +508,7 @@ code_status() {
     return 0
   fi
   st="$(dc ps -a --format '{{.State}} {{.Health}}' code 2>/dev/null | head -n 1 || true)"
-  printf 'Code page: on — %s (the Code tab; unlock with the portal password, 12 h per browser)\n' "$(portal_url code)"
+  printf 'Code page: on — %s (the Code tab; unlock with the web app password, 12 h per browser)\n' "$(portal_url code)"
   if ! terminal_on; then printf '             !! left out: the terminal is off (./stack code enable turns it on)\n'
   elif ! terminal_ready; then printf '             !! left out: %s\n' "$(terminal_why_out)"; fi
   printf '  Container  %s\n' "${st:-not created — ./stack up}"
@@ -562,7 +562,7 @@ code_test_checks() {
     _check "code host refuses another site's Origin" "$code" 403
     portal_session_end
   else
-    _skip "code host unlock checks" "portal login failed"
+    _skip "code host unlock checks" "web app login failed"
   fi
   out="$(dc exec -T caddy wget -S -O /dev/null -T 10 http://code-upstream:8095/api/state 2>&1 || true)"
   _check "the code container refuses requests without the secret header" "$(printf '%s\n' "$out" | awk '!f && /^  HTTP\// { print $2; f = 1 }')" 407
@@ -570,7 +570,7 @@ code_test_checks() {
     let left = hosts.length; const res = {};
     for (const [h, p] of hosts) { const s = net.connect({ host: h, port: p, timeout: 3000 }); const done = (r) => { res[h] = r; s.destroy(); if (!--left) console.log(hosts.map(([x]) => res[x]).join(" ")); };
       s.on("connect", () => done("open")); s.on("timeout", () => done("closed")); s.on("error", () => done("closed")); }' 2>/dev/null || true)"
-  _check "the code container reaches nothing but Caddy (no LiteLLM, portal, sandbox, gateway, shared-mcp, internet)" "$out" "closed closed closed closed closed closed"
+  _check "the code container reaches nothing but Caddy (no LiteLLM, web app, sandbox, gateway, shared-mcp, internet)" "$out" "closed closed closed closed closed closed"
   # one op over the spawn socket: OPEN {op: sessions.list} -> a RESULT frame (0x15) with a sessions list
   out="$(_probe dc exec -T code node -e 'const s = require("net").connect("/run/bn-code/coded.sock"); const p = Buffer.from(JSON.stringify({ op: "sessions.list" }));
     const h = Buffer.alloc(5); h[0] = 1; h.writeUInt32BE(p.length, 1); let b = Buffer.alloc(0);
@@ -626,7 +626,7 @@ code_preview_checks() {
   _check "the same-site guard: a preview's Origin, another host's POST and fetch refused; a page load passes" "$out" "403 403 403 200"
   # shellcheck disable=SC2034  # read by portal_curl
   PORTAL_JAR=''
-  if ! portal_session_start; then _skip "a preview through the whole chain" "portal login failed"; return 0; fi
+  if ! portal_session_start; then _skip "a preview through the whole chain" "web app login failed"; return 0; fi
   out="$(printf '%s' "$(get_env PORTAL_PASSWORD)" | portal_curl code /.bn/unlock -s -m 15 -o /dev/null -w '%{http_code}' -c "$PORTAL_JAR" \
     -H "Origin: $(portal_url code)" --data-urlencode 'password@-' 2>/dev/null || true)"
   url="$(portal_curl code '/.bn/preview?port=9&format=json' -s -m 10 -H 'Sec-Fetch-Site: same-origin' 2>/dev/null | sed -n 's/.*"url": *"\([^"]*\)".*/\1/p')"
@@ -634,7 +634,7 @@ code_preview_checks() {
   host="${url#http://}"; host="${host%%/*}"; host="${host%:*}"
   case "$host" in p9-*."$d") out="$(curl -s -m 15 --resolve "$host:$p:127.0.0.1" "$url" -w ' %{http_code}' || true)" ;; *) out="no link (unlock $out)" ;; esac
   case "$out" in *"Nothing is listening on port 9 in the sandbox"*" 502") out=yes ;; esac
-  _check "a preview link goes through Caddy, the portal's check and the gateway to bn-preview" "$out" yes
+  _check "a preview link goes through Caddy, the web app's check and the gateway to bn-preview" "$out" yes
 }
 
 # code_image_refs -> its local build while it is on (lib/images.sh keeps it as :previous for rollback)

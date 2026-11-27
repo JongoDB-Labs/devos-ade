@@ -45,7 +45,7 @@ test_setup_and_update_time_each_of_their_stretches() {
     assert_contains "$c" "$want"
   done
   c="$(sed -n '/^setup_keys_and_ui() {/,/^}/p' "$STACK_DIR/lib/commands.sh")"
-  for want in 'upd_gate keys "LiteLLM keys, Admin sign-in"' 'upd_gate -s stt_service "Voice service"' 'upd_gate signin "Portal sign-in and Chat'"'"'s API key"' 'upd_gate syncs "Open WebUI syncs (models, prices, banner)"'; do
+  for want in 'upd_gate keys "LiteLLM keys, Admin sign-in"' 'upd_gate -s stt_service "Voice service"' 'upd_gate signin "Web app sign-in and Chat'"'"'s API key"' 'upd_gate syncs "Open WebUI syncs (models, prices, banner)"'; do
     assert_contains "$c" "$want"
   done
   c="$(sed -n '/^cmd_update() {/,/^}/p' "$STACK_DIR/lib/commands.sh")"

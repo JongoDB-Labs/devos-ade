@@ -905,7 +905,7 @@ openrouter_after_up() {
 # _or_owui_only — Open WebUI labels and cost-filter prices without restarting anything, when the stack runs.
 _or_owui_only() {
   [ -n "$(get_env LITELLM_MASTER_KEY)" ] && [ -n "$(dc ps -q open-webui 2>/dev/null)" ] || return 0
-  if portal_session_start; then _or_owui_refresh; else warn "could not sign in to the portal — Open WebUI labels not checked"; fi
+  if portal_session_start; then _or_owui_refresh; else warn "could not sign in to the web app — Open WebUI labels not checked"; fi
   portal_session_end
 }
 
@@ -919,7 +919,7 @@ _or_apply() {
   if [ -z "$(dc ps -q litellm 2>/dev/null)" ]; then log "saved — the stack is stopped; ./stack up applies it"; return 0; fi
   run_phase "LiteLLM" litellm dc up -d --no-deps --force-recreate --wait litellm
   ensure_portal_password_hash   # lib/settings.sh
-  run_phase "Portal" portal dc up -d --no-deps --wait portal
+  run_phase "Web app" portal dc up -d --no-deps --wait portal
   portal_session_or_die
   _or_owui_refresh
   portal_session_end

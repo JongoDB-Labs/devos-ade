@@ -353,7 +353,7 @@ test_the_password_free_check_reaches_this_computer_only_judged_on_the_pinned_add
     msrv_apply "$rf" >/dev/null 2>&1
     out="$(cat "$(local_dir)/server-result.json")"
     case "$out" in *'"status":"blocked"'*) ;; *) echo "checked without a password: $u -> $out"; return 1 ;; esac
-    assert_contains "$out" "portal password"
+    assert_contains "$out" "web app password"
   done
   assert_eq "$(cat "$TMP/curl.args")" ""                                    # (none of them was contacted)
   # this computer — localhost, 127.x, ::1, a name pinned to 127.0.0.1 — is

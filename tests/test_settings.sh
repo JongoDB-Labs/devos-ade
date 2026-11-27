@@ -1000,7 +1000,7 @@ case "$1" in
   config) echo "==> config: 1/4 checking (x)"; echo "==> config: 3/4 restarting"; [ -z "${FAKE_FAIL:-}" ] || { echo "xx  failed while restarting: LiteLLM did not come up — previous settings restored"; exit 1; }
           echo "==> saved: BUDGET_SETUP" ;;
   backup) echo "==> backup written to backups/20261014-120000 (724K) — databases" ;;
-  test) printf '  ok    litellm alive\n  ok    portal login\n'; [ -z "${FAKE_FAIL:-}" ] || { printf '  FAIL  anthropic /v1/messages (got 400, want 200)\n'; exit 1; } ;;
+  test) printf '  ok    litellm alive\n  ok    web app login\n'; [ -z "${FAKE_FAIL:-}" ] || { printf '  FAIL  anthropic /v1/messages (got 400, want 200)\n'; exit 1; } ;;
   hang) echo $$ > "$TMP/hung"; sleep 30 & echo $! > "$TMP/hung-child"; wait ;;
   project) [ "$2" != add ] || echo "==> ${3##*/}: $3 → $3 in the sandbox (read-write) — a project on the Code page"
            [ -z "${FAKE_LINKED:-}" ] || echo "!!  ${3##*/}: This is a linked git worktree: git won't work on it inside the sandbox (its history lives in /x/main/.git, which isn't shared). To use git there, add the main repository instead."
@@ -1062,8 +1062,8 @@ test_helper_checks_the_password_against_its_own_hash() {
   _cfg_req 0 local 'wrong password!' "$NONCE" "$(_lines BUDGET_SETUP=6)"
   if settings_poll_once 2>/dev/null; then return 1; fi
   [ ! -e "$CALLS" ]
-  assert_contains "$(cat "$(helper_status_file)")" '"message": "Not saved: wrong portal password'
-  assert_contains "$(tail -n 1 "$(settings_audit_file)")" "result=refused via=portal-local keys=BUDGET_SETUP reason=wrong portal password"
+  assert_contains "$(cat "$(helper_status_file)")" '"message": "Not saved: wrong web app password'
+  assert_contains "$(tail -n 1 "$(settings_audit_file)")" "result=refused via=portal-local keys=BUDGET_SETUP reason=wrong web app password"
   # PORTAL_PASSWORD_HASH (which the portal could know) is not what the helper checks against
   set_env PORTAL_PASSWORD_HASH "$(pw_hash 'attacker chosen 1' 100000)"
   _cfg_req 0 local 'attacker chosen 1' 11111111111111111111111111111111 "$(_lines BUDGET_SETUP=6)"
@@ -1188,9 +1188,9 @@ test_helper_diagnostics_need_the_password() {
   _checkout
   DIAG_MIN_INTERVAL_S=0
   _act backup 0 "$NONCE" 'wrong password here'; ! settings_poll_once 2>/dev/null
-  assert_contains "$(cat "$(helper_status_file)")" "wrong portal password"
+  assert_contains "$(cat "$(helper_status_file)")" "wrong web app password"
   _act backup 0 11111111111111111111111111111111 $'correct horse battery\njunk'; ! settings_poll_once 2>/dev/null
-  assert_contains "$(cat "$(helper_status_file)")" "wrong portal password"   # openssl reads one line: never enough
+  assert_contains "$(cat "$(helper_status_file)")" "wrong web app password"   # openssl reads one line: never enough
   printf '{"action":"backup","requested_at":%s,"nonce":"%s"}' "$(date +%s)" 22222222222222222222222222222222 > "$(request_dir)/act-22222222222222222222222222222222.json"
   ! settings_poll_once 2>/dev/null
   assert_contains "$(cat "$(helper_status_file)")" "not a valid request"
@@ -1287,7 +1287,7 @@ test_helper_project_remove_and_read_only_by_id() {
   # the password, as for every diagnostic
   _pact '"project-remove"' '"when":"now","project":"p_0123abcd"' 22222222222222222222222222222222 'wrong'
   if settings_poll_once 2>/dev/null; then return 1; fi
-  assert_contains "$(cat "$(helper_status_file)")" "wrong portal password"
+  assert_contains "$(cat "$(helper_status_file)")" "wrong web app password"
 }
 
 test_helper_folder_chooser_at_most_once_a_minute_and_ten_a_day() {
@@ -1843,7 +1843,7 @@ test_up_waits_for_a_running_settings_change() {
   while [ ! -s "$STATE_DIR/lock/pid" ] && [ "$i" -lt 300 ]; do sleep 0.1; i=$((i + 1)); done
   if out="$( (unset DEVOS_ADE_LOCK_HELD; cmd_up) 2>&1)"; then touch "$TMP/release"; return 1; fi
   touch "$TMP/release"; wait "$holder" 2>/dev/null || true
-  assert_contains "$out" "a settings change (from the portal or ./stack config) is running"
+  assert_contains "$out" "a settings change (from the web app or ./stack config) is running"
 }
 
 test_hidden_models_apply_in_open_webui() {

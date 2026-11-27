@@ -501,14 +501,14 @@ test_portal_port_falls_back_to_8800_when_80_is_busy() {
   : > "$ENV_FILE"; _stub_ports "80" 0
   ASSUME_YES=1 resolve_portal_port 2> "$TMP/err"
   assert_eq "$(get_env PORTAL_PORT)" 8800
-  assert_contains "$(cat "$TMP/err")" "port 80 is in use → using 8800 for the portal (PORTAL_PORT): http://"
+  assert_contains "$(cat "$TMP/err")" "port 80 is in use → using 8800 for the web app (PORTAL_PORT): http://"
 }
 
 test_portal_port_rootless_docker_skips_80() {
   printf 'PORTAL_HOST=devos-ade.localhost\n' > "$ENV_FILE"; _stub_ports "8800" 1
   ASSUME_YES=1 resolve_portal_port 2> "$TMP/err"
   assert_eq "$(get_env PORTAL_PORT)" 8801
-  assert_contains "$(cat "$TMP/err")" "rootless Docker cannot publish port 80 → using 8801 for the portal"
+  assert_contains "$(cat "$TMP/err")" "rootless Docker cannot publish port 80 → using 8801 for the web app"
   assert_contains "$(cat "$TMP/err")" "http://devos-ade.localhost:8801"
 }
 
@@ -523,14 +523,14 @@ test_portal_port_is_offered_interactively_and_never_one_in_use() {
   assert_eq "$(get_env PORTAL_PORT)" 8802
   assert_eq "$(sed -n 1p "$TMP/prompts")" "  Port to use for PORTAL_PORT [8802]"
   assert_eq "$(grep -c 'Port to use' "$TMP/prompts")" 2
-  assert_contains "$(cat "$TMP/err")" "port 80 is in use, so the portal cannot have the address http://bn-x.localhost: it needs another port"
+  assert_contains "$(cat "$TMP/err")" "port 80 is in use, so the web app cannot have the address http://bn-x.localhost: it needs another port"
   assert_contains "$(cat "$TMP/err")" "port 18930 is in use right now — choose another"
-  assert_contains "$(cat "$TMP/err")" "port 80 is in use → using 8802 for the portal (PORTAL_PORT): http://bn-x.localhost:8802"
+  assert_contains "$(cat "$TMP/err")" "port 80 is in use → using 8802 for the web app (PORTAL_PORT): http://bn-x.localhost:8802"
   # a free port typed: taken
   printf 'PORTAL_HOST=bn-x.localhost\n' > "$ENV_FILE"; : > "$TMP/prompts"; printf '18931\n' > "$TMP/answers"
   resolve_portal_port 2> "$TMP/err"
   assert_eq "$(get_env PORTAL_PORT)" 18931
-  assert_contains "$(cat "$TMP/err")" "→ using 18931 for the portal (PORTAL_PORT): http://bn-x.localhost:18931"
+  assert_contains "$(cat "$TMP/err")" "→ using 18931 for the web app (PORTAL_PORT): http://bn-x.localhost:18931"
   # three unusable answers: setup stops (nothing in use is ever written)
   printf 'PORTAL_HOST=bn-x.localhost\n' > "$ENV_FILE"; printf '8800\nabc\n80\n' > "$TMP/answers"
   if (resolve_portal_port) 2> "$TMP/err"; then return 1; fi
@@ -547,7 +547,7 @@ test_portal_port_without_a_terminal_takes_a_free_port_and_says_so() {
   assert_eq "$(get_env PORTAL_PORT)" 8801
   [ ! -e "$TMP/prompts" ] || { echo "asked without a terminal" >&2; return 1; }
   assert_eq "$(grep -c . "$TMP/err")" 1
-  assert_contains "$(cat "$TMP/err")" "port 80 is in use → using 8801 for the portal (PORTAL_PORT)"
+  assert_contains "$(cat "$TMP/err")" "port 80 is in use → using 8801 for the web app (PORTAL_PORT)"
 }
 
 test_portal_port_keeps_80_when_it_is_ours() {
@@ -566,7 +566,7 @@ test_portal_port_of_its_own_taken_is_asked_again_with_the_address() {
   resolve_portal_port 2> "$TMP/err"
   assert_eq "$(get_env PORTAL_PORT)" 18950
   assert_contains "$(cat "$TMP/err")" "port 18952 is in use right now — choose another"
-  assert_contains "$(cat "$TMP/err")" "port 18952 is in use → using 18950 for the portal (PORTAL_PORT): http://bn-x.localhost:18950"
+  assert_contains "$(cat "$TMP/err")" "port 18952 is in use → using 18950 for the web app (PORTAL_PORT): http://bn-x.localhost:18950"
   assert_eq "$(get_env PORTAL_ORIGIN)" "http://bn-x.localhost:18950"
 }
 
@@ -631,7 +631,7 @@ test_test_portal_passes_and_deletes_the_session_file() {
   _fake_caddy; fails=0
   out="$(_test_portal; echo "fails=$fails")"
   assert_contains "$out" "fails=0"
-  assert_contains "$out" "ok    admin. loads, framable only by the portal"
+  assert_contains "$out" "ok    admin. loads, framable only by the web app"
   _test_portal >/dev/null
   [ ! -e "$JAR_SEEN" ] || { echo "session file left behind" >&2; return 1; }
 }
@@ -640,7 +640,7 @@ test_test_portal_flags_a_frameable_app() {
   printf 'PORTAL_HOST=devos-ade.localhost\nPORTAL_PORT=80\n' > "$ENV_FILE"; mkdir -p "$STATE_DIR"
   _fake_caddy; fails=0; FRAME_CSP="frame-ancestors *"
   out="$(_test_portal; echo "fails=$fails")"
-  assert_contains "$out" "FAIL  admin. loads, framable only by the portal"
+  assert_contains "$out" "FAIL  admin. loads, framable only by the web app"
   assert_contains "$out" "fails=3"
 }
 
@@ -698,7 +698,7 @@ test_an_older_compose_builds_the_portal_without_the_docs_index_and_says_so() {
   dc() { echo "dc $*" >> "$TMP/dc"; }
   DEVOS_ADE_COMPOSE_CONTEXTS=0; _BN_COMPOSE_VERSION=2.12.2
   out="$(_build_and_up_front open-webui portal caddy 2>&1)"
-  assert_contains "$out" "Docker Compose 2.12.2 is older than 2.24.4, which $PRODUCT_NAME needs (./stack setup and ./stack update stop for it): the portal is built without its search's docs index"
+  assert_contains "$out" "Docker Compose 2.12.2 is older than 2.24.4, which $PRODUCT_NAME needs (./stack setup and ./stack update stop for it): the web app is built without its search's docs index"
   assert_contains "$(cat "$TMP/dc")" "dc build -q portal"   # it still builds and starts
   : > "$TMP/dc"; DEVOS_ADE_COMPOSE_CONTEXTS=1
   assert_not_contains "$(_build_and_up_front open-webui portal caddy 2>&1)" "older than 2.24.4"
@@ -748,7 +748,7 @@ test_ensure_portal_reachable_recreates_caddy_when_its_port_forward_resets() {
   FWD="000 000 000 200" _stub_forward
   out="$(ensure_portal_reachable 2>&1)"
   assert_contains "$out" "port 80 on this computer does not reach Caddy, although Caddy answers in its container"
-  assert_contains "$out" "Caddy recreated: the portal answers again"
+  assert_contains "$out" "Caddy recreated: the web app answers again"
   assert_contains "$(cat "$TMP/calls")" "dc up -d --no-deps --force-recreate --wait caddy"
   assert_contains "$(cat "$TMP/calls")" "http://127.0.0.1:80/caddy-health"
   # still unreachable after it: said how to go on

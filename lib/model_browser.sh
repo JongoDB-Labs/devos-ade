@@ -133,7 +133,7 @@ cmd_models_browse() {
   printf 'The model browser (Settings › Models & providers › Browse models) lists:\n'
   printf '  Bedrock            %s models: %s and the models only other regions offer\n' "$(_mb_count "$(model_browser_dir)/bedrock.json")" "$(get_env AWS_REGION_NAME)"
   if explabs_enabled; then printf '  Experiential Labs  %s models your key may call\n' "$(_mb_count "$(model_browser_dir)/explabs-ids.json" ids)"; fi
-  if openrouter_enabled; then printf '  OpenRouter         its public list, read by the portal\n'; fi
+  if openrouter_enabled; then printf '  OpenRouter         its public list, read by the web app\n'; fi
 }
 
 # model_browser_tick — the update helper, each loop: when the portal asked (model_browser_wanted_file), or no list was

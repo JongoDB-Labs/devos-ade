@@ -26,7 +26,7 @@ AWS's model page now lists both models as **Legacy** (end of life 2027-03-30) wi
 failure (network, permissions, throttling) is handled as before and never switches anything off:
 
 - An install with Bedrock speech-to-text on switches to your **browser's speech recognition once**, at
-  `./stack up`, `./stack update` (also the portal's *Update now*) or `./stack setup`: `STT_PROVIDER` is cleared
+  `./stack up`, `./stack update` (also the web app's *Update now*) or `./stack setup`: `STT_PROVIDER` is cleared
   in `.env`, the stt container is removed and Chat restarts. It says so in the command's output, on Home (the
   voice line, and one notification in Activity) and in `./stack status` and `./stack stt status`:
 
@@ -148,9 +148,9 @@ browser ─(webm/opus, mp4/aac)─▶ Open WebUI ─▶ Caddy :8090 ─▶ stt c
 With Bedrock speech-to-text, your recordings go only to **your own AWS account**: the stt container converts
 them in a temporary directory in memory that is deleted right after the request, and LiteLLM sends them to
 Bedrock in your region. The container's only network is an **internal** Docker network shared with LiteLLM
-and Caddy, so it has **no internet access** and publishes no port. Open WebUI and the portal do not share a
+and Caddy, so it has **no internet access** and publishes no port. Open WebUI and the web app do not share a
 network with it: they reach it through Caddy's internal `:8090` site (not published), so a compromised stt
-container could not talk to Open WebUI or the portal directly. (On Linux, containers on an internal network can
+container could not talk to Open WebUI or the web app directly. (On Linux, containers on an internal network can
 still reach the host through the network's gateway address: a service on your computer that listens on
 `0.0.0.0` is reachable from the stt container. Docker Desktop on macOS does not have that path.) The container
 holds no AWS credentials and no key of its own, keeps nothing, and logs only sizes, durations and status codes
@@ -273,7 +273,7 @@ the audio and uses that.
   `./stack stt status` or Home): see [October 2026](#october-2026-aws-no-longer-accepts-audio-for-voxtral) —
   `./stack up` (or *Update now*) switches to browser speech; `./stack stt set openai|groq` for calls.
 - **"Error transcribing chunk: External: …"** in Chat carries the stt container's message, for example:
-  - *the Open WebUI key is over its monthly budget* — raise it in the portal's Settings → Spending & budgets (or `./stack config set BUDGET_OPENWEBUI`);
+  - *the Open WebUI key is over its monthly budget* — raise it in the web app's Settings → Spending & budgets (or `./stack config set BUDGET_OPENWEBUI`);
   - *Bedrock refused voxtral-small … for this AWS account* — model access was revoked: ask your AWS admin, then
     `./stack models --recheck`; or `./stack stt set openai|groq`;
   - *Bedrock is throttling speech-to-text right now* — try again in a few seconds;
@@ -291,4 +291,4 @@ the audio and uses that.
   transcription once (without a language hint). Only successful transcriptions are billed.
 - **Edited `STT_*` in `.env` by hand:** `./stack up` (or `./stack setup`) applies it.
 - **Call asks for the microphone and fails:** browsers allow the microphone only on `https://` or
-  `localhost` origins; `http://*.localhost` (the default portal) works.
+  `localhost` origins; `http://*.localhost` (the default web app) works.

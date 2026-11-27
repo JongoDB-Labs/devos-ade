@@ -950,7 +950,7 @@ _ss_check_request() {
     session="${BASH_REMATCH[6]}"; digest="${BASH_REMATCH[8]}"; thinking="${BASH_REMATCH[9]}"; outputs="${BASH_REMATCH[10]}"; keep="${BASH_REMATCH[11]:--}"
   else echo "not a valid request" >&2; return 1; fi
   action="${BASH_REMATCH[1]}"; ts="${BASH_REMATCH[2]}"; n="${BASH_REMATCH[3]}"; auth="${BASH_REMATCH[4]}"; origin="${BASH_REMATCH[5]}"
-  [ "${#auth}" -le 400 ] || { echo "the password is longer than 300 bytes (the portal refuses those too)" >&2; return 1; }
+  [ "${#auth}" -le 400 ] || { echo "the password is longer than 300 bytes (the web app refuses those too)" >&2; return 1; }
   # (a part's name 200 characters at most, 64 tokens at most — the portal's limits, checked again)
   if [ "$keep" != - ] && [ "$action" != setup-copy ]; then
     local t k=0 IFS=,

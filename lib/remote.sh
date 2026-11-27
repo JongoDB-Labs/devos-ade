@@ -144,7 +144,7 @@ remote_net_preflight() {
   remote_on || return 0
   if ! why="$(remote_net_ok)"; then
     warn "$why"
-    warn "remote access is left out of this run (the local portal is not affected); fix it, then ./stack up"
+    warn "remote access is left out of this run (the local web app is not affected); fix it, then ./stack up"
     REMOTE_DEGRADED=1
     return 0
   fi
@@ -408,7 +408,7 @@ remote_usage() {
 Usage: ./stack remote <command>
 
   status                 Remote access: mode, URLs, the Tailscale sidecar and the identity check
-  enable tailscale       Reach the portal from your devices through Tailscale Services (HTTPS, *.ts.net)
+  enable tailscale       Reach the web app from your devices through Tailscale Services (HTTPS, *.ts.net)
   enable domain HOST     … under your own name (HOST=bedrock.example.com; Cloudflare DNS, wildcard certificate)
   disable                Back to this computer only (the sidecar stops; its login is kept)
   test                   Checks what can be checked from here, then a checklist for your phone/laptop
@@ -450,7 +450,7 @@ remote_ask_login() {
   local cur v
   cur="$(get_env TAILSCALE_ALLOWED_LOGIN)"
   v="${TAILSCALE_ALLOWED_LOGIN:-}"
-  [ -n "$v" ] || v="$(ask "Your Tailscale login — only it may use the portal remotely (blank: anyone in your tailnet, password only)" "$cur")"
+  [ -n "$v" ] || v="$(ask "Your Tailscale login — only it may use the web app remotely (blank: anyone in your tailnet, password only)" "$cur")"
   v="$(printf '%s' "$v" | tr '[:upper:]' '[:lower:]')"
   [ -z "$v" ] || valid_login "$v" || die "'$v' does not look like a Tailscale login (e.g. you@example.com or you@github)"
   set_env TAILSCALE_ALLOWED_LOGIN "$v"
@@ -537,12 +537,12 @@ remote_preview_note() {
 # remote_login_warning — Tailscale mode without TAILSCALE_ALLOWED_LOGIN: say loudly what that means
 remote_login_warning() {
   [ "$(remote_mode)" = tailscale ] && [ -z "$(get_env TAILSCALE_ALLOWED_LOGIN)" ] || return 0
-  warn "TAILSCALE_ALLOWED_LOGIN is blank: ANY device your tailnet policy lets reach the Services gets the login page, and the portal password is the only thing left — set your login (./stack remote enable tailscale asks for it) unless you really want that"
+  warn "TAILSCALE_ALLOWED_LOGIN is blank: ANY device your tailnet policy lets reach the Services gets the login page, and the web app password is the only thing left — set your login (./stack remote enable tailscale asks for it) unless you really want that"
 }
 
 # remote_restart_front — portal, Open WebUI and Caddy read the remote settings at start
 remote_restart_front() {
-  run_phase "Portal + Chat + Caddy (remote settings)" "portal open-webui caddy" _remote_up_front
+  run_phase "Web app + Chat + Caddy (remote settings)" "portal open-webui caddy" _remote_up_front
 }
 _remote_up_front() { ensure_portal_password_hash && dc up -d --wait portal open-webui && caddy_up; }
 
@@ -558,7 +558,7 @@ remote_disable() {
   remote_set_hosts "" "" "" ""   # also empties Open WebUI's WEBUI_URL (derived from REMOTE_CHAT_HOST)
   unset_env TS_AUTHKEY
   remote_restart_front
-  log "remote access is off; the portal is only on $(portal_url) again"
+  log "remote access is off; the web app is only on $(portal_url) again"
   log "the sidecar's login is kept (volume tailscale-state) for a later ./stack remote enable; to forget it: remove the device $(ts_node_name) in the Tailscale admin console and run docker volume rm $(project_name)_tailscale-state"
   [ "$mode" != domain ] || log "you can delete the two DNS records for your remote name and its wildcard, and revoke the Cloudflare token (CLOUDFLARE_API_TOKEN in .env)"
 }
@@ -577,9 +577,9 @@ remote_identity_text() {
   fi
   seen="$(dc exec -T portal cat /state/remote-identity 2>/dev/null | head -n 1 | tr -d '\r' || true)"
   case "$seen" in
-    present*) echo "Tailscale login $login AND the portal password; sessions are bound to it (Tailscale sent Tailscale-User-Login on remote requests, ${seen#present })" ;;
+    present*) echo "Tailscale login $login AND the web app password; sessions are bound to it (Tailscale sent Tailscale-User-Login on remote requests, ${seen#present })" ;;
     absent*) echo "Tailscale login $login required — but remote requests (${seen#absent }) carried no Tailscale-User-Login and were REFUSED (Tailscale sends none from tagged devices; sign in to Tailscale as $login on that device)" ;;
-    *) echo "Tailscale login $login required (Tailscale-User-Login, sent for devices signed in as a user; tagged devices are refused) AND the portal password — no remote request seen yet" ;;
+    *) echo "Tailscale login $login required (Tailscale-User-Login, sent for devices signed in as a user; tagged devices are refused) AND the web app password — no remote request seen yet" ;;
   esac
 }
 
@@ -587,7 +587,7 @@ remote_status() {
   local mode st sj ip s
   mode="$(remote_mode)"
   if [ "$mode" = off ]; then
-    printf 'Remote access: off — the portal is only on this computer: %s\n' "$(portal_url)"
+    printf 'Remote access: off — the web app is only on this computer: %s\n' "$(portal_url)"
     printf '  To reach it from your phone/laptop: ./stack remote enable tailscale   (docs/remote.md)\n'
     return 0
   fi
@@ -595,7 +595,7 @@ remote_status() {
   if [ -z "$(get_env REMOTE_HOST)" ]; then
     printf '  not finished — the sidecar has not logged in yet: ./stack remote enable %s\n' "$mode"
   else
-    printf '  Portal   %s\n' "$(remote_url)"
+    printf '  Web app  %s\n' "$(remote_url)"
     for s in $(remote_app_list); do
       case "$s" in
         preview) printf '  %-8s %s   (dev servers in the sandbox, opened from the Code page)\n' "$s" "$(remote_url "$s")" ;;
@@ -658,12 +658,12 @@ remote_test() {
     id="${login:+Tailscale-User-Login: $login}"
     _check "remote login page via the sidecar's network ($h)" "$(_caddy_remote_get tailscale "$h" /login "$id" | cut -d'|' -f1)" 200
     got="$(_caddy_remote_get tailscale "$(get_env REMOTE_CHAT_HOST)" / "$id")"
-    _check "remote chat without a session → hand-off on the portal host" "${got%%\?*}" "302|https://$h/auth/handoff"
+    _check "remote chat without a session → hand-off on the web app host" "${got%%\?*}" "302|https://$h/auth/handoff"
     _check "unknown remote host refused" "$(_caddy_remote_get tailscale nope.invalid / | cut -d'|' -f1)" 404
     ph="$(get_env REMOTE_PREVIEW_HOST)"
     if [ -n "$ph" ]; then
       _check "remote previews without their cookie (no hand-off from the Code page) → refused" "$(_caddy_remote_get tailscale "$ph" / "$id" | cut -d'|' -f1)" 403
-      _check "the same-site guard: a request from the preview's origin to the portal → refused" \
+      _check "the same-site guard: a request from the preview's origin to the web app → refused" \
         "$(_caddy_remote_get tailscale "$h" /login "Origin: https://$ph" | cut -d'|' -f1)" 403
     fi
     _check "remote listener refuses other containers" "$(_caddy_remote_get caddy "$h" /login | cut -d'|' -f1)" 000
@@ -714,9 +714,9 @@ remote_up_hook() {
   [ "$mode" != tailscale ] || [ "${#b}" -le 54 ] ||
     warn "TS_SERVICE=$b is ${#b} characters: $b-terminal or $b-preview would be longer than a DNS name's 63 — set TS_SERVICE in .env to at most 54 (then ./stack remote enable tailscale; the Services get new names)"
   remote_serve_sync
-  dc up -d --no-deps tailscale >/dev/null 2>&1 || { warn "could not start the Tailscale sidecar — remote access is down (./stack logs tailscale); the local portal is fine"; return 0; }
+  dc up -d --no-deps tailscale >/dev/null 2>&1 || { warn "could not start the Tailscale sidecar — remote access is down (./stack logs tailscale); the local web app is fine"; return 0; }
   if st="$(ts_wait_running "$REMOTE_UP_WAIT")"; then log "remote access: $(remote_url)"
-  else warn "the Tailscale sidecar is not logged in yet (state: $st) — remote access is down until it is (./stack remote status); the local portal is fine"; fi
+  else warn "the Tailscale sidecar is not logged in yet (state: $st) — remote access is down until it is (./stack remote status); the local web app is fine"; fi
   remote_login_warning
 }
 
@@ -730,7 +730,7 @@ setup_remote_choice() {
   SETUP_REMOTE_MODE=''
   [ -z "$(get_env REMOTE_MODE)" ] || return 0   # asked before: off, or a mode
   if [ "${ASSUME_YES:-0}" = 1 ] || ! _have_tty; then set_env REMOTE_MODE off; return 0; fi
-  a="$(ask "Use the portal only on this computer, or also from your phone/laptop through Tailscale? [local/tailscale]" local)"
+  a="$(ask "Use the web app only on this computer, or also from your phone/laptop through Tailscale? [local/tailscale]" local)"
   case "$a" in
     t* | T*) SETUP_REMOTE_MODE=tailscale; log "remote access through Tailscale is set up at the end (./stack remote enable tailscale)" ;;
     *) set_env REMOTE_MODE off; log "local only (./stack remote enable tailscale adds your devices later)" ;;

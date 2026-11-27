@@ -325,7 +325,7 @@ docker_autostart_hint_weekly() {
 
 serve_urls() {
   local r=''
-  log "portal: $(portal_url)"
+  log "web app: $(portal_url)"
   r="$(remote_url 2>/dev/null || true)"
   [ -z "$r" ] || log "remote: $r"
 }
@@ -453,7 +453,7 @@ cmd_ssh_info() {
   cb="$(devos_claude_cmd 2>/dev/null || echo devos-claude)"
   cat <<EOF
 Claude Code (devos-claude) from your phone: SSH into this machine — or, without SSH, the optional browser
-terminal (./stack terminal enable: a sandbox in the portal that sees only one folder of yours).
+terminal (./stack terminal enable: a sandbox in the web app that sees only one folder of yours).
 
   This machine   $name
                  ($where)

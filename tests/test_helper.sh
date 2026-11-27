@@ -37,7 +37,7 @@ EOS
   _keep_awake() { :; }      # never caffeinate/systemd-inhibit for real (tests/test_auto_update.sh tests it)
 }
 
-_req() { # _req ACTION [AGE_S] [NONCE] [FILE-NONCE] — a request file as the portal writes it
+_req() { # _req ACTION [AGE_S] [NONCE] [FILE-NONCE] — a request file as the web app writes it
   local n="${3:-$NONCE}" fn="${4:-${3:-$NONCE}}"
   printf '{"action":"%s","requested_at":%s,"nonce":"%s"}' "$1" "$(( $(date +%s) - ${2:-0} ))" "$n" > "$(request_dir)/req-$fn.json"
 }
@@ -455,7 +455,7 @@ test_setup_asks_with_default_yes_and_installs() {
   assert_eq "$(cat "$TMP/asked")" "Turn on one-click updates from Home? (Y/n)|y"
   assert_eq "$(cat "$TMP/svc")" "INSTALL"
   assert_contains "$out" "One-click updates: a small background job under your user runs only ./stack update, rollback or
-clean, each after you confirm on Home with the portal password; ./stack helper uninstall removes it."
+clean, each after you confirm on Home with the web app password; ./stack helper uninstall removes it."
   [ ! -e "$(helper_declined_file)" ] || return 1
 }
 

@@ -105,7 +105,7 @@ EOF
 helper_unit_text() {
   cat <<EOF
 [Unit]
-Description=$PRODUCT_NAME update helper ($(project_name)): one-click Update/Rollback/Clean from the portal
+Description=$PRODUCT_NAME update helper ($(project_name)): one-click Update/Rollback/Clean from the web app
 
 [Service]
 ExecStart=/bin/bash $(_sd_exec_quote "$STACK_DIR/bin/devos-ade-helper") $(_sd_exec_quote "$STACK_DIR")
@@ -152,7 +152,7 @@ helper_install() {
     *) die "the update helper supports macOS (launchd) and Linux (systemd --user)" ;;
   esac
   rm -f "$(helper_declined_file)"
-  log "Home now offers Update / Rollback / Clean (each asks for the portal password). Remove it: ./stack helper uninstall"
+  log "Home now offers Update / Rollback / Clean (each asks for the web app password). Remove it: ./stack helper uninstall"
   log "$(auto_summary)$(auto_on || printf ' — turn them on in Home → Maintenance, or ./stack helper auto on')"
 }
 
@@ -242,7 +242,7 @@ offer_helper() {
   if [ "${1:-}" = --after-update ]; then [ -t 0 ] && _stdout_tty || return 0; fi
   [ ! -e "$(helper_declined_file)" ] || return 0
   printf '\nOne-click updates: a small background job under your user runs only ./stack update, rollback or\n'
-  printf 'clean, each after you confirm on Home with the portal password; ./stack helper uninstall removes it.\n'
+  printf 'clean, each after you confirm on Home with the web app password; ./stack helper uninstall removes it.\n'
   case "$(ask "Turn on one-click updates from Home? (Y/n)" "y")" in
     [Nn]*) mkdir -p "$STATE_DIR" && date +%s > "$(helper_declined_file)"
            log "one-click updates stay off and you will not be asked again (./stack helper install turns them on)" ;;
@@ -555,8 +555,8 @@ helper_check_request() {
   [ -f "$f" ] || { echo "not a regular file" >&2; return 1; }
   uid="$(_file_uid "$f")"
   for u in $(_allowed_uids); do [ "$uid" != "$u" ] || ok=1; done
-  [ "$ok" = 1 ] || { echo "owned by uid $uid, not by you or the portal" >&2; return 1; }
-  [ -r "$f" ] || { echo "unreadable (the portal writes requests readable by its group; see docs/security.md)" >&2; return 1; }
+  [ "$ok" = 1 ] || { echo "owned by uid $uid, not by you or the web app" >&2; return 1; }
+  [ -r "$f" ] || { echo "unreadable (the web app writes requests readable by its group; see docs/security.md)" >&2; return 1; }
   body="$(head -c $((HELPER_MAX_BYTES + 1)) "$f" 2>/dev/null && echo x)" || { echo "unreadable" >&2; return 1; }
   body="${body%x}"
   [ -n "$body" ] || { echo "empty or unreadable" >&2; return 1; }

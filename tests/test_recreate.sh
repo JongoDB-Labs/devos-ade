@@ -287,13 +287,13 @@ test_setup_starts_open_webui_the_portal_and_shared_mcp_together() {
   printf 'OPENWEBUI_API_KEY=sk-owui\nPORTAL_PORT=80\nPORTAL_HOST=x.localhost\n' > "$ENV_FILE"
   SETUP_BUILT=" portal shared-mcp open-webui "
   setup_keys_and_ui 2>/dev/null || return 1
-  assert_eq "$(cat "$TMP/calls")" "PHASE Open WebUI + portal + shared-mcp (http://x.localhost)
+  assert_eq "$(cat "$TMP/calls")" "PHASE Open WebUI + web app + shared-mcp (http://x.localhost)
 dc up -d --wait --no-deps postgres rustfs litellm open-webui portal caddy shared-mcp"
   # a first setup: no key yet — shared-mcp on its own once it is made (its image built then, unless setup built it)
   printf 'PORTAL_PORT=80\nPORTAL_HOST=x.localhost\n' > "$ENV_FILE"; : > "$TMP/calls"; SETUP_BUILT=''
   ensure_openwebui_api_key() { set_env OPENWEBUI_API_KEY sk-new; }
   setup_keys_and_ui 2>/dev/null || return 1
-  assert_eq "$(cat "$TMP/calls")" "PHASE Open WebUI + portal (http://x.localhost)
+  assert_eq "$(cat "$TMP/calls")" "PHASE Open WebUI + web app (http://x.localhost)
 dc build -q portal
 dc up -d --wait --no-deps postgres rustfs litellm open-webui portal caddy
 PHASE shared-mcp

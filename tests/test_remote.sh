@@ -253,7 +253,7 @@ test_identity_text() {
   set_env TAILSCALE_ALLOWED_LOGIN me@example.com
   assert_contains "$(remote_identity_text)" "no remote request seen yet"
   echo "present since 2026-10-12 10:00 UTC" > "$TMP/identity"
-  assert_contains "$(remote_identity_text)" "Tailscale login me@example.com AND the portal password"
+  assert_contains "$(remote_identity_text)" "Tailscale login me@example.com AND the web app password"
   echo "absent since 2026-10-12 10:00 UTC" > "$TMP/identity"
   assert_contains "$(remote_identity_text)" "carried no Tailscale-User-Login and were REFUSED"
   set_env REMOTE_MODE domain
@@ -266,7 +266,7 @@ test_status_summary_and_table_show_remote() {
   assert_eq "$(remote_summary_line)" ""
   printf 'REMOTE_MODE=tailscale\n' >> "$ENV_FILE"; remote_hosts_tailscale "$TN"
   out="$(remote_status)"
-  assert_contains "$out" "Portal   https://devos-ade.$TN"
+  assert_contains "$out" "Web app  https://devos-ade.$TN"
   assert_contains "$out" "Local    http://devos-ade.localhost (unchanged)"
   assert_contains "$out" "Sidecar  Running"
   assert_contains "$(remote_summary_line)" "https://devos-ade.$TN"
@@ -416,7 +416,7 @@ test_bad_remote_network_leaves_remote_out_but_keeps_the_stack() {
   printf 'REMOTE_MODE=tailscale\nREMOTE_SUBNET=10.0.0.0/30\n' >> "$ENV_FILE"
   out="$(remote_net_preflight 2>&1; echo "degraded=$REMOTE_DEGRADED overlays=[$(compose_overlays)]")"
   assert_contains "$out" "not an IPv4 network from /24 to /29"
-  assert_contains "$out" "local portal is not affected"
+  assert_contains "$out" "local web app is not affected"
   assert_contains "$out" "degraded=1 overlays=[]"
   REMOTE_DEGRADED=1; : > "$TMP/dc"
   assert_eq "$(remote_up_hook 2>&1)" ""

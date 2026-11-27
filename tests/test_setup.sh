@@ -123,7 +123,7 @@ test_cmd_test_reports_every_failure_on_closed_ports() {
   [ "$rc" -ne 0 ] || { echo "cmd_test should fail" >&2; return 1; }
   assert_eq "$(printf '%s\n' "$out" | grep -c '  FAIL ')" 14
   assert_contains "$out" "14 check(s) failed"
-  assert_contains "$out" "skip  checks behind the portal login"
+  assert_contains "$out" "skip  checks behind the web app login"
 }
 
 test_cmd_test_skips_model_visibility_without_opus() {

@@ -615,7 +615,7 @@ _settings_mask() {   # _settings_mask KEY VALUE -> what list/get show
 # Keys the layout misses (none: tests/test_settings.sh checks) come last, under "Other".
 config_list() {
   local s title k depth pol
-  printf 'Settings in %s (secrets masked; change them in the portal'"'"'s Settings tab or with ./stack config set KEY)\n' "$(env_file_display)"
+  printf 'Settings in %s (secrets masked; change them in the web app'"'"'s Settings tab or with ./stack config set KEY)\n' "$(env_file_display)"
   while IFS=$'\t' read -r s title; do
     [ -n "$(settings_layout_rows | awk -F'\t' -v s="$s" '$1 !~ /^[@+]/ && $2 == s')" ] || continue   # Diagnostics: no keys
     printf '\n%s\n' "$title"
@@ -894,7 +894,7 @@ _cfg_email_check() {
   local old new users owner held role
   old="$(get_env OPENWEBUI_ADMIN_EMAIL)"; new="$(cfg_new OPENWEBUI_ADMIN_EMAIL)"
   _cfg_stack_running || return 0   # stopped: .env only; ./stack up reconciles both apps
-  portal_session_start || _cfg_refuse "could not sign in to the portal to check the new email"
+  portal_session_start || _cfg_refuse "could not sign in to the web app to check the new email"
   users="$(_owui_users_tsv)" || _cfg_refuse "could not list Chat's accounts (is Open WebUI up? ./stack status)"
   owner="$(printf '%s\n' "$users" | awk -F'\t' -v e="$old" '!f && tolower($2) == tolower(e) && $3 == "admin" { print $1; f = 1 }')"
   [ -n "$owner" ] || _cfg_refuse "could not find your Chat account ($old): ./stack up repairs the owner account first"
@@ -1066,7 +1066,7 @@ _cfg_post() {
   if _cfg_on explabs; then _cfg_t "Restart · Experiential Labs' models (from the list cached)" _cfg_explabs; fi
   if _cfg_on remote-preview; then _cfg_t "Restart · the remote preview address" code_remote_sync; fi   # (blank when off)
   # the portal over HTTPS or plain HTTP again (lib/tls.sh): its own restart of Caddy and the apps, with .env's new origins
-  if _cfg_on https; then _cfg_t "Restart · the portal over HTTPS (certificate, trust, Caddy)" _cfg_https; fi
+  if _cfg_on https; then _cfg_t "Restart · the web app over HTTPS (certificate, trust, Caddy)" _cfg_https; fi
   # .env first, so ./stack up applies them too when the stack is stopped
   if _cfg_on pins && [ -s "$STACK_DIR/litellm/enabled-models.txt" ]; then _cfg_t "Restart · the models chosen" choose_defaults; fi
   if [ -z "$(get_env LITELLM_MASTER_KEY)" ] || [ ! -f "$cfg" ]; then ! _cfg_on code || _cfg_code; log "saved — ./stack setup applies it"; return 0; fi
@@ -1140,7 +1140,7 @@ _cfg_post() {
   if _cfg_on budget || _cfg_on alert-pct; then _cfg_t "Restart · the keys' budgets in LiteLLM" _cfg_budgets; _cfg_followup banner; fi
   # Chat's own part of the change, now: the owner's email (stray accounts), the models hidden in its picker
   if _cfg_on email || _cfg_on owui-models; then
-    portal_session_start || die "could not sign in to the portal after the restart (HTTP ${PORTAL_LOGIN_CODE:-?})"
+    portal_session_start || die "could not sign in to the web app after the restart (HTTP ${PORTAL_LOGIN_CODE:-?})"
     if _cfg_on email; then _cfg_t "Restart · Chat's stray accounts" _owui_drop_strays "$(cfg_old OPENWEBUI_ADMIN_EMAIL)" || true; fi
     if _cfg_on owui-models; then _cfg_t "Restart · the models hidden in Chat" owui_apply_hidden; fi
     portal_session_end
@@ -1218,7 +1218,7 @@ _cfg_verify() {
   fi
   if _cfg_on portal || _cfg_on portal-pw || _cfg_on email || _cfg_on litellm-pw || _cfg_on mcp || _cfg_on pins || _cfg_on alert-pct ||
      _cfg_on rustfs || _cfg_on remote-preview || _cfg_on code || cfg_has OPENROUTER_API_KEY; then
-    _cfg_t "Verify · the portal's sign-in" portal_session_start || die "the portal does not accept PORTAL_PASSWORD from .env (HTTP ${PORTAL_LOGIN_CODE:-?})"
+    _cfg_t "Verify · the web app's sign-in" portal_session_start || die "the web app does not accept PORTAL_PASSWORD from .env (HTTP ${PORTAL_LOGIN_CODE:-?})"
     if _cfg_on email; then
       owner_signin_check "$CFG_OWUI_OWNER" || die "Chat does not sign you in as the owner with the new email ($OWNER_ERR)"
     fi
@@ -1304,7 +1304,7 @@ _cfg_done() {
   settings_audit ok "$CFG_VIA" "$CFG_ORDER"
   _cfg_t "Done · the settings page's snapshot" settings_snapshot_write
   log "saved: $(printf '%s\n' $CFG_ORDER | grep -vx PORTAL_PASSWORD_HASH | tr '\n' ',' | sed 's/,$//; s/,/, /g')${CFG_T_ALL:+ (in $(_fmt_ms $(( $(_ms_now) - CFG_T_ALL ))))}"
-  if _cfg_on portal-pw; then log "the portal password changed: every browser and device signs in again (the one that changed it stays signed in)"; fi
+  if _cfg_on portal-pw; then log "the web app password changed: every browser and device signs in again (the one that changed it stays signed in)"; fi
   if _cfg_on mcp; then log "running devos-claude sessions and other MCP clients need the new token (.state/mcp.json; devos-claude reads it at its next start)"; fi
   if _cfg_on aws && [ -n "$(cfg_old AWS_ACCESS_KEY_ID)" ]; then log "remember to deactivate the old key ($(_settings_mask AWS_ACCESS_KEY_ID "$(cfg_old AWS_ACCESS_KEY_ID)")) in IAM, or ask your AWS admin to"; fi
   _cfg_followup_start
@@ -1639,7 +1639,7 @@ budget_sync_quiet() {
 settings_reconcile_with_session() {
   [ -n "$(get_env PORTAL_PASSWORD)" ] && [ -n "$(get_env OPENWEBUI_ADMIN_EMAIL)" ] || return 0
   if portal_session_start; then settings_reconcile
-  else warn "could not sign in to the portal to check the Chat and Admin sign-ins — ./stack up checks them"; fi
+  else warn "could not sign in to the web app to check the Chat and Admin sign-ins — ./stack up checks them"; fi
   portal_session_end
 }
 
@@ -1784,7 +1784,7 @@ _report_scrub() {
 cmd_restart() {
   local s="${1:-}"
   case " $RESTART_SERVICES " in *" $s "*) [ -n "$s" ] ;; *) false ;; esac ||
-    die "usage: ./stack restart SERVICE   (one of: $RESTART_SERVICES; the portal and postgres are not restarted on their own)"
+    die "usage: ./stack restart SERVICE   (one of: $RESTART_SERVICES; the web app and postgres are not restarted on their own)"
   [ $# -eq 1 ] || die "usage: ./stack restart SERVICE"
   [ -f "$ENV_FILE" ] || die "run ./stack setup first"
   [ "$s" != stt ] || [ "$(stt_provider)" = bedrock ] || die "the stt container runs only with Bedrock speech-to-text (./stack stt status)"

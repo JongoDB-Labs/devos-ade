@@ -25,10 +25,10 @@ Usage: ./stack <command> [--yes]
 
   setup        First-time (or repeat) setup: AWS creds, ports, model probe, keys (< $0.01 Bedrock)
   up | down    Start / stop the stack
-  status       Services, health, URLs and disk use (the portal: one login for every browser UI)
+  status       Services, health, URLs and disk use (the web app: one login for every browser UI)
                --disk measures disk use now (otherwise reused for 5 minutes)
   versions     Each core service: what runs, what this release pins, the newest upstream
-  open         The installed DevOS ADE app, else the portal in your browser, where
+  open         The installed DevOS ADE app, else the web app in your browser, where
                "Install app" installs it (setup and up open it too; DEVOS_ADE_NO_OPEN=1
                turns that off)
   logs [svc]   Follow logs (litellm, open-webui, rustfs, postgres, shared-mcp, portal, caddy, stt, terminal, code,
@@ -52,7 +52,7 @@ Usage: ./stack <command> [--yes]
   helper       One-click Update / Rollback / Clean on Home (setup offers it): install | uninstall
                | status | auto on [--hour N] | auto off | auto status   (automatic updates: a new
                release installs at night, N:00 to N+3:00 this computer's time; off by default, N=3)
-  remote       The portal from your phone/laptop over HTTPS (Tailscale): status | enable tailscale
+  remote       The web app from your phone/laptop over HTTPS (Tailscale): status | enable tailscale
                | enable domain HOST | disable | test   (docs/remote.md)
   rotate-aws   Replace the AWS access key (then runs test: ~$0.0001 Bedrock)
                --use-instance-role / --use-keys switch between an EC2 IAM role and a key
@@ -75,11 +75,11 @@ Usage: ./stack <command> [--yes]
   runtimes     The model runtimes DevOS ADE installs and runs itself (Ollama; macOS natively, Linux as a container):
                status | install ID | start ID | stop ID | uninstall ID | cancel | logs ID [LINES]
   terminal     Claude Code in the browser: a Terminal tab, a sandbox that sees only one folder of yours
-               status | enable [--workspace DIR] | disable   (asks for the portal password again)
+               status | enable [--workspace DIR] | disable   (asks for the web app password again)
   code         Claude Code in the browser with a chat: a Code tab with permission prompts, models and
                your files, in the terminal's sandbox (on by default with the terminal; disable keeps it off)
-               status | enable [--workspace DIR] | disable   (asks for the portal password again)
-  https        The portal over HTTPS on this computer, from a CA that can only vouch for this install's own addresses:
+               status | enable [--workspace DIR] | disable   (asks for the web app password again)
+  https        The web app over HTTPS on this computer, from a CA that can only vouch for this install's own addresses:
                status | on | off   (on adds the CA to your login keychain: macOS asks for your password)
   project      Folders of this computer as projects of the Code page, mounted into its sandbox:
                list | add DIR [--read-only] [--hide-path] [--name N] | remove NAME | mode NAME ro|rw | apply
@@ -96,9 +96,9 @@ Usage: ./stack <command> [--yes]
   subscriptions   Your AI subscriptions' own tools in the sandbox: Claude Code on your Claude plan,
                Codex, Gemini CLI, Copilot, Cursor, Grok — status | login TOOL | logout TOOL (each signs in
                with its own flow there; DevOS ADE never sees the login)
-  password     Where the portal password is (PORTAL_PASSWORD in this folder's .env)
+  password     Where the web app password is (PORTAL_PASSWORD in this folder's .env)
                --show prints it (only to a terminal)
-  config       Every setting in .env, secrets masked (the portal's Settings tab shows the same):
+  config       Every setting in .env, secrets masked (the web app's Settings tab shows the same):
                list | get KEY | set KEY [KEY…] (asks; hidden for secrets) | apply --stdin
                | check-aws (free) | report | regenerate rustfs|mcp-token
   restart      Restart one service: litellm | open-webui | shared-mcp | stt | rustfs | caddy | searxng | forgejo
@@ -129,14 +129,14 @@ cmd_help_for() {
 # cmd_password — ./stack password: where the portal password is; --show prints it, only to a terminal
 cmd_password() {
   case "${1:-}" in '' | --show) ;; *) die "usage: ./stack password [--show]" ;; esac
-  [ -f "$ENV_FILE" ] && [ -n "$(get_env PORTAL_PASSWORD)" ] || die "no portal password yet — run ./stack setup"
+  [ -f "$ENV_FILE" ] && [ -n "$(get_env PORTAL_PASSWORD)" ] || die "no web app password yet — run ./stack setup"
   if [ "${1:-}" = --show ]; then
     _stdout_tty || die "not printing the password: stdout is not a terminal (it is PORTAL_PASSWORD in $(env_file_display))"
     printf '%s\n' "$(get_env PORTAL_PASSWORD)"
     return 0
   fi
-  printf 'The portal password is PORTAL_PASSWORD in %s (project %s).\n' "$(env_file_display)" "$(project_name)"
-  printf 'Print it: ./stack password --show   Change it: Settings in the portal, or ./stack config set PORTAL_PASSWORD\n'
+  printf 'The web app password is PORTAL_PASSWORD in %s (project %s).\n' "$(env_file_display)" "$(project_name)"
+  printf 'Print it: ./stack password --show   Change it: Settings in the web app, or ./stack config set PORTAL_PASSWORD\n'
 }
 
 check_prereqs() {
@@ -687,7 +687,7 @@ _setup_interrupted() {
 # setup's own steps, each timed as one (cmd_setup)
 _setup_settings() {
   setup_ports
-  setup_done "ports chosen (the portal: $(portal_url))"; setup_step "asking about remote access"
+  setup_done "ports chosen (the web app: $(portal_url))"; setup_step "asking about remote access"
   setup_remote_choice   # lib/remote.sh: asks once — this computer only (default), or your devices too
   remote_net_preflight  # remote access on: its Docker network usable? else this run goes on without it
   localgit_net_preflight   # lib/localgit.sh: the git server's network free? else stop, saying which subnet to set
@@ -759,10 +759,10 @@ cmd_setup() {
   # (a search through LiteLLM: only worth asking again when LiteLLM, its config, its models or the backend changed)
   upd_gate websearch "Web search check" "LiteLLM and the search backend did not change" websearch_after_start   # lib/websearch.sh: one search with the backend in use (on the setup key), or why there is none
   upd_gate -s gitserver "Local git server (Forgejo)" "its settings and image did not change" localgit_start               # lib/localgit.sh: the built-in git server up (on by default) or gone (off); never fatal
-  setup_step "creating keys and starting Open WebUI, the portal and the MCP server"
+  setup_step "creating keys and starting Open WebUI, the web app and the MCP server"
   setup_keys_and_ui
   write_mcp_config
-  setup_done "keys created; Open WebUI, the portal and the MCP server started"
+  setup_done "keys created; Open WebUI, the web app and the MCP server started"
   setup_step "turning on the Code page and its terminal (on by default, unless turned off)"
   # Safe to skip: it decides from .env and its failure mark whether to turn the Code page on by default; with both unchanged
   # (and the workspace folder there) it would decide what was decided: nothing to turn on (CODE_DEFAULT_ON=0)
@@ -1004,7 +1004,7 @@ setup_bringup_and_probe() {
 # setup_bringup_and_probe's own steps, each timed as one
 _setup_prices() {
   if built_now portal || dc build -q portal >/dev/null 2>&1; then refresh_prices 1
-  else warn "could not build the portal image yet — prices stay as they are (./stack logs portal after setup)"; fi
+  else warn "could not build the web app image yet — prices stay as they are (./stack logs portal after setup)"; fi
 }
 # (an update's downloads first, which ran side by side with the builds: lib/steps.sh pulls_wait; then any image still
 # missing, as on a first setup)
@@ -1066,7 +1066,7 @@ _build_and_up_front() {
   local out rc=0 b=() s up=("$@") bm=0
   ensure_portal_password_hash   # lib/settings.sh: the portal starts only with a hash that matches PORTAL_PASSWORD
   # (every Compose this version runs with, 2.24.4 or newer, reads it: only one ./stack setup and update stop for does not)
-  compose_reads_contexts || warn "Docker Compose ${_BN_COMPOSE_VERSION:-(this one)} is older than 2.24.4, which $PRODUCT_NAME needs (./stack setup and ./stack update stop for it): the portal is built without its search's docs index (README and docs/ sections) — update Docker Compose"
+  compose_reads_contexts || warn "Docker Compose ${_BN_COMPOSE_VERSION:-(this one)} is older than 2.24.4, which $PRODUCT_NAME needs (./stack setup and ./stack update stop for it): the web app is built without its search's docs index (README and docs/ sections) — update Docker Compose"
   for s in portal shared-mcp; do case " $* " in *" $s "*) built_now "$s" || b+=("$s") ;; esac; done
   [ ${#b[@]} -eq 0 ] || building "the ${b[*]} image(s)" dc build -q "${b[@]}" || return 1
   # (setup's own front, UP_FRONT_AFTER_DATA=1: the phases before it brought up what these depend on: Postgres, RustFS and
@@ -1095,18 +1095,18 @@ _build_and_up_front() {
 # up_front SERVICE... — the portal phase of setup: Open WebUI, the portal and Caddy (and shared-mcp, when listed) with
 # their new code, settings and Caddyfile, in one phase (Home's progress card: one step)
 up_front() {
-  local label="${UP_FRONT_LABEL:-Open WebUI + portal}" s
+  local label="${UP_FRONT_LABEL:-Open WebUI + web app}" s
   if [ -z "${UP_FRONT_LABEL:-}" ]; then for s in "$@"; do [ "$s" != shared-mcp ] || label="$label + shared-mcp"; done; fi
   PORTAL_PORT_FELL_BACK=0
   run_phase "$label ($(portal_url))" "$*" _build_and_up_front "$@"
-  [ "$PORTAL_PORT_FELL_BACK" = 0 ] || warn "Docker could not publish port 80 → using $(portal_port) for the portal (PORTAL_PORT): $(portal_url)"
+  [ "$PORTAL_PORT_FELL_BACK" = 0 ] || warn "Docker could not publish port 80 → using $(portal_port) for the web app (PORTAL_PORT): $(portal_url)"
 }
 
 # portal_session_or_die — a portal session for setup's Open WebUI calls (they go through Caddy like a browser).
 portal_session_or_die() {
   portal_session_start || {
     portal_session_end
-    die "could not sign in to the portal at $(portal_url) (HTTP ${PORTAL_LOGIN_CODE:-?}) — see ./stack logs portal and ./stack logs caddy"
+    die "could not sign in to the web app at $(portal_url) (HTTP ${PORTAL_LOGIN_CODE:-?}) — see ./stack logs portal and ./stack logs caddy"
   }
 }
 
@@ -1165,7 +1165,7 @@ ensure_openwebui_api_key() {
       [ "$try" = 3 ] || sleep 2
     done
     case "$code" in
-      401 | 403) warn "the Open WebUI API key in .env was refused (HTTP $code, by Open WebUI or the portal session) — creating a new one" ;;
+      401 | 403) warn "the Open WebUI API key in .env was refused (HTTP $code, by Open WebUI or the web app session) — creating a new one" ;;
       *) warn "the Open WebUI API key was not checked: Open WebUI answered HTTP ${code:-000}; the key is kept"; return 0 ;;
     esac
   fi
@@ -1173,7 +1173,7 @@ ensure_openwebui_api_key() {
   # In trusted-header mode Open WebUI ignores the password and signs in the header's user; the form still needs both fields.
   printf '{"email":"","password":""}' |
     portal_curl chat /api/v1/auths/signin -fsS -m 30 -o "$tmp" -H 'Content-Type: application/json' --data-binary @- ||
-    { rm -f "$tmp"; die "could not sign in to Open WebUI through the portal as $(get_env OPENWEBUI_ADMIN_EMAIL) — see ./stack logs open-webui"; }
+    { rm -f "$tmp"; die "could not sign in to Open WebUI through the web app as $(get_env OPENWEBUI_ADMIN_EMAIL) — see ./stack logs open-webui"; }
   token="$(json_get token < "$tmp")"
   [ -n "$token" ] || { rm -f "$tmp"; die "Open WebUI sign-in returned no token"; }
   portal_curl_auth "$token" chat /api/v1/auths/api_key -fsS -m 30 -X POST -o "$tmp" || { rm -f "$tmp"; die "could not create Open WebUI API key"; }
@@ -1201,7 +1201,7 @@ setup_keys_and_ui() {
   # Safe to skip (sign-in, Open WebUI syncs): they write into Open WebUI (its API key, model names and prices, the cost filter,
   # the budget banner — the banner lives in its memory). The same Open WebUI container (id and start time), keys, catalog,
   # prices, enabled models and code leave nothing to write; a recreated or restarted one runs them.
-  upd_gate signin "Portal sign-in and Chat's API key" "Open WebUI, the keys and the owner did not change" _setup_portal_signin
+  upd_gate signin "Web app sign-in and Chat's API key" "Open WebUI, the keys and the owner did not change" _setup_portal_signin
   # shared-mcp on its own when it had no key (a first setup), or its key was just made anew (its environment changed)
   [ -n "$mcp_key" ] && [ "$(get_env OPENWEBUI_API_KEY)" = "$mcp_key" ] || run_phase "shared-mcp" shared-mcp _build_and_up_mcp
   upd_gate syncs "Open WebUI syncs (models, prices, banner)" "Open WebUI, the models and the prices did not change" _setup_owui_syncs
@@ -1258,7 +1258,7 @@ models_recheck() {
   stt_after_probe   # lib/stt.sh: Voxtral may have become usable (or not)
   stt_setup_service
   ensure_portal_password_hash
-  run_phase "Open WebUI + shared-mcp + portal" "open-webui shared-mcp portal" dc up -d --wait open-webui shared-mcp portal
+  run_phase "Open WebUI + shared-mcp + web app" "open-webui shared-mcp portal" dc up -d --wait open-webui shared-mcp portal
   portal_session_or_die
   sync_openwebui_models
   openrouter_sync_owui   # optional; lib/openrouter.sh
@@ -1343,8 +1343,8 @@ cmd_costs() {
     printf '\n%s\n  (the "≈ … at paid rates" figures above; Home'"'"'s Spend card switches between Actual and Equivalent)\n' "$COST_EQUIVALENT_TEXT"
   fi
   stt_costs_section
-  printf '\nBreakdown by model and day: %s/ui → Usage (portal Admin tab; its sign-in is on the portal Home page)\n' "$(portal_url admin)"
-  printf 'Budgets: Settings in the portal, or ./stack config set BUDGET_CLAUDE_CODE (BUDGET_OPENWEBUI, BUDGET_SETUP%s)\n' \
+  printf '\nBreakdown by model and day: %s/ui → Usage (web app Admin tab; its sign-in is on the web app Home page)\n' "$(portal_url admin)"
+  printf 'Budgets: Settings in the web app, or ./stack config set BUDGET_CLAUDE_CODE (BUDGET_OPENWEBUI, BUDGET_SETUP%s)\n' \
     "$([ -z "$(get_env LITELLM_KEY_TERMINAL)" ] || echo ', BUDGET_TERMINAL')"
   printf 'Alerts at %s%%: Settings → Spending & budgets, or ./stack config set ALERT_WEBHOOK_URL (%s)\n' "$(alert_pct)" \
     "$([ -n "$(get_env ALERT_WEBHOOK_URL)" ] && echo 'webhook set' || echo 'none set')"
@@ -1374,7 +1374,7 @@ print_summary() {
 
   ${O_GRN}$PRODUCT_NAME is up.${O_OFF}
 
-  Portal          $(portal_url)   $login
+  Web app         $(portal_url)   $login
                   Home, Chat (Open WebUI), Admin (LiteLLM) and Files (RustFS) behind one login
   Claude Code     $cb   (plain \`claude\` is unchanged)
 SUMMARY
@@ -1576,7 +1576,7 @@ cmd_up() {
       explabs_after_up   # lib/explabs.sh: names, tags and the cost line's prices when its models changed
     fi
   else
-    warn "could not sign in to the portal — budget banner and Open WebUI prices not refreshed"
+    warn "could not sign in to the web app — budget banner and Open WebUI prices not refreshed"
   fi
   portal_session_end
   [ "$own" = 0 ] || stack_unlock
@@ -1592,10 +1592,10 @@ cmd_logs() {
     die "the built-in SearXNG is off (WEBSEARCH_SEARXNG_BUILTIN=off): no container, no logs — ./stack config set WEBSEARCH_SEARXNG_BUILTIN on turns it on" ;; esac
   dc logs -f --tail=200 "$@"
 }
-status_url() { # status_url SERVICE -> where to open it (browser UIs: through the portal)
+status_url() { # status_url SERVICE -> where to open it (browser UIs: through the web app)
   case "$1" in
     portal) echo "$(portal_url)   (Home: one login for all)" ;;
-    caddy) echo "- (serves the portal URLs)" ;;
+    caddy) echo "- (serves the web app URLs)" ;;
     open-webui) portal_url chat ;;
     litellm) echo "$(portal_url admin)/ui" ;;
     rustfs) portal_url files ;;
@@ -1754,7 +1754,7 @@ _test_portal() {
   # shellcheck disable=SC2034  # read by portal_curl (lib/portal.sh)
   PORTAL_JAR=''
   code="$(portal_curl '' /login -s -m 10 -o /dev/null -w '%{http_code}' || true)"
-  _check "portal login page ($origin)" "$code" 200
+  _check "web app login page ($origin)" "$code" 200
   code="$(portal_curl chat / -s -m 10 -o /dev/null -D "$hdr" -w '%{http_code}' -H 'Accept: text/html' || true)"
   loc="$(_hdr location < "$hdr")"
   _check "chat without a session → login" "$code ${loc%%\?*}" "302 $origin/login"
@@ -1769,15 +1769,15 @@ _test_portal() {
   code="$(portal_curl chat /pyodide/a/b.js -s -m 10 -o /dev/null -w '%{http_code}' -H 'Accept: application/json' || true)"
   _check "anything else under /pyodide/ needs a session" "$code" 401
   if ! portal_session_start; then
-    _check "portal login (PORTAL_PASSWORD)" "${PORTAL_LOGIN_CODE:-}" 303
-    _skip "checks behind the portal login" "login failed"
+    _check "web app login (PORTAL_PASSWORD)" "${PORTAL_LOGIN_CODE:-}" 303
+    _skip "checks behind the web app login" "login failed"
     portal_session_end; rm -f "$hdr"; return 0
   fi
-  _check "portal login (PORTAL_PASSWORD)" 303 303
+  _check "web app login (PORTAL_PASSWORD)" 303 303
   code="$(portal_curl '' /login?next=http://evil.example/ -s -m 10 -o /dev/null -D "$hdr" -w '%{http_code}' || true)"
   _check "login refuses a foreign next= (no open redirect)" "$code $(_hdr location < "$hdr")" "303 /"
   code="$(portal_curl '' /api/summary -s -m 30 -o /dev/null -w '%{http_code}' -H 'X-Requested-With: devos-ade' || true)"
-  _check "portal Home data (/api/summary)" "$code" 200
+  _check "web app Home data (/api/summary)" "$code" 200
   code="$(portal_curl chat /health -s -m 10 -o /dev/null -w '%{http_code}' || true)"
   _check "open-webui health (chat.)" "$code" 200
   if [ -n "$opus" ]; then
@@ -1799,7 +1799,7 @@ _test_portal() {
       if bad="$(chat_csp_check "$csp" "$origin" "$(app_host chat)")"; then csp="Chat's policy"; else csp="$bad differs in: $csp"; fi
       ref="|$(_hdr referrer-policy < "$hdr")"; want_ref='|no-referrer'
     fi
-    _check "${k%%:*}. loads, framable only by the portal" "$code|$csp|$(_hdr x-frame-options < "$hdr")$ref" "200|$want_csp|$want_ref"
+    _check "${k%%:*}. loads, framable only by the web app" "$code|$csp|$(_hdr x-frame-options < "$hdr")$ref" "200|$want_csp|$want_ref"
   done
   portal_session_end; rm -f "$hdr"
 }

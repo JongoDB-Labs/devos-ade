@@ -297,7 +297,7 @@ test_setup_goes_on_when_turning_https_on_fails() {
   printf 'PORTAL_HOST=devos-ade.localhost\nPORTAL_PORT=8800\n' > "$ENV_FILE"
   out="$(https_setup_question 2>&1; echo "still here")"
   assert_contains "$out" "still here"
-  assert_contains "$out" "the portal stays plain HTTP"
+  assert_contains "$out" "the web app stays plain HTTP"
   assert_eq "$(get_env PORTAL_HTTPS)" false
 }
 
@@ -340,7 +340,7 @@ test_setup_asks_only_at_a_terminal_and_only_once() {
   confirm() { printf '%s\n' "$1" > "$q"; return 1; }
   https_setup_question
   assert_eq "$(get_env PORTAL_HTTPS)" false
-  assert_contains "$(cat "$q")" "Serve the portal over HTTPS? This adds a certificate that can only vouch for this install's own addresses to your login keychain; macOS asks for your password."
+  assert_contains "$(cat "$q")" "Serve the web app over HTTPS? This adds a certificate that can only vouch for this install's own addresses to your login keychain; macOS asks for your password."
   confirm() { return 0; }; set_env PORTAL_HTTPS ''
   https_setup_question
   assert_eq "$(get_env PORTAL_HTTPS)" true
@@ -418,9 +418,9 @@ test_the_addresses_in_the_apps_follow_the_scheme() {
 }
 
 test_the_commands_exist() {
-  assert_contains "$(cmd_help)" "https        The portal over HTTPS on this computer"
+  assert_contains "$(cmd_help)" "https        The web app over HTTPS on this computer"
   out="$(https_usage)"
-  assert_contains "$out" "on        Serves the portal over HTTPS"
+  assert_contains "$out" "on        Serves the web app over HTTPS"
   _tls_env
   assert_contains "$(cmd_https status)" "HTTPS: off"
   if (cmd_https nonsense) >/dev/null 2>&1; then return 1; fi

@@ -8,7 +8,7 @@ stored in `.env`, and AWS rotates the role's temporary credentials by itself. Ot
 DigitalOcean, …) work the same way with an IAM user access key, as on your Mac.
 
 Everything stays private: the security group has **no inbound rules**. You reach the VM over
-[Tailscale](https://tailscale.com) (portal: [docs/remote.md](remote.md); SSH and Claude Code from a phone:
+[Tailscale](https://tailscale.com) (web app: [docs/remote.md](remote.md); SSH and Claude Code from a phone:
 [docs/phone-claude-code.md](phone-claude-code.md)) and log in for the first time with AWS Systems Manager.
 
 ## What to launch
@@ -25,7 +25,7 @@ Everything stays private: the security group has **no inbound rules**. You reach
 | IAM instance profile | the `devos-ade` role below |
 
 Every image DevOS ADE runs is published for `linux/arm64` (pgvector, RustFS, aws-cli, LiteLLM, Open WebUI,
-Caddy, and the Python base of the portal and shared-mcp images, which are built on the VM), so Graviton works
+Caddy, and the Python base of the web app and shared-mcp images, which are built on the VM), so Graviton works
 out of the box and costs less than the equivalent x86 type.
 
 ## 1. The IAM role
@@ -192,7 +192,7 @@ sudo su - ec2-user     # a fresh login picks up the docker group
 docker compose version && docker buildx version
 ```
 
-Compose builds the portal and shared-mcp images on the first setup, which needs the buildx plugin; on a
+Compose builds the web app and shared-mcp images on the first setup, which needs the buildx plugin; on a
 `t4g.medium` that build takes a few minutes. Setup warns if the Docker Engine is older than 28 (older engines can
 let other machines on the same LAN reach ports published on `127.0.0.1`). On EC2 the security group without
 inbound rules drops such traffic at the network interface, so the warning is informational there; update Docker
@@ -235,7 +235,7 @@ Later:
 
 ## 5. Reach it
 
-The portal listens on `127.0.0.1` only. For remote access over Tailscale (no inbound ports), see
+The web app listens on `127.0.0.1` only. For remote access over Tailscale (no inbound ports), see
 [docs/remote.md](remote.md). For Claude Code from your phone or laptop over SSH, install Tailscale on the VM
 itself and see [docs/phone-claude-code.md](phone-claude-code.md):
 
@@ -251,7 +251,7 @@ its own (Docker's restart policy, with `docker.service` enabled as above).
 ## Keeping the role's credentials to LiteLLM
 
 With a key, only the LiteLLM container receives AWS credentials. With the instance role and hop limit 2,
-**every container on the VM can ask IMDS for the role's credentials**: Open WebUI, the portal, shared-mcp, RustFS,
+**every container on the VM can ask IMDS for the role's credentials**: Open WebUI, the web app, shared-mcp, RustFS,
 Postgres, Caddy, a remote-access sidecar, and anything you `docker run` yourself. The role only allows Bedrock
 calls, so the worst case is Bedrock spend outside LiteLLM's budgets by a compromised container — but it is a
 wider reach than key mode. Two optional hardening steps:
@@ -395,7 +395,7 @@ regions for latency; your prompts still go to Bedrock's US regions as above.
 
 The role detection is unit-tested with stubs; after your first install, from `~/devos-ade`, confirm:
 
-1. The first `./stack setup` built the portal and shared-mcp images (buildx) without errors.
+1. The first `./stack setup` built the web app and shared-mcp images (buildx) without errors.
 2. Setup offered the role, printed `Bedrock access confirmed with the role` and showed
    `arn:aws:sts::<account>:assumed-role/devos-ade/i-…` with your account ID.
 3. `grep -c AWS_ACCESS_KEY_ID .env` prints `0`, and `grep AWS_AUTH .env` shows `AWS_AUTH=instance-role`.

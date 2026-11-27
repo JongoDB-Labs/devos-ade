@@ -574,7 +574,7 @@ test_apply_relabels_and_updates_cost_filter() {
   portal_session_or_die() { :; }; portal_session_end() { :; }
   openrouter_sync_owui() { echo SYNC >> "$TMP/seq"; }; owui_install_cost_filter() { echo COST >> "$TMP/seq"; }
   _or_apply 2>/dev/null
-  assert_eq "$(tr '\n' ';' < "$TMP/seq")" "RENDER;PHASE LiteLLM;PHASE Portal;SYNC;COST;"
+  assert_eq "$(tr '\n' ';' < "$TMP/seq")" "RENDER;PHASE LiteLLM;PHASE Web app;SYNC;COST;"
 }
 
 test_refresh_without_changes_still_checks_open_webui() {

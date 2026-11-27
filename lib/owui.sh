@@ -683,7 +683,7 @@ budget_banner_json() {
       reset = ($4 != "") ? " (resets " $4 ")" : ""
       if (pct >= 100) { type = "error"; what = "has used its whole monthly budget" reset " — requests with this key are refused until then" }
       else { type = "warning"; what = "has used " pct "% of its monthly budget" reset }
-      msg = "The **" $1 "** key " what ": " usd($2 + 0) " of " usd($3 + 0) ". To raise it: Settings in the portal, or ./stack config set " envk($1) "."
+      msg = "The **" $1 "** key " what ": " usd($2 + 0) " of " usd($3 + 0) ". To raise it: Settings in the web app, or ./stack config set " envk($1) "."
       out = out (n++ ? "," : "") sprintf("{\"id\":\"%s-%s-%s\",\"type\":\"%s\",\"title\":\"Budget\",\"content\":\"%s\",\"dismissible\":true,\"timestamp\":%d}", p, $1, type, type, msg, now)
     }
     END { print "[" out "]" }'

@@ -15,7 +15,7 @@ COMPOSE_PROJECT_NAME=bn-test ./setup.sh
 Setup stores the name in that copy's `.env` on its **first** run, so every later `./stack …` command in that
 folder targets the `bn-test` containers, volumes and shared-mcp/portal images, never the main stack's. The
 name is fixed from then on: a `COMPOSE_PROJECT_NAME` left over in your shell never repoints a checkout
-(`./stack setup` refuses and changes nothing; other commands ignore it with a warning). The copy's portal gets
+(`./stack setup` refuses and changes nothing; other commands ignore it with a warning). The copy's web app gets
 its own host name, `<name>.localhost` (here `http://bn-test.localhost`, with `chat.`, `admin.` and `files.` in
 front for the apps; `PORTAL_HOST` in `.env`), so the two stacks never share browser cookies. Ports move
 automatically because the main stack holds the defaults. `--yes` never touches your
@@ -69,32 +69,32 @@ and `./stack clean --dry-run`. `--help` (or `-h`) exits 0 for a known command, w
   published on `127.0.0.1`; setup warns if it sees one. Your user must be in the `docker` group (setup says so
   if the daemon refuses you).
 - Rootless Docker and SELinux hosts (Fedora/RHEL) work: bind mounts carry the `z` label and backups adapt
-  their file ownership. Rootless Docker can't use port 80, so the portal is on 8800. These setups are less
+  their file ownership. Rootless Docker can't use port 80, so the web app is on 8800. These setups are less
   tested; please report problems.
-- `./stack` keeps `PORTAL_GID` in `.env` (your group; 0 on rootless Docker) so the portal can write
+- `./stack` keeps `PORTAL_GID` in `.env` (your group; 0 on rootless Docker) so the web app can write
   `litellm/prices/` (setgid, group-writable 2775).
 - `./stack open` starts the browser detached (`nohup setsid`); if it fails at once, the default browser
   (`xdg-open`) is used. Without a display it only prints the URL.
 
-## Portal host name, port and the public-host opt-in
+## Web app host name, port and the public-host opt-in
 
-The portal uses port 80 when it is free (so the URLs carry no port); otherwise setup picks 8800 and says so,
-e.g. `port 80 is in use → using 8800 for the portal (PORTAL_PORT): http://devos-ade.localhost:8800`. Setup
+The web app uses port 80 when it is free (so the URLs carry no port); otherwise setup picks 8800 and says so,
+e.g. `port 80 is in use → using 8800 for the web app (PORTAL_PORT): http://devos-ade.localhost:8800`. Setup
 moves other ports (`LITELLM_PORT`, `SHARED_MCP_PORT`) the same way. `./stack status` always prints the real
 URLs.
 
 You may edit `PORTAL_HOST` / `PORTAL_PORT` in `.env`; `./stack up` picks the change up. A `PORTAL_HOST` that
-does not end in `.localhost` is refused unless you also set `DEVOS_ADE_ALLOW_PUBLIC_HOST=1`: the portal is
+does not end in `.localhost` is refused unless you also set `DEVOS_ADE_ALLOW_PUBLIC_HOST=1`: the web app is
 plain HTTP, so its session cookie is not `Secure` and goes to that name and all its subdomains. Only use a name
 that resolves to this computer alone.
 
 ## HTTPS for the portal (`./stack https`)
 
-`PORTAL_HTTPS=true` (Settings › Account & security › **Serve the portal over HTTPS**) serves the portal and its
+`PORTAL_HTTPS=true` (Settings › Account & security › **Serve the web app over HTTPS**) serves the web app and its
 sibling hosts over HTTPS on the same port. `./stack https on` makes the certificates, trusts the install's own CA (macOS:
 login keychain, asks for your password; Linux: your user NSS database, and the system store only if you say yes to a `sudo`
-question, otherwise it prints the command), checks that the certificate is accepted, then restarts the portal, Chat and
-Caddy with `https://` addresses. If the check fails it turns itself off again and says why: an untrusted portal is never
+question, otherwise it prints the command), checks that the certificate is accepted, then restarts the web app, Chat and
+Caddy with `https://` addresses. If the check fails it turns itself off again and says why: an untrusted web app is never
 left on. `./stack https off` asks before removing the CA from the keychain or database, serves plain http, and deletes
 `.state/tls`. `./stack https status` shows the switch, the CA's expiry, the site certificate's expiry and whether the
 certificate is trusted.
@@ -103,13 +103,13 @@ certificate is trusted.
   are left or the host names changed. A host name outside the CA's constraints needs a new CA, which needs your consent
   again.
 - **Non-interactive runs** (`-y`, the update helper, a pipe) never switch it on or off by themselves.
-- **Port 80.** Plain http on the portal port redirects to https; the old-address redirects (`LEGACY_HOSTS`) stay plain http
+- **Port 80.** Plain http on the web app port redirects to https; the old-address redirects (`LEGACY_HOSTS`) stay plain http
   and are not published while HTTPS is on.
 - **Remote access** (Tailscale, your own domain) is unchanged: it already is HTTPS with its own certificates.
 
-## Opening the portal (`./stack open`)
+## Opening the web app (`./stack open`)
 
-`./stack open` first looks for the installed web app of this portal, by the name its manifest gives
+`./stack open` first looks for the installed web app of this web app, by the name its manifest gives
 (`DevOS ADE`, or `DevOS ADE (<project>)` / `(port N)` for other addresses — then the same under its name before
 v0.25.0, for an app installed then; `portal_app_name` in `lib/portal.sh` and `app_name` in `portal/portal/webapp.py`
 share the rule):
@@ -123,7 +123,7 @@ share the rule):
   `%`, never through a shell, and refused if it holds quotes, `$`, backticks, `;`, `|`, `&`, `<`, `>`,
   parentheses or a backslash.
 
-Without an installed app it opens the portal as a tab in your everyday browser profile (the one that can
+Without an installed app it opens the web app as a tab in your everyday browser profile (the one that can
 install it), the first of Google Chrome, Microsoft Edge, Brave and Chromium, and prints a one-time tip about
 **Install app** that names that browser's own menu. On macOS it looks in `/Applications` and `~/Applications`
 first, then asks Spotlight by bundle id (`mdfind`, read-only) for browsers installed elsewhere. Without any of
@@ -149,7 +149,7 @@ from DevOS Companion's Dock icon): the PWA's 192, 512 and 1024 px icons on macOS
 torus inside the safe circle), the monochrome one, the 180 px Apple touch icon, the 16-48 px favicons, and the
 sidebar's logo and `/favicon.svg` (the small icon as an SVG around a PNG). Chrome and Edge make the Dock, Start-menu
 and Linux desktop icons from the manifest's. It records the Pillow version and the sha256 of the source and of every
-file in `static/icons/SOURCES`; the portal tests fail if one no longer matches. Caddy makes exactly those PNGs public,
+file in `static/icons/SOURCES`; the web app tests fail if one no longer matches. Caddy makes exactly those PNGs public,
 by name.
 
 ## Verbose output
@@ -177,14 +177,14 @@ file a service reads only when it starts, `./stack` puts the file's checksum int
 | `subs-chat` | `terminal/managed/chat.json` |
 
 A changed file therefore recreates that service, and only it, at the next `up` that includes it (`./stack up` too).
-Files a service reads again on its own (the portal's `catalog/` and `litellm/`, the hook's `code-models.tsv` and
+Files a service reads again on its own (the web app's `catalog/` and `litellm/`, the hook's `code-models.tsv` and
 `web-search.json`, Tailscale's `serve.json`) restart nothing. A container that is running but unhealthy is recreated as
 well. `./stack restart SERVICE` still recreates one service on request.
 
-Setup builds every image it needs side by side: the portal, shared-mcp and Open WebUI first, and, while they are on,
+Setup builds every image it needs side by side: the web app, shared-mcp and Open WebUI first, and, while they are on,
 the terminal, its egress proxy and the Code page in a build of their own in the background, while LiteLLM, Open WebUI
-and the portal come up; the terminal's step waits for it. An unchanged image takes a few seconds from Docker's cache.
-Then it starts the services in groups, one compose call each: Postgres and RustFS; LiteLLM; Open WebUI, the portal,
+and the web app come up; the terminal's step waits for it. An unchanged image takes a few seconds from Docker's cache.
+Then it starts the services in groups, one compose call each: Postgres and RustFS; LiteLLM; Open WebUI, the web app,
 Caddy and shared-mcp; the terminal with what fronts it; the Code page. Within a group, Compose starts each service as
 soon as what it depends on is up. If a joint build fails, each image is built again on its own, so the failure is
 reported where it belongs: setup stops for the stack's own images, and goes on without the terminal or the Code page
@@ -201,7 +201,7 @@ downloading them, and installs the rest side by side.
 **An update's setup runs only what changed.** `./stack update` runs `./stack setup --yes --update-mode`; nothing else turns
 the mode on (`./stack update --force` and a plain `./stack setup` run every step). Each of these steps has a digest of
 what it reads: ports and settings in `.env`, prices, LiteLLM's config and the default models, voice and its container,
-SearXNG, the web search check, the git server and its account, the Code page default, LiteLLM's keys, the portal sign-in,
+SearXNG, the web search check, the git server and its account, the Code page default, LiteLLM's keys, the web app sign-in,
 the Open WebUI syncs and the smoke test. Its inputs are the `.env` keys it reads, the model catalog and the models found,
 the prices in use, the compose files, the ID of the images this checkout builds, the identity of the LiteLLM and Open WebUI
 containers (a recreated or restarted one is not the same: the banner Open WebUI shows lives in its memory), the price
@@ -396,7 +396,7 @@ tests/e2e/run.sh --aws-env /path/to/a/file/with/AWS_keys    # or export AWS_ACCE
 
 - **Isolation:** a `git clone` of the checkout plus your uncommitted changes, committed locally, in
   `tests/e2e/work/<project>` (`--work DIR`; keep it out of temporary folders, Docker bind-mounts files from it);
-  Compose project `bne2e` or `bne2e-<suffix>` (`--project`; no other name is accepted), portal
+  Compose project `bne2e` or `bne2e-<suffix>` (`--project`; no other name is accepted), web app
   `http://bne2e.localhost:<port>`, free ports (never 80, 443, 3000, 3009, 4000, 8080, 8081, 8090, 8765 or 8800).
   `./stack` runs with a clean environment (proxy settings kept) and without a terminal (`tests/e2e/notty`, so
   nothing can stop at a prompt). Setup never links `~/.local/bin/devos-claude` (the link and its file are
@@ -411,7 +411,7 @@ tests/e2e/run.sh --aws-env /path/to/a/file/with/AWS_keys    # or export AWS_ACCE
   `--host-resolver-rules`. Checks that drive the Open WebUI, LiteLLM or RustFS UIs skip, saying so, when
   compose.yaml pins another version than the one their selectors were written for.
 - **Credentials:** the AWS key is read from `--aws-env` (only `AWS_*` lines) or the environment and handed to
-  `./stack setup` through its environment. The browser suite reads the portal, LiteLLM and RustFS sign-ins from
+  `./stack setup` through its environment. The browser suite reads the web app, LiteLLM and RustFS sign-ins from
   the throwaway `.env`, mounted read-only. Every log is redacted (all `.env` secrets → `***`, also when the run
   fails), screenshots mask the sign-ins and RustFS's access key, and network logs hold no bodies, presigned
   signatures or token/key parameters.
@@ -433,7 +433,7 @@ tests/e2e/run.sh --aws-env /path/to/a/file/with/AWS_keys    # or export AWS_ACCE
   `voice`, `claude`, `mutating`) runs only those parts; `--skip-cli-mutating` skips backup/restore, down/up, rotate-aws,
   update and rollback.
 - **Images:** every run is a Compose project of its own, so setup's images (`<project>/<name>:local`: Open WebUI, the
-  portal, shared-mcp, the sandbox, its egress proxy, the Code page) are that run's. Setup builds each one once per
+  web app, shared-mcp, the sandbox, its egress proxy, the Code page) are that run's. Setup builds each one once per
   tree: the first run keeps what it built as `bne2e-cache/<name>:<key>` (key: the throwaway's git tree — this
   checkout's files, uncommitted changes included —, the image's name, its build arguments, the uid the sandbox's
   image is built for and the compose files), and a later run of the same files tags that as its own instead of
@@ -461,7 +461,7 @@ tests/e2e/run.sh --aws-env /path/to/a/file/with/AWS_keys    # or export AWS_ACCE
   $0.25). After the suite a hostile stand-in takes bn-coded's socket (markup, bogus ids, an oversized frame, an
   endless line, forged control requests) for one more browser check, then gives it back.
 - **The update helper:** the `settings/*` checks (Settings changes through the helper: a budget, the Admin and
-  portal passwords, the owner email, a new RustFS key pair, Back up now, nightly backups, the helper's refusals)
+  web app passwords, the owner email, a new RustFS key pair, Back up now, nightly backups, the helper's refusals)
   need it running. `--helper` (or `E2E_HELPER=1`) runs the throwaway's own `bin/devos-ade-helper` in the
   foreground for them, as a child of the run (never `./stack helper install`: no launchd agent or systemd unit),
   with `SETTINGS_MIN_INTERVAL_S=5`; it is stopped right after them and on any exit, its log in `logs/helper.log`.
@@ -470,7 +470,7 @@ tests/e2e/run.sh --aws-env /path/to/a/file/with/AWS_keys    # or export AWS_ACCE
 - **Known product bugs** go in `tests/e2e/known-issues.tsv` (check id, reason): a listed check that fails is
   reported as XFAIL, one that passes as XPASS.
 - **The UI/UX sweep** (`tests/e2e/ui-sweep.sh --aws-env FILE`, opt-in, its own throwaway `bne2e-uisweep`): every page
-  and state of the portal, Chat, the Code page and the terminal at three widths (1512×900, 820×1180, 390×844) in
+  and state of the web app, Chat, the Code page and the terminal at three widths (1512×900, 820×1180, 390×844) in
   both themes — screenshots, console errors and failed requests, broken images and icons, the logo, the old name in
   visible text, text or elements past their card, sideways scroll, unnamed controls, and every link (external ones
   paced; a bot wall's page checked in a browser). `--long-path` stages it under a long folder name so every path the

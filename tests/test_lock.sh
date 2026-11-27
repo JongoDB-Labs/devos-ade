@@ -92,7 +92,7 @@ test_up_releases_a_lock_it_took_and_keeps_its_callers() {
 }
 
 test_lock_messages_name_a_settings_change_and_the_helper() {
-  assert_eq "$(stack_lock_says "42 config")" "a settings change (from the portal or ./stack config) is running (pid 42)"
+  assert_eq "$(stack_lock_says "42 config")" "a settings change (from the web app or ./stack config) is running (pid 42)"
   assert_eq "$(stack_lock_says "42 rotate-aws")" "another ./stack rotate-aws is running (pid 42)"
   _status_in_progress() { return 0; }   # the helper's job (lib/helper.sh)
   assert_contains "$(stack_lock_says "42 update")" "./stack helper status shows its progress"
@@ -113,7 +113,7 @@ test_a_terminal_command_records_running_then_done() {
   assert_contains "$(cat "$f")" '"version": "v0.9.0"'
   case "$(cat "$f")" in *'"finished_at": null'*) echo "no finish time" >&2; return 1 ;; esac
   _json_ok "$f" || return 1
-  [ "$(perm_of "$f")" = 644 ] || { echo "the portal must be able to read it" >&2; return 1; }
+  [ "$(perm_of "$f")" = 644 ] || { echo "the web app must be able to read it" >&2; return 1; }
   [ ! -d "$STATE_DIR/lock" ] || { echo "the lock must go" >&2; return 1; }
 }
 

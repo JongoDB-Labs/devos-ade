@@ -292,7 +292,7 @@ tls_trust_check() {
 
 # https_unsupported -> prints why and returns 0 on a computer this does not run on
 https_unsupported() {
-  case "$(uname -s)" in Darwin | Linux) ;; *) echo "HTTPS for the portal is made for macOS and Linux"; return 0 ;; esac
+  case "$(uname -s)" in Darwin | Linux) ;; *) echo "HTTPS for the web app is made for macOS and Linux"; return 0 ;; esac
   tls_have_openssl || { echo "openssl was not found"; return 0; }
   return 1
 }
@@ -306,7 +306,7 @@ https_fail_off() {
   save_portal_origin
   https_apply || true
   warn "HTTPS is off again: $1"
-  warn "the portal is plain HTTP on $(portal_url) as before"
+  warn "the web app is plain HTTP on $(portal_url) as before"
 }
 
 # https_apply — Caddy, the portal and the apps that name the portal's address, with the scheme .env holds now (one Compose
@@ -318,7 +318,7 @@ https_apply() {
   [ -z "$(dc ps -q --status running forgejo 2>/dev/null)" ] || svc="$svc forgejo"
   [ -z "$(dc ps -q --status running code 2>/dev/null)" ] || svc="$svc code"
   # shellcheck disable=SC2086  # the service list, word-split on purpose
-  run_phase "Restart · the portal over $(portal_scheme)" "$svc" dc up -d --no-deps --wait $svc || return 1
+  run_phase "Restart · the web app over $(portal_scheme)" "$svc" dc up -d --no-deps --wait $svc || return 1
   ensure_portal_reachable
 }
 
@@ -341,13 +341,13 @@ https_enable() {
     log "this computer already trusts the certificate"
   else
     tls_trust_add || { https_fail_off "the certificate authority was not added to this computer's trust (refused or failed)"; return 1; }
-    tls_trust_check || { https_fail_off "this computer does not trust the certificate after adding it ($(uname -s) said no) — the portal stays plain HTTP"; return 1; }
+    tls_trust_check || { https_fail_off "this computer does not trust the certificate after adding it ($(uname -s) said no) — the web app stays plain HTTP"; return 1; }
   fi
   set_env PORTAL_HTTPS true
   save_portal_origin
   https_notice_write
-  https_apply || die "the portal did not come back over HTTPS — ./stack https off turns it off again"
-  log "the portal is served over HTTPS: $(portal_url)"
+  https_apply || die "the web app did not come back over HTTPS — ./stack https off turns it off again"
+  log "the web app is served over HTTPS: $(portal_url)"
   log "sign in again there, and install the app again from the new address; $(portal_url) replaces $(printf '%s' "$(portal_url)" | sed 's/^https/http/')"
 }
 
@@ -366,8 +366,8 @@ https_disable() {
   set_env PORTAL_HTTPS false
   save_portal_origin
   [ "$was" = 0 ] || https_notice_write
-  https_apply || die "the portal did not come back — see ./stack logs caddy"
-  log "the portal is plain HTTP again: $(portal_url)"
+  https_apply || die "the web app did not come back — see ./stack logs caddy"
+  log "the web app is plain HTTP again: $(portal_url)"
 }
 
 # https_guard — at setup, up and update: a certificate that is due is made again without a question (and the new one
@@ -393,15 +393,15 @@ https_setup_question() {
   if https_unsupported >/dev/null; then return 0; fi
   local where="your login keychain; macOS asks for your password."
   [ "$(uname -s)" = Darwin ] || where="your browsers' certificate database (NSS); the system store only if you say yes."
-  if confirm "Serve the portal over HTTPS? This adds a certificate that can only vouch for this install's own addresses to $where"; then
+  if confirm "Serve the web app over HTTPS? This adds a certificate that can only vouch for this install's own addresses to $where"; then
     # (in a subshell: whatever stops it — a refused prompt, openssl — leaves setup going, on plain HTTP)
     if ! ( https_enable ); then
       if https_on; then warn "HTTPS is on, but its restart failed; setup goes on — ./stack https off turns it off"
-      else set_env PORTAL_HTTPS false; warn "the portal stays plain HTTP (the messages above say why); ./stack https on tries again"; fi
+      else set_env PORTAL_HTTPS false; warn "the web app stays plain HTTP (the messages above say why); ./stack https on tries again"; fi
     fi
   else
     set_env PORTAL_HTTPS false
-    log "the portal stays plain HTTP; ./stack https on turns HTTPS on later"
+    log "the web app stays plain HTTP; ./stack https on turns HTTPS on later"
   fi
 }
 
@@ -428,13 +428,13 @@ https_usage() {
 Usage: ./stack https <command>
 
   status    On or off, the address, the certificate and whether this computer trusts it
-  on        Serves the portal over HTTPS on this computer: makes a certificate authority that can only vouch for this
+  on        Serves the web app over HTTPS on this computer: makes a certificate authority that can only vouch for this
             install's own addresses (.state/tls), adds it to your login keychain (macOS asks for your password) or your
             NSS database (Linux; the system store only after a yes), checks that the computer trusts it, then restarts
             Caddy and the apps with the https address. A computer that does not trust it keeps plain HTTP.
   off       Plain HTTP again; removes the authority from the keychain or NSS database (it asks first) and deletes .state/tls
 
-  .env: PORTAL_HTTPS=true | false (Settings › Account & security › Serve the portal over HTTPS). The address changes:
+  .env: PORTAL_HTTPS=true | false (Settings › Account & security › Serve the web app over HTTPS). The address changes:
   sign in again, and install the app again from the new address.
 EOF
 }

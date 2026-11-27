@@ -33,11 +33,11 @@ test_status_table_columns_line_up_with_long_service_names() {
   assert_eq "$(printf '%s\n' "$out" | grep '^  terminal-gateway ' | awk '{ print index($0, "healthy") }')" \
     "$(printf '%s\n' "$out" | grep '^  caddy ' | awk '{ print index($0, "healthy") }')"
   assert_contains "$out" "  terminal-gateway running      healthy    - (the terminal's only way into the stack)"
-  assert_contains "$out" "  caddy            running      healthy    - (serves the portal URLs)"
+  assert_contains "$out" "  caddy            running      healthy    - (serves the web app URLs)"
   # without it the table is as before (SERVICE 11 wide)
   optional_services() { echo ""; }
   out="$(printf 'caddy\trunning\thealthy\t0\n' | status_table)"
-  assert_contains "$out" "  caddy       running      healthy    - (serves the portal URLs)"
+  assert_contains "$out" "  caddy       running      healthy    - (serves the web app URLs)"
 }
 
 test_status_table_flags_failed_bucket_setup() {

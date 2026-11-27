@@ -106,7 +106,7 @@ Labs) on, Home's Spend card has an **Actual | Equivalent** switch (stored in the
   not. The free router `or/openrouter/free` always shows "$0 (no paid version)": LiteLLM's daily figures do not
   say which model answered, so there is nothing to price it at.
 
-The portal reads per-model token counts from LiteLLM's daily activity (`GET /user/daily/activity/aggregated`,
+The web app reads per-model token counts from LiteLLM's daily activity (`GET /user/daily/activity/aggregated`,
 UTC days; a key's budget period starts at 00:00 UTC, so the key's window is exact) with the master key, and
 caches them for a minute. LiteLLM also books an estimate of each failed request's prompt tokens, so they are
 counted in proportion to the answered requests (a burst of refused requests does not inflate the tokens or
@@ -132,7 +132,7 @@ by cause with a fix:
 | HTTP 402 | paid models need credits (openrouter.ai/settings/credits), or `./stack openrouter models free` |
 | HTTP 404 "No endpoints found matching your data policy" | allow free endpoints that may train on prompts at openrouter.ai/settings/privacy |
 | HTTP 401 | paste a new key into `.env` and run `./stack openrouter apply` (or `./stack openrouter set`) |
-| a key's monthly budget used up | raise it in the portal's Settings → Spending & budgets (or `./stack config set BUDGET_OPENWEBUI`) |
+| a key's monthly budget used up | raise it in the web app's Settings → Spending & budgets (or `./stack config set BUDGET_OPENWEBUI`) |
 | anything else | the status and the provider's message (keys, AWS access keys, ARNs, account ids, key hashes and emails masked) |
 
 `./stack costs` and `./stack openrouter status` print the 30-day free and paid totals (free: `$0 actual (≈ $… at
@@ -158,6 +158,6 @@ OpenRouter's Activity and Logs show the requests as DevOS ADE. They name the pro
 OpenRouter's own *Input & Output Logging* is not needed (Admin's logs record every request) and would store
 your prompts at OpenRouter.
 
-The key itself stays in `.env` (mode 600) and reaches only the LiteLLM and portal containers; curl gets it on
-stdin (never on a command line), and the portal calls OpenRouter server-side, so the key never reaches a
+The key itself stays in `.env` (mode 600) and reaches only the LiteLLM and web app containers; curl gets it on
+stdin (never on a command line), and the web app calls OpenRouter server-side, so the key never reaches a
 browser.

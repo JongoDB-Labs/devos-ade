@@ -121,7 +121,7 @@ ensure_prices_dir() {
     chmod 755 "$d" 2>/dev/null || warn "cannot set the mode of $d (chmod 755)"
     return 0
   fi
-  chmod 2775 "$d" 2>/dev/null || warn "cannot make $d group-writable (chmod 2775) — the portal may not be able to save prices"
+  chmod 2775 "$d" 2>/dev/null || warn "cannot make $d group-writable (chmod 2775) — the web app may not be able to save prices"
   [ "$(get_env PORTAL_GID)" != "$gid" ] || return 0
   set_env PORTAL_GID "$gid"
   # Group-writable means every member of that group can change the price files.
@@ -209,7 +209,7 @@ on_prices_changed() {
   local own=0
   if declare -F owui_install_cost_filter >/dev/null || declare -F sync_openwebui_models >/dev/null; then
     if [ -z "${PORTAL_JAR:-}" ]; then
-      portal_session_start || { warn "could not sign in to the portal to update Open WebUI's prices — ./stack setup retries"; portal_session_end; return 0; }
+      portal_session_start || { warn "could not sign in to the web app to update Open WebUI's prices — ./stack setup retries"; portal_session_end; return 0; }
       own=1
     fi
     if declare -F owui_install_cost_filter >/dev/null; then

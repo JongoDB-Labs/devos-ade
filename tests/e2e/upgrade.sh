@@ -992,7 +992,7 @@ if [ "$MIGRATE" = 0 ] && [ "$FAST_CHECK" = 1 ]; then
   grep -E '^==> .* ready \(' "$LOGS/fast-apply.log" | sed 's/^==> //' | while IFS= read -r l; do say "fast apply step: $l"; done
   # (a step that ran: what changed in its inputs, from the trace the stack keeps — .state/update/trace-on, set before Update now)
   tdir="$STACK/.state/update"
-  for pair in "Prices|prices" "LiteLLM keys, Admin sign-in|keys" "Portal sign-in and Chat|signin" "Open WebUI syncs|syncs" \
+  for pair in "Prices|prices" "LiteLLM keys, Admin sign-in|keys" "Web app sign-in and Chat|signin" "Open WebUI syncs|syncs" \
     "Git server account|gitafter" "Smoke test|smoke" "Ports and settings in .env|settings"; do
     want="${pair%|*}"; name="${pair#*|}"; why=''
     if ! grep -q "^==> $want.*: not run" "$LOGS/fast-apply.log"; then

@@ -278,7 +278,7 @@ test_the_git_host_name_follows_the_portals_rules() {
   check_app_hosts
   printf 'PORTAL_HOST=bn.localhost\nGIT_HOST=chat.bn.localhost\n' > "$ENV_FILE"
   out="$( ( check_app_hosts ) 2>&1 )" || true
-  assert_contains "$out" "GIT_HOST=chat.bn.localhost is the same host name as another app or the portal"
+  assert_contains "$out" "GIT_HOST=chat.bn.localhost is the same host name as another app or the web app"
   printf 'PORTAL_HOST=bn.localhost\nPORTAL_PORT=8800\n' > "$ENV_FILE"; save_portal_origin
   assert_eq "$(get_env GIT_ORIGIN)" "http://git.bn.localhost:8800"
 }
@@ -483,7 +483,7 @@ test_the_web_site_signs_the_owner_in_only_after_the_portal_and_the_sandboxs_path
   assert_eq "$(printf '%s\n' "$s" | grep -c 'header_up {$LOCALGIT_SSO_HEADER} devos')" 1
   site="$(printf '%s\n' "$s" | sed -n '/^{\$LOCAL_SCHEME:http}:\/\/{\$GIT_HOST} {/,/^}/p')"
   assert_contains "$site" 'header_up {$LOCALGIT_SSO_HEADER} devos'
-  [ "$(printf '%s\n' "$site" | grep -n 'import portal_auth' | cut -d: -f1)" -lt "$(printf '%s\n' "$site" | grep -n 'header_up {$LOCALGIT_SSO_HEADER}' | cut -d: -f1)" ] || { echo "the header is set before the portal's check" >&2; return 1; }
+  [ "$(printf '%s\n' "$site" | grep -n 'import portal_auth' | cut -d: -f1)" -lt "$(printf '%s\n' "$site" | grep -n 'header_up {$LOCALGIT_SSO_HEADER}' | cut -d: -f1)" ] || { echo "the header is set before the web app's check" >&2; return 1; }
   # the other ways to Forgejo remove one a client sent
   for f in caddy/localgit-gateway-on.caddy; do assert_contains "$(cat "$T_ROOT/$f")" "request_header -X-Webauth-User"; done
   mirrors="$(printf '%s\n' "$s" | sed -n '/^http:\/\/:8099 {/,/^}/p')"
@@ -626,7 +626,7 @@ test_after_up_recreates_the_portal_only_for_a_new_token_and_says_when_there_is_n
   localgit_read_token_ensure() { return 1; }
   out="$(localgit_after_up 2>&1)"; rc=$?
   assert_eq "$rc" 0
-  assert_contains "$out" "could not make the token the portal's Git search uses"
+  assert_contains "$out" "could not make the token the web app's Git search uses"
   printf 'LOCALGIT=off\n' > "$ENV_FILE"; : > "$TMP/calls"; localgit_read_token_ensure() { echo ensure >> "$TMP/calls"; }
   localgit_after_up; assert_eq "$(cat "$TMP/calls")" ""                        # (off: nothing)
 }

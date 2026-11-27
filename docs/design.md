@@ -6,7 +6,7 @@ DevOS ADE uses the DevOS design system: the DevOS website's tokens, type scale, 
 button and nav patterns. Two things are ADE's own. The accent is ADE's teal, taken from the icon's ribbon, where the
 website uses violet. Dark mode uses the DevOS apps' warm "Ink" palette, not the website's cool dark.
 
-The tokens live in one file with two identical copies, because the portal and the Code page are built from separate
+The tokens live in one file with two identical copies, because the web app and the Code page are built from separate
 Docker contexts:
 
 - `portal/portal/static/tokens.css` and `code/web/src/styles/tokens.css`: custom properties only.
@@ -83,7 +83,7 @@ The other text colours, on `--bg` and `--surface`:
 | `--t-s` | 0.875rem | labels |
 | `--t-xs` | 0.8rem | ADE's step below `--t-s` (16 / 1.25), dense chrome |
 
-The portal's running text stays at 15 px and the Code page's chrome at 13 px: both are dense tools.
+The web app's running text stays at 15 px and the Code page's chrome at 13 px: both are dense tools.
 
 - **Display:** "DevOS Serif" (Source Serif 4), weight 600, for page and section titles: `h1` to `h4`, the brand name
   and the spend figure.
@@ -94,12 +94,12 @@ The three fonts are the website's own files: latin subsets with a variable weigh
 the SIL Open Font License 1.1, with its licence beside it in `fonts/LICENSE-*.txt`. They load from the page's own
 origin, never from a CDN.
 
-The sign-in and unlock pages that the Admin, Files, terminal and Code hosts serve read the portal's style sheets from
-the portal's host. Their CSP allows no fonts from there, so they use the system fonts in the same colours.
+The sign-in and unlock pages that the Admin, Files, terminal and Code hosts serve read the web app's style sheets from
+the web app's host. Their CSP allows no fonts from there, so they use the system fonts in the same colours.
 
-The error pages — a portal page that is not there, a host name that is not this install's, a preview link opened
+The error pages — a web app page that is not there, a host name that is not this install's, a preview link opened
 outside the Code page — are the sign-in card too (`static/error.html`): a short code in the eyebrow style over the
-title, one sentence, and where to go instead as pill links, the main one teal. The portal's 404 and the unknown host's
+title, one sentence, and where to go instead as pill links, the main one teal. The web app's 404 and the unknown host's
 page have the fonts (Caddy hands the unknown name the sign-in page's public files under that name); the code host's
 preview page has the system fonts, as the unlock pages. They never show what was asked for (no path, host or query).
 
@@ -143,7 +143,7 @@ where the item is the link (Home's Continue rows). A destructive action asks fir
 goes, with Cancel focused. There is one component per front end, the same in look: `portal/portal/static/ctxmenu.js`
 (`window.bnMenu`) and `Dropdown` with `ctx` in `code/web/src/components/ui.tsx`.
 
-What has a menu, by page (JON-821). "Code page" means the Code app; Home asks it for the session actions the portal
+What has a menu, by page (JON-821). "Code page" means the Code app; Home asks it for the session actions the web app
 cannot run itself.
 
 | Page | Item | Actions |
@@ -169,7 +169,7 @@ is on the card), the editor's tabs (they have their own close and move controls)
 
 The Code page imports the same `tokens.css` and `fonts.css`. Its own extra tokens, in `code/web/src/styles/app.css`,
 are derived from the palette: chrome, panels, the editor, syntax and diffs. Syntax colours keep 4.5:1 on the editor
-in both themes. The page's chrome follows the portal:
+in both themes. The page's chrome follows the web app:
 
 - pills for its buttons, pickers and status-bar actions;
 - mono eyebrows for its group heads;
@@ -222,10 +222,10 @@ stack. The rules, so a new card drops in without a new pattern:
   class `wg-off`. A card the person hid stays hidden with news to show; one they show still hides itself when empty. The
   header's version and release line (`#home-version`, `#release-line`) say an update is available whether or not the Update
   card is shown; following them shows a hidden card for now (`bnWidgets.peek`, not saved). **The layout is kept per kind of
-  screen** (desktop, tablet, phone) in one file of the portal's state dir (`ui-layout.json`, mode 600, written atomically, at
+  screen** (desktop, tablet, phone) in one file of the web app's state dir (`ui-layout.json`, mode 600, written atomically, at
   most 16 KB) through `GET` and `PUT /api/ui/layout` (portal/uilayout.py: the session and `X-Requested-With`; unknown pages,
   screens and widgets refused or dropped, spans and heights clamped; a `PUT` replaces only the screens it names, `null`
-  puts one back to the default). localStorage `bn.layout` is only a cache, read before the portal answers so the page does not
+  puts one back to the default). localStorage `bn.layout` is only a cache, read before the web app answers so the page does not
   flash. The model (defaults, merge with what was saved, clamp, move, resize, hide, reset, the sentences announced) is plain
   functions in widgets.js, apart from the DOM, so the Code and Terminal pages can take the same engine with their own
   widget table; a widget a later release adds is appended to a saved layout with its default. Keyboard: a handle takes
@@ -240,7 +240,7 @@ stack. The rules, so a new card drops in without a new pattern:
   (their pointer-down's default is prevented; a click gives the terminal the keyboard back before its key, or the focus report that
   follows would make tmux read an Esc as Alt), are 44 px on touch, and changes are announced in `#term-live`. ttyd focuses
   its terminal each time it connects; ttyd-keys.js says whether a person's click or tap put the focus there (a trusted
-  pointerdown in it just before: `navigator.userActivation` counts a key pressed in the portal too), and the page gives the
+  pointerdown in it just before: `navigator.userActivation` counts a key pressed in the web app too), and the page gives the
   keyboard back to its owner otherwise (a control of the page, or the
   terminal a person or the page chose). The stage is `overflow: clip`: a hidden box still scrolls to show a clicked
   terminal, and the frames, placed from the stage's corner, would be off their slots.
@@ -294,4 +294,4 @@ Chat is Open WebUI, a third-party app, and it is never forked. Open WebUI 0.12.0
   already follows light and dark like the rest of ADE.
 - Its only styling hook is `/static/custom.css`, which is empty by default. The stack does not fill it, so Chat keeps
   Open WebUI's own look.
-- The portal's frame around Chat is ADE's: the "who answers" bar and the voice tip.
+- The web app's frame around Chat is ADE's: the "who answers" bar and the voice tip.

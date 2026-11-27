@@ -77,7 +77,7 @@ Usage: ./stack project <command>
       --later                 not now: ./stack project apply (or ./stack up) restarts it
   In a terminal you are asked; otherwise --when-idle (--yes: --now).
 
-  From the portal: Settings › Claude Code › Project folders (Choose on this computer… opens a folder chooser on
+  From the web app: Settings › Claude Code › Project folders (Choose on this computer… opens a folder chooser on
   this computer's screen through the update helper; a request never names a path).
 EOF
 }

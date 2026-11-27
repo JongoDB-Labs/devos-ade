@@ -42,7 +42,7 @@ migrate --now`, then `cd ~/devos-ade && ./stack update --force`; a later `./stac
 
 The new hostname is a new browser origin, so once:
 
-- sign in again to the portal;
+- sign in again to the web app;
 - unlock Code and Terminal again;
 - install the browser app (PWA) again from `http://devos-ade.localhost`, and remove the old one.
 

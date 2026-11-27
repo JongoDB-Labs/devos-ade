@@ -66,7 +66,7 @@ ask_port() {
 svc_label() { # svc_label COMPOSE_SERVICE -> name used in messages
   case "$1" in
     litellm) echo LiteLLM ;; open-webui) echo "Open WebUI" ;; rustfs) echo "the RustFS console" ;;
-    shared-mcp) echo "the shared MCP server" ;; caddy) echo "the portal" ;; *) echo "$1" ;;
+    shared-mcp) echo "the shared MCP server" ;; caddy) echo "the web app" ;; *) echo "$1" ;;
   esac
 }
 

@@ -43,7 +43,7 @@ dollars. Use Haiku or Sonnet for routine work.
 
 ## When prices are checked
 
-- The portal checks at start and every 24 hours.
+- The web app checks at start and every 24 hours.
 - `./stack setup` checks before it configures LiteLLM (skipped if the last check is under an hour old).
 - `./stack up` does a quick check (LiteLLM's list only, at most 20 seconds, skipped if the last check is under
   12 hours old, instant when offline).
@@ -87,4 +87,4 @@ LiteLLM's prices anyway; then `./stack up` hands them to LiteLLM.
 - To turn the updates off, switch **Daily price update** off in Settings → Spending & budgets (under More settings) (or
   `./stack config set PRICE_UPDATES` and answer `false`).
 - Linux: `./stack` sets `PORTAL_GID` in `.env` to your group (group 0 on rootless Docker) and makes
-  `litellm/prices/` setgid and group-writable (2775); the portal keeps its own user, which owns `/state`.
+  `litellm/prices/` setgid and group-writable (2775); the web app keeps its own user, which owns `/state`.

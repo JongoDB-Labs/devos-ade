@@ -61,9 +61,9 @@ terminal_usage() {
 Usage: ./stack terminal <command>
 
   status                      On or off, the workspace folder, the container, its address and access
-  enable [--workspace DIR]    A Terminal tab in the portal: Claude Code in a sandbox container that sees only
+  enable [--workspace DIR]    A Terminal tab in the web app: Claude Code in a sandbox container that sees only
                               DIR (default ~/devos-ade-workspace, or ~/bedrock-now-workspace on an install
-                              that already has it) and asks for the portal password again
+                              that already has it) and asks for the web app password again
   disable                     Removes the container (the folder and Claude Code's history are kept)
 
   .env: TERMINAL_EGRESS=internet (the default: public addresses only, through its egress proxy) | host (this
@@ -394,11 +394,11 @@ terminal_enable() {
   projects_up_hook   # lib/projects.sh: the project folders' mounts (kept from before), each folder checked again
   chat_proxy_leave   # (Chat's own proxy, no longer its way out: gone before any up)
   run_phase "Terminal image (build; the first one takes a few minutes)" terminal terminal_build
-  run_phase "Terminal + its gateway + portal + Caddy" "terminal terminal-gateway portal caddy litellm shared-mcp" _terminal_up
+  run_phase "Terminal + its gateway + web app + Caddy" "terminal terminal-gateway portal caddy litellm shared-mcp" _terminal_up
   terminal_after_up
   [ "$own" = 0 ] || stack_unlock
   printf '\n'; terminal_status
-  printf '\nOpen the Terminal tab on Home (%s) and unlock it with the portal password.\n' "$(portal_url)"
+  printf '\nOpen the Terminal tab on Home (%s) and unlock it with the web app password.\n' "$(portal_url)"
 }
 
 terminal_disable() {
@@ -419,7 +419,7 @@ terminal_disable() {
   terminal_remote_sync
   log "LiteLLM and shared-mcp restart once as they leave the terminal's gateway network: Chat answers," \
     "devos-claude requests and MCP sessions in progress drop for a few seconds"
-  run_phase "Portal + Caddy (terminal off)" "portal caddy litellm shared-mcp" _terminal_front
+  run_phase "Web app + Caddy (terminal off)" "portal caddy litellm shared-mcp" _terminal_front
   code_network_cleanup   # (lib/code.sh: its network, now that nothing uses it)
   terminal_network_cleanup
   # ttyd's, bn-coded's and bn-preview's sockets: nothing to keep
@@ -652,13 +652,13 @@ terminal_setup_hook() {
 terminal_status() {
   local st ws why
   if ! terminal_on; then
-    printf 'Terminal: off — ./stack terminal enable [--workspace DIR] adds a Terminal tab to the portal:\n'
+    printf 'Terminal: off — ./stack terminal enable [--workspace DIR] adds a Terminal tab to the web app:\n'
     printf '  Claude Code in a sandbox container that sees only DIR (README: "Claude Code in the browser")\n'
     return 0
   fi
   ws="$(get_env TERMINAL_WORKSPACE)"; why="$(terminal_why_out)"
   st="$(dc ps -a --format '{{.State}} {{.Health}}' terminal 2>/dev/null | head -n 1 || true)"
-  printf 'Terminal: on — %s (the Terminal tab; unlock with the portal password, 12 h per browser)\n' "$(portal_url terminal)"
+  printf 'Terminal: on — %s (the Terminal tab; unlock with the web app password, 12 h per browser)\n' "$(portal_url terminal)"
   printf '  Workspace  %s → /workspace\n' "${ws:-(none)}"
   [ -z "$why" ] || printf '             !! left out: %s\n' "$why"
   projects_status_lines   # lib/projects.sh: the project folders of this computer it sees too
@@ -725,7 +725,7 @@ terminal_test_checks() {
     _check "terminal refuses another site's Origin" "$code" 403
     portal_session_end
   else
-    _skip "terminal unlock checks" "portal login failed"
+    _skip "terminal unlock checks" "web app login failed"
   fi
   # ttyd, as the main Caddy reaches it (through the gateway), without the secret header: a forged X-Portal-User
   # changes nothing
@@ -744,7 +744,7 @@ terminal_test_checks() {
   case "$out" in *search_knowledge*) got=yes ;; *) got=no ;; esac
   _check "terminal gateway: the shared MCP server's tools" "$got" yes
   out="$(_probe dc exec -T terminal timeout 20 sh -c 'for u in http://portal:8000/healthz http://open-webui:8080/health http://litellm:4000/health/liveliness http://shared-mcp:8000/healthz http://rustfs:9000/ http://caddy:8080/ http://gateway:8080/ http://gateway:8090/healthz http://gateway:7681/ http://gateway:7682/; do curl --noproxy "*" -s -m 3 -o /dev/null -w "%{http_code} " "$u" || true; done' 2>/dev/null || true)"
-  _check "terminal cannot reach the portal, Open WebUI, LiteLLM/shared-mcp directly, RustFS, the main Caddy or the gateway's other ports" \
+  _check "terminal cannot reach the web app, Open WebUI, LiteLLM/shared-mcp directly, RustFS, the main Caddy or the gateway's other ports" \
     "$(printf '%s' "$out" | tr -s ' ' | sed 's/ $//')" "000 000 000 000 000 000 000 000 000 000"
   # No DNS way out (internet and off: internal networks only): Docker's embedded DNS answers no outside names there —
   # since Engine 26.0 (25.0.4, 23.0.11: CVE-2024-29018); an older engine forwards them, a few bytes' way out for what is

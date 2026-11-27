@@ -943,7 +943,7 @@ test_test_checks_report_health_unlock_secret_and_isolation() {
   fails=0
   out="$(code_test_checks)"
   assert_eq "$(printf '%s\n' "$out" | grep -c '^  ok ')" 12
-  assert_contains "$out" "ok    a preview link goes through Caddy, the portal's check and the gateway to bn-preview"
+  assert_contains "$out" "ok    a preview link goes through Caddy, the web app's check and the gateway to bn-preview"
   assert_contains "$out" "ok    a forged preview link is refused"
   assert_contains "$out" "ok    the code container reaches bn-coded in the sandbox (a sessions.list round trip on its socket)"
   dc() { case "$*" in *"sessions.list"*) printf 'error ENOENT\n' ;; *"exec -T code node"*) printf 'open closed closed closed closed closed\n' ;; *"exec -T terminal timeout 20 sh"*) printf '200 755 socket\n' ;; *) ok_dc "$@" ;; esac; }

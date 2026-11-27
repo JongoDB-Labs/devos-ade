@@ -1,4 +1,4 @@
-# Remote access: the portal from your phone and laptop
+# Remote access: the web app from your phone and laptop
 
 Back to the [README](../README.md#remote-access).
 
@@ -9,8 +9,8 @@ port to the internet. The local address keeps working exactly as before.
 | Mode | Command | Addresses | Certificate | Who can connect |
 |---|---|---|---|---|
 | off (default) | `./stack remote disable` | `http://devos-ade.localhost` | none (plain HTTP on 127.0.0.1) | this computer |
-| **Tailscale** (recommended) | `./stack remote enable tailscale` | `https://devos-ade.<tailnet>.ts.net` plus `-chat`, `-admin`, `-files` | Tailscale (Let's Encrypt, automatic) | devices in your tailnet that your policy allows, signed in to Tailscale as you; your Tailscale login **and** the portal password |
-| Own domain | `./stack remote enable domain bedrock.example.com` | `https://bedrock.example.com` plus `chat.`, `admin.`, `files.` | Let's Encrypt wildcard via DNS-01 (Cloudflare) | devices in your tailnet that your policy allows; the portal password |
+| **Tailscale** (recommended) | `./stack remote enable tailscale` | `https://devos-ade.<tailnet>.ts.net` plus `-chat`, `-admin`, `-files` | Tailscale (Let's Encrypt, automatic) | devices in your tailnet that your policy allows, signed in to Tailscale as you; your Tailscale login **and** the web app password |
+| Own domain | `./stack remote enable domain bedrock.example.com` | `https://bedrock.example.com` plus `chat.`, `admin.`, `files.` | Let's Encrypt wildcard via DNS-01 (Cloudflare) | devices in your tailnet that your policy allows; the web app password |
 
 Setup asks once: *only this computer, or also your phone/laptop through Tailscale?* (default: only this
 computer). `./stack remote status` shows what is on; `./stack status`, the setup summary and Home show the
@@ -28,9 +28,9 @@ phone (Tailscale) ──HTTPS──▶ Tailscale Service svc:devos-ade[-chat|-ad
                              │  sidecar's fixed address on its own small network)
                              │  sets X-Portal-Remote: 1 and X-Portal-Proxy (after deleting client copies)
                              │  forward_auth → portal: this host's own cookie + Tailscale login check
-                             │  (no cookie on an app host yet → one-time hand-off from the portal host)
+                             │  (no cookie on an app host yet → one-time hand-off from the web app host)
                              ▼
-                     portal / Open WebUI / LiteLLM / RustFS (as for local access)
+                     web app / Open WebUI / LiteLLM / RustFS (as for local access)
 ```
 
 - A `tailscale/tailscale` container (`compose.tailscale.yaml`, pinned by version and digest) joins your
@@ -41,9 +41,9 @@ phone (Tailscale) ──HTTPS──▶ Tailscale Service svc:devos-ade[-chat|-ad
   address: the subnet's last host (`REMOTE_SIDECAR_IP`, `10.255.255.254`; `./stack` derives it). If you set
   `REMOTE_SUBNET`, use a /24 to /29 without host bits. `./stack up`/`setup` check it and look for Docker
   networks it overlaps; if it is unusable they say so and start the stack **without** remote access for that
-  run, so the local portal never goes down because of it.
+  run, so the local web app never goes down because of it.
 - `./stack up`, `setup` and `restore` never wait for it: the stack comes up first, then the sidecar is
-  started and given a few seconds; if it is not logged in you get a warning and the local portal works as
+  started and given a few seconds; if it is not logged in you get a warning and the local web app works as
   always. `./stack remote status` shows the login state.
 - It hosts four [Tailscale Services](https://tailscale.com/kb/1552/tailscale-services), one per app, because
   Open WebUI and LiteLLM both use a host-only cookie called `token` and must stay on different host names. The
@@ -56,22 +56,22 @@ phone (Tailscale) ──HTTPS──▶ Tailscale Service svc:devos-ade[-chat|-ad
   trusts `X-Forwarded-*` only from that address. It marks requests with `X-Portal-Remote: 1`; the local site deletes that
   header and any `Tailscale-User-*` header a client sends.
 - Caddy also adds `X-Portal-Proxy: <PORTAL_PROXY_SECRET>` (a random secret in `.env`; client copies are
-  deleted, the apps never receive it). The portal believes `X-Portal-Remote` and `Tailscale-User-Login` only
+  deleted, the apps never receive it). The web app believes `X-Portal-Remote` and `Tailscale-User-Login` only
   together with it, so a container that talks to `portal:8000` directly cannot claim to be remote.
-- The portal then uses **host-only** session cookies, `__Host-bn_session` (`Secure`, `HttpOnly`,
+- The web app then uses **host-only** session cookies, `__Host-bn_session` (`Secure`, `HttpOnly`,
   `SameSite=Strict`, `Path=/`, no `Domain` — the `__Host-` prefix makes the browser enforce that), the remote
   origin for its CSRF check and redirects, and `https://…` app addresses on Home. The apps' own cookies
   (Open WebUI's and LiteLLM's `token`, …) get `Secure` added by Caddy on the remote site only; locally (plain
   http) they stay as they are.
 - **Hand-off.** Each app host gets its own cookie, never a shared one: an app host without a cookie sends the
-  browser to `https://<portal>/auth/handoff?to=<app>&next=…`; the portal (signed in) mints a token that is
+  browser to `https://<portal>/auth/handoff?to=<app>&next=…`; the web app (signed in) mints a token that is
   signed, valid for 60 seconds, usable once, and only for that one host, and redirects to
-  `https://<app host>/.bn/callback?t=…`. Caddy hands that path to the portal, which checks the token and sets
-  the host's own cookie with the portal session's start time — so it expires with the portal session and
+  `https://<app host>/.bn/callback?t=…`. Caddy hands that path to the web app, which checks the token and sets
+  the host's own cookie with the web app session's start time — so it expires with the web app session and
   **Sign out** (or a changed password) ends it too. `next` stays on the same host. This works inside Home's
   frames as well (tested in Chromium and WebKit: the four names are one "site", so `SameSite=Strict` holds).
-  Tokens also carry the password fingerprint and are refused after a portal restart. If a browser refuses the
-  app host's cookie, the portal stops after four hand-offs a minute and says so instead of looping.
+  Tokens also carry the password fingerprint and are refused after a web app restart. If a browser refuses the
+  app host's cookie, the web app stops after four hand-offs a minute and says so instead of looping.
 - **Install it on your phone.** The remote address is installable like the local one (Android/desktop
   Chrome and Edge: *Install app*; iPhone/iPad Safari: *Share → Add to Home Screen*). Being another origin it is
   another app, named **DevOS ADE (remote)** (a second copy: *DevOS ADE (bn-dev, remote)*). Its manifest,
@@ -82,7 +82,7 @@ phone (Tailscale) ──HTTPS──▶ Tailscale Service svc:devos-ade[-chat|-ad
   `REMOTE_TERMINAL=true` in `.env` and run `./stack up`. Then it gets a remote name of its own —
   `<base>-terminal.<tailnet>.ts.net` (a fifth Tailscale Service: approve it like the others; `./stack remote
   status` lists it) or `terminal.<your domain>` (the wildcard certificate covers it) — reached through the same
-  hand-off, and it still asks for the portal password again ([security](security.md#the-browser-terminal)).
+  hand-off, and it still asks for the web app password again ([security](security.md#the-browser-terminal)).
   With the Code page on, the same switch shares it too (`<base>-code`, a sixth Service); its previews of dev servers
   only if you turn them on (`<base>-preview`, a seventh: [below](#previews-of-dev-servers-over-remote-access)).
 - Every app host answers only page loads, plain assets and its own pages' requests from the other hosts of the
@@ -154,13 +154,13 @@ computer running DevOS ADE.
 
 Tailscale adds `Tailscale-User-Login` (your login name) to proxied Service requests from a device signed in as
 a user, after deleting any copy the client sent (Tailscale's `ipn/ipnlocal/serve.go`; nothing there exempts
-Services). Setup asks for your login (`TAILSCALE_ALLOWED_LOGIN`); the portal then **requires** it: a remote
+Services). Setup asks for your login (`TAILSCALE_ALLOWED_LOGIN`); the web app then **requires** it: a remote
 request without the header, or with another login, is refused (403) — on the login page, at sign-in and on
 every app request. Sessions (and hand-off tokens) are bound to that login. **Tagged** devices (servers, not
-people) never get the header from Tailscale, so they cannot use the portal remotely while a login is set;
+people) never get the header from Tailscale, so they cannot use the web app remotely while a login is set;
 leave `TAILSCALE_ALLOWED_LOGIN` blank to allow them (password only — `enable`, `status` and `test` then warn
 loudly, because any device your policy lets in gets the login page). `./stack remote status` shows what the
-portal last saw ("Identity"). This has been checked against Tailscale's source, not yet end to end on a real
+web app last saw ("Identity"). This has been checked against Tailscale's source, not yet end to end on a real
 tailnet: `./stack remote test`'s checklist covers it.
 
 ### Cookies stay on their own host
@@ -168,7 +168,7 @@ tailnet: `./stack remote test`'s checklist covers it.
 All four names live under `<tailnet>.ts.net`, next to every other machine of your tailnet. A cookie scoped to
 that domain would be sent to all of them, so none is: every session cookie is host-only (`__Host-`), each app
 host gets its own through the hand-off, and Caddy never forwards them to the apps. Admin and Files then get their
-own app session from the portal on their own name, host-only as well
+own app session from the web app on their own name, host-only as well
 ([automatic sign-in](security.md#automatic-sign-in-to-admin-and-files)). Own-domain mode works the same way
 (nothing is scoped to `bedrock.example.com` either).
 
@@ -274,7 +274,7 @@ edit your tailnet policy first (the tag, its `tagOwners`, the Services and their
   module at a pinned version, the `dns` line in `caddy/remote-domain.caddy`, and the token variable in
   `compose.domain.yaml`.
 - Tailscale cannot see inside this TLS, so there is no `Tailscale-User-Login` (Caddy deletes client copies) and
-  no binding to your login: access is your tailnet grant (to `tag:devos-ade`, port 443) plus the portal
+  no binding to your login: access is your tailnet grant (to `tag:devos-ade`, port 443) plus the web app
   password. Cookies are host-only, as above.
 
 ## Cloudflare Tunnel + Access (documentation only)
@@ -288,16 +288,16 @@ does not automate this; know the trade-offs first:
 - **Validate the Access JWT, not just its presence.** Access adds `Cf-Access-Jwt-Assertion`; anything that can
   reach the tunnel origin without going through Access could send its own. A proxy in front of Caddy would have
   to verify the JWT's signature (your team's certs URL), audience (the application's AUD tag) and expiry —
-  DevOS ADE's portal does not do this. Without it, Access is the only gate and the portal password the second.
+  DevOS ADE's web app does not do this. Without it, Access is the only gate and the web app password the second.
 - **100 MB request body limit** on Cloudflare's free and pro plans: larger uploads to Chat or Files fail.
-- Map four public host names (portal, chat, admin, files) to `http://127.0.0.1:<PORTAL_PORT>` with the matching
-  **local** `Host` header (`httpHostHeader`), and keep the portal's cookie rules in mind: the local site is
+- Map four public host names (web app, chat, admin, files) to `http://127.0.0.1:<PORTAL_PORT>` with the matching
+  **local** `Host` header (`httpHostHeader`), and keep the web app's cookie rules in mind: the local site is
   plain HTTP with a non-`Secure` cookie for `PORTAL_HOST`. A proper integration would need the remote-site
   treatment above (a `X-Portal-Remote` Caddy block with `https` names); it is not provided.
 
 ## Turning it off
 
-`./stack remote disable` stops the sidecar, removes the remote site (and its names) from Caddy, the portal
+`./stack remote disable` stops the sidecar, removes the remote site (and its names) from Caddy, the web app
 and Open WebUI. The sidecar's login stays in the `tailscale-state` volume for a later
 `enable`. To forget it completely: remove the machine in the admin console and
 `docker volume rm <project>_tailscale-state`; delete the Services and DNS records you no longer need.

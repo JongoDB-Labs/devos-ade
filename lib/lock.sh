@@ -38,7 +38,7 @@ stack_lock_holder() {
 stack_lock_says() {
   local pid="${1%% *}" what="${1#* }"
   case "$what" in
-    config) echo "a settings change (from the portal or ./stack config) is running (pid $pid)" ;;
+    config) echo "a settings change (from the web app or ./stack config) is running (pid $pid)" ;;
     *) if [ "$what" != helper ] && declare -F _status_in_progress >/dev/null && _status_in_progress 2>/dev/null; then
          echo "the update helper is running ./stack $what (pid $pid; ./stack helper status shows its progress)"
        else echo "another ./stack $what is running (pid $pid)"; fi ;;

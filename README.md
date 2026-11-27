@@ -10,11 +10,11 @@ otherwise, and that sends what you say to the browser's maker (Google, Microsoft
 You get modern models without sending your work to a consumer AI service, and you see what every answer costs.
 Install it with one command; nothing listens beyond `127.0.0.1`.
 
-![DevOS ADE portal](docs/img/portal-home.png)
+![DevOS ADE web app](docs/img/portal-home.png)
 
 ## What you get
 
-Everything below runs on your computer, behind one portal sign-in. The optional parts are off until you turn them on;
+Everything below runs on your computer, behind one web app sign-in. The optional parts are off until you turn them on;
 the Code page and its browser terminal are on by default (`./stack terminal disable` turns both off, `./stack code
 disable` the Code page alone; either stays off across updates).
 
@@ -25,11 +25,11 @@ disable` the Code page alone; either stays off across updates).
 | [**Home, Admin, Files**](#the-portal-one-login-for-everything) | health, spend and budgets; LiteLLM's UI; the shared file store (also an MCP server for Claude Code) | on | — |
 | [**The API for your tools**](#the-models-from-your-own-code) | the same models for your own scripts and apps: OpenAI- and Anthropic-compatible, on `127.0.0.1`, a key and budget per tool (Admin › Virtual Keys) | on | — |
 | [**Activity & search**](#activity-and-search) | a bell for budget alerts, updates, Code sessions that need you and jobs; **Ctrl/⌘+K** finds pages, settings, Code sessions and workspace files, Chat conversations, the walkthrough and these docs | on | — |
-| [**Settings**](#settings) | every setting of `.env`, shown in the portal | on (read-only until the update helper is installed) | `./stack helper install` makes it editable |
+| [**Settings**](#settings) | every setting of `.env`, shown in the web app | on (read-only until the update helper is installed) | `./stack helper install` makes it editable |
 | [**Terminal**](#claude-code-in-the-browser) | Claude Code in the browser, in a sandbox that sees one folder of yours (`~/devos-ade-workspace`) and reaches public internet addresses through an egress proxy of its own — not this computer's services or your network | on, as the Code page's sandbox (internet: public addresses only) | `./stack terminal disable` / `enable` (disable turns the Code page off too); its internet: Settings › Claude Code › Sandbox internet access |
 | [**Code page**](#the-code-page) | Claude Code as an IDE-like page: chat with any chat model of the catalog, @-mentions of the terminal, the changes, failed runs and file lines, permission modes, comments on a plan's lines, editor, file and dev-server previews, review changes, Git with remotes (Git hosts: clone, fetch, pull, push), Run & test | on (Bypass, Auto and remote access to it: off) | `./stack code disable` / `enable`, or Settings › Claude Code; the Code tab stays and says how while it is off |
 | [**Your AI subscriptions**](#your-ai-subscriptions) | your own plans in the sandbox, each through its provider's own, unmodified app signed in with its own sign-in: Claude Code on your Claude plan (`claude-sub`), Codex (ChatGPT), Gemini CLI, Copilot, Cursor, Grok — a **who answers** menu above the Terminal and Chat (where the tool itself opens in place of Open WebUI) and in the Code page's terminal panel; DevOS ADE never sees a login | on (the tools are in the sandbox; nothing is signed in) | `TERMINAL_AI_TOOLS` in `.env` (all, none or some); Settings › *Models & providers* |
-| [**Remote access**](#remote-access) | the portal from your phone or laptop over HTTPS ([on a phone](#using-it-on-your-phone)) | off | `./stack remote enable tailscale` / `disable` |
+| [**Remote access**](#remote-access) | the web app from your phone or laptop over HTTPS ([on a phone](#using-it-on-your-phone)) | off | `./stack remote enable tailscale` / `disable` |
 | [**Voice**](#voice-speech-to-text) | speech-to-text for Chat's microphone and voice calls (Mistral Voxtral on Bedrock: AWS no longer accepts its audio since October 2026; your own OpenAI/Groq key, or the browser) | browser speech (Bedrock: on when your key can use Voxtral and AWS takes its audio) | `./stack stt set openai\|groq` / `bedrock` / `remove` |
 | [**OpenRouter**](#optional-openrouter) | hundreds of other models, some free | off | Settings › Models & providers, or `./stack openrouter set` / `remove` |
 | [**Experiential Labs**](#optional-experiential-labs) | one gateway in front of many models, on its credits or your own provider keys | off | Settings › Models & providers, or `./stack config set EXPLABS_API_KEY` |
@@ -87,7 +87,7 @@ role), and otherwise tells you to run `./setup.sh` in the new folder.
 setup offers the role instead and stores no key ([Run it on a cloud VM](#run-it-on-a-cloud-vm)). A first setup
 then asks, once each:
 
-- whether to use the portal **only on this computer** (the default) or also from your phone or laptop through
+- whether to use the web app **only on this computer** (the default) or also from your phone or laptop through
   Tailscale ([Remote access](#remote-access); it is set up at the end, and `./stack remote enable tailscale` does it
   later);
 - an **admin email** for Chat and Admin (default: your `git config user.email`; kept in lowercase, as Chat keeps
@@ -98,9 +98,9 @@ then asks, once each:
 
 Then it:
 
-1. verifies the key with AWS, picks free ports and the portal address, and generates every secret into `.env`
-   (mode 600, never committed), including the portal password. When port 80 is taken, it says so and asks which port
-   the portal should use instead (Enter takes the suggestion, 8800 or the next port free at that moment; a port in
+1. verifies the key with AWS, picks free ports and the web app address, and generates every secret into `.env`
+   (mode 600, never committed), including the web app password. When port 80 is taken, it says so and asks which port
+   the web app should use instead (Enter takes the suggestion, 8800 or the next port free at that moment; a port in
    use is asked again; `--yes` takes the suggestion), and names the new address;
 2. starts the stack and **probes every model** with a 1-token request (< $0.01 in total) to see which ones
    your key can use, and prints a table of ENABLED/DISABLED models with prices and reasons. A later setup or update
@@ -119,9 +119,9 @@ Then it:
    links `devos-claude` only where `~/.local/bin/claude-bedrock` already points into this checkout (an update from
    v0.27.x). It never edits your shell rc files or `~/.claude`.
 
-At the end it prints the portal address, the first time only (and only to a terminal) its password (always in
+At the end it prints the web app address, the first time only (and only to a terminal) its password (always in
 `.env` as `PORTAL_PASSWORD`; `./stack password --show` prints it) and a `devos-claude` command to try, and, when
-run in a terminal, opens the portal: the installed app if you have one, else a browser tab (`DEVOS_ADE_NO_OPEN=1`
+run in a terminal, opens the web app: the installed app if you have one, else a browser tab (`DEVOS_ADE_NO_OPEN=1`
 turns that off). On your first visit Home starts with [Get started](#home-continue-and-get-started): five steps
 that tick themselves off; the full [walkthrough](#walkthrough) is under **Walkthrough**.
 
@@ -143,7 +143,7 @@ printf 'CODE_ENABLED=false\n' >> .env      # or: printf 'TERMINAL_EGRESS=off\n' 
 ./setup.sh --yes
 ```
 
-**Next:** open the **Code** tab, under Chat, to use Claude Code in the browser: it asks for the portal password
+**Next:** open the **Code** tab, under Chat, to use Claude Code in the browser: it asks for the web app password
 once more, and in its default mode every command and file change waits for your OK ([the Code page](#the-code-page);
 `./stack code disable` turns it off). Remote access, OpenRouter and voice can be changed at any time
 ([What you get](#what-you-get) lists the commands).
@@ -169,8 +169,8 @@ stay signed in for 30 days (Settings → Account & security → Session length);
 open` opens it: the installed app if you have installed it (see [Desktop app](#desktop-app)), otherwise a tab in
 your browser.
 
-**HTTPS on this computer (optional).** `./stack https on`, or Settings › Account & security › **Serve the portal over HTTPS**
-(setup asks once, default yes), serves the portal, Chat, Admin, Files, the Terminal and the Code page at `https://…`
+**HTTPS on this computer (optional).** `./stack https on`, or Settings › Account & security › **Serve the web app over HTTPS**
+(setup asks once, default yes), serves the web app, Chat, Admin, Files, the Terminal and the Code page at `https://…`
 from a certificate authority made for this install alone: it can only vouch for this install's own addresses
 (`devos-ade.localhost`, its subdomains and the preview names), so it cannot be used to impersonate any other site.
 macOS asks for your password to add it to your login keychain; Linux adds it to your user certificate database.
@@ -180,22 +180,22 @@ says where things stand. Details: [docs/security.md](docs/security.md#https-on-t
 
 | Tab | What it is | Sign-in |
 |---|---|---|
-| **Home** | First **Continue**: the Code sessions that need you, the recent ones and your newest chats, each a click away, with **New session** and **New chat** — and on a first visit **Get started** ([Home: Continue and Get started](#home-continue-and-get-started)). Under them: spend per key against its budget, the services (one line), the models your key can use (one line, the table with prices under it), the `devos-claude` command. Under the title: *Up to date · checked 12 min ago ·* **Check for updates** ([Updating](#updating)). Refreshes every 30 s; makes no Bedrock calls. Above the tabs: **Search** (Ctrl/⌘+K) and the **Activity** bell ([Activity and search](#activity-and-search)). | the portal |
+| **Home** | First **Continue**: the Code sessions that need you, the recent ones and your newest chats, each a click away, with **New session** and **New chat** — and on a first visit **Get started** ([Home: Continue and Get started](#home-continue-and-get-started)). Under them: spend per key against its budget, the services (one line), the models your key can use (one line, the table with prices under it), the `devos-claude` command. Under the title: *Up to date · checked 12 min ago ·* **Check for updates** ([Updating](#updating)). Refreshes every 30 s; makes no Bedrock calls. Above the tabs: **Search** (Ctrl/⌘+K) and the **Activity** bell ([Activity and search](#activity-and-search)). | the web app |
 | **Chat** | Open WebUI at `chat.devos-ade.localhost`: chat, documents/knowledge, images (if enabled) | automatic |
-| **Code** | On by default: Claude Code with a chat and your files, at `code.devos-ade.localhost` ([The Code page](#the-code-page)); while it is off the tab stays, muted, and says how to turn it on | the portal, then the portal password again (12 hours) |
+| **Code** | On by default: Claude Code with a chat and your files, at `code.devos-ade.localhost` ([The Code page](#the-code-page)); while it is off the tab stays, muted, and says how to turn it on | the web app, then the web app password again (12 hours) |
 | **Admin** | LiteLLM's UI at `admin.devos-ade.localhost/ui`: keys, spend by model and day, logs | automatic |
 | **Files** | The RustFS console at `files.devos-ade.localhost`: the shared object store | automatic |
 | **Git** | While the local git server is on (by default): its web UI at `git.devos-ade.localhost`, signed in as its owner — repositories, branches, issues and pull requests ([The built-in git server](#the-built-in-git-server-forgejo)); while it is off the tab stays, muted, and links to **Settings › Claude Code › Local git server** | automatic |
-| **Terminal** | While it is on (by default, as the Code page's sandbox): Claude Code in a sandbox, at `terminal.devos-ade.localhost` ([Claude Code in the browser](#claude-code-in-the-browser)) | the portal, then the portal password again (12 hours) |
-| **Settings** | Every setting of `.env`, secrets masked; change passwords, the owner email, the AWS key, budgets, voice, OpenRouter, the Code page, Claude Code's models, the sandbox's internet and updates; backups and diagnostics ([Settings](#settings); changes need the update helper) | the portal (each change asks for the password again) |
+| **Terminal** | While it is on (by default, as the Code page's sandbox): Claude Code in a sandbox, at `terminal.devos-ade.localhost` ([Claude Code in the browser](#claude-code-in-the-browser)) | the web app, then the web app password again (12 hours) |
+| **Settings** | Every setting of `.env`, secrets masked; change passwords, the owner email, the AWS key, budgets, voice, OpenRouter, the Code page, Claude Code's models, the sandbox's internet and updates; backups and diagnostics ([Settings](#settings); changes need the update helper) | the web app (each change asks for the password again) |
 
-One sign-in is all there is: the portal signs you in to every app, in its tab, a pop-out window, on the remote
-site and on a phone. Chat trusts the portal's word for who you are; for Admin and Files, which cannot, the portal
+One sign-in is all there is: the web app signs you in to every app, in its tab, a pop-out window, on the remote
+site and on a phone. Chat trusts the web app's word for who you are; for Admin and Files, which cannot, the web app
 signs in to LiteLLM and RustFS for you with the sign-ins it already holds and hands the app's own session to your
 browser on that app's address ([how](docs/security.md#automatic-sign-in-to-admin-and-files)). **Sign out** ends
-the portal session that every request to Admin and Files needs, and every Admin (LiteLLM) session made before it
+the web app session that every request to Admin and Files needs, and every Admin (LiteLLM) session made before it
 (also LiteLLM's own form's); the Files console's temporary credentials can stay valid in that browser for up to
-12 hours, of no use without a portal session. LiteLLM's and RustFS's own sign-ins still exist, as a fallback and for
+12 hours, of no use without a web app session. LiteLLM's and RustFS's own sign-ins still exist, as a fallback and for
 the API, under **Credentials** on Home:
 
 | Fallback sign-in | User | Password |
@@ -205,14 +205,14 @@ the API, under **Credentials** on Home:
 
 Home's **Credentials** copies them and opens each app's own form; an app's own **Logout** shows that form too
 (opening the app from Home again signs you in). A password changed inside LiteLLM's own UI is not known to the
-portal: set it in Settings as well, or the automatic sign-in to Admin stops (it then says so, with a link to the form).
+web app: set it in Settings as well, or the automatic sign-in to Admin stops (it then says so, with a link to the form).
 
 Each app stays open while you switch tabs; the arrow next to a tab opens it in its own browser tab. For more room,
-the button at the top of the sidebar (or **Ctrl+\\**, **⌘\\** on a Mac, with the focus in the portal) folds it to a
+the button at the top of the sidebar (or **Ctrl+\\**, **⌘\\** on a Mac, with the focus in the web app) folds it to a
 column of icons, as on a tablet: each icon names itself in a tooltip, Search, the Activity bell and the version stay,
 the walkthrough opens as a card beside the icons, and the apps get the width. The same button (or key) brings the names
 back; the browser remembers which you chose. If port 80
-is taken, the portal is on 8800 (`http://devos-ade.localhost:8800`) and setup says so. To change the
+is taken, the web app is on 8800 (`http://devos-ade.localhost:8800`) and setup says so. To change the
 password, use **Settings → Account & security** (or `./stack config set PORTAL_PASSWORD`). Setup prints the password once, and only
 in a terminal; piped into a log it prints where it is instead. Tools can use the LiteLLM API at
 `http://127.0.0.1:4000` (`LITELLM_PORT`; OpenAI- and Anthropic-compatible): [the models from your own
@@ -240,13 +240,13 @@ reloading the page shows the new version.
   in a terminal. The same menus are on the Code page's sessions, projects, files and changes, on Browse models, Settings
   rows, Activity and the tabs ([the list](docs/design.md#item-menus)).
 
-The Code page itself tells the portal which of its sessions Home may show — whenever it is open in a browser that
-unlocked it, framed in the Code tab or not — and the portal keeps that in memory only (gone at Sign out); when the Code
+The Code page itself tells the web app which of its sessions Home may show — whenever it is open in a browser that
+unlocked it, framed in the Code tab or not — and the web app keeps that in memory only (gone at Sign out); when the Code
 page has not been open for a while, Home says how old the list is. Chat's conversations come from Open WebUI's own list.
 
 **Get started** is a first visit's checklist, above Continue: sign in, add a model provider (or confirm Bedrock's),
 open Code and run a first session, open Chat and ask something, set a budget. Each step ticks itself off from what the
-portal sees — enabled chat models, a session the Code page reported, a conversation in Chat, a budget changed from its
+web app sees — enabled chat models, a session the Code page reported, a conversation in Chat, a budget changed from its
 default (or **Keep these**) — and offers its next action. **Full walkthrough** opens the whole tour; **Hide** puts the
 checklist away in this browser, and the walkthrough's head (*Get started on Home*) brings it back. A browser that used
 Home before Get started existed does not see it.
@@ -255,7 +255,7 @@ On a wide window Home is a dashboard, not one long page: Get started and Continu
 columns, then spend, services, models, sign-ins and the terminal's `devos-claude` in three; a long list scrolls inside its
 card. **Customize**, in Home's header, makes each card a widget you can hide, move and resize (drag, or the keyboard:
 arrows move, Shift with the arrows resizes, H hides); a tray brings hidden ones back and **Reset to default** returns Home to
-this layout. Your arrangement is kept in the portal for each kind of screen (desktop, tablet, phone). Settings' **Models & providers** is four tabs (**Keys**, **Subscriptions**, **Local models**, **Search**), and **Browse models** a grid.
+this layout. Your arrangement is kept in the web app for each kind of screen (desktop, tablet, phone). Settings' **Models & providers** is four tabs (**Keys**, **Subscriptions**, **Local models**, **Search**), and **Browse models** a grid.
 A phone keeps one column.
 
 ### Send feedback
@@ -279,7 +279,7 @@ Back and Next pinned to its bottom.
    host** for the Code page (Sign in with GitHub or GitLab, an access token or an SSH key it makes; **Open Git hosts**
    opens its dialog), each app's budget, and extras (the desktop app, one-click updates). Each step shows its live
    status and the commands to run, with Copy buttons.
-2. **Your apps (one sign-in):** the portal password is the only one you type; Chat, Admin (on Virtual Keys) and
+2. **Your apps (one sign-in):** the web app password is the only one you type; Chat, Admin (on Virtual Keys) and
    Files (on its buckets) open signed in, and opening each one ticks its step off. Admin's and Files' own sign-ins
    are folded away under **Credentials**, with Copy buttons and a link to each app's own form, for the API or in
    case the automatic sign-in ever fails.
@@ -295,10 +295,10 @@ Back and Next pinned to its bottom.
    menu on each page, the switch for your Claude plan, what is greyed out — a link to where it is turned on) and the
    store Claude Code and Chat
    share.
-6. **Keep it running:** Home, Activity and search, where the money went, updates, backups and rollback, and the portal
+6. **Keep it running:** Home, Activity and search, where the money went, updates, backups and rollback, and the web app
    from your phone.
 
-Steps tick off by themselves where the portal can tell (models enabled; OpenRouter, voice or remote access on; Chat,
+Steps tick off by themselves where the web app can tell (models enabled; OpenRouter, voice or remote access on; Chat,
 Admin or Files opened; a key's spend going up; a git host connected, as the Code tab reports it; the update helper
 running); the others have **Mark as done** or **Skip**. Progress is kept in this browser only; closing the walkthrough
 leaves the button with your progress, and **Start over** at the end resets it.
@@ -327,7 +327,7 @@ what you have not read yet, and its panel lists, newest first:
 
 **Mark as read**, **Mark all as read** and **✕** (dismiss; **Show dismissed** brings them back) are kept in this
 browser only. **Browser notifications** in the panel are off until you turn them on (the browser asks once): then a new
-item raises one while a portal tab is open but you are not looking at it — never for what was there already, never
+item raises one while a web app tab is open but you are not looking at it — never for what was there already, never
 when the tab is closed (there is no push service). A notification says only what kind of thing happened ("A Code
 session needs you", "A job failed", "Budget alert: Claude Code at 85 %"), never a session's title, a prompt or a job's
 message, which can show on a lock screen: those stay in the panel. A click on a Code session's notification opens
@@ -335,31 +335,31 @@ that session in the Code tab; on a phone, a session that waits for you is also a
 with **Answer**.
 
 **Search** (**Ctrl+K**, **⌘K** on a Mac, or the box at the top of the sidebar; on a phone **More → Search**) finds, as
-you type: the portal's pages and **Check for updates**, every Settings section and setting by name or key (Enter opens
+you type: the web app's pages and **Check for updates**, every Settings section and setting by name or key (Enter opens
 it, lit up), Code
 sessions and **workspace file names** (asked from the Code tab while this browser has it open; Enter opens the file in
 its editor), **Chat conversations** (Open WebUI's own search), the local git server's **Git** repositories (name, description), issues and pull requests (titles; Enter opens it in the Git tab, `#git/<owner>/<repo>/issues/<number>`), the walkthrough's steps, and the sections of this README
-and `docs/` (on GitHub, as of your release; indexed when the portal's image is built). Where a setting is changed
+and `docs/` (on GitHub, as of your release; indexed when the web app's image is built). Where a setting is changed
 comes first: when the words you type start words of a Settings section's or setting's title, Settings is listed above
-the walkthrough and the docs, its sections first (*budget* → **Spending & budgets**). The Git group does not search code: the git server's code indexer is off unless `LOCALGIT_INDEXER=true` is in `.env` (then the search offers the server's own code search); if the git server does not answer, one **Search in Git** entry opens the Git tab. ↑ ↓ choose, Enter opens, Esc closes. Ctrl/⌘+K works while the focus is in the portal itself: inside the Chat
+the walkthrough and the docs, its sections first (*budget* → **Spending & budgets**). The Git group does not search code: the git server's code indexer is off unless `LOCALGIT_INDEXER=true` is in `.env` (then the search offers the server's own code search); if the git server does not answer, one **Search in Git** entry opens the Git tab. ↑ ↓ choose, Enter opens, Esc closes. Ctrl/⌘+K works while the focus is in the web app itself: inside the Chat
 or Code tab the key goes to that app (Open WebUI and the Code page have a Ctrl+K of their own) — click the sidebar's
 search box there. Nothing typed there is sent outside your stack (over remote access it goes from your device to the
-portal, like everything else); [docs/security.md](docs/security.md#activity-and-search) says what each part reads.
+web app, like everything else); [docs/security.md](docs/security.md#activity-and-search) says what each part reads.
 
 ### Desktop app
 
-Install the portal as an app and it gets its own window, its own icon in the Dock (macOS) or taskbar, a place
-in Cmd-Tab / Alt-Tab, and it stays put when you minimize it. It is the same portal (same sign-in, Chat's
+Install the web app as an app and it gets its own window, its own icon in the Dock (macOS) or taskbar, a place
+in Cmd-Tab / Alt-Tab, and it stays put when you minimize it. It is the same web app (same sign-in, Chat's
 microphone keeps working), kept by your browser.
 
-- **Install:** open the portal in Google Chrome or Microsoft Edge (`./stack open` does this) and click
+- **Install:** open the web app in Google Chrome or Microsoft Edge (`./stack open` does this) and click
   **Install app** at the bottom of the sidebar, or on Home. The button only shows when the browser can install
   it; otherwise use **⋮ → Cast, save and share → Install page as app** (Chrome) or **⋯ → Apps → Install this
   site as an app** (Edge). On macOS the app lands in `~/Applications/Chrome Apps.localized/` (Edge:
   `Edge Apps.localized`); keep it in the Dock with right-click → **Options → Keep in Dock**. On Linux it is
   added to your applications menu. Safari on macOS: **File → Add to Dock**.
 - **Open it:** from the Dock, Launchpad, Spotlight or the applications menu, or with `./stack open`, which
-  opens the installed app when it finds one and otherwise the portal as a tab in your everyday browser profile
+  opens the installed app when it finds one and otherwise the web app as a tab in your everyday browser profile
   (with a one-time tip on how to install it). The app's **Chat** and **Home** shortcuts are on its Dock icon's
   right-click menu.
 - **Once it is installed, a browser tab says so:** instead of **Install app**, the sidebar and Home show **Open
@@ -372,14 +372,14 @@ microphone keeps working), kept by your browser.
   catches up when you come back to it. Uninstall it and the tab offers **Install app** again. On Android, Home
   says where the app is (home screen, or **⋮ → Open in app**): there is no link that opens an installed web
   app there. Inside the app there is neither button. An app installed before this version learns its link when
-  the browser next refreshes it from the portal's manifest (it does so when the app or a portal tab loads);
+  the browser next refreshes it from the web app's manifest (it does so when the app or a web app tab loads);
   until then **Open in the app** falls back to the list on Home. Answered **Don't allow** with *Remember this
   choice*? Chrome then never opens the app from the link: uninstall and reinstall the app (your data is in the
   stack, not in the app), or try removing DevOS ADE under `chrome://settings/handlers` (Edge:
   `edge://settings/content/handlers`). If the same copy is installed in both Chrome and Edge, the operating
   system gives the link to one of the two apps.
-- **Several copies:** each portal address is its own app: `DevOS ADE` for the default one, `DevOS ADE
-  (bn-dev)` for a copy with `COMPOSE_PROJECT_NAME=bn-dev`, `DevOS ADE (port 8800)` when the portal is not on
+- **Several copies:** each web app address is its own app: `DevOS ADE` for the default one, `DevOS ADE
+  (bn-dev)` for a copy with `COMPOSE_PROJECT_NAME=bn-dev`, `DevOS ADE (port 8800)` when the web app is not on
   port 80 (an app installed before v0.25.0 is named `bedrock-now` until you accept its new name and icon when the
   browser offers them; `./stack open` finds it under either). If you rename the app in the install dialog,
   `./stack open` will not find it (it opens a tab). Each
@@ -392,10 +392,10 @@ microphone keeps working), kept by your browser.
 
 ### Using it on your phone
 
-The portal is a web app you can put on your home screen. The stack only listens on this computer by default,
+The web app can be put on your home screen. The stack only listens on this computer by default,
 so a phone needs remote access (HTTPS) turned on first; a tablet or a small browser window works the same way.
 
-- **Install it:** on an iPhone or iPad, open the portal in Safari, tap **Share → Add to Home Screen**. On
+- **Install it:** on an iPhone or iPad, open the web app in Safari, tap **Share → Add to Home Screen**. On
   Android, open it in Chrome and tap **⋮ → Install app** (Chrome offers this over HTTPS only; over plain
   http it can still add a shortcut). It opens full screen with the DevOS ADE icon, like any other app.
 - **Phone layout:** a tab bar at the bottom with **Home**, **Chat**, **Code** and **More**. The first sign-in
@@ -405,13 +405,13 @@ so a phone needs remote access (HTTPS) turned on first; a tablet or a small brow
   an **Enabled only** filter, on by default on a phone). Chat and Code fill the screen and shrink above the keyboard,
   so the message box stays visible.
 - **Code on a phone** is the Code page's own phone layout (the chat first; files, the editor, Git and the rest as
-  sheets), unlocked once with the portal password. When a session waits for you (a permission card, a question, a
+  sheets), unlocked once with the web app password. When a session waits for you (a permission card, a question, a
   plan), the **Code** tab shows a badge, the other tabs a banner with **Answer**, and opening Code goes straight to that
   session with its card in view: **Allow once** and **Deny** are full-width buttons at the bottom of the card. While the
   Code page is off (or off for remote access) the tab shows *off* and says how to turn it on.
 - **More** in the tab bar holds the rest: Settings, **Activity** (a dot on More while something is unread),
   **Search** and the walkthrough; then, under *In a new tab*, Admin and Files (desktop apps: they open in a new browser
-  tab, already signed in; from an iPhone or iPad Home Screen app they open in Safari, which asks for the portal
+  tab, already signed in; from an iPhone or iPad Home Screen app they open in Safari, which asks for the web app
   password once) and the Terminal while it is on (full screen); and **Sign out**.
 - **Over remote access** (so on a phone) Update, Rollback, Clean, the automatic-updates switch, Settings changes
   and Diagnostics are off unless `REMOTE_ADMIN_ACTIONS=true`; Home then says to use a desktop browser on the
@@ -578,7 +578,7 @@ never chose) turns it on with the workspace `~/devos-ade-workspace` (a second co
 The stack must be running to turn it on. The first `enable` builds the sandbox's image on your computer (a few
 minutes); a later `enable` without `--workspace` keeps the folder it had.
 
-This is the **Terminal** tab of the portal (on a phone: **More → Terminal**, full screen): `devos-claude` in a
+This is the **Terminal** tab of the web app (on a phone: **More → Terminal**, full screen): `devos-claude` in a
 tmux session, set up like the one on your computer (same models — `--models`, `--model`, the `/model` menu, read from
 LiteLLM's `/model/info` — the shared MCP server, the cost line and the session cost on exit; plain `claude` there keeps
 Claude Code's own `/model` lineup), but with **its own LiteLLM key**, `claude-code-terminal`, and its own monthly budget
@@ -610,7 +610,7 @@ terminals in a split (**Add a terminal**; the extra views are tmux sessions grou
 detaches), a **key bar** (Esc, Tab, Ctrl, Alt, arrows, Home, End, PgUp, PgDn, Ctrl-C, Ctrl-b: on by default on a phone and a
 tablet) that sends to the terminal you used last, up to 20 **quick commands** (a click types it; Enter only if you marked it
 Run) and your **projects** (**Open a shell here**). A small script in the terminal's page (`terminal/ttyd-keys.js`, allowed
-by its hash) takes these from the portal page alone. Until you customize, the tab is one terminal as before.
+by its hash) takes these from the web app page alone. Until you customize, the tab is one terminal as before.
 
 It is a sandbox, not a shell on your computer:
 
@@ -627,7 +627,7 @@ It is a sandbox, not a shell on your computer:
   to 4 GB of memory (`TERMINAL_MEM_LIMIT` in `.env`).
 - Inside the stack its only neighbour is its own gateway (a second, minimal Caddy), which passes just what Claude
   Code needs — LiteLLM's Anthropic API, model list and key info, and the shared MCP server's `/mcp` — and answers
-  404 to everything else: LiteLLM's admin UI and API, the Bedrock pass-through, the portal and its login, Open
+  404 to everything else: LiteLLM's admin UI and API, the Bedrock pass-through, the web app and its login, Open
   WebUI, the databases. It never holds the master key or the `claude-code` key of `devos-claude` on your
   computer, and its own key works only for those LiteLLM paths, wherever it is used.
 - Out, it reaches **public internet addresses only** (git clone, npm, pip, Claude Code's web fetch), through an
@@ -639,7 +639,7 @@ It is a sandbox, not a shell on your computer:
   access** (`TERMINAL_EGRESS`) offers three choices: **Internet only** (the default), **+ this computer**
   (`host`: the sandbox on the internet itself, on any address and port, as v0.10.0 and earlier always had it — then
   this computer's own services are reachable from it: on Docker Desktop everything on its `127.0.0.1`, such as LiteLLM
-  on port 4000, still with its own key's limits, the shared MCP server, the portal's login and any dev server; on
+  on port 4000, still with its own key's limits, the shared MCP server, the web app's login and any dev server; on
   Linux what listens on every address; and so are the Docker API if you exposed it and your network) and **Off** (only
   LiteLLM and the shared MCP server). Opening it further works only from this computer. `TERMINAL_EGRESS_ALLOW` (only
   these names, each with the names under it; `name:PORT` allows that name on that port instead of 80, 443 and 22,
@@ -647,7 +647,7 @@ It is a sandbox, not a shell on your computer:
   it is set, no IP addresses either) in `.env`, then `./stack up`, narrow it further. The sandbox's internal networks
   resolve no outside names (no way out by DNS) with Docker Engine 26.0 or later (25.0.4, 23.0.11; Docker Desktop 4.29
   and later); `./stack test` says so on an older one.
-- Opening it asks for the **portal password again**; that unlock lasts 12 hours in that browser, and Sign out
+- Opening it asks for the **web app password again**; that unlock lasts 12 hours in that browser, and Sign out
   ends it. Another website cannot drive it with your cookies: the terminal accepts connections only from its own
   page. Whatever answers there, its page runs only ttyd's own script and can set or clear no cookies.
 - Over [remote access](#remote-access) it is **off** unless you set `REMOTE_TERMINAL=true` in `.env` (then
@@ -669,7 +669,7 @@ It is a sandbox, not a shell on your computer:
 `./stack terminal disable` removes the container and turns the Code page off too; the folder, Claude Code's history
 (the `terminal-home` volume, your AI subscriptions' logins with it: [below](#your-ai-subscriptions)) and the key stay
 (delete the key in Admin to revoke it). Every `enable` and `disable`
-restarts the portal and Caddy (open apps reload), and the first `enable`, and `disable`, also LiteLLM and the shared
+restarts the web app and Caddy (open apps reload), and the first `enable`, and `disable`, also LiteLLM and the shared
 MCP server (they join or leave the terminal's gateway network): Chat answers, `devos-claude` requests and MCP
 sessions in progress drop for a few seconds. Details and what was weighed:
 [docs/security.md](docs/security.md#the-browser-terminal).
@@ -727,7 +727,7 @@ from the computer running the stack).
 
 - **Terminal**: *Open* above it — Claude Code on Bedrock, a shell, or one of your tools, each in a tmux window of its
   own (one that is not signed in starts with its sign-in). The Code page's terminal panel has the same *Open…* menu,
-  in the project's folder. A tool starts only on your click of the button beside the menu (*Open*), never on a choice: the portal then makes a short-lived launch token for
+  in the project's folder. A tool starts only on your click of the button beside the menu (*Open*), never on a choice: the web app then makes a short-lived launch token for
   exactly that; a link to the terminal with a tool in it but no such token only asks *Open … here?*.
 - **Chat**: each subscription that is signed in is **a model in Open WebUI's own menu** — *Codex · your ChatGPT plan*,
   *GitHub Copilot · your Copilot plan*, *Grok*, and *Claude · your Claude plan* while its switch is on (not Cursor: it
@@ -853,7 +853,7 @@ mark their panes): a guard against reading one by accident, not a boundary. Whic
 ./stack code enable --workspace ~/projects # on again, or another folder for its sandbox
 ```
 
-The **Code** tab sits in the portal directly under Chat (on a phone: in the tab bar, beside Chat): Claude Code
+The **Code** tab sits in the web app directly under Chat (on a phone: in the tab bar, beside Chat): Claude Code
 in an IDE-like page instead of a terminal — your projects and an explorer of the shown project's folder on the
 left, an editor (CodeMirror) in the middle, the chat on the right and the sandbox's terminal in a bottom panel
 (`Ctrl+\``); on a tablet the chat and one of explorer/editor, on a phone the chat first with files, editor and diffs
@@ -889,12 +889,12 @@ Settings**, which opens Settings at the Code page's switch, with `./stack code e
 from the Code page's host. Over remote access without `REMOTE_TERMINAL=true` it says how to allow it there.
 
 The first `enable` builds the page's image (a few minutes; with the terminal off, the stack must be running to turn
-it on). `enable` and `disable` restart the portal, Caddy and Open WebUI (open apps reload; Open WebUI for its
+it on). `enable` and `disable` restart the web app, Caddy and Open WebUI (open apps reload; Open WebUI for its
 connection to your subscriptions as Chat models: chats in progress drop for a few seconds) but not the terminal: its tmux session
 goes on (only a terminal container from before v0.5.0, without the page's spawn server, is restarted once, and
 `--workspace` with another folder recreates it).
 
-From the portal: **Settings → Claude Code → Code page: On** (only on the computer running DevOS ADE; **Off** works from
+From the web app: **Settings → Claude Code → Code page: On** (only on the computer running DevOS ADE; **Off** works from
 anywhere). The update helper runs `./stack code enable` / `disable` for you. With the browser terminal off, **On**
 turns it on too, with the folder Settings names before you confirm (the terminal's `TERMINAL_WORKSPACE`, or
 `~/devos-ade-workspace`); another folder is chosen in a terminal (`./stack code enable --workspace DIR`, or
@@ -1174,7 +1174,7 @@ this computer can be copied into the sandbox and go on there, on any model of th
 written back to those folders.
 
 - **Where**: a folder of this computer's ⋯ › **Import sessions from this computer…** (or the line under its sessions),
-  three steps. *Look on this computer* (the portal password again: the portal checks it and hands the request to the
+  three steps. *Look on this computer* (the web app password again: the web app checks it and hands the request to the
   [update helper](#updating) — the Code page's own server never sees it) asks the helper, which asks
   **you, on this computer's screen**, first: *Don't allow*, *Allow once* (that look, for an hour) or *Always for this
   folder* — then lists the sessions: titles, dates, sizes. *Pick* the ones to copy. *Check and copy*: each one read in,
@@ -1198,7 +1198,7 @@ written back to those folders.
   calls and their results' ids stay, so the session resumes as it was (Claude can run a tool again when it needs what
   it saw). Tick **Include tool outputs** on the sheet (`./stack sessions import … --with-tool-outputs` in a terminal)
   to bring those outputs, scanned and redacted as below — on the computer itself, or from another device with the
-  portal password; the sheet says how many things were left out, and shows the transcript exactly as it would be
+  web app password; the sheet says how many things were left out, and shows the transcript exactly as it would be
   copied.
 - **Possible secrets** (AWS keys, Amazon Bedrock API keys, GitHub, GitLab, Slack, Anthropic, OpenAI, Google, Stripe,
   SendGrid, npm, PyPI, Hugging Face, DigitalOcean, Shopify, Linear and Atlassian tokens, Slack webhooks, Azure keys,
@@ -1208,7 +1208,7 @@ written back to those folders.
   `api_key`, `X-Api-Key` …, or a `name`/`value` pair such as Kubernetes' env — and `.env`-style lines with a random
   value) are listed per session — what kind, where, and its length; for a token only its public start (`ghp_…`),
   never anything of a password — and **redacted by default** (`[REDACTED:<kind>]`). Untick one to keep it as it is:
-  that copy needs the portal password (the update helper makes it). The transcript and its subagents' transcripts alike
+  that copy needs the web app password (the update helper makes it). The transcript and its subagents' transcripts alike
   (and the tool outputs, when you include them); a file beside it that cannot be read so, or of a kind the copy does
   not keep, stays behind. What you chose holds for the session as it was checked: read again, it is checked again. **The
   redaction is a best-effort safety net, not a guarantee**: a secret in a shape the scan does not know, or in prose,
@@ -1239,7 +1239,7 @@ email — into the sandbox's own configuration, one way: nothing is ever written
 
 - **Where**: the ⋯ menu › **Bring your setup from this computer…** (also a project's ⋯, the command palette,
   Settings › Claude Code › **Bring your setup…**, and the Git panel's *Use yours from this computer…* next to the
-  name its commits are made with), three steps as the Import sheet's. *Look on this computer* (the portal password
+  name its commits are made with), three steps as the Import sheet's. *Look on this computer* (the web app password
   again; the [update helper](#updating) asks **you, on this computer's screen**, first — *Allow once* or
   *Always*) lists names and sizes only. *Pick and open* the ones you want: only those are read. *Check and copy*:
   each one as it will be, before anything reaches the sandbox. Without the helper: `./stack sessions config import`
@@ -1265,12 +1265,12 @@ email — into the sandbox's own configuration, one way: nothing is ever written
   (`allowed-tools`, `permissionMode: bypassPermissions`, hooks, MCP servers) and the ``!`…` `` commands it runs, a
   stdio MCP server's command line (it starts with every session), an MCP server on `localhost` or a private address
   (not reachable with *Internet only*), one that signs in with OAuth (sign in again in the sandbox: `/mcp`). From a
-  phone or another computer, copying what lets Claude act without asking needs the portal password too.
+  phone or another computer, copying what lets Claude act without asking needs the web app password too.
 - **Possible secrets**: in a copied file or setting they are listed (as the Import sheet's) and redacted unless you
   keep one; an MCP server's `env` and `headers` values that look like a secret — by their name or their shape — are
   each **left out** unless you tick *copy into the sandbox (Claude could read it)*; one in its URL or arguments — a
   capability URL's random path too — keeps the server out unless you keep it, and a plugin marketplace's URL with a
-  token is not added unless you keep it (such URLs are shown masked). Keeping one needs the portal password (the
+  token is not added unless you keep it (such URLs are shown masked). Keeping one needs the web app password (the
   update helper makes that copy).
 - **The sandbox's own is kept**: permission rules and hooks are added to its `settings.json` (a later copy replaces
   only what DevOS ADE added from that tool, and lists what it takes out first); any other file, a skill's folder, a server of the same name or a Git name the
@@ -1421,7 +1421,7 @@ too.
   on works only from the computer running DevOS ADE), and every switch to it asks first, in a dialog that names
   what it means here: the workspace is your real folder (git hooks, package scripts and editor settings in it run on
   your computer later), the sandbox's internet access, and the budget. While it is on a red strip sits above the prompt
-  box (*Switch to Manual*), the tab title starts with ⏵⏵ and the portal's Code badge turns red; it ends with the
+  box (*Switch to Manual*), the tab title starts with ⏵⏵ and the web app's Code badge turns red; it ends with the
   session's process (an idle stop, a resume: *Manual* again; new sessions start in your usual mode, never in Bypass).
   Over remote access it works too once allowed on the computer, and the dialog says you are remote. One mode switch
   runs at a time (pressed again meanwhile, the last one goes next), and a switch Claude Code refuses is taken back in
@@ -1547,8 +1547,8 @@ without GitHub or an off-site GitLab. It is on by default (**Settings › Claude
 SQLite, no SSH, no registration, no mail) with its repositories in a Docker volume of its own (`gitdata`: `./stack
 uninstall` removes it, turning the server off keeps it).
 
-- **Its web UI** is at `git.<your portal host>` (`http://git.devos-ade.localhost`), behind the portal's sign-in like Admin
-  and Files, and it is the portal's **Git** tab: in the sidebar after Files (on a phone under **More**), with an arrow to open
+- **Its web UI** is at `git.<your web app host>` (`http://git.devos-ade.localhost`), behind the web app's sign-in like Admin
+  and Files, and it is the web app's **Git** tab: in the sidebar after Files (on a phone under **More**), with an arrow to open
   it in its own window. The tab opens a place with an address `#git/<owner>/<repo>`, `…/issues`, `…/issues/<number>`, `…/pulls`,
   `…/pulls/<number>` or `…/src/branch/<name>/…` (the search uses these; other places are not opened from an address). Local
   access only: the remote site has no git host, so there the tab says so. With the server off the tab stays, muted, and
@@ -1588,18 +1588,18 @@ uninstall` removes it, turning the server off keeps it).
   are unaffected), so nothing a terminal or Claude does can rewrite it there. A branch the server would not take (it has commits the project does not) is shown as *the local git server has
   commits this project doesn't — pull first* and left alone. Automatic pushes stop, and the panel says why, if the remote is
   ever pointed anywhere but that repository. The panel shows where it is kept, when it was last pushed and what has not been,
-  **Push now**, **Open in Git** (the portal's Git page), **Issues** and **Pull requests**, a switch for the automatic
+  **Push now**, **Open in Git** (the web app's Git page), **Issues** and **Pull requests**, a switch for the automatic
   pushes and **Stop keeping it here** (the remote goes; the repository stays on the server). *Not for this project* is
   remembered; the project's menu still has *Keep on your local git server…*. Claude is told a kept project is pushed by itself
   and not to publish it elsewhere unless asked, and to commit finished work at the end of a task: **a kept project pushes commits, not
   uncommitted changes**, so a file that was only saved in the editor or the terminal is not on the server until it is committed.
 - **Search.** The global search's **Git** group lists repositories (name, description) and issues and pull requests
-  (titles). The portal server asks Forgejo's API for them with a **read-only token** of the owner account (`read:repository`,
+  (titles). The web app server asks Forgejo's API for them with a **read-only token** of the owner account (`read:repository`,
   `read:issue`; `LOCALGIT_READ_TOKEN` in `.env`, made by `./stack up` and made again if the server stops accepting it): only
-  the portal container has it, never your browser, the terminal or the Code page. Code is not searched unless you turn
+  the web app container has it, never your browser, the terminal or the Code page. Code is not searched unless you turn
   Forgejo's repository indexer on (`LOCALGIT_INDEXER=true`, then `./stack up`).
-- **Signed in by the portal.** Opening the web UI with your portal session signs you in as `devos` — no password
-  (Caddy adds Forgejo's reverse-proxy sign-in header after the portal's check, on that site only; the header's name is a
+- **Signed in by the web app.** Opening the web UI with your web app session signs you in as `devos` — no password
+  (Caddy adds Forgejo's reverse-proxy sign-in header after the web app's check, on that site only; the header's name is a
   random secret (`LOCALGIT_SSO_HEADER`) known only to Caddy and Forgejo, so no other container can forge it; the sandbox's
   gateway also strips `X-Webauth-*`). The owner password in `.env` stays as a fallback.
 - **Mirroring to GitHub or GitLab** (Forgejo's own repository mirroring), from this computer:
@@ -1733,7 +1733,7 @@ neither — GitHub only asks a GitHub App for one key before it can be installed
 The settings change only from the computer running DevOS ADE (another app is another party you would authorize).
 
 The credentials are kept by the code container, in its own volume (`<project>_code-state`): not in `.env`, not in the
-portal, not in backups, never in the sandbox. They are stored there unencrypted (a file of mode 600): anyone who can
+web app, not in backups, never in the sandbox. They are stored there unencrypted (a file of mode 600): anyone who can
 read Docker's volumes on this computer can read them — revoke a token or key you think was exposed. A push, pull,
 fetch or clone you start gets its host's credential for that one operation, through a channel only that git process
 has, and only for the host of the URL you confirmed — the repository's configuration cannot send it elsewhere (URL
@@ -1811,7 +1811,7 @@ remote switch (`REMOTE_TERMINAL`) — so `enable` turns the terminal on when it 
 disable` turns the Code page off with it. The page itself comes from a separate container that holds no LiteLLM
 key and mounts no folder of yours: Claude Code runs in the sandbox (started there by a small spawn server on a
 socket only the two containers share), the files you see are read and written there, and the costs it shows come
-from LiteLLM's spend logs through the portal. Opening it asks for the portal password again (12 hours per
+from LiteLLM's spend logs through the web app. Opening it asks for the web app password again (12 hours per
 browser; Sign out or a new password locks it). That one unlock also opens its terminal panel: the page hands it to
 the terminal's host with a one-time link (valid for a minute), which unlocks the terminal — the Terminal tab too —
 until the Code page's unlock ends; the terminal's own unlock never opens the Code page.
@@ -1863,7 +1863,7 @@ SSH into the machine from a phone SSH app (Blink or Termius on iOS, Termius or J
 -A -s claude` and run `devos-claude` in it; a dropped connection then loses nothing. Tailscale on both devices makes
 this work from anywhere without open ports. `./stack ssh-info` prints the exact commands for this machine (its
 Tailscale name, the SSH command, apps, mosh). Without SSH, the optional [browser
-terminal](#claude-code-in-the-browser) runs Claude Code in a sandbox from the portal's More menu. Claude
+terminal](#claude-code-in-the-browser) runs Claude Code in a sandbox from the web app's More menu. Claude
 Code's Remote Control doesn't work with Bedrock or a custom API URL. A sleeping Mac answers no SSH: `./stack serve`
 keeps the stack up and the Mac awake (on AC power, lid open) until Ctrl-C (`--background` without a terminal, `--stop`
 ends that; on Linux only laptops get a sleep inhibitor, in the foreground). Step by step, incl. the lid-closed
@@ -1915,7 +1915,7 @@ print(m.content[0].text)
 Tools that read the usual variables take `OPENAI_BASE_URL` and `OPENAI_API_KEY`, or `ANTHROPIC_BASE_URL` and
 `ANTHROPIC_API_KEY`. LiteLLM's port listens on `127.0.0.1` only: tools on other devices cannot reach it. Over [remote
 access](#remote-access) LiteLLM is the **Admin** site (`-admin` of your tailnet name, or `admin.` of your domain),
-behind your portal sign-in: a page for you, not an endpoint for tools. Keep keys out of code you share.
+behind your web app sign-in: a page for you, not an endpoint for tools. Keep keys out of code you share.
 
 ## Settings
 
@@ -1924,7 +1924,7 @@ by what you came to do — a list on the left (on a phone, a section picker at t
 
 | Section | What is in it |
 |---|---|
-| **Account & security** | portal password, owner email, Admin (LiteLLM) password, session length, **Serve the portal over HTTPS**, signed-in devices, storing prompts |
+| **Account & security** | web app password, owner email, Admin (LiteLLM) password, session length, **Serve the web app over HTTPS**, signed-in devices, storing prompts |
 | **Models & providers** | a card for each provider: Bedrock (the AWS key, with *Check*, or this EC2 machine's role), OpenRouter (its key and models), Experiential Labs (its key and models) and *Your AI subscriptions* (Claude, Codex, Copilot, Cursor, Grok, Gemini: Sign in, Sign out, Check again; Claude's *Use my Claude plan*); *Search*: Claude Code's WebSearch and its backends (the built-in SearXNG, AgentCore Web Search, Tavily, Brave Search, Perplexity, your own SearXNG; each with an **i** for its cost, what it sends and where its key comes from) — [below](#models--providers); *More*: OpenRouter's cap and aliases |
 | **Bedrock (AWS)** | the region, **Re-check models** |
 | **Spending & budgets** | the budgets of Chat, `devos-claude` and the Terminal/Code page (with this period's spend), alert threshold and webhook; *More*: the setup key's budget, daily price updates |
@@ -1948,13 +1948,13 @@ Code page's *Auto mode*, everything of remote access); rare ones are folded unde
 lists the plain settings whose value differs from `.env.example`'s (a blank value counts as the default; keys and
 passwords are never compared). A link can open a section or a setting: `#settings/spending`,
 `#settings/CODE_ENABLED` (the walkthrough and Home use them). Plain values are shown as they are; secrets only as
-*set* (with the last four characters of generated keys and the `AKIA…` ends of the AWS key ID). The portal never
+*set* (with the last four characters of generated keys and the `AKIA…` ends of the AWS key ID). The web app never
 reads `.env`: `./stack` writes a masked copy, `.state/status/settings.json`, whenever `.env` changes (the page shows
 "as of"); where each key is shown comes from `catalog/settings-layout.tsv`.
 
 **What you can change here**, each with what it restarts and for how long:
 
-- the portal password (this browser stays signed in, every other device signs in again), the owner email (the
+- the web app password (this browser stays signed in, every other device signs in again), the owner email (the
   same Chat account keeps its chats; the Admin sign-in follows), the Admin (LiteLLM) password, how many days a
   sign-in lasts (1-90), storing prompts; **Sign out other devices** and **Sign out everywhere**;
 - the AWS access key (checked with AWS first, including Bedrock access, free; a key of another AWS account needs a
@@ -1993,20 +1993,20 @@ reads `.env`: `./stack` writes a masked copy, `.state/status/settings.json`, whe
   service, a status report to
   copy (your home folder shown as `~`; no secrets, emails, tailnet names or account numbers).
 
-Reveal/Copy works only for values the portal already holds (the Admin and Files sign-ins, the three LiteLLM keys,
+Reveal/Copy works only for values the web app already holds (the Admin and Files sign-ins, the three LiteLLM keys,
 the shared MCP token), after the password again. **Advanced** and **About this install** are read-only, with the
 reason and the command that changes each value (ports, host names, internal secrets, what setup derived). Restoring
 a backup stays a terminal command (`./stack restore`): it replaces every chat, key and file with an older state.
 
-**Before the password.** Save asks for the portal password only for a real change: an empty key or a value a setting
+**Before the password.** Save asks for the web app password only for a real change: an empty key or a value a setting
 already has says so under its field instead, as does a key of the wrong shape. A provider's key — OpenRouter,
-Experiential Labs, OpenAI or Groq for speech-to-text — is first asked of that provider by the portal (the free call
+Experiential Labs, OpenAI or Groq for speech-to-text — is first asked of that provider by the web app (the free call
 setup makes, within 8 seconds): a key it rejects is said under the field with where keys come from, and stays in the
 field for a fix; when the provider does not answer in time, **Save anyway** hands it to the helper, which checks it
 again. Each key's form links to where its keys come from (*Get a key at …*) and shows their shape (`sk-or-v1-…`). A
 change the helper refuses opens its form again, with what you typed and the reason under the field.
 
-**How a change is applied.** Changes need the [update helper](#updating) (`./stack helper install`): the portal
+**How a change is applied.** Changes need the [update helper](#updating) (`./stack helper install`): the web app
 writes a small request, and the helper — outside Docker, as you — checks it again (the password against its own
 copy, the allowlist, each value) and runs `./stack config apply`: the live checks first, one `.env` write, only
 the restarts the change needs, free checks of the result, and on any failure the previous values back.
@@ -2051,7 +2051,7 @@ models**.
 OpenRouter and Experiential Labs offer with your keys, the way you would search each provider's own site — by name, id
 or vendor — with every model's price per million tokens, context window, tool use, image input and how it works with
 Claude Code, and filters (provider, free or paid, output price, context size, tool use, image input, *works with Claude
-Code*). Each row shows whether it is in your pickers now, with **Add** and **Remove**; a change goes through your portal
+Code*). Each row shows whether it is in your pickers now, with **Add** and **Remove**; a change goes through your web app
 password and the update helper like any other, and only the model gateway restarts, so the model then shows everywhere
 — Chat, the Code page, the terminal and `devos-claude --models`. You can add several Experiential Labs models, pick
 OpenRouter's as a list, and serve Bedrock models beyond the built-in catalog (a foundation model or inference profile
@@ -2065,7 +2065,7 @@ list inference profiles still gets Claude by its usual `us.` id, checked with `b
 may and otherwise marked **Not confirmed**. **Read again** reads every list fresh; it answers within seconds, so
 when openrouter.ai is slow (over 15 s) the copy read before stays, and the page says so. **Try it** makes one short, capped call
 and shows the cost first; it never runs on an expensive model (Opus included) without you confirming. The lists are
-read on the computer running DevOS ADE, never in your browser and never with a provider key in the portal (Bedrock's
+read on the computer running DevOS ADE, never in your browser and never with a provider key in the web app (Bedrock's
 through a one-off, read-only model-gateway container; Experiential Labs' with your key the same way the gateway is
 always called; OpenRouter's from its public list), cached about an hour and refreshed in the background
 ([docs/security.md](docs/security.md#the-model-browser)).
@@ -2085,7 +2085,7 @@ shown masked. Their old places — the AWS key in *Bedrock (AWS)* (*AWS & models
 **Model servers.** Besides downloading to this computer, the same section points the gateway at any OpenAI-compatible
 server by address: `./stack local-models server add lab http://10.0.0.5:8000` (this computer's own is `localhost`, which the
 gateway reaches as `host.docker.internal`), then `server key lab` for a key, `server enable lab '*'` (or one model id) and
-`server rm lab`; Settings › Models & providers › Local models has the same as a form: **This computer** first, then each server (reachable or not and why, a box for each model it serves, Edit key, Remove), and **Add a server** (address, optional name and key, a trust box for https): Check server probes it from this computer and lists its models (all ticked, with context lengths) and any plain-http-to-public warning, Add server registers the ticked ones live. Every step asks for the portal password and goes through the update helper; the key is never shown again. A stored key is only ever sent to that server's own saved address. Its models appear as `ms/lab/<id>`, Local, free, tool
+`server rm lab`; Settings › Models & providers › Local models has the same as a form: **This computer** first, then each server (reachable or not and why, a box for each model it serves, Edit key, Remove), and **Add a server** (address, optional name and key, a trust box for https): Check server probes it from this computer and lists its models (all ticked, with context lengths) and any plain-http-to-public warning, Add server registers the ticked ones live. Every step asks for the web app password and goes through the update helper; the key is never shown again. A stored key is only ever sent to that server's own saved address. Its models appear as `ms/lab/<id>`, Local, free, tool
 use unknown; a down server's models say why (DNS, refused, TLS, 401, no `/v1/models`). A self-signed server is trusted one
 server at a time (`--trust`), and plain http to a public address is allowed with a warning. A Tailscale MagicDNS name may not
 resolve inside the gateway container: use the server's tailnet IP.
@@ -2125,7 +2125,7 @@ network ([docs/security.md](docs/security.md#local-models)).
 **Runtimes.** DevOS ADE installs, runs and watches **Ollama**, **llama.cpp**, **LM Studio** and **vLLM** itself, like its own containers: Settings › Models &
 providers › Local models › **Runtimes** shows each runtime's state (Running, Stopped, Not installed, or **Yours** for an
 Ollama you run yourself), its version, its address, the models it has loaded (and how much of them is on the GPU), how
-many times it ended and was started again, and its log. **Install** (the portal password) downloads the version this
+many times it ended and was started again, and its log. **Install** (the web app password) downloads the version this
 release pins, with a progress bar and **Cancel** (what arrived is kept for the next try): on a Mac Ollama's own build
 from github.com/ollama/ollama, checked against the SHA-256 this release pins before anything is unpacked, run as a
 launchd user agent of this stack on the GPU (Metal), its models in the stack's folder; on Linux Ollama's image (pinned
@@ -2178,7 +2178,7 @@ served); Uninstall deletes vLLM's image too. In a terminal: `./stack local-model
 
 ## Remote access
 
-The portal from your phone or laptop, over HTTPS, without opening a port to the internet:
+The web app from your phone or laptop, over HTTPS, without opening a port to the internet:
 
 ```bash
 ./stack remote enable tailscale      # https://devos-ade.<tailnet>.ts.net (+ -chat, -admin, -files)
@@ -2189,7 +2189,7 @@ The portal from your phone or laptop, over HTTPS, without opening a port to the 
 
 A small Tailscale container joins your tailnet and serves four
 [Tailscale Services](https://tailscale.com/kb/1552/tailscale-services) with real certificates; your devices
-need the Tailscale app. Remote requests need your **Tailscale login and the portal password**. The local address
+need the Tailscale app. Remote requests need your **Tailscale login and the web app password**. The local address
 keeps working unchanged. One-time steps in the Tailscale admin console (a tag, four Services — one more each for
 the browser terminal shared remotely (`REMOTE_TERMINAL=true`), the Code page (with it) and its previews
 (`REMOTE_PREVIEW=true`) —, a policy snippet and an auth key) are printed with your names filled in; when a setting
@@ -2203,7 +2203,7 @@ host-only session cookies work, and Cloudflare Tunnel: [docs/remote.md](docs/rem
 You pay AWS Bedrock on-demand prices (USD, for the `us.` US-only inference profiles); nothing else in the
 stack costs money. Full price table, worked examples and the update rules: [docs/prices.md](docs/prices.md).
 
-**Prices update daily.** The portal fetches LiteLLM's public price list at start and every 24 hours and
+**Prices update daily.** The web app fetches LiteLLM's public price list at start and every 24 hours and
 cross-checks it with the public AWS Price List; `./stack setup` and `./stack up` check too. Guards keep a bad
 upstream file from making prices vanish or jump; a refused change shows as a warning on Home and in `./stack
 costs`. `./stack prices` checks now, `./stack prices --accept` applies a change the guards refused, and new
@@ -2343,7 +2343,7 @@ add them next to your Bedrock models as `or/<id>`; it is **off unless you give i
 ./stack openrouter remove              # back to Bedrock only
 ```
 
-The portal's **Settings → Models & providers → OpenRouter** (*Add key*) does the same as `set` from the computer running DevOS
+The web app's **Settings → Models & providers → OpenRouter** (*Add key*) does the same as `set` from the computer running DevOS
 ADE (not over remote access): paste the key there, and it is checked before anything changes; its card then says how
 many models it adds, and *OpenRouter models* in it picks which.
 
@@ -2481,7 +2481,7 @@ shown there once.
   does not say which (a streamed answer, as Claude Code's always are): they stay $0, counted too.
 - **The key** stays in `.env` (mode 600) and reaches only LiteLLM (`os.environ/EXPLABS_API_KEY`) and
   `api.experientiallabs.ai` (on curl's stdin, never on a command line or in a URL). Settings and `./stack config` never
-  show it back, not even its last characters; no log, status line or file of the portal holds it.
+  show it back, not even its last characters; no log, status line or file of the web app holds it.
 
 **Privacy:** a prompt to an `xl/…` model goes to Experiential Labs and the provider it routes the call to. What is kept
 there follows your Experiential Labs account's own settings: its prompt capture (`capture_prompt_content`) and its zero
@@ -2524,7 +2524,7 @@ results and says what it found).
 
 **The built-in SearXNG** is the official SearXNG image, pinned by digest, as one more container of the stack
 (`searxng`): read-only, no capabilities, its own user, 512 MB at most. No port is published and no Caddy site leads to
-it: its one inbound network it shares with LiteLLM alone, so the portal, Open WebUI, the terminal, the Code page and
+it: its one inbound network it shares with LiteLLM alone, so the web app, Open WebUI, the terminal, the Code page and
 their sandboxes cannot reach it; its way out to the search engines is a network of its own
 ([docs/security.md](docs/security.md#the-built-in-searxng)). `./stack` writes its settings (`searxng/settings.yml`:
 JSON output on, no limiter, no image proxy, the engines below) and its secret key, made once by setup and kept in
@@ -2536,7 +2536,7 @@ slow it down or refuse it for a while (SearXNG then leaves it out for a few minu
 WebSearch finds less — a key of Tavily, Brave Search or Perplexity, or AgentCore Web Search, gives steadier results and
 comes first by itself once set up. `./stack config set WEBSEARCH_SEARXNG_BUILTIN off` (or its switch in Settings)
 removes the container. While it is on, Home's Services show it like the other services (its state and health, from
-`./stack`'s record of the containers: the portal has no way to it), `./stack logs searxng` shows what it did and
+`./stack`'s record of the containers: the web app has no way to it), `./stack logs searxng` shows what it did and
 `./stack restart searxng` (or Settings › Diagnostics) restarts it.
 
 **AgentCore Web Search** needs no other key, and the query stays inside AWS. Setup checks it: for free, who your key
@@ -2656,7 +2656,7 @@ troubleshooting: [docs/voice.md](docs/voice.md).
 - **Price lists:** the daily price update downloads LiteLLM's public price list from GitHub
   (`raw.githubusercontent.com`) and the public AWS Price List (`pricing.us-east-1.amazonaws.com`). No
   credentials are sent; `PRICE_UPDATES=false` turns it off.
-- **Update check:** once a day the portal asks GitHub's public releases API (`api.github.com`) for the latest
+- **Update check:** once a day the web app asks GitHub's public releases API (`api.github.com`) for the latest
   DevOS ADE release and, only when it is newer than yours, fetches that release's `compose.yaml` from
   `raw.githubusercontent.com` to estimate the download. Unauthenticated, https only; nothing about your
   install is sent (GitHub sees your IP address, as for any download). Settings → Updates & backups
@@ -2681,9 +2681,9 @@ troubleshooting: [docs/voice.md](docs/voice.md).
 | `./stack setup` | First-time or repeat setup: AWS key, ports, model probe (again only when the key, region, catalog or LiteLLM changed, or after a week), keys | < $0.01 |
 | `./stack up` / `down` | Start / stop (data is kept) | none |
 | `./stack status [--disk]` | Services, health, URLs and the disk this install uses (images, data, backups, and old images `./stack clean` would remove, if any; reused for 5 minutes, `--disk` measures now) | none |
-| `./stack open` | The installed DevOS ADE app, else the portal in a browser tab | none |
+| `./stack open` | The installed DevOS ADE app, else the web app in a browser tab | none |
 | `./stack logs [service]` | Follow logs (`litellm`, `open-webui`, `rustfs`, `postgres`, `shared-mcp`, `portal`, `caddy`, `stt`, `searxng`; while on: `terminal`, `terminal-gateway`, `terminal-egress` (the sandbox's refusals), `code`, `tailscale`) | none |
-| `./stack test` | End-to-end smoke test, incl. the portal login (and, while the terminal is on, its isolation and its egress proxy's refusals) | ~$0.0001 |
+| `./stack test` | End-to-end smoke test, incl. the web app login (and, while the terminal is on, its isolation and its egress proxy's refusals) | ~$0.0001 |
 | `./stack costs` | Prices for your enabled models + spend per key | none |
 | `./stack prices [--accept]` | Check prices now; `--accept` applies a refused change | none |
 | `./stack models [--recheck]` | Which models your key can use; `--recheck` re-probes | `--recheck`: < $0.01 |
@@ -2694,7 +2694,7 @@ troubleshooting: [docs/voice.md](docs/voice.md).
 | `./stack rollback [--yes]` | Back to the version before the last update: code, data (its backup), images | ~$0.0001 |
 | `./stack helper install\|uninstall\|status` | One-click Update / Rollback / Clean on Home (a user-level background job; setup offers it) | none |
 | `./stack helper auto on [--hour N]\|off\|status` | Automatic updates: a new release installs by itself at night, `N:00`–`N+3:00` this computer's time (default 3; off by default) | < $0.01 per update |
-| `./stack remote status\|enable tailscale\|enable domain HOST\|disable\|test` | Optional: the portal from your phone/laptop over HTTPS through Tailscale ([docs/remote.md](docs/remote.md)) | none |
+| `./stack remote status\|enable tailscale\|enable domain HOST\|disable\|test` | Optional: the web app from your phone/laptop over HTTPS through Tailscale ([docs/remote.md](docs/remote.md)) | none |
 | `./stack rotate-aws [--use-keys \| --use-instance-role]` | Replace the AWS key (verified first), then test; the flags switch between an EC2 IAM role and a key | ~$0.0001 |
 | `./stack serve [--background \| --stop]` | Start the stack and keep the Mac (or a Linux laptop) awake until Ctrl-C (prints the URLs; `--background`: macOS only) | none |
 | `./stack ssh-info` | How to run `devos-claude` from your phone over SSH | none |
@@ -2709,8 +2709,8 @@ troubleshooting: [docs/voice.md](docs/voice.md).
 | `./stack sessions config [list\|import\|scan\|open\|consent]` | Bring your setup: items of your Claude Code setup (`CLAUDE.md`, skills, agents, commands, MCP servers, plugins, four settings) and your Git name and email copied into the sandbox, after you allowed it here (never env or logins; nothing written back; [above](#your-claude-code-setup-from-this-computer)) | none (what you bring: tokens in every request) |
 | `./stack git-host import gh\|glab [--host HOST]` | A login of the GitHub CLI or the GitLab CLI on this computer as a Git host of the Code page ([above](#remote-repositories-git-hosts-clone-push-and-pull)): the token goes to the code container on stdin (never a command line, a file or the browser); what it reaches is shown and confirmed first. glab: a personal access token only (an OAuth login of glab's is refused) | none |
 | `./stack git-server status \| mirror list \| mirror add push\|pull REPO URL \| mirror sync REPO \| mirror remove REPO NAME` | The [built-in git server](#the-built-in-git-server-forgejo)'s mirroring to a connected GitHub / GitLab (an access token): a push mirror keeps a remote copy of a local repository (its refs force-updated), a pull mirror a read-only local copy of a remote. What it does and the token handed to Forgejo are shown and confirmed first; the git server has no way out to the internet until a mirror exists | none |
-| `./stack password [--show]` | Where the portal password is (`PORTAL_PASSWORD` in this folder's `.env`); `--show` prints it, only to a terminal | none |
-| `./stack config [list\|get KEY\|set KEY…\|apply --stdin\|check-aws\|report\|regenerate rustfs\|mcp-token]` | Every setting, secrets masked; `set` asks for values (hidden for secrets) and applies them like the portal's [Settings](#settings) | none (`check-aws` is free; an AWS key change runs the test: ~$0.0001) |
+| `./stack password [--show]` | Where the web app password is (`PORTAL_PASSWORD` in this folder's `.env`); `--show` prints it, only to a terminal | none |
+| `./stack config [list\|get KEY\|set KEY…\|apply --stdin\|check-aws\|report\|regenerate rustfs\|mcp-token]` | Every setting, secrets masked; `set` asks for values (hidden for secrets) and applies them like the web app's [Settings](#settings) | none (`check-aws` is free; an AWS key change runs the test: ~$0.0001) |
 | `./stack restart SERVICE` | Recreate one service with its current settings (`litellm`, `open-webui`, `shared-mcp`, `stt`, `rustfs`, `caddy`; `searxng` while the built-in SearXNG is on) | none |
 | `./stack uninstall` | Remove the containers, ALL data volumes and this install's built images (keeps `.env` and `backups/`) | none |
 | `./stack versions` | Each core service: the version it runs, the one this release pins, the newest upstream | none |
@@ -2735,7 +2735,7 @@ When a newer release is out, Home shows an **update card**: one line for **every
 installs the newest, so a jump from v0.4.1 to v0.9.0 lists v0.5.0 to v0.9.0, each with its headline) and their
 release notes (the newest open), what the update will do (backup, roughly how much it downloads, a few minutes of
 downtime) and the command to copy; `./stack status` and the `devos-claude` launch line mention it too (they read
-the portal's last check, not with `UPDATE_CHECK=false`; no network of their own). The portal checks once a day, and
+the web app's last check, not with `UPDATE_CHECK=false`; no network of their own). The web app checks once a day, and
 again when you open Home and its last check is more than 3 hours old (at most every 15 minutes); the card and the
 version label say when it last checked. Settings → Updates & backups (`UPDATE_CHECK=false`) turns the check off.
 
@@ -2797,17 +2797,17 @@ macOS, a systemd user unit on Linux). Setup asks *Turn on one-click updates from
 next interactive `./stack update` of an install that has no helper yet; yes is the default. A "no" is
 remembered and not asked again (an install that said no to the earlier opt-in question is asked once more).
 `./stack setup --yes` installs it only with `DEVOS_ADE_HELPER=1`, and `./stack helper install` works any
-time. The portal cannot install software on your computer by design, so this one step happens in a terminal;
+time. The web app cannot install software on your computer by design, so this one step happens in a terminal;
 until then Home shows "One-click updates are off" with that command and a Copy button. With the helper, Home
 shows **Update now** (first in the update card, with `./stack update` folded under *From a terminal instead*),
-**Roll back** and **Clean up old images**. Each asks for the portal password again, and
+**Roll back** and **Clean up old images**. Each asks for the web app password again, and
 Home shows the progress and the result, e.g. "Updated to v0.3.0 · freed 3.1 GB". The progress card lists every step
 of the update with how long it took — the backup, the new code, each image's download and build, your subscriptions'
 tools, each group of services, the smoke test — so no part of it looks stuck. While the update restarts the
-portal (about a minute or two), Home cannot reach it: the progress card then says it is reconnecting and for how
+web app (about a minute or two), Home cannot reach it: the progress card then says it is reconnecting and for how
 long, and picks up by itself. Home's last job is the newest of any origin: a `./stack update`, `rollback`, `setup`,
 `config`, `code` or similar command you run in a terminal shows there too ("./stack code enable finished · Run in
-a terminal"). The portal itself still cannot run anything: it can only leave a request
+a terminal"). The web app itself still cannot run anything: it can only leave a request
 that the helper checks strictly. The helper then runs one of those three `./stack` commands, one at a time (a
 terminal `./stack update`, `rollback`, `clean`, `restore` or `setup` makes it answer "Busy"), with its own
 limits (one a minute, 12 a day). It does not update a checkout that follows a branch unless
@@ -2816,9 +2816,9 @@ limits (one a minute, 12 a day). It does not update a checkout that follows a br
 offering it). An update that finds nothing new ends as "Already up to date"; neither it nor `--force` touches
 the rollback target or the kept images.
 
-**Prepared ahead (on by default):** once the portal's daily check names a release newer than yours, the helper fetches it,
+**Prepared ahead (on by default):** once the web app's daily check names a release newer than yours, the helper fetches it,
 builds its images and downloads the ones it pins, in the background, so Update now only has the switch to make (about half a
-minute). Home's update card says *Preparing v0.x.y in the background: build portal*, then *Ready: v0.x.y is downloaded and
+minute). Home's update card says *Preparing v0.x.y in the background: build web app*, then *Ready: v0.x.y is downloaded and
 built*, or why it failed (Update now then does that work itself, as before). The images are built as `<project>-prep/<service>`,
 never as the names your running version or **Roll back** uses; no container, `.env` or file of the checkout changes, and no
 script of the new release runs. It builds one image at a time, does not start while the processors are 80% in use or more
@@ -2835,11 +2835,11 @@ ends well), or against a list shipped with the code until there is one; it never
 terminal each finished step is followed by `[████████░░░░] 14/31 · Images · ~1 min left` (only when the output is a terminal).
 
 **Automatic updates (off by default):** in Home → Maintenance, *Automatic updates: Off | Nightly (03:00–06:00)*
-(asks for the portal password), or `./stack helper auto on [--hour N]` / `off` / `status` (`AUTO_UPDATE` and
+(asks for the web app password), or `./stack helper auto on [--hour N]` / `off` / `status` (`AUTO_UPDATE` and
 `AUTO_UPDATE_HOUR` in `.env`). When on, the helper installs a new **release** by itself between `N:00` and
 `N+3:00` on this computer's clock (default 03:00–06:00), the same way as Update now: a backup first, then a few
 minutes of downtime, and Home's progress card ("Updated automatically to v0.4.0 at 03:04"). It installs only
-the release Home announced (the portal's daily check, so not with `UPDATE_CHECK=false`) when it is also the newest
+the release Home announced (the web app's daily check, so not with `UPDATE_CHECK=false`) when it is also the newest
 release tag after fetching origin, only on a checkout that is on a release (as `install.sh` leaves it; never a
 branch, whatever `DEVOS_ADE_HELPER_ALLOW_BRANCH` says), and only while the stack runs. Each release is tried
 **once**: if it fails, Home shows the error with **Roll back** right there (when the update had already changed
@@ -2919,7 +2919,7 @@ entry needs (`NODE_ENV`, for example) in its `env`.
 
 **Updating from v0.1.x:** Open WebUI and the RustFS console no longer have their own ports (setup removes
 `OPENWEBUI_PORT` and `RUSTFS_CONSOLE_PORT` from `.env`), so the old address such as `http://127.0.0.1:8080`
-stops working. Open the portal URL the update prints, sign in with `PORTAL_PASSWORD` from `.env` and use the
+stops working. Open the web app URL the update prints, sign in with `PORTAL_PASSWORD` from `.env` and use the
 **Chat** tab. Your chats, knowledge bases, files and spend history are unchanged.
 
 ## Troubleshooting
@@ -2927,12 +2927,12 @@ stops working. Open the portal URL the update prints, sign in with `PORTAL_PASSW
 | Symptom | Fix |
 |---|---|
 | A model shows **DISABLED** (no Marketplace access, no model access, access denied), or "no models are usable with this AWS key" | Your AWS account or IAM user can't use it, or the region is wrong. Ask your AWS admin (see [above](#asking-your-aws-admin-for-model-access)), then run `./stack models --recheck`. |
-| A URL from this README doesn't work | Setup moved a port because something else used it (port 80 taken, or rootless Docker → the portal is on 8800). See `./stack status` or `PORTAL_PORT` / `*_PORT` in `.env`. |
-| The portal stopped answering after an update ("This site can't be reached", the smoke test's portal checks `000`) while `./stack status` shows every service healthy | Docker Desktop kept forwarding the port to the Caddy container the update replaced. `./stack restart caddy` mends it, then `./stack update` finishes the update. Since v0.14.1 every update, `./stack up` and restore notice this and recreate Caddy by themselves; if it still does not answer, restart Docker (on a Mac: quit Docker Desktop and open it again), then `./stack up`. |
+| A URL from this README doesn't work | Setup moved a port because something else used it (port 80 taken, or rootless Docker → the web app is on 8800). See `./stack status` or `PORTAL_PORT` / `*_PORT` in `.env`. |
+| The web app stopped answering after an update ("This site can't be reached", the smoke test's web app checks `000`) while `./stack status` shows every service healthy | Docker Desktop kept forwarding the port to the Caddy container the update replaced. `./stack restart caddy` mends it, then `./stack update` finishes the update. Since v0.14.1 every update, `./stack up` and restore notice this and recreate Caddy by themselves; if it still does not answer, restart Docker (on a Mac: quit Docker Desktop and open it again), then `./stack up`. |
 | `http://devos-ade.localhost` doesn't resolve | Use a current Chrome, Edge, Firefox or Safari; they resolve `*.localhost` themselves. Command-line tools may not: `curl --resolve devos-ade.localhost:80:127.0.0.1 http://devos-ade.localhost/login`. |
-| The portal shows its login page after you followed a link to it from another site | Expected with `SameSite=Strict`: such a visit arrives without the session cookie. Type or bookmark the URL. |
-| Forgot the portal password | Run `./stack password --show` in your DevOS ADE folder: it prints it (it is `PORTAL_PASSWORD` in `.env`; `./stack password` says which file). The sign-in page says the same, with this install's folder and Compose project on this computer (so a second copy is not mixed up; over remote access without the folder), and its **Show** button shows what you typed. After five wrong tries the login waits a few seconds (up to five minutes). |
-| The old Open WebUI address (`127.0.0.1:8080`/`8082`) stopped working after an update | By design: browsers reach every app through the portal now. Open the URL from `./stack status`. |
+| The web app shows its login page after you followed a link to it from another site | Expected with `SameSite=Strict`: such a visit arrives without the session cookie. Type or bookmark the URL. |
+| Forgot the web app password | Run `./stack password --show` in your DevOS ADE folder: it prints it (it is `PORTAL_PASSWORD` in `.env`; `./stack password` says which file). The sign-in page says the same, with this install's folder and Compose project on this computer (so a second copy is not mixed up; over remote access without the folder), and its **Show** button shows what you typed. After five wrong tries the login waits a few seconds (up to five minutes). |
+| The old Open WebUI address (`127.0.0.1:8080`/`8082`) stopped working after an update | By design: browsers reach every app through the web app now. Open the URL from `./stack status`. |
 | A setting changed in Open WebUI's admin UI reverts after a restart | By design (`ENABLE_PERSISTENT_CONFIG=false`): `.env` and setup own the configuration. |
 | `devos-claude` ignores the stack, or uses the wrong model or key | An `env` block in Claude Code's user settings (`~/.claude-bedrock/settings.json`; `~/.claude/settings.json` with `CLAUDE_BEDROCK_USE_MY_CONFIG=1`) or the folder's `.claude/settings.json` (e.g. `ANTHROPIC_BASE_URL`, `ANTHROPIC_MODEL`) overrides the wrapper. Remove those keys. |
 | Your plugins, MCP servers, `CLAUDE.md` or keybindings are missing in `devos-claude` | By design: it uses its own config folder, `~/.claude-bedrock`. Add what you need there (`devos-claude mcp add …`, `devos-claude plugin install …`, a `CLAUDE.md`), or run with `CLAUDE_BEDROCK_USE_MY_CONFIG=1` ([a lean config folder](#a-lean-config-folder-for-bedrock)). |
@@ -2945,21 +2945,21 @@ stops working. Open the portal URL the update prints, sign in with `PORTAL_PASSW
 | "project '…' was just claimed by …" | Another checkout ran a command at the same moment and now owns the project; fix it as for "already used". If it says "a record pointing to …, which no longer exists", just re-run. |
 | "project '…' is already used by another Compose project in …" | Something other than DevOS ADE uses this project name. Stop it there (`docker compose down`), or set up this copy with `COMPOSE_PROJECT_NAME=<other name> ./setup.sh`. |
 | "./stack uninstall here would delete project '…'" | The volumes belong to another folder's install; run `./stack uninstall` there instead. |
-| Setup can't sign in to the portal or to Open WebUI through it | Run `./stack logs portal` and `./stack logs caddy`. If you edited `PORTAL_PASSWORD` in `.env` by hand, run `./stack up` (it hashes the new one for the portal). |
+| Setup can't sign in to the web app or to Open WebUI through it | Run `./stack logs portal` and `./stack logs caddy`. If you edited `PORTAL_PASSWORD` in `.env` by hand, run `./stack up` (it hashes the new one for the web app). |
 | Settings: "changed on disk since you opened the page" | `.env` changed in the meantime (a terminal command, or an edit by hand): reload the page and make the change again. |
 | Settings shows everything but nothing can be changed | Changes need the update helper: `./stack helper install` (or use `./stack config set KEY` in a terminal). From a remote device they also need `REMOTE_ADMIN_ACTIONS=true`. |
 | The Code page's **Start** or **Run** says "the terminal's tmux has hooks … or loader variables … set" | Something in the sandbox (or your tmux settings) changed the terminal's tmux, so a new window might not run what you saw. Run the command in the terminal yourself, remove them (`tmux set-hook -gu …`, `tmux set-environment -gu …`), or restart the terminal (`./stack terminal disable`, then `enable`; that ends its tmux session). |
 | A remote address of the terminal, the Code page or its previews does not answer | Each is a Tailscale Service of its own: define it in the admin console and approve it (`./stack remote status` lists the Services; [docs/remote.md](docs/remote.md)). |
 | On the Code page or in `devos-claude`, a model answers but never reads, edits or runs anything (or writes its tool calls out as text) | It is marked **chat only** (OpenRouter and Experiential Labs models whose listing names no tool use): it cannot use Claude Code's tools. Pick a Claude model or one marked **works** — in the picker, with `/model`, or `devos-claude --model` (`devos-claude --models` says how each works); a **not tested** one may do the same ([Models for Claude Code](#models-for-claude-code)). |
 | In the sandbox, a download, `npm install` or `git clone` fails with 403 from the proxy (curl: `CONNECT tunnel failed, response 403`) | The egress proxy refused it: `./stack logs terminal-egress` says why. A name left out by `TERMINAL_EGRESS_ALLOW` or listed in `TERMINAL_EGRESS_DENY`: change the list in `.env`, then `./stack up`; a port other than 80, 443 and 22: `TERMINAL_EGRESS_ALLOW=*,name:PORT`. Something on this computer or your network (a dev server or registry on your Mac, a git server on your LAN) is never reached through the proxy: Settings › Claude Code › Sandbox internet access › **+ this computer** (`host`, from this computer only; [what it opens](#claude-code-in-the-browser)). |
-| Ctrl/⌘+K opens Chat's search or the Code page's command palette, not the portal's Search (or Ctrl/⌘+\\ does not fold the sidebar) | While the focus is inside an app's tab, the key goes to that app (Chat and the Code page have a Ctrl/⌘+K of their own). Click the search box at the top of the sidebar (on a phone **More → Search**) or the button above it, or click the sidebar first. |
-| Search finds no sections of the README or `docs/` ("this portal's image has no index of them") | The portal was built without that index: by an earlier release with a Docker Compose that does not read `build.additional_contexts`, or by a plain `docker build`. This version needs Docker Compose 2.24.4 or newer (`docker compose version` shows yours; `./stack setup` and `./stack update` stop on an older one and say so): update it, then `./stack setup` rebuilds the portal with the index. Meanwhile the docs are on GitHub. |
+| Ctrl/⌘+K opens Chat's search or the Code page's command palette, not the web app's Search (or Ctrl/⌘+\\ does not fold the sidebar) | While the focus is inside an app's tab, the key goes to that app (Chat and the Code page have a Ctrl/⌘+K of their own). Click the search box at the top of the sidebar (on a phone **More → Search**) or the button above it, or click the sidebar first. |
+| Search finds no sections of the README or `docs/` ("this web app's image has no index of them") | The web app was built without that index: by an earlier release with a Docker Compose that does not read `build.additional_contexts`, or by a plain `docker build`. This version needs Docker Compose 2.24.4 or newer (`docker compose version` shows yours; `./stack setup` and `./stack update` stop on an older one and say so): update it, then `./stack setup` rebuilds the web app with the index. Meanwhile the docs are on GitHub. |
 | Your browser's developer console shows warnings or errors inside Admin, Files or Chat (*preloaded … but not used*, *width(0) and height(0) of chart*, a 404 for `rebalance/status`, *No token found in localStorage*) | Expected: they come from LiteLLM, RustFS and Open WebUI themselves, not from DevOS ADE, and change nothing. [tests/e2e/INVENTORY.md](tests/e2e/INVENTORY.md#known-issues) says where each comes from. |
-| The installed app still shows the old name or icon | Chrome asks before changing an installed app's name and icon, at its next check. Accept it, or uninstall the app from its window (⋮ › Uninstall) and install it again from the portal. |
+| The installed app still shows the old name or icon | Chrome asks before changing an installed app's name and icon, at its next check. Accept it, or uninstall the app from its window (⋮ › Uninstall) and install it again from the web app. |
 | Speech-to-text error in Chat | Your browser has no speech recognition (e.g. Firefox), or you use an installed / home-screen app. [Server speech-to-text](#voice-speech-to-text) works there: `./stack stt set bedrock`. |
 | No **Call** button in Chat (next to the microphone) | Voice calls need [server speech-to-text](#voice-speech-to-text): `./stack stt set bedrock` (no key; `./stack stt status` says why it is off), or `openai` / `groq`. |
 | "Error transcribing chunk: External: …" | The message after it says what failed (budget, model access, throttling, a too-long recording); see [docs/voice.md](docs/voice.md#troubleshooting). |
-| Admin says "automatic sign-in did not work" | It names the reason (LiteLLM not running, or it refused the password the portal has). If you changed the Admin password inside LiteLLM, set it in **Settings → Account & security** too; meanwhile **Sign in with the password instead** opens LiteLLM's own form. Files likewise (RustFS not running, or a key pair edited by hand: `./stack config regenerate rustfs`). |
+| Admin says "automatic sign-in did not work" | It names the reason (LiteLLM not running, or it refused the password the web app has). If you changed the Admin password inside LiteLLM, set it in **Settings → Account & security** too; meanwhile **Sign in with the password instead** opens LiteLLM's own form. Files likewise (RustFS not running, or a key pair edited by hand: `./stack config regenerate rustfs`). |
 | LiteLLM's own form refuses `admin` | Once setup has created the database admin, sign in with `OPENWEBUI_ADMIN_EMAIL` / `LITELLM_UI_PASSWORD` (Home → Credentials shows both); the shared `admin` login is off. |
 | Forgot the LiteLLM admin password (you changed it in the LiteLLM UI) | Set a new one in **Settings → Account & security** (or `./stack config set LITELLM_UI_PASSWORD`): it is changed in LiteLLM itself, with the master key when the old one no longer works. Editing `LITELLM_UI_PASSWORD` in `.env` alone does nothing once the admin exists (`./stack up` then warns and repairs it). |
 | Home warns about prices (refused change, stale, LiteLLM/AWS gap) | See [docs/prices.md](docs/prices.md#guards). After checking a refused change: `./stack prices --accept`, then `./stack up`. |
@@ -2969,15 +2969,15 @@ stops working. Open the portal URL the update prints, sign in with `PORTAL_PASSW
 ## Advanced
 
 - **A second copy** (to try a branch next to your main stack): clone into another folder and run
-  `COMPOSE_PROJECT_NAME=bn-test ./setup.sh`. It gets its own containers, data, ports and portal name
+  `COMPOSE_PROJECT_NAME=bn-test ./setup.sh`. It gets its own containers, data, ports and web app name
   (`http://bn-test.localhost`). See [docs/advanced.md](docs/advanced.md#running-a-second-copy).
 - **Linux, SELinux, rootless Docker:** supported (Docker Engine 28+; your user in the `docker` group; rootless
-  puts the portal on 8800). See [docs/advanced.md](docs/advanced.md#linux-selinux-and-rootless-docker).
-- **A non-`.localhost` portal name** is refused unless you set `DEVOS_ADE_ALLOW_PUBLIC_HOST=1`: the portal is
+  puts the web app on 8800). See [docs/advanced.md](docs/advanced.md#linux-selinux-and-rootless-docker).
+- **A non-`.localhost` web app name** is refused unless you set `DEVOS_ADE_ALLOW_PUBLIC_HOST=1`: the web app is
   plain HTTP. See [docs/advanced.md](docs/advanced.md#portal-host-name-port-and-the-public-host-opt-in).
 - **Verbose output:** `DEVOS_ADE_VERBOSE=1 ./stack setup` shows the full docker compose output (also for
   `restore` and `rollback`, which otherwise leave out Compose's per-container "Waiting / Healthy" lines).
-- **Backups, restore on a new machine, AWS key rotation, adding models, the portal window:**
+- **Backups, restore on a new machine, AWS key rotation, adding models, the web app window:**
   [docs/advanced.md](docs/advanced.md).
 
 ## Testing
@@ -2987,7 +2987,7 @@ stops working. Open the portal URL the update prints, sign in with `PORTAL_PASSW
   last line counts what passed, was skipped and failed, and names every failure (each test with its file, or a guard);
   a test that changes this checkout's `.env`, `.state/`, `litellm/` or `backups/`, calls the real docker, aws or
   tailscale, or curls this computer fails by name (the live-state and isolation guards). Plus the Python tests in
-  `portal/tests`, `shared-mcp/tests`, `stt/tests` and `owui/tests` (the portal's in its image's test stage, with the
+  `portal/tests`, `shared-mcp/tests`, `stt/tests` and `owui/tests` (the web app's in its image's test stage, with the
   repository files some of them check: `portal/test.sh`). The Settings page's controls, key by key, against each
   setting's policy (on this computer and from a remote device) in a browser, without a stack:
   `sh portal/e2e/settings/run.sh`.
@@ -2995,7 +2995,7 @@ stops working. Open the portal URL the update prints, sign in with `PORTAL_PASSW
   builds a throwaway copy of this checkout under its own project (`bne2e.localhost`, free ports — never your
   install's), runs setup non-interactively, drives every page in a pinned Playwright Chromium container (login, Home,
   Chat with a streamed answer and a file question, voice calls and speech-to-text, Admin, the RustFS console's
-  upload/download/delete, phone and tablet layouts, sign-out), checks every portal route, header and CSRF rule, runs
+  upload/download/delete, phone and tablet layouts, sign-out), checks every web app route, header and CSRF rule, runs
   the safe `./stack` commands (backup/restore, down/up, update, rollback) and `devos-claude -p`, then removes
   everything it created. About 15-25 minutes and up to about 20 cents of Bedrock, most of it the Code page's Haiku
   turns (capped by small budgets; the total is printed; with `--no-code` about half a cent); results as a table and
@@ -3058,17 +3058,17 @@ stops working. Open the portal URL the update prints, sign in with `PORTAL_PASSW
   tests/e2e/harness-parity.sh --aws-env FILE --families explabs --explabs-real` runs the real gateway (credits on every
   turn). `--families`, `--models` and `--scenarios` pick fewer.
 - **Remote access without a tailnet** (opt-in, no AWS, about two minutes): `tests/e2e/remote/run.sh` runs the real
-  portal and Caddyfile in Tailscale mode behind a stand-in for the sidecar, in Chromium (and Firefox and WebKit for
+  web app and Caddyfile in Tailscale mode behind a stand-in for the sidecar, in Chromium (and Firefox and WebKit for
   one probe): the hand-offs, the Code page's previews over remote access and the same-site guard (and, with the guard
   taken out, what it stops). `tests/caddy-validate.sh` (Docker) validates the Caddyfile in every mode combination
   (own-domain mode only with `CADDY_DNS_IMAGE` set to the DNS-plugin build).
 
 ## Security model
 
-- One way in for browsers: Caddy on `127.0.0.1`, which asks the portal to check a signed, `HttpOnly`,
+- One way in for browsers: Caddy on `127.0.0.1`, which asks the web app to check a signed, `HttpOnly`,
   `SameSite=Strict` session cookie before every request. Open WebUI trusts a sign-in header that only Caddy
-  can set; LiteLLM and RustFS get their own sessions from the portal, handed over on their own host names and
-  never in a URL; the apps may be framed only by the portal.
+  can set; LiteLLM and RustFS get their own sessions from the web app, handed over on their own host names and
+  never in a URL; the apps may be framed only by the web app.
 - Every host port binds to `127.0.0.1`. AWS credentials reach only the LiteLLM container and never appear on a
   command line; all secrets live in `.env` (mode 600). On EC2 with an IAM role there are no AWS keys at all, but
   every container on the VM can fetch the role's temporary credentials from the metadata service unless you
@@ -3076,13 +3076,13 @@ stops working. Open the portal URL the update prints, sign in with `PORTAL_PASSW
 - Images are pinned by version (Caddy and Tailscale also by digest), Python dependencies are hash-locked, and the
   npm packages of the terminal and the Code page are pinned by their lockfiles' checksums.
 - The update helper runs only `./stack update|rollback|clean` (and `./stack helper auto on|off`) for this
-  checkout, on a strictly checked request that the portal writes after you re-enter the password, within its
+  checkout, on a strictly checked request that the web app writes after you re-enter the password, within its
   own rate limits; with automatic updates on, also `./stack update` for a new release tag at night; for Settings,
   `./stack config apply` and the Diagnostics' fixed commands (the smoke test, the AWS key check, a model re-check,
   a backup, one service's restart, the report); with nightly backups on, `./stack backup --nightly`. Its
   buttons are off for remote access by default. Only `./stack remote`'s Caddy blocks mark requests as remote;
   an SSH tunnel or your own reverse proxy to `127.0.0.1` counts as local.
-- Settings changes are requests too: the helper checks the password against its own hash (the portal holds
+- Settings changes are requests too: the helper checks the password against its own hash (the web app holds
   only a hash of it, never the password), its own allowlist and each value, and runs `./stack config apply`
   with the values on stdin; keys that could send data elsewhere, and settings that would protect less, change
   only from this computer.
@@ -3091,14 +3091,14 @@ stops working. Open the portal URL the update prints, sign in with `PORTAL_PASSW
   pick another), has its own LiteLLM key and budget, and reaches inside the stack only a gateway that passes
   Claude Code's few LiteLLM paths and the shared MCP server, and outside only public internet addresses, through an
   egress proxy of its own (not this computer's services or your network, unless `TERMINAL_EGRESS=host`); opening it
-  needs the portal password again, it refuses
+  needs the web app password again, it refuses
   other sites' connections, and remote access leaves it out unless `REMOTE_TERMINAL=true`. What it writes into
   the workspace can run on your computer when you open that folder there.
 - The Code page is on by default too, and runs Claude Code in that same sandbox; in its default mode every command
   and file change waits for your OK. Its page comes from a container
   with no LiteLLM key, no folder of yours and no network but the one it shares with Caddy; it needs its own
   password unlock, treats everything from the sandbox as untrusted text (a strict CSP with Trusted Types, set by
-  Caddy whoever answers), and takes models, prices and costs from the portal, never from the sandbox. Its *Bypass
+  Caddy whoever answers), and takes models, prices and costs from the web app, never from the sandbox. Its *Bypass
   permissions* mode is off unless allowed in Settings (from this computer only) and asks in every session; in every
   mode it flags changes to files of your folder that run on your computer (git hooks, `.envrc`, editor and Claude
   Code settings …), with Revert.
@@ -3125,7 +3125,7 @@ compose.domain.yaml           remote access under your own domain: Caddy with a 
 compose.terminal*.yaml        the browser terminal and its gateway (only while ./stack terminal is on; on by default);
                               -proxy: its egress proxy (TERMINAL_EGRESS=internet), -egress: host mode
 compose.code.yaml             the Code page (only while ./stack code is on, with the terminal; on by default)
-compose.portal-docs.yaml      the portal's search index of README and docs/ (a build context of those files only)
+compose.portal-docs.yaml      the web app's search index of README and docs/ (a build context of those files only)
 caddy/Caddyfile               the reverse proxy (no secrets); caddy/remote-*.caddy the remote site,
                               caddy/terminal-*.caddy the terminal's site and its gateway, caddy/code-*.caddy
                               the Code page's site, caddy/preview-*.caddy and artifact-*.caddy its previews' and

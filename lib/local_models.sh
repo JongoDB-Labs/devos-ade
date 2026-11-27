@@ -710,7 +710,7 @@ msrv_probe_url() {
   case "$tgt" in
     ok*) IFS=$'\t' read -r _ addr pin_h pin_p <<< "$tgt"; pin_ph="$addr"
          if [ "$only" = loopback ] && ! _msrv_loopback "$addr"; then
-           printf 'blocked\t%s is another computer: checking it asks for your portal password\t\n' "$addr"; return 0
+           printf 'blocked\t%s is another computer: checking it asks for your web app password\t\n' "$addr"; return 0
          fi
          case "$pin_ph" in *:*) pin_ph="[$pin_ph]" ;; esac
          case "$pin_h" in *[!0-9.]*) case "$pin_h" in *:*) ;; *) args+=(--resolve "$pin_h:$pin_p:$pin_ph") ;; esac ;; esac ;;   # (pinned: DNS cannot change the target now)
@@ -1140,7 +1140,7 @@ local_models_yaml() {
 }
 
 # --- the portal's file ---
-_local_put() { # _local_put FILE < content — atomically, readable by the portal
+_local_put() { # _local_put FILE < content — atomically, readable by the web app
   local d tmp; d="$(dirname "$1")"
   mkdir -p "$d" 2>/dev/null || return 0
   tmp="$(mktemp "$d/.local.XXXXXX")" || return 0

@@ -86,7 +86,7 @@ _req_read() {
   [ -f "$f" ] || { echo "not a regular file" >&2; return 1; }
   uid="$(_file_uid "$f")"
   for u in $(_allowed_uids); do [ "$uid" != "$u" ] || ok=1; done
-  [ "$ok" = 1 ] || { echo "owned by uid $uid, not by you or the portal" >&2; return 1; }
+  [ "$ok" = 1 ] || { echo "owned by uid $uid, not by you or the web app" >&2; return 1; }
   [ -r "$f" ] || { echo "unreadable" >&2; return 1; }
   body="$(read_portal_file "$f" $(($2 + 1)) && echo x)" || { echo "unreadable" >&2; return 1; }
   body="${body%x}"
@@ -144,7 +144,7 @@ settings_check_request() {
   _sv_re "$SREQ_TS" '^[0-9]{1,12}$' || { echo "bad time" >&2; return 1; }
   _sv_re "$SREQ_BASE" '^[0-9a-f]{64}$' || { echo "bad base" >&2; return 1; }
   _sv_re "$SREQ_AUTH" '^[A-Za-z0-9+/]+={0,2}$' || { echo "bad auth line" >&2; return 1; }
-  [ "${#SREQ_AUTH}" -le 400 ] || { echo "the password is longer than 300 bytes (the portal refuses those too)" >&2; return 1; }
+  [ "${#SREQ_AUTH}" -le 400 ] || { echo "the password is longer than 300 bytes (the web app refuses those too)" >&2; return 1; }
   now="$(date +%s)"
   [ "$SREQ_TS" -le $((now + 30)) ] || { echo "dated in the future" >&2; return 1; }
   [ $((now - SREQ_TS)) -le "$HELPER_MAX_AGE_S" ] || { echo "stale (older than ${HELPER_MAX_AGE_S}s)" >&2; return 1; }
@@ -181,7 +181,7 @@ _auth_ok() {
   _auth_throttled && { echo "too many wrong passwords: the helper takes no requests from Settings for a while" >&2; return 1; }
   pw="$(_b64_decode "$1")"
   case "$pw" in *[[:cntrl:]]*) pw='' ;; esac
-  if [ -z "$pw" ] || ! helper_password_ok "$pw"; then _auth_failed; echo "wrong portal password" >&2; return 1; fi
+  if [ -z "$pw" ] || ! helper_password_ok "$pw"; then _auth_failed; echo "wrong web app password" >&2; return 1; fi
 }
 
 # The helper's own lock-out for wrong passwords in settings requests: it holds even when the portal (whose login
@@ -312,7 +312,7 @@ helper_run_settings() {
     JOB_RESULT=failed; helper_write_status failed "$(_last_error "$plain")"; rm -f "$plain"; return 0
   fi
   msg="$(_settings_unstamp "$logf" | sed -n 's/^==> saved: /Saved: /p' | tail -n 1)"
-  grep -q 'the portal password changed' "$logf" && msg="$msg. Every other browser and device was signed out."
+  grep -q 'the web app password changed' "$logf" && msg="$msg. Every other browser and device was signed out."
   JOB_RESULT="done"; helper_write_status "done" "${msg:-Saved}"
 }
 
@@ -384,7 +384,7 @@ act_check_request() {
   else
     echo "not a valid request" >&2; return 1
   fi
-  [ "${#auth}" -le 400 ] || { echo "the password is longer than 300 bytes (the portal refuses those too)" >&2; return 1; }
+  [ "${#auth}" -le 400 ] || { echo "the password is longer than 300 bytes (the web app refuses those too)" >&2; return 1; }
   [ "$n" = "$nonce" ] || { echo "nonce does not match the file name" >&2; return 1; }
   case " $DIAG_ACTIONS $PROJECT_ACTIONS $SESSIONS_REVOKE_ACTIONS $SUBS_HELPER_ACTIONS $LOCAL_HELPER_ACTIONS " in *" $action "*) ;; *) echo "action not allowed" >&2; return 1 ;; esac
   now="$(date +%s)"
