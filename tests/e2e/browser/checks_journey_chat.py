@@ -102,6 +102,17 @@ def chat_to_git(ctx):
             if st != 200:
                 time.sleep(3)
         expect(st == 200, f"README.md is not in {owner}/{name} on the git server after 120 s: HTTP {st}")
+        # (the contents API reads git, so README.md is there before Forgejo has recorded the push's branch in its database;
+        # any repository page in between makes Forgejo record it itself, alongside the push's own record, and the one that
+        # loses shows a 500 "SyncRepoBranches, unique constraint violation" — Forgejo 17's RepoAssignment fallback, upstream.
+        # The Git tab is opened once the branch list, read from that database, has main: no page can race the push then.)
+        t0, names = time.time(), []
+        while time.time() - t0 < 60 and "main" not in names:
+            st, bl = checks_git.forgejo(ctx, "GET", f"/api/v1/repos/{owner}/{name}/branches")
+            names = [b.get("name") for b in bl] if st == 200 and isinstance(bl, list) else []
+            if "main" not in names:
+                time.sleep(1)
+        expect("main" in names, f"the git server has not recorded {owner}/{name}'s main branch after 60 s: HTTP {st}")
         page.evaluate("p => { location.hash = '#git/' + p; }", f"{owner}/{name}")
         gf = frame_of(page, "git")
         gf.wait_for_url(re.compile(re.escape(f"/{owner}/{name}") + r"/?$"), timeout=30000)
