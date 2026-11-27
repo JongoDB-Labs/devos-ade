@@ -6567,6 +6567,89 @@ def project_chip_long(browser):
     p.close()
 
 
+LONG_PROMPT = "Please could you take a very long look at the way the nightly export job handles the retry budget when the upstream is slow"
+SHORT_TITLE = "Take a very long look"   # (what the mock's "Haiku" makes of LONG_PROMPT: dev/mock-server.mjs mockShortTitle)
+
+
+def search_sessions(page, scope, words):
+    """Type words into the Projects search box of `scope` and wait for the list made for them (the box asks the backend 250 ms after the last key)."""
+    box = scope.get_by_label("Search sessions")
+    box.fill(words)
+    page.wait_for_timeout(900)
+
+
+@check("sessions: a short title after the first turn (Rename wins), search finds a session by its conversation (JON-517), desktop and phone 320x640")
+def short_titles(browser):
+    post(NORMAL + "/__mock/reset")
+    p = Page(browser, NORMAL, "short-titles", **DESKTOP)
+    page = p.open()
+    send(page, LONG_PROMPT)
+    wait_turns(page, 1)
+    # the title the page showed from the first prompt becomes the short one, without a reload
+    expect(page.locator(".chat-head .pane-title")).to_have_text(SHORT_TITLE, timeout=10_000)
+    page.get_by_test_id("side-sessions").click()
+    row = page.get_by_test_id("session-row").filter(has_text=SHORT_TITLE)
+    expect(row).to_have_count(1, timeout=10_000)
+    assert "nightly" not in row.locator(".sess-title").inner_text(), "the list still shows the first prompt"
+    p.shot("short-title-desktop.png")
+    # the list as the backend gives it (a reload): the short title, the first prompt kept for search
+    page.reload()
+    expect(page.get_by_test_id("conn")).to_have_text("Connected", timeout=10_000)
+    page.get_by_test_id("side-sessions").click()
+    expect(page.get_by_test_id("session-row").filter(has_text=SHORT_TITLE)).to_have_count(1, timeout=10_000)
+    # Rename is the person's own and wins
+    cur = page.get_by_test_id("session-row").filter(has_text=SHORT_TITLE)
+    cur.hover()
+    cur.get_by_role("button", name="Session actions").click()
+    page.get_by_role("menuitem", name="Rename").click()
+    page.get_by_label("Session name").fill("My export notes")
+    page.get_by_label("Session name").press("Enter")
+    expect(page.get_by_test_id("session-row").filter(has_text="My export notes")).to_have_count(1, timeout=10_000)
+    page.reload()
+    expect(page.get_by_test_id("conn")).to_have_text("Connected", timeout=10_000)
+    page.get_by_test_id("side-sessions").click()
+    expect(page.get_by_test_id("session-row").filter(has_text="My export notes")).to_have_count(1, timeout=10_000)
+    expect(page.get_by_test_id("session-row").filter(has_text=SHORT_TITLE)).to_have_count(0)
+    # search by the conversation: a word only Claude's answer holds ("quokka") finds the session open here; one only the answer of a
+    # closed session holds ("shallow") finds that one; any case; nothing for words nowhere
+    panel = page.get_by_test_id("sessions")
+    search_sessions(page, panel, "QuOkKa")
+    expect(page.get_by_test_id("session-row")).to_have_count(1)
+    expect(page.get_by_test_id("session-row")).to_contain_text("My export notes")
+    p.shot("short-title-search-desktop.png")
+    search_sessions(page, panel, "shallow")
+    expect(page.get_by_test_id("session-row")).to_have_count(1)
+    expect(page.get_by_test_id("session-row")).to_contain_text("Why does CI fail")
+    search_sessions(page, panel, "no such words anywhere")
+    expect(page.get_by_test_id("session-row")).to_have_count(0)
+    search_sessions(page, panel, "")
+    expect(page.get_by_test_id("session-row").first).to_be_visible()
+    p.assert_clean()
+    p.close()
+
+    post(NORMAL + "/__mock/reset")
+    p = Page(browser, NORMAL, "short-titles-phone", viewport={"width": 320, "height": 640}, device_scale_factor=2, is_mobile=True, has_touch=True, color_scheme="light")
+    page = p.open()
+    send(page, LONG_PROMPT)
+    wait_turns(page, 1)
+    expect(page.locator(".pt-title")).to_have_text(SHORT_TITLE, timeout=10_000)
+    p.shot("short-title-phone-header.png")
+    page.get_by_test_id("phone-sessions").tap()
+    sheet = page.get_by_test_id("sheet-sessions")
+    expect(sheet.get_by_test_id("session-row").filter(has_text=SHORT_TITLE)).to_have_count(1, timeout=10_000)
+    assert "nightly" not in sheet.get_by_test_id("session-row").first.locator(".sess-title").inner_text(), "the sheet still shows the first prompt"
+    p.shot("short-title-phone-sheet.png")
+    search_sessions(page, sheet, "quokka")
+    expect(sheet.get_by_test_id("session-row")).to_have_count(1)
+    search_sessions(page, sheet, "median per route")
+    expect(sheet.get_by_test_id("session-row")).to_have_count(1)
+    expect(sheet.get_by_test_id("session-row")).to_contain_text("latency report")
+    p.shot("short-title-search-phone.png")
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth"), "horizontal overflow (phone, 320 px)"
+    p.assert_clean()
+    p.close()
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
     procs = start_mocks()

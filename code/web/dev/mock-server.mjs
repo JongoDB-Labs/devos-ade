@@ -1086,6 +1086,16 @@ class Session {
     this.state = state;
     this.broadcast(this.stateMsg());
   }
+  /** A short title for the session (JON-517), as the backend makes one after the first turn: kept beside the row, told to every
+   *  page; the open session still named by its first prompt takes it (replaced), one renamed keeps its name. */
+  makeShortTitle(text) {
+    const row = saved.get(this.id);
+    if (!row || row.shortTitle) return;
+    row.shortTitle = mockShortTitle(text);
+    const replaced = this.titleFromPrompt === true && !row.customTitle;
+    if (replaced) { this.title = row.shortTitle; row.title = row.shortTitle; }
+    broadcastAll({ type: 'session_title', session: this.id, title: row.shortTitle, replaced });
+  }
   /** Before a tool changes a file: what it was (null: not there), for rewind_files. */
   changed(path, before) {
     const prompt = this.prompts[this.prompts.length - 1];
@@ -1248,7 +1258,7 @@ class Session {
     const started = Date.now();
     if (uuid) this.prompts.push(uuid);
     this.emit({ type: 'user', text, uuid, images: Array.isArray(images) ? images.length : 0 });
-    if (!this.title) this.title = String(text).slice(0, 80);
+    if (!this.title) { this.title = String(text).slice(0, 80); this.titleFromPrompt = true; }
     this.init();
     const watchBase = watchSnap();
     let turns = 1;
@@ -1281,7 +1291,10 @@ class Session {
       if (HOSTILE_MODE) rows.push({ startTime: new Date(started + 700).toISOString(), model: HOSTILE.img, spend: -1, tokens: 'NaN' });
       spendRows.set(this.id, rows);
     }, FAST ? 10 : 900);
-    saved.set(this.id, { id: this.id, title: this.title, firstPrompt: saved.get(this.id)?.firstPrompt || text, branch: 'main', modified: Date.now(), transcript: this.transcript, cwd: this.cwd ?? WS });
+    saved.set(this.id, { ...(saved.get(this.id) ?? {}), id: this.id, title: this.title, firstPrompt: saved.get(this.id)?.firstPrompt || text, branch: 'main', modified: Date.now(), transcript: this.transcript, cwd: this.cwd ?? WS });
+    // JON-517: the backend names a session by a short title made after its first turn (Haiku, once) — here only for a prompt about
+    // "the nightly export" (the other checks keep their sessions named by their first prompt), made a moment after the turn
+    if (this.turns === 1 && !failed && !interrupted && /nightly export/i.test(text)) setTimeout(() => this.makeShortTitle(text), FAST ? 150 : 500);
     this.lastActive = Date.now();
     this.setState('idle');
     const next = this.queue.shift();
@@ -1366,6 +1379,10 @@ async function runScenario(s, text, images) {
     // a turn Claude Code ran on a model other than the one picked: the page says what ran
     s.overrideModel = s.resolvedModel() === MODELS.aliases.haiku ? MODELS.aliases.sonnet : MODELS.aliases.haiku;
     try { await s.stream('Answered on another model than the one picked.'); } finally { s.overrideModel = null; }
+    return 1;
+  }
+  if (t.includes('nightly export')) {
+    await s.stream('The nightly export keeps a retry budget of five attempts. The quokka scheduler decides when each attempt runs.');
     return 1;
   }
   if (t.includes('hostile')) return hostile(s);
@@ -1816,9 +1833,13 @@ const jsonBody = async (req) => {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 let lastRecent = null;   // (POST /.bn/recent's last body: what the page told the "portal")
 
+// the short title the mock "Haiku" makes: the first five words of the prompt without its politeness (the real one is a model's)
+const mockShortTitle = (text) => String(text).replace(/^\s*(please[, ]+)?(could|can|would) you( please)?\s+/i, '').replace(/^please\s+/i, '').split(/\s+/).filter(Boolean).slice(0, 5).join(' ').replace(/^./, (c) => c.toUpperCase()).slice(0, 60);
+// what a session's conversation says (the person's prompts and Claude's answers), lower-cased: what sessions.search looks through
+const talkOf = (x) => (x.transcript ?? []).filter((e) => (e.type === 'user' || e.type === 'text') && typeof e.text === 'string').map((e) => e.text).join('\n').toLowerCase();
 function sessionInfo(x) {
   const cwd = x.cwd ?? WS;
-  return { id: x.id, title: x.title, first_prompt: x.firstPrompt, branch: x.branch, modified: x.modified, cwd, project: placeOf(x.id, cwd), ...(x.imported ? { imported: x.imported } : {}), ...(archivedMock.has(x.id) ? { archived: true } : {}) };
+  return { id: x.id, title: x.customTitle || x.shortTitle || x.title, first_prompt: x.firstPrompt, branch: x.branch, modified: x.modified, cwd, project: placeOf(x.id, cwd), ...(x.imported ? { imported: x.imported } : {}), ...(archivedMock.has(x.id) ? { archived: true } : {}) };
 }
 
 // --- the Import sheet ---
@@ -2175,7 +2196,7 @@ async function api(req, res, url) {
   if (p === '/api/sessions' && m === 'GET') {
     const q = (url.searchParams.get('q') || '').toLowerCase();
     const forgotten = (cwd) => typeof cwd === 'string' && [...hostForgotten].some((r) => cwd === r || cwd.startsWith(`${r}/`));
-    const rows = [...saved.values()].filter((x) => (!q || `${x.title} ${x.firstPrompt}`.toLowerCase().includes(q)) && !forgotten(x.cwd)).sort((a, b) => b.modified - a.modified);
+    const rows = [...saved.values()].filter((x) => (!q || `${x.customTitle || x.shortTitle || x.title} ${x.firstPrompt}`.toLowerCase().includes(q) || (q.length >= 2 && talkOf(x).includes(q))) && !forgotten(x.cwd)).sort((a, b) => b.modified - a.modified);
     return json(res, 200, { sessions: rows.map(sessionInfo) });
   }
   if (p === '/api/sessions' && m === 'POST') {
@@ -2311,8 +2332,8 @@ async function api(req, res, url) {
     if (mm[2] === '/title' && m === 'POST') {
       const b = await jsonBody(req);
       const title = String(b.title || '').slice(0, 200);
-      if (sessions.get(id)) sessions.get(id).title = title;
-      if (saved.get(id)) saved.get(id).title = title;
+      if (sessions.get(id)) { sessions.get(id).title = title; sessions.get(id).titleFromPrompt = false; }
+      if (saved.get(id)) { saved.get(id).title = title; saved.get(id).customTitle = title; }
       return json(res, 200, { ok: true });
     }
     if (!mm[2] && m === 'DELETE') {

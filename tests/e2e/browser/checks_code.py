@@ -4949,3 +4949,69 @@ def export_to_files(ctx):
     return (f"a git project of {len(EXPORT_FILES)} files zipped in the sandbox without .git, node_modules or what .gitignore names ({len(EXPORT_DEFAULT)} files), "
             f"handed by the Code page to the portal and listed in Files (code-exports/{name}), downloaded from the console and unpacked to the same tree; "
             "Everything and .git history change the plan; the code host alone has no Export to Files and saves the same zip; no CSP violations")
+
+
+SHORT_TITLE_PROMPT = ("Please could you take a very long look at the way the nightly export job of our little weather station handles its retry budget "
+                      "whenever the upstream archive is slow, and say in one plain sentence what you would look at first. "
+                      "End your answer with the sum of 7919 and 4242 written in digits.")
+SHORT_TITLE_ANSWER_ONLY = "12161"   # (7919 + 4242: in Claude's answer, nowhere in the prompt)
+
+
+@check("browser", "code-ui-short-title")
+@saved
+def ui_short_title(ctx):
+    """JON-517: after a Haiku session's first turn the Projects list names it by a short title (3 to 7 words, one line, at most
+    60 characters) instead of its long first prompt — made by Haiku, once, and kept on the code server (never as Claude Code's
+    custom title) — and the Projects search finds the session by a word only Claude's answer holds. Haiku only."""
+    need_haiku()
+    page, rec = ui_page(ctx, "code-ui-short-title", fresh_ws=True)
+    c = Code.on(page, rec, goto=False)
+    own = c.new_session(HAIKU)
+    wait_state(c, own, "model", HAIKU)
+    page.goto(f"{CODE}/?session={own}")
+    see(page.get_by_test_id("conn")).to_have_text("Connected", timeout=30000)
+    c = Code.on(page, rec, goto=False)
+    ask(page, SHORT_TITLE_PROMPT)
+    answered(page)
+    said = page.get_by_test_id("msg-claude").last.inner_text()
+    if SHORT_TITLE_ANSWER_ONLY not in said:
+        raise Skip(f"Haiku's answer does not hold the sum ({SHORT_TITLE_ANSWER_ONLY}) the search part looks for")
+
+    def listed():
+        rows = c.api("GET", "/api/sessions")["json"]["sessions"]
+        return next((r for r in rows if r["id"] == own), None)
+
+    # within a time limit the list names the session by a short title: not its first prompt, 3 to 7 words, 60 characters at most, one line
+    t0, row = time.time(), None
+    while time.time() - t0 < 120:
+        row = listed()
+        if row and row["title"] != row["firstPrompt"]:
+            break
+        page.wait_for_timeout(2000)
+    expect(row is not None and row["title"] != row["firstPrompt"], f"no short title within 120 s: {row and row['title'][:100]!r}")
+    title = row["title"]
+    words = title.split()
+    expect(3 <= len(words) <= 7 and len(title) <= 60 and "\n" not in title, f"not a short title of 3 to 7 words: {title!r}")
+    expect(not row.get("customTitle"), f"stored as Claude Code's custom title (a Rename's): {row.get('customTitle')!r}")
+    expect(SHORT_TITLE_ANSWER_ONLY not in title and SHORT_TITLE_ANSWER_ONLY not in row["firstPrompt"], "the search word is in the title or the prompt")
+    # the page: the header follows without a reload; the Projects list shows it
+    see(page.locator(".chat-head .pane-title")).to_have_text(title, timeout=30000)
+    page.get_by_test_id("side-sessions").click()
+    mine = page.locator(f"[data-testid=session-row][data-session='{own}']")
+    see(mine).to_contain_text(title, timeout=30000)
+    expect("nightly export" not in mine.locator(".sess-title").inner_text(), "the list still shows the first prompt")
+    page.mouse.move(0, 0)
+    shot(page, "117-code-ui-short-title")
+    # search by the conversation: a word only Claude's answer holds finds it (any case), words nowhere find nothing
+    box = page.get_by_label("Search sessions")
+    box.fill(SHORT_TITLE_ANSWER_ONLY)
+    see(page.locator(f"[data-testid=session-row][data-session='{own}']")).to_have_count(1, timeout=30000)
+    got = c.api("GET", f"/api/sessions?q={SHORT_TITLE_ANSWER_ONLY}")["json"]["sessions"]
+    expect(own in [r["id"] for r in got], f"/api/sessions?q={SHORT_TITLE_ANSWER_ONLY} did not list the session: {[r['id'][:8] for r in got]}")
+    none = c.api("GET", "/api/sessions?q=zzqxv-no-such-words-7741")["json"]["sessions"]
+    expect(own not in [r["id"] for r in none], "a search for words that are nowhere listed the session")
+    shot(page, "117b-code-ui-short-title-search")
+    box.fill("")
+    csp_clean(page, rec)
+    return (f"first turn on Haiku, a long first prompt: the list named it {title!r} ({len(words)} words) within {time.time() - t0:.0f} s after the answer, "
+            "not as a custom title; the header followed without a reload; the search found it by a word only Claude's answer held; no CSP violations")
