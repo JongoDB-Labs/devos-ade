@@ -4,11 +4,14 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.73.2] - 2026-11-27
 
 ### Fixed
 
 - **A commit made in the Terminal now reaches your local git server within seconds.** For a project kept on the local git server with "Push by itself after a commit" on, a commit made in the Terminal (or by any other git) used to wait for the next background push, up to 10 minutes. That included the first commit of a folder kept right after `git init`, whose repository stayed empty meanwhile. The Code page now looks at each kept project every 10 seconds and pushes a new commit at once. The look reads each repository's branch from its files, starts no git process, and does nothing more when nothing changed. (JON-1430)
+
+### To get it
+Existing installs: Home › Update now.
 
 ## [0.73.1] - 2026-11-27
 
