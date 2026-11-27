@@ -320,8 +320,9 @@ umask 0077"
   # the Gemini CLI's system settings (they outrank the user's) only turn its auto-update off
   assert_eq "$(tr -d ' \n' < "$STACK_DIR/terminal/tools/gemini-settings.json")" '{"general":{"enableAutoUpdate":false,"enableAutoUpdateNotification":false}}'
   # the Code page's Gemini CLI sessions get a second file (GEMINI_CLI_SYSTEM_SETTINGS_PATH, set by bn-coded): the same, and
-  # no YOLO mode, no project .env files — installed by the Dockerfile next to the first
-  assert_eq "$(tr -d ' \n' < "$STACK_DIR/terminal/tools/gemini-code-settings.json")" '{"general":{"enableAutoUpdate":false,"enableAutoUpdateNotification":false},"security":{"disableYoloMode":true},"advanced":{"ignoreLocalEnv":true}}'
+  # no YOLO mode, no "allow always" (Gemini's own moves the session to auto-edit), no .env of the project's but its
+  # .gemini/.env where it is trusted — installed by the Dockerfile next to the first
+  assert_eq "$(tr -d ' \n' < "$STACK_DIR/terminal/tools/gemini-code-settings.json")" '{"general":{"enableAutoUpdate":false,"enableAutoUpdateNotification":false},"security":{"disableYoloMode":true,"disableAlwaysAllow":true},"advanced":{"ignoreLocalEnv":true}}'
   assert_contains "$(cat "$STACK_DIR/terminal/Dockerfile")" 'COPY tools/gemini-code-settings.json /etc/gemini-cli/code-settings.json'
   assert_contains "$(cat "$STACK_DIR/terminal/bin/bn-coded.mjs")" "GEMINI_CODE_SETTINGS = '/etc/gemini-cli/code-settings.json'"
 }

@@ -59,6 +59,14 @@ const UNCONFIRMED = '\0unconfirmed';
 const EXISTING_LOGIN = new Set(['cursor_login']);
 // a refusal for a missing login that does not say "auth" (Gemini CLI: "Gemini API key is missing or not configured.")
 const NO_LOGIN = /auth|api key is missing/i;
+// the tools never sent an authenticate, whatever they name as their default: Gemini CLI signs in from the sign-in it
+// keeps (its settings' selectedType) in session/new itself, and any method of its would start a sign-in
+const NEVER_AUTH = Object.freeze(new Set(['gemini']));
+// the tools never told "allow always": Gemini CLI 0.65.0's "Allow for this session" on an edit moves the whole session
+// to its autoEdit mode without a word (core scheduler/policy.ts isAutoEditTransition), and its "… in all future
+// sessions" saves a rule in your own Gemini settings. Its Code page settings turn them off (security.disableAlwaysAllow);
+// should one come anyway, the page is not offered it and gets allow once
+const NO_ALWAYS = Object.freeze(new Set(['gemini']));
 
 export class AcpAgent {
   // proc: sandboxAgent's process. onEvent(ev): the page's events. onPermission({tool, input, kind}) -> 'once' |
@@ -122,10 +130,13 @@ export class AcpAgent {
   }
 
   async init() {
-    const r = obj(await this.peer.request('initialize', {
-      protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
-      clientInfo: { name: 'code-page', title: 'Code page', version: this.clientVersion },
-    }, { timeoutMs: 60000 }));
+    let r;
+    try {
+      r = obj(await this.peer.request('initialize', {
+        protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
+        clientInfo: { name: 'code-page', title: 'Code page', version: this.clientVersion },
+      }, { timeoutMs: 60000 }));
+    } catch (e) { if (this.wantsLogin) throw this.signInAgain(); throw e; }
     this.caps = obj(r.agentCapabilities);
     this.authMethods = arr(r.authMethods).map(obj).filter((m) => typeof m.id === 'string').map((m) => m.id).slice(0, 20);
     const d = obj(r._meta).defaultAuthMethodId;
@@ -157,6 +168,10 @@ export class AcpAgent {
     if (current) this.model = short(current, 200);
   }
 
+  signInAgain() {
+    return new NotSignedIn(`${HARNESSES[this.tool]?.name ?? this.tool} took the screen for a sign-in (most likely its Google sign-in wants renewing): open a terminal, run gemini there and sign in again`);
+  }
+
   sawTerminal() {
     this.wantsLogin = true;
     this.log(`${this.tool}: wrote a terminal screen (its sign-in) where only JSON-RPC may be: stopped`);
@@ -166,9 +181,9 @@ export class AcpAgent {
 
   async withLogin(fn) {
     try { return await fn(); } catch (e) {
-      if (this.wantsLogin) throw new NotSignedIn(`${HARNESSES[this.tool]?.name ?? this.tool} wants its Google sign-in again: open a terminal, run gemini there and sign in`);
+      if (this.wantsLogin) throw this.signInAgain();
       if (!(e instanceof RpcError) || !NO_LOGIN.test(`${e.message} ${JSON.stringify(e.data ?? '')}`)) throw e;
-      const method = this.authMethods.find((m) => EXISTING_LOGIN.has(m)) ?? this.defaultAuth;
+      const method = NEVER_AUTH.has(this.tool) ? null : (this.authMethods.find((m) => EXISTING_LOGIN.has(m)) ?? this.defaultAuth);
       if (!method) throw new NotSignedIn(this.tool === 'gemini' ? 'sign in to Gemini CLI in the Terminal (run gemini there)' : said(e.message, 200));
       try { await this.peer.request('authenticate', { methodId: method }, { timeoutMs: 60000 }); } catch (e2) { throw new NotSignedIn(said(e2.message, 200)); }
       try { return await fn(); } catch (e3) {
@@ -328,6 +343,7 @@ export class AcpAgent {
       // (Chat: a tool reached for — the process was killed there and then: the turn ends with what came before it)
       if (this.toolTried) return { stop: 'cancelled', usage: usageOf({}), tried: this.toolTried };
       if (this.unsafe) { this.close(); throw this.unsafeError(); }
+      if (this.wantsLogin) throw this.signInAgain();
       throw e;
     } finally { this.prompting = false; this.flush(); }
     if (this.unsafe) { this.close(); throw this.unsafeError(); }
@@ -464,8 +480,10 @@ export class AcpAgent {
       if (paths && await this.plainEdit(paths)) return pick('allow_once');
     }
     const c = acpCall(merged);
-    const answer = await this.onPermission({ tool: c.name, input: c.input, kind, always: opts.some((o) => o.kind === 'allow_always') });
-    if (answer === 'always') return pick('allow_always', 'allow_once');
+    const always = !NO_ALWAYS.has(this.tool) && opts.some((o) => o.kind === 'allow_always');
+    const answer = await this.onPermission({ tool: c.name, input: c.input, kind, always });
+    if (answer === 'always' && always) return pick('allow_always', 'allow_once');
+    if (answer === 'always') return pick('allow_once');
     if (answer === 'once') return pick('allow_once');
     return pick('reject_once', 'reject_always');
   }

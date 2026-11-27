@@ -807,7 +807,7 @@ model can switch to another or back to the default, and the answer says "… doe
 for an id the tool no longer offers. Not yet in Chat: Gemini CLI (JON-1424) and Cursor (no switch that turns its tools off). Gemini CLI is on the Code
 page, on the sign-in it holds itself (an organisation's Code Assist login or an API key, signed in in the Terminal; Google's
 personal plans stopped working in it on 2026-06-18): `gemini --acp --approval-mode default` with its own system settings
-file (no YOLO mode, no project `.env`) and folder trust only where you trusted the project's settings, in its asking
+file (no YOLO mode, no "allow always", no project `.env` but a trusted project's `.gemini/.env`) and folder trust only where you trusted the project's settings, in its asking
 modes (default and plan; never its auto-edit or YOLO), never sent an `authenticate`; a sign-in that has lapsed says so at
 once and asks you to sign in again in the Terminal. It also reads the project's `GEMINI.md` as instructions, and the
 project's `.gemini/` is part of the settings you trust first.

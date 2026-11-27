@@ -4,7 +4,8 @@
     "enableAutoUpdateNotification": false
   },
   "security": {
-    "disableYoloMode": true
+    "disableYoloMode": true,
+    "disableAlwaysAllow": true
   },
   "advanced": {
     "ignoreLocalEnv": true

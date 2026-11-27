@@ -4158,8 +4158,12 @@ never reads, copies, keeps, passes on or relays a login.**
   `security.disableYoloMode`, `advanced.ignoreLocalEnv`; system settings outrank yours and the project's) and
   `GEMINI_CLI_TRUST_WORKSPACE`, which Gemini CLI takes as its folder trust outright — `true` only when the code
   container says this project's own agent settings are trusted (the decision above), `false` otherwise, so an untrusted
-  folder's `.gemini/settings.json` is ignored and only four sanitized keys are read from its `.env`; with
-  `ignoreLocalEnv` no project `.env` is read at all. Gemini also reads the project's `GEMINI.md` as instructions;
+  folder's `.gemini/settings.json` and `.gemini/.env` are ignored; `ignoreLocalEnv` keeps every other `.env` of the
+  project and the folders above it unread (only the home folder's). A trusted project's own `.gemini/.env` is read,
+  as its `.gemini/settings.json` is: both are in the trust hash below. `security.disableAlwaysAllow` takes Gemini's
+  "allow always" answers away (its "Allow for this session" on an edit would move the whole session to its auto-edit
+  mode unsaid, and "… in all future sessions" would save a rule in your Gemini settings), and the code container never
+  offers or sends one for Gemini either: each change is asked. Gemini also reads the project's `GEMINI.md` as instructions;
   `.gemini/` is in the agent-settings trust hash (`.gemini/settings.json`, hooks and MCP servers included), so a change
   there asks again. A stale or revoked sign-in makes Gemini CLI take the screen for its own sign-in (escape codes on
   stdout, then a wait for a code on stdin): a raw ESC byte can never be part of JSON-RPC, so the first one stops the

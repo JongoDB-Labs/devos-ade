@@ -75,6 +75,43 @@ test('Gemini: "Gemini API key is missing" and "Authentication required" are not 
     } finally { agent.close(); }
     assert.deepEqual(lines(f), [], scenario);
   }
+  // (one that names a default method, as a later version might: never sent either)
+  const f = seenFile();
+  const { agent } = make('default-auth', f);
+  try {
+    await agent.init();
+    assert.equal(agent.defaultAuth, 'oauth-personal');
+    await assert.rejects(agent.open({ cwd: '/workspace' }), (e) => e instanceof NotSignedIn && /Terminal/.test(e.message));
+  } finally { agent.close(); }
+  assert.deepEqual(lines(f), []);
+});
+
+test('Gemini: "allow always" is never offered to the page nor sent (its own moves the session to autoEdit unsaid)', async () => {
+  const f = seenFile();
+  const asked = [];
+  const proc = gemini('ask-always', f);
+  const agent = new AcpAgent(proc, { tool: 'gemini', onPermission: async (q) => { asked.push(q); return 'always'; } });
+  try {
+    await agent.init();
+    await agent.open({ cwd: '/workspace' });
+    const r = await agent.prompt('write a.txt');
+    assert.equal(r.stop, 'end_turn');
+    assert.equal(asked.length, 1);
+    assert.equal(asked[0].always, false);
+    assert.deepEqual(lines(f), ['permission proceed_once']);
+  } finally { agent.close(); }
+});
+
+test('Gemini: its sign-in screen in initialize or in a turn is not signed in too', async () => {
+  for (const at of ['stale-init', 'stale-prompt']) {
+    const { agent } = make(at);
+    try {
+      const t0 = Date.now();
+      const go = async () => { await agent.init(); await agent.open({ cwd: '/workspace' }); await agent.prompt('x'); };
+      await assert.rejects(go(), (e) => e instanceof NotSignedIn && /sign in again/.test(e.message), at);
+      assert.ok(Date.now() - t0 < 5000, at);
+    } finally { agent.close(); }
+  }
 });
 
 test('Gemini: its sign-in screen on stdout (escape codes, then a wait on stdin) is not signed in at once, and the process is killed', async () => {
@@ -83,7 +120,7 @@ test('Gemini: its sign-in screen on stdout (escape codes, then a wait on stdin) 
     const t0 = Date.now();
     try {
       await agent.init();
-      await assert.rejects(agent.open({ cwd: '/workspace' }), (e) => e instanceof NotSignedIn && /sign-in again/.test(e.message));
+      await assert.rejects(agent.open({ cwd: '/workspace' }), (e) => e instanceof NotSignedIn && /sign in again/.test(e.message));
       assert.ok(Date.now() - t0 < 5000, `${scenario}: ${Date.now() - t0} ms`);
       if (proc.exitCode === null && proc.signalCode === null) await once(proc, 'exit');
       assert.ok(proc.signalCode === 'SIGKILL' || proc.exitCode !== null);

@@ -45,6 +45,7 @@ export class Peer {
     // chunk itself: a line that has no end yet counts.
     if (this.onTerminal && !this.terminalSeen && s.includes('\x1b')) {
       this.terminalSeen = true;
+      this.log(`a terminal escape from the tool: ${said(s.slice(Math.max(0, s.indexOf('\x1b') - 20), s.indexOf('\x1b') + 60), 80)}`);
       try { this.onTerminal(); } catch (e) { this.log(`onTerminal: ${said(e?.message || e)}`); }
       if (this.done) return;
     }
