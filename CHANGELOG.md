@@ -4,7 +4,7 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.73.0] - 2026-11-27
 
 ### Changed
 
@@ -16,6 +16,9 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 - **An item menu opened from the keyboard stays open, and one that closes on its own gives the focus back.** A menu of the web app's rows (Home, Settings, Activity and the rest) closes when the page scrolls or the window changes size. It no longer closes at once when the page scrolled the row into view just before it opened (Shift+F10 or the menu key on a row low on the page). When it does close and held the focus, the focus goes back to the row it came from instead of being lost on the page.
 - **The Code page's cost meter stays calm when the spend logs are slow.** When LiteLLM's spend logs do not answer in time, the web app now says so in an ordinary answer instead of an error, so the page logs no error; the meter keeps its last figures and catches up after the next turn or a click. (JON-1400)
+
+### To get it
+Existing installs: Home › Update now.
 
 ## [0.72.1] - 2026-11-27
 
