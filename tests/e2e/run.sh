@@ -1552,8 +1552,9 @@ elif [ "$SUBSCRIPTIONS" = 1 ]; then
   w_shot="$(printf '%s\n' "$out" | awk '/^shot: == \/workspace$/{f=1;next} /^shot: == /{f=0} f')"
   r_shot="$(printf '%s\n' "$out" | awk '/^shot: == \/workspace\/e2e-jon518-repo$/{f=1;next} /^shot: == /{f=0} f')"
   if printf '%s' "$r_shot" | grep -F 'Quick safety check' >/dev/null && printf '%s' "$r_shot" | grep -F 'trust this folder' >/dev/null \
-     && [ -n "$(printf '%s' "$w_shot" | tr -d '[:space:]')" ] && ! printf '%s' "$w_shot" | grep -E 'Quick safety check|trust this folder' >/dev/null; then
-    record terminal claude-trusts-the-workspace-only PASS "$(( $(now) - t0 ))" "claude in /workspace showed no trust question; in a new git repository under it (with a .claude/settings.json) it asked (Quick safety check ... trust this folder); neither answered, no prompt sent"
+     && printf '%s' "$w_shot" | grep -E 'for shortcuts|Welcome to Claude Code|Run /login|Not logged in' >/dev/null \
+     && ! printf '%s' "$w_shot" | grep -E 'Quick safety check|trust this folder' >/dev/null; then
+    record terminal claude-trusts-the-workspace-only PASS "$(( $(now) - t0 ))" "claude in /workspace showed no trust question; in a new git repository under it (with a .claude/settings.json) it asked (Quick safety check ... trust this folder); neither answered, no prompt sent — /workspace showed: $(printf '%s' "$w_shot" | grep -E -m1 'for shortcuts|Welcome to Claude Code|Run /login|Not logged in' | tr -s '[:space:]' ' ' | head -c 120)"
   else record terminal claude-trusts-the-workspace-only FAIL "$(( $(now) - t0 ))" "workspace: $(printf '%s' "$w_shot" | tr -s '[:space:]' ' ' | head -c 200) | repo: $(printf '%s' "$r_shot" | tr -s '[:space:]' ' ' | head -c 200)"; fi
   # Codex's own screen opens once signed in (from 0.164.0, from the program alone it stopped at "no complete local
   # package", and only once signed in): signed in with a stand-in API key in a home of the check's own, never the

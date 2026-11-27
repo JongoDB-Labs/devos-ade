@@ -33,7 +33,7 @@ fi
 if ! jq -e '.projects["/workspace"].hasTrustDialogAccepted == true' "$HOME/.claude.json" >/dev/null 2>&1; then
   if jq '.projects["/workspace"] = ((.projects["/workspace"] // {}) + {hasTrustDialogAccepted: true})' \
        "$HOME/.claude.json" > "$HOME/.claude.json.tmp" 2>/dev/null; then
-    mv "$HOME/.claude.json.tmp" "$HOME/.claude.json"
+    mv "$HOME/.claude.json.tmp" "$HOME/.claude.json" || rm -f "$HOME/.claude.json.tmp"
   else rm -f "$HOME/.claude.json.tmp"; fi
 fi
 # trust:end
