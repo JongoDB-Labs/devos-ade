@@ -5915,6 +5915,8 @@ def bulk_sessions_flow(browser, name, phone):
     post(NORMAL + "/__mock/busy?title=" + urllib.parse.quote(A))
     go(root.get_by_test_id("sessions-select"))
     select(A)
+    if not ws.get_by_test_id("archived-list").is_visible():
+        go(ws.get_by_test_id("archived-toggle"))
     select(C, archived=True)
     go(root.get_by_test_id("sessions-delete"))
     expect(page.get_by_test_id("delete-sessions-dialog")).to_contain_text("Delete 2 sessions?")
