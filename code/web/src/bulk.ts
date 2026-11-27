@@ -15,7 +15,7 @@ export const bulkDeleteHeading = (n: number): string => (n === 1 ? 'Delete this 
 /** One short reason a session was skipped, from the words of the refusal (the backend's, or this page's own check). */
 export function skipReason(message: string): string {
   const m = message.toLowerCase();
-  if (/turn is running|working|busy|starting/.test(m)) return 'a turn is running in it';
+  if (/turn is running/.test(m)) return 'a turn is running in it';
   if (/terminal|elsewhere in the sandbox/.test(m)) return 'it is open in the terminal';
   if (/read only|no longer added/.test(m)) return 'it is read only';
   const t = message.replace(/\s+/g, ' ').trim().replace(/[.;:]+$/, '');

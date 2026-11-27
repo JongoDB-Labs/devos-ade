@@ -332,6 +332,7 @@ export function ProjectsPanel() {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [picking, setPicking] = useState(false);
   const [picked, setPicked] = useState<string[]>([]);
+  const [acting, setActing] = useState(false);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
   const [archShown, setArchShown] = useState<Record<string, boolean>>({});
@@ -349,15 +350,28 @@ export function ProjectsPanel() {
   const subOf = (v: SessionView) => [v.permissions.length ? 'waiting for you' : v.state === 'busy' ? 'working' : v.state === 'starting' ? 'starting' : v.unseen ? 'done — new' : v.state,
     modelLabel(models, v.model)].filter(Boolean).join(' · ');
   const isOpen = (p: Project) => expanded[p.id] ?? (!p.gone && (p.id === current || by[p.id].open.some((id) => groupOf(views[id]) !== 'done')));
-  // (select mode ends when the action is done; the list then shows it)
-  const endPicking = async (done: Promise<void>) => { await done; setPicking(false); setPicked([]); };
+  // a bulk action, once at a time: select mode ends when it changed something (the list then shows it); when it changed
+  // nothing, the selection stays, to try again
+  const act = async (run: () => Promise<number>) => {
+    if (acting) return;
+    setActing(true);
+    try {
+      if ((await run()) > 0) { setPicking(false); setPicked([]); }
+    } finally {
+      setActing(false);
+    }
+  };
   const pick = (id: string, on: boolean) => setPicked((x) => (on ? [...new Set([...x, id])] : x.filter((y) => y !== id)));
   // (a session shown in a project whose folder does not hold its own: Continue in that project forks it there)
   const continueTo = (id: string, p: Project) => {
     const cwd = where[id]?.cwd ?? info.get(id)?.cwd;
     return !p.gone && cwd && cwd !== p.path && !cwd.startsWith(`${p.path}/`) ? { id: p.id, name: label(p.name, 60) } : null;
   };
+  // the rows listed in this render (a search or a folded group hides the others): the bar acts on the selected ones of
+  // these only — a session selected and then hidden is not archived or deleted unseen
+  const listed = new Set<string>();
   const row = (id: string, title: string, sub: string, v?: SessionView, gone = false, p?: Project) => (
+    listed.add(id),
     <Row key={id} id={id} view={v} active={id === active} title={title} sub={sub} picking={picking && !gone} picked={picked.includes(id)} onPick={(on) => pick(id, on)}
       gone={gone} archived={info.get(id)?.archived === true} imported={info.get(id)?.imported ?? null} continueTo={p && !gone ? continueTo(id, p) : null} harness={v?.harness ?? info.get(id)?.harness} />
   );
@@ -541,30 +555,31 @@ export function ProjectsPanel() {
         </button>
         <Suggestions />
       </div>
-      {picking && (
+      {/* (the selected sessions that are listed: worked out here, below the list, whose rows are listed by now) */}
+      {picking && ((sel: string[]) => (
         <div class="proj-pickbar" data-testid="sessions-picked">
-          <span class="muted small">{picked.length} selected</span>
-          <button type="button" class="btn small primary" disabled={!picked.length} onClick={() => openProjectDialog({ kind: 'file', ids: picked })} data-testid="sessions-add-to-project">
+          <span class="muted small">{sel.length} selected</span>
+          <button type="button" class="btn small primary" disabled={acting || !sel.length} onClick={() => openProjectDialog({ kind: 'file', ids: sel })} data-testid="sessions-add-to-project">
             Add to project…
           </button>
-          {(!picked.length || picked.some((id) => !info.get(id)?.archived)) && (
-            <button type="button" class="btn small" disabled={!picked.length} onClick={() => void endPicking(bulkArchive(picked.filter((id) => !info.get(id)?.archived), true))} data-testid="sessions-archive">
+          {(!sel.length || sel.some((id) => !info.get(id)?.archived)) && (
+            <button type="button" class="btn small" disabled={acting || !sel.length} onClick={() => void act(() => bulkArchive(sel.filter((id) => !info.get(id)?.archived), true))} data-testid="sessions-archive">
               Archive
             </button>
           )}
-          {picked.some((id) => info.get(id)?.archived) && (
-            <button type="button" class="btn small" onClick={() => void endPicking(bulkArchive(picked.filter((id) => info.get(id)?.archived), false))} data-testid="sessions-unarchive">
+          {sel.some((id) => info.get(id)?.archived) && (
+            <button type="button" class="btn small" disabled={acting} onClick={() => void act(() => bulkArchive(sel.filter((id) => info.get(id)?.archived), false))} data-testid="sessions-unarchive">
               Unarchive
             </button>
           )}
-          <button type="button" class="btn small danger" disabled={!picked.length} onClick={() => openProjectDialog({ kind: 'delete-sessions', ids: picked, titles: picked.map((id) => titleOf(id, views[id] ?? ({} as SessionView))), done: () => (setPicking(false), setPicked([])) })} data-testid="sessions-delete">
+          <button type="button" class="btn small danger" disabled={acting || !sel.length} onClick={() => openProjectDialog({ kind: 'delete-sessions', ids: sel, titles: sel.map((id) => titleOf(id, views[id] ?? ({} as SessionView))), done: () => (setPicking(false), setPicked([])) })} data-testid="sessions-delete">
             Delete…
           </button>
           <button type="button" class="btn small ghost" onClick={() => (setPicking(false), setPicked([]))}>
             Cancel
           </button>
         </div>
-      )}
+      ))(picked.filter((id) => listed.has(id)))}
     </div>
   );
 }
@@ -973,7 +988,7 @@ function DeleteSessionsDialog({ ids, titles, done, onClose }: { ids: string[]; t
           Cancel
         </button>
         <button type="button" class="btn danger" disabled={busy} data-testid="delete-sessions-confirm"
-          onClick={() => { setBusy(true); void bulkDelete(ids).then(() => (done?.(), onClose())); }}>
+          onClick={() => { setBusy(true); void bulkDelete(ids).then((n) => (n > 0 && done?.(), onClose())); }}>
           {busy ? <Spinner size={12} /> : null} Delete {ids.length === 1 ? 'the session' : `${ids.length} sessions`}
         </button>
       </div>

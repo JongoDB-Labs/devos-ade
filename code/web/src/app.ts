@@ -1925,7 +1925,7 @@ export async function deleteSessionById(id: string): Promise<boolean> {
 }
 
 /** Archive (or list again) several sessions: one request each, a turn running in one skips it. One notice for all. */
-export async function bulkArchive(ids: string[], on: boolean): Promise<void> {
+export async function bulkArchive(ids: string[], on: boolean): Promise<number> {
   const reasons: string[] = [];
   const done: string[] = [];
   for (const id of ids) {
@@ -1939,14 +1939,16 @@ export async function bulkArchive(ids: string[], on: boolean): Promise<void> {
       reasons.push(skipReason(errText(e)));
     }
   }
-  if (on) for (const id of done) if (get().views[id] && get().views[id].state !== 'closed') await closeSessionById(id);
+  // (archived: its process ends, as for one; a close that fails leaves it archived all the same)
+  if (on) for (const id of done) if (get().views[id] && get().views[id].state !== 'closed') await closeSessionById(id).catch(() => undefined);
   set((s) => ({ ...s, sessions: s.sessions.map((x) => (done.includes(x.id) ? { ...x, archived: on || undefined } : x)) }));
   toast(bulkNotice(on ? 'Archived' : 'Unarchived', done.length, reasons), reasons.length && !done.length ? 'error' : 'ok');
   void refreshSessions();
+  return done.length;
 }
 
 /** Delete several sessions (the dialog first, Projects.tsx BulkDeleteDialog): each with its own request naming its own id. */
-export async function bulkDelete(ids: string[]): Promise<void> {
+export async function bulkDelete(ids: string[]): Promise<number> {
   const reasons: string[] = [];
   let done = 0;
   for (const id of ids) {
@@ -1970,6 +1972,7 @@ export async function bulkDelete(ids: string[]): Promise<void> {
   announce();
   toast(bulkNotice('Deleted', done, reasons), reasons.length && !done ? 'error' : 'ok');
   void refreshSessions();
+  return done;
 }
 
 /** The terminal opened (a tab of its own on a phone), then a message about the window it made. */

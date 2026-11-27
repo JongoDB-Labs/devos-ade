@@ -29,7 +29,6 @@
 .proj-add:hover { border-color: var(--accent); background: var(--hover); }
 .proj-pickbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 8px 10px; border-top: 1px solid var(--line); background: var(--surface-2); }
 .proj-pickbar .muted { margin-right: auto; }
-.proj-pickbar .btn { min-height: 28px; }
 .bulk-titles { margin: 0 0 8px; padding-left: 18px; overflow-wrap: anywhere; }
 .sess-pick { flex: none; margin: 0 0 0 8px; }
 .side-tools .icon-btn.on { color: var(--accent); background: var(--active); }

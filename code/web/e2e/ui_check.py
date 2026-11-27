@@ -5841,8 +5841,9 @@ def bulk_sessions_flow(browser, name, phone):
         expect(bar).to_be_visible()
         bb = bar.bounding_box()
         boxes = [b.bounding_box() for b in bar.locator("button").all() if b.is_visible()]
+        least = 36 if phone else 24   # (a touch screen: the app's touch size for small buttons, as everywhere else)
         for b in boxes:
-            assert b["height"] >= 24 and b["width"] >= 24, f"a bar button under 24 px: {b}"
+            assert b["height"] >= least and b["width"] >= least, f"a bar button under {least} px: {b}"
             assert b["x"] >= bb["x"] - 0.5 and b["x"] + b["width"] <= bb["x"] + bb["width"] + 0.5, f"a bar button leaves the bar: {b} {bb}"
         for i, a in enumerate(boxes):
             for b in boxes[i + 1:]:
@@ -5865,6 +5866,12 @@ def bulk_sessions_flow(browser, name, phone):
     go(root.get_by_test_id("sessions-select"))
     select(A, B, C)
     expect(root.get_by_test_id("sessions-picked")).to_contain_text("3 selected")
+    # a search that hides two of them: the bar counts (and acts on) the one still listed only; clearing it shows all 3
+    search = root.get_by_role("searchbox", name="Search sessions")
+    search.fill("jitter")
+    expect(root.get_by_test_id("sessions-picked")).to_contain_text("1 selected", timeout=10_000)
+    search.fill("")
+    expect(root.get_by_test_id("sessions-picked")).to_contain_text("3 selected", timeout=10_000)
     expect(root.get_by_test_id("sessions-unarchive")).to_have_count(0)
     bar_fits()
     p.shot(f"{name}-bulk-select-bar.png")
