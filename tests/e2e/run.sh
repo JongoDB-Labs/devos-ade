@@ -1538,6 +1538,23 @@ elif [ "$SUBSCRIPTIONS" = 1 ]; then
     tmux -L e2e-gemini capture-pane -p -J -t g; tmux -L e2e-gemini kill-server' 2>/dev/null)"
   if printf '%s' "$out" | grep 'accounts.google.com/o/oauth2' >/dev/null; then record subscriptions signin-gemini PASS "$(( $(now) - t0 ))" "its own sign-in (Login with Google, NO_BROWSER) printed its link; ended there, never completed"
   else record subscriptions signin-gemini FAIL "$(( $(now) - t0 ))" "no Google link in: $(printf '%s' "$out" | tr '\n' ' ' | tail -c 300)"; fi
+  # Claude Code's trust question (JON-518): not asked in /workspace itself (bn-terminal records it), asked in a git repository
+  # made under /workspace that carries a .claude/settings.json (a clone's hooks and MCP servers must not run unasked).
+  # tmux as the sandbox's user, a few seconds each, ended with the server: no key is pressed, so no model request is made
+  t0="$(now)"
+  out="$(docker exec -e TERM=xterm-256color "$tc" sh -c 'R=/workspace/e2e-jon518-repo; rm -rf "$R"; mkdir -p "$R/.claude" || exit 1
+    git -C "$R" init -q; printf "{\"permissions\":{\"allow\":[\"Bash(echo e2e-jon518)\"]}}\n" > "$R/.claude/settings.json"
+    for d in /workspace "$R"; do
+      tmux -L e2e-trust -f /dev/null new-session -d -s t -x 200 -y 50 -c "$d" claude; sleep 14
+      { echo "== $d"; tmux -L e2e-trust capture-pane -p -J -t t; } | sed "s/^/shot: /"; tmux -L e2e-trust kill-server
+    done
+    rm -rf "$R"' 2>/dev/null)"
+  w_shot="$(printf '%s\n' "$out" | awk '/^shot: == \/workspace$/{f=1;next} /^shot: == /{f=0} f')"
+  r_shot="$(printf '%s\n' "$out" | awk '/^shot: == \/workspace\/e2e-jon518-repo$/{f=1;next} /^shot: == /{f=0} f')"
+  if printf '%s' "$r_shot" | grep -F 'Quick safety check' >/dev/null && printf '%s' "$r_shot" | grep -F 'trust this folder' >/dev/null \
+     && [ -n "$(printf '%s' "$w_shot" | tr -d '[:space:]')" ] && ! printf '%s' "$w_shot" | grep -E 'Quick safety check|trust this folder' >/dev/null; then
+    record terminal claude-trusts-the-workspace-only PASS "$(( $(now) - t0 ))" "claude in /workspace showed no trust question; in a new git repository under it (with a .claude/settings.json) it asked (Quick safety check ... trust this folder); neither answered, no prompt sent"
+  else record terminal claude-trusts-the-workspace-only FAIL "$(( $(now) - t0 ))" "workspace: $(printf '%s' "$w_shot" | tr -s '[:space:]' ' ' | head -c 200) | repo: $(printf '%s' "$r_shot" | tr -s '[:space:]' ' ' | head -c 200)"; fi
   # Codex's own screen opens once signed in (from 0.164.0, from the program alone it stopped at "no complete local
   # package", and only once signed in): signed in with a stand-in API key in a home of the check's own, never the
   # sandbox's, removed after; nothing of Codex is copied into that home (its background server is off)

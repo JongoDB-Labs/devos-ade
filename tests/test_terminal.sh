@@ -1462,3 +1462,45 @@ test_the_sandbox_git_has_a_default_identity_that_every_other_one_beats() {
   assert_contains "$(grep -c 'COPY gitconfig /etc/gitconfig' "$STACK_DIR/terminal/Dockerfile")" "1"
   assert_contains "$(cat "$g")" "helper = /usr/local/bin/bn-git-credential"
 }
+
+# JON-518: the terminal's first start trusts /workspace itself, in Claude Code's ~/.claude.json, and nothing else
+test_first_start_trusts_the_workspace_and_nothing_below_it() {
+  command -v jq >/dev/null || { echo "no jq here" >&2; return 0; }
+  local f="$STACK_DIR/terminal/bin/bn-terminal" blk h="$TMP/trusthome" j
+  blk="$(sed -n '/^# trust:begin$/,/^# trust:end$/p' "$f")"
+  assert_contains "$blk" "hasTrustDialogAccepted"
+  # (the first-run line writes the file; this runs both lines as bn-terminal does, with the shell options it sets)
+  first="$(grep -F '[ -e "$HOME/.claude.json" ] || printf' "$f")"
+  [ -n "$first" ] || { echo "first-run line not found" >&2; return 1; }
+  run_start() { HOME="$h" bash -c "set -euo pipefail; umask 077; $first
+$blk"; }
+  # a first start: onboarding and theme as before, /workspace trusted, no other folder
+  rm -rf "$h"; mkdir -p "$h"; run_start
+  j="$h/.claude.json"
+  assert_eq "$(jq -r '.hasCompletedOnboarding, .theme' "$j" | tr '\n' ' ')" "true dark "
+  assert_eq "$(jq -c '.projects' "$j")" '{"/workspace":{"hasTrustDialogAccepted":true}}'
+  assert_eq "$(jq '.projects | length' "$j")" "1"
+  assert_eq "$(_perm "$j")" "600"
+  # twice: byte-identical (not rewritten), no leftover temp file
+  cp "$j" "$TMP/trust1"; run_start
+  assert_eq "$(cmp "$TMP/trust1" "$j" && echo same)" "same"
+  [ ! -e "$j.tmp" ] || { echo "temp file left" >&2; return 1; }
+  # an existing file: every other key kept (the account, MCP servers, other folders and their own keys, an untrusted
+  # /workspace entry's other keys), only the /workspace record added
+  printf '%s\n' '{"oauthAccount":{"x":1},"theme":"light","mcpServers":{"a":{"command":"b"}},"projects":{"/workspace":{"allowedTools":["Bash"],"hasTrustDialogAccepted":false},"/workspace/repo":{"hasTrustDialogAccepted":false,"k":2},"/other":{"hasTrustDialogAccepted":true}}}' > "$j"
+  run_start
+  assert_eq "$(jq -c '[.oauthAccount, .theme, .mcpServers.a.command]' "$j")" '[{"x":1},"light","b"]'
+  assert_eq "$(jq -c '.projects["/workspace"]' "$j")" '{"allowedTools":["Bash"],"hasTrustDialogAccepted":true}'
+  assert_eq "$(jq -c '.projects["/workspace/repo"]' "$j")" '{"hasTrustDialogAccepted":false,"k":2}'
+  assert_eq "$(jq -c '.projects["/other"]' "$j")" '{"hasTrustDialogAccepted":true}'
+  assert_eq "$(jq '.projects | length' "$j")" "3"
+  # a clone is never pre-trusted: only the one literal path is ever written
+  assert_eq "$(printf '%s\n' "$blk" | grep -o '\.projects\["[^"]*"\]' | sort -u)" '.projects["/workspace"]'
+  # not JSON: left exactly as it was, and the start goes on
+  printf 'not json {' > "$j"; run_start
+  assert_eq "$(cat "$j")" "not json {"
+  [ ! -e "$j.tmp" ] || { echo "temp file left" >&2; return 1; }
+  # the hint and the prompt are never turned off globally
+  assert_not_contains "$(cat "$f")" "skipDangerousModePermissionPrompt"
+  assert_not_contains "$(cat "$f")" "hasTrustDialogAccepted\": true}}"
+}

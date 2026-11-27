@@ -18,9 +18,24 @@ if [ -n "${SHARED_MCP_TOKEN:-}" ] && [ -n "${BN_MCP_URL:-}" ]; then
     '{mcpServers: {"bedrock-shared": {type: "http", url: $url, headers: {Authorization: $auth}}}}' > "$conf/mcp.json.tmp"
   mv "$conf/mcp.json.tmp" "$conf/mcp.json"
 fi
-# First start only: no theme picker (dark, like the terminal). Claude Code's other first-run question — whether
-# you trust the files in /workspace — stays yours to answer.
+# First start only: no theme picker (dark, like the terminal).
 [ -e "$HOME/.claude.json" ] || printf '{"hasCompletedOnboarding":true,"theme":"dark"}\n' > "$HOME/.claude.json"
+# Claude Code's other first-run question — "Do you trust the files in this folder?" — is answered for /workspace
+# itself, so the first `claude` there does not ask (JON-518). Nothing else is trusted, and never a path a person or a
+# repository chooses: Claude Code (2.1.309) looks for the trust record at the folder, and for a folder inside a git
+# repository only from there up to the repository's root, never above it — so a repository cloned or made under
+# /workspace (project new, git clone) is asked about again, before its .claude/settings.json hooks and MCP servers
+# run. A folder of /workspace outside any repository inherits this record: it holds no repository's settings.
+# Merged into what is there (other keys kept), written only when the record is not yet there, left alone when the
+# file is not JSON that jq reads.
+# trust:begin
+if ! jq -e '.projects["/workspace"].hasTrustDialogAccepted == true' "$HOME/.claude.json" >/dev/null 2>&1; then
+  if jq '.projects["/workspace"] = ((.projects["/workspace"] // {}) + {hasTrustDialogAccepted: true})' \
+       "$HOME/.claude.json" > "$HOME/.claude.json.tmp" 2>/dev/null; then
+    mv "$HOME/.claude.json.tmp" "$HOME/.claude.json"
+  else rm -f "$HOME/.claude.json.tmp"; fi
+fi
+# trust:end
 # The Code page's spawn server, bn-coded, on a socket in the code-socket volume, which only the code container shares
 # (./stack code enable; it connects, it never listens there). Always running, so turning the Code page on or off never
 # restarts this container: with no code container, nothing connects and it does nothing. Restarted when it exits —
