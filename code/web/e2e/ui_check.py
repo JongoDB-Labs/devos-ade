@@ -2410,7 +2410,8 @@ def previews2_desktop(browser):
     nb = pane.get_by_test_id("preview-notebook")
     expect(nb.get_by_test_id("nb-cell")).to_have_count(8, timeout=15_000)
     expect(nb.locator("[data-testid=math] .katex").first).to_be_visible(timeout=10_000)
-    assert nb.locator("[data-testid=math] .katex").count() >= 3
+    # (at least three: the formulas are typeset one after another, so a count taken at once can come too early)
+    expect(nb.locator("[data-testid=math] .katex").nth(2)).to_be_attached(timeout=10_000)
     expect(nb.locator(".nb-out-text .ansi-fg2")).to_have_text("ok")
     expect(nb.locator(".nb-code .tok-keyword").first).to_be_visible(timeout=10_000)
     assert decoded(page, ".pane:not(.hidden) .nb-img") == [160, 100]
