@@ -676,6 +676,11 @@ _msrv_selfaddr() {
   case "$1" in 169.254.* | fe[89ab]* | ::ffff:169.254.* | ::ffff:172.1[6-9].* | ::ffff:172.2[0-9].* | ::ffff:172.3[01].* | ::ffff:100.6[4-9].* | ::ffff:100.[7-9][0-9].* | ::ffff:100.1[01][0-9].* | ::ffff:100.12[0-7].*) return 0 ;; esac
   return 1
 }
+# _msrv_dotted_quad H -> 0 only for a strict IPv4 literal (four numbers, each 0 to 255): a name that starts with one is not an address
+_msrv_dotted_quad() {
+  local o; [[ $1 =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || return 1
+  for o in ${1//./ }; do [ "$((10#$o))" -le 255 ] || return 1; done
+}
 # msrv_host URL -> the host part, lower case, without brackets and port
 msrv_host() {
   local rest hp; rest="${1#*://}"; hp="${rest%%/*}"
@@ -690,9 +695,8 @@ msrv_default_kind() {
   if [ -n "${2:-}" ]; then _msrv_selfaddr "$2" && echo self || echo hosted; return 0; fi
   case "$h" in
     localhost | *.local | *.lan | *.internal | *.home.arpa | *.localdomain | *.ts.net | host.docker.internal) echo self; return 0 ;;
-    [0-9]*.[0-9]*.[0-9]*.[0-9]*) _msrv_selfaddr "$h" && echo self || echo hosted; return 0 ;;
-    *:*) _msrv_selfaddr "$h" && echo self || echo hosted; return 0 ;;
-    *.*) echo hosted; return 0 ;;
+    *:*) [[ $h =~ ^[0-9A-Fa-f:.]+$ ]] && _msrv_selfaddr "$h" && echo self || echo hosted; return 0 ;;   # (an IPv6 literal only: nothing else has a colon)
+    *.*) if _msrv_dotted_quad "$h"; then _msrv_selfaddr "$h" && echo self || echo hosted; else echo hosted; fi; return 0 ;;   # (10.1.1.1x.evil.com is a name)
   esac
   echo self
 }
@@ -841,29 +845,40 @@ msrv_enabled() {
     fi
   done | awk -F'\t' '!s[$1 "/" $2]++' | head -n "$LOCAL_MODELS_MAX"
 }
-# _msrv_per_token IN_PER_MILLION -> USD per token as a plain decimal (no exponent: YAML 1.1 reads 5e-07 as text)
-_msrv_per_token() { awk -v v="$1" 'BEGIN { printf "%.10f\n", v / 1000000 }'; }
-# msrv_cost_lines NAME ID -> the LiteLLM cost lines of a model: a self-hosted one is free ($0); a hosted one carries its
-# prices (per model, else per server); with none, no price line at all — LiteLLM then prices it from its own price map when it
-# knows the id, and otherwise records no price: the spend is unknown, never claimed to be $0
-msrv_cost_lines() {
-  local p
-  if [ "$(msrv_kind "$1")" = hosted ]; then
-    p="$(msrv_price "$1" "$2")"
-    [ -n "$p" ] || return 0
-    printf '      input_cost_per_token: %s\n      output_cost_per_token: %s\n' "$(_msrv_per_token "${p%%;*}")" "$(_msrv_per_token "${p#*;}")"
-  else
-    printf '      input_cost_per_token: 0\n      output_cost_per_token: 0\n'
-  fi
+# _msrv_per_token IN_PER_MILLION -> USD per token as a plain decimal (no exponent: YAML 1.1 reads 5e-07 as text), 16 places so
+# the smallest valid price (0.000001 a million) is not rounded to 0; prints nothing for a price of 0
+_msrv_per_token() { awk -v v="$1" 'BEGIN { s = sprintf("%.16f", v / 1000000); if (s + 0 > 0) print s }'; }
+# _msrv_cost_lines KIND PRICES ID -> the LiteLLM cost lines of a model (PRICES: the server's "id=in;out,..." list). A self-hosted
+# one is free ($0); a hosted one carries its prices (its own, else the server's *), checked again here (a hand-edited .env is not
+# trusted); with none valid and above 0 it gets no price line at all — LiteLLM then prices it from its own price map when it knows
+# the id, and otherwise records no price: the spend is unknown, never $0
+_msrv_cost_lines() {
+  local kind="$1" list="$2" id="$3" e own='' all='' pin pout a b
+  if [ "$kind" != hosted ]; then printf '      input_cost_per_token: 0\n      output_cost_per_token: 0\n'; return 0; fi
+  while IFS= read -r e; do
+    [ -n "$e" ] || continue
+    case "${e%%=*}" in "$id") own="${e#*=}" ;; '*') all="${e#*=}" ;; esac
+  done <<< "${list//,/$'\n'}"
+  [ -n "$own" ] || own="$all"
+  [[ $own =~ ^[0-9]{1,6}(\.[0-9]{1,6})?\;[0-9]{1,6}(\.[0-9]{1,6})?$ ]] || return 0
+  pin="$(_msrv_per_token "${own%%;*}")"; pout="$(_msrv_per_token "${own#*;}")"
+  [ -n "$pin" ] && [ -n "$pout" ] || return 0
+  printf '      input_cost_per_token: %s\n      output_cost_per_token: %s\n' "$pin" "$pout"
 }
+# msrv_cost_lines NAME ID -> the same for one saved server's model
+msrv_cost_lines() { _msrv_cost_lines "$(msrv_kind "$1")" "$(_msrv_items MODEL_SERVER_PRICES | awk -F: -v n="$1" '$1 == n { sub(/^[^:]*:/, ""); printf "%s%s", s, $0; s = "," }')" "$2"; }
 msrv_yaml() {
-  local n id ctx key base note ssl costs
+  local n id ctx key base note ssl costs last='' kind='' plist=''
   while IFS=$'\t' read -r n id ctx; do
+    if [ "$n" != "$last" ]; then   # (the kind and prices of a server once, not for each of its models)
+      last="$n"; kind="$(msrv_kind "$n")"
+      plist="$(_msrv_items MODEL_SERVER_PRICES | awk -F: -v n="$n" '$1 == n { sub(/^[^:]*:/, ""); printf "%s%s", s, $0; s = "," }')"
+    fi
     base="$(msrv_gateway_url "$n")" || continue; key="$(msrv_key "$n")"
     [ -n "$key" ] || { note="$(msrv_key_note "$n")"; [ -z "$note" ] || warn "model server $n: $note" >&2; }
     # ($(...) drops a trailing newline: each extra block is given its own, so the next line starts on a line of its own)
     ssl=''; [ "$(msrv_trust "$n")" != 1 ] || ssl=$'      ssl_verify: false\n'
-    costs="$(msrv_cost_lines "$n" "$id")"; [ -z "$costs" ] || costs="$costs"$'\n'
+    costs="$(_msrv_cost_lines "$kind" "$plist" "$id")"; [ -z "$costs" ] || costs="$costs"$'\n'
     printf '  - model_name: "ms/%s/%s"\n    litellm_params:\n      model: "openai/%s"\n      api_base: "%s"\n      api_key: "%s"\n%s      timeout: 600\n%s    model_info:\n      mode: "chat"\n' \
       "$n" "$id" "$id" "$base" "${key:-none}" "$ssl" "$costs"
   done < <(msrv_enabled)
@@ -1058,15 +1073,22 @@ msrv_apply_op() {
       case "$st" in blocked | numeric | dns) die "refused: $detail" ;; esac
       valid_msrv_models "$(_msrv_models_for "$n" "$models")" || die "unusable model list"
       if [ -z "$addr" ]; then die "that address could not be checked"; fi
+      # (what it is billed as: the one asked for; else the one it had while the address is the same; else the default for its
+      # address — the checked one. A server moved to another address is judged afresh: it keeps its prices only if it stays hosted.)
+      # Everything is checked here, before anything is written.
+      local oldkind='' clearp=0
+      case "$kind" in self | hosted) ;; *) kind='' ;; esac
+      if [ -z "$kind" ] && [ -n "$old" ] && [ "$u" = "$old" ]; then oldkind="$(_msrv_items MODEL_SERVER_KINDS | awk -F= -v n="$n" '$1 == n && !d++ { print $2 }')"; kind="$oldkind"; fi
+      [ -n "$kind" ] || kind="$(msrv_default_kind "$u" "$addr")"
+      if [ "$prices" = none ]; then prices=''; clearp=1; fi
+      if [ -n "$old" ] && [ "$u" != "$old" ] && [ -z "$prices" ] && [ "$kind" != hosted ]; then clearp=1; fi
+      valid_msrv_prices "$(_msrv_prices_for "$n" "$prices")" || die "unusable price list"
+      [ "$u" = "$old" ] || [ -z "$old" ] || keyout="$keyout; billed as $kind now that the address changed"
       mkdir -p "$(local_dir)"                                                # (its checked address is known before it registers: models need it)
       { { grep -v "^$n"$'\t' "$(msrv_state_file)" 2>/dev/null || true; }; printf '%s\t%s\t%s\t%s\t%s\n' "$n" "$st" "$detail" "$(date +%s)" "$addr"; } | _local_put "$(msrv_state_file)"
-      # (what it is billed as: the one asked for, else the one it had, else the default for its address — the checked one)
-      case "$kind" in self | hosted) ;; *) kind=''; [ -z "$old" ] || kind="$(_msrv_items MODEL_SERVER_KINDS | awk -F= -v n="$n" '$1 == n && !d++ { print $2 }')" ;; esac
-      [ -n "$kind" ] || kind="$(msrv_default_kind "$u" "$addr")"
-      valid_msrv_prices "$(_msrv_prices_for "$n" "$prices")" || die "unusable price list"
       CFG_ORDER=''; cfg_put MODEL_SERVERS "$new"; cfg_put MODEL_SERVER_KEYS "$keys"
       cfg_put MODEL_SERVER_KINDS "$(_msrv_kinds_for "$n" "$kind")"
-      [ -z "$prices" ] && [ -n "$old" ] || cfg_put MODEL_SERVER_PRICES "$(_msrv_prices_for "$n" "$prices")"
+      if [ -n "$prices" ] || [ -z "$old" ] || [ "$clearp" = 1 ]; then cfg_put MODEL_SERVER_PRICES "$(_msrv_prices_for "$n" "$prices")"; fi
       cfg_put MODEL_SERVER_MODELS "$(_msrv_models_for "$n" "$models")"
       config_apply local cli ''
       msrv_probe_all; log "saved $n: $st$keyout" ;;

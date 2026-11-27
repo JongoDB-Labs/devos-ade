@@ -1328,10 +1328,10 @@ MODEL_SERVER_PRICES=groq:*=0.59;0.79,groq:llama3:8b=1.5;2
   # self-hosted: $0, exactly as before
   assert_eq "$(printf '%s\n' "$y" | awk '/model_name: "ms\/lan\/qwen\/Qwen3-8B"/ { f = 1 } f && /input_cost_per_token/ { print $2; exit }')" 0
   # hosted: the model's own price, else the server's, as plain decimals per token
-  assert_eq "$(printf '%s\n' "$y" | awk '/model_name: "ms\/groq\/llama3:8b"/ { f = 1 } f && /input_cost_per_token/ { print $2; exit }')" 0.0000015000
-  assert_eq "$(printf '%s\n' "$y" | awk '/model_name: "ms\/groq\/llama3:8b"/ { f = 1 } f && /output_cost_per_token/ { print $2; exit }')" 0.0000020000
-  assert_eq "$(printf '%s\n' "$y" | awk '/model_name: "ms\/groq\/qwen\/Qwen3-8B"/ { f = 1 } f && /input_cost_per_token/ { print $2; exit }')" 0.0000005900
-  assert_eq "$(printf '%s\n' "$y" | awk '/model_name: "ms\/groq\/qwen\/Qwen3-8B"/ { f = 1 } f && /output_cost_per_token/ { print $2; exit }')" 0.0000007900
+  assert_eq "$(printf '%s\n' "$y" | awk '/model_name: "ms\/groq\/llama3:8b"/ { f = 1 } f && /input_cost_per_token/ { print $2; exit }')" 0.0000015000000000
+  assert_eq "$(printf '%s\n' "$y" | awk '/model_name: "ms\/groq\/llama3:8b"/ { f = 1 } f && /output_cost_per_token/ { print $2; exit }')" 0.0000020000000000
+  assert_eq "$(printf '%s\n' "$y" | awk '/model_name: "ms\/groq\/qwen\/Qwen3-8B"/ { f = 1 } f && /input_cost_per_token/ { print $2; exit }')" 0.0000005900000000
+  assert_eq "$(printf '%s\n' "$y" | awk '/model_name: "ms\/groq\/qwen\/Qwen3-8B"/ { f = 1 } f && /output_cost_per_token/ { print $2; exit }')" 0.0000007900000000
   # the YAML parses, and no hosted entry says $0
   if command -v python3 >/dev/null && python3 -c 'import yaml' 2>/dev/null; then
     printf 'model_list:\n%s\n' "$y" | python3 -c 'import sys, yaml; d = yaml.safe_load(sys.stdin); assert len(d["model_list"]) == 4, d'
@@ -1440,4 +1440,58 @@ test_a_request_file_from_the_helper_carries_kind_and_prices_to_the_apply_and_an_
   printf 'op=save\nname=lab\nurl=http://10.0.0.5:8000\ntrust=false\nkey=\nmodels=*\nref=0123456789abcdef\n' > "$rf"     # (no kind, no prices: the shape from before)
   msrv_apply "$rf" >/dev/null 2>&1
   assert_eq "$(msrv_kind lab)" self
+}
+
+# --- JON-849 review fixes ---
+test_a_name_that_starts_like_an_address_is_a_name_and_only_a_strict_dotted_quad_is_judged_as_one() {
+  local u
+  for u in http://10.1.1.1x.evil.com http://10.0.0.1.nip.io http://192.168.1.1.example.com http://127.0.0.1.evil.org http://10.0.0.256 http://10.0.0.1.2 http://100.64.0.1.nip.io ; do
+    [ "$(msrv_default_kind "$u")" = hosted ] || { echo "not hosted: $u -> $(msrv_default_kind "$u")"; return 1; }
+  done
+  for u in http://10.1.1.1 http://192.168.0.255:80 'http://[fd00::1]' 'http://[::1]'; do
+    [ "$(msrv_default_kind "$u")" = self ] || { echo "not self: $u"; return 1; }
+  done
+}
+
+test_a_hosted_price_that_is_invalid_or_would_round_to_zero_gets_no_cost_lines_never_zero_and_a_tiny_one_is_kept() {
+  _lm_env "MODEL_SERVERS=h=https://gpu.example.org
+MODEL_SERVER_MODELS=h:*
+MODEL_SERVER_KINDS=h=hosted
+MODEL_SERVER_PRICES=h:*=0.000001;0.000002,h:llama3:8b=abc;1
+"
+  _fake_srv 0 200 "$VLLM"; msrv_probe_all
+  local y; y="$(local_models_yaml)"
+  assert_eq "$(printf '%s\n' "$y" | awk '/model_name: "ms\/h\/qwen\/Qwen3-8B"/ { f = 1 } f && /input_cost_per_token/ { print $2; exit }')" 0.0000000000010000   # (1e-12 a token kept, no exponent)
+  assert_not_contains "$(printf '%s\n' "$y" | awk '/model_name: "ms\/h\/llama3:8b"/ { f = 1; next } f && /model_name/ { exit } f')" "cost_per_token"   # (garbage: no line, not 0)
+  _lm_env "MODEL_SERVERS=h=https://gpu.example.org
+MODEL_SERVER_MODELS=h:*
+MODEL_SERVER_KINDS=h=hosted
+MODEL_SERVER_PRICES=h:*=0;0
+"
+  _fake_srv 0 200 "$VLLM"; msrv_probe_all
+  assert_not_contains "$(local_models_yaml)" "cost_per_token"
+}
+
+test_moving_a_server_to_another_address_without_a_kind_judges_it_afresh_and_a_failed_save_writes_nothing() {
+  _lm_env ''; _fake_apply; _fake_srv 0 200 "$VLLM"
+  msrv_apply_op save lab http://192.168.1.4:8000 0 '' '*' '' '' >/dev/null 2>&1
+  assert_eq "$(msrv_kind lab)" self
+  msrv_apply_op save lab https://gpu.example.org 0 '' '*' '' '' >/dev/null 2>&1       # (same name, a public address, no kind given)
+  assert_eq "$(msrv_kind lab)" hosted; assert_eq "$(get_env MODEL_SERVER_KINDS)" "lab=hosted"
+  msrv_apply_op billing lab '' 0 '' '' hosted '*=1;2' >/dev/null 2>&1
+  msrv_apply_op save lab http://192.168.1.4:8000 0 '' '*' '' '' >/dev/null 2>&1       # (back to a private address: free again, prices dropped)
+  assert_eq "$(msrv_kind lab)" self; assert_eq "$(get_env MODEL_SERVER_PRICES)" ""
+  msrv_apply_op billing lab '' 0 '' '' hosted '*=1;2' >/dev/null 2>&1
+  msrv_apply_op save lab https://gpu.example.org 0 '' '*' '' '' >/dev/null 2>&1       # (private to public: hosted; the prices from before are kept for it)
+  assert_eq "$(msrv_kind lab)" hosted
+  # the same address and no kind: what it had stays, prices too
+  msrv_apply_op save lab https://gpu.example.org 0 '' '*' '' '' >/dev/null 2>&1
+  assert_eq "$(msrv_kind lab)" hosted; assert_eq "$(get_env MODEL_SERVER_PRICES)" 'lab:*=1;2'
+  # prices=none clears them and nothing was written before the check
+  msrv_apply_op save lab https://gpu.example.org 0 '' '*' hosted none >/dev/null 2>&1
+  assert_eq "$(get_env MODEL_SERVER_PRICES)" ""
+  # a bad price list dies before the state file or .env change
+  local before_state before_env; before_state="$(cat "$(msrv_state_file)")"; before_env="$(cat "$ENV_FILE")"
+  ! ( msrv_apply_op save lab https://other.example.org 0 '' '*' hosted 'x=bad' ) >/dev/null 2>&1
+  assert_eq "$(cat "$(msrv_state_file)")" "$before_state"; assert_eq "$(cat "$ENV_FILE")" "$before_env"
 }

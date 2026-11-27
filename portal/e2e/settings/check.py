@@ -321,7 +321,7 @@ def lm_helper(b):
         ids = b.get("models") or []
         LM["servers"].append({"name": name, "url": url, "reached_as": url + "/v1", "trust": bool(b.get("trust")), "key": bool(b.get("key")), "up": True,
                               "reason": "", "warning": "", "models": LM_MODELS, "all": ids == ["*"], "enabled": [i for i in ids if i != "*"],
-                              "kind": b.get("kind") or "self", "prices": [p for p in (b.get("prices") or []) if isinstance(p, dict)]})
+                              "kind": b.get("kind") or ("hosted" if "203.0.113" in url else "self"), "prices": [p for p in (b.get("prices") or []) if isinstance(p, dict)]})
     else:
         sv = next((x for x in LM["servers"] if x["name"] == name), None)
         if sv is None:
@@ -919,8 +919,8 @@ def check_hosted_server(page, failures, label):
     row = page.locator("[data-server-row=groq]")
     row.wait_for(state="visible", timeout=10000)
     save = next((q for q in LM["posts"] if q["op"] == "save"), None)
-    if not save or save.get("kind") != "hosted" or save.get("prices") != [{"id": "*", "in": 0.59, "out": 0.79}]:
-        failures.append(f"{label}: the save request carries {save}")
+    if not save or save.get("kind") is not None or save.get("prices") != [{"id": "*", "in": 0.59, "out": 0.79}]:
+        failures.append(f"{label}: the save request carries {save} (no kind: the helper decides from the address it checked)")
     head = row.locator(".lm-name").inner_text()
     if "Remote" not in head or "$0.59 in / $0.79 out per 1M" not in head or "Local" in head or "$0\n" in head + "\n":
         failures.append(f"{label}: the hosted server's row says {head!r}")

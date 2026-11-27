@@ -925,3 +925,14 @@ def test_kind_and_prices_are_checked_before_anything_reaches_the_helper(app):
 def test_the_helper_capability_lists_the_billing_token_only_when_the_helper_says_so(tmp_path):
     (tmp_path / "helper-settings.json").write_text(json.dumps({"settings": 1, "local": ["local-server", "local-server-billing", "nope"], "written_at": int(time.time())}))
     assert st.capability(tmp_path)["local"] == ["local-server", "local-server-billing"]
+
+
+def test_a_status_row_with_no_kind_is_judged_by_its_address_a_public_one_is_remote_never_free(tmp_path):
+    _status(tmp_path)
+    d = json.loads((tmp_path / "local-models.json").read_text())
+    rows = [("pub", "https://api.groq.com"), ("ip", "http://203.0.113.9:8000"), ("lan", "http://192.168.1.4:8000"), ("loop", "http://localhost:11434"),
+            ("tail", "http://box.ts.net:8000"), ("evil", "http://10.0.0.1.nip.io"), ("v6", "http://[fd00::1]:8000"), ("dotless", "http://vllm:8000")]
+    d["servers"] = [{"name": n, "url": u, "status": "ok", "detail": "a|0", "enabled": "*"} for n, u in rows]
+    (tmp_path / "local-models.json").write_text(json.dumps(d))
+    got = {x["name"]: x["kind"] for x in lm.read_status(tmp_path)["servers"]}
+    assert got == {"pub": "hosted", "ip": "hosted", "lan": "self", "loop": "self", "tail": "self", "evil": "hosted", "v6": "self", "dotless": "self"}

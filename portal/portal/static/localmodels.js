@@ -576,7 +576,9 @@
       const billed = kind === "hosted"
         ? `marked Remote${prices ? `, at ${usd(pi)} in / ${usd(po)} out per million tokens` : ", with no price set (its spend shows as unknown, never $0)"}`
         : "marked Local, at $0";
-      ask({ op: "save", name, url: p.url, key: srv.key, trust: p.trust, models, skind: kind, ...(prices ? { prices } : {}) }, `Add ${name}?`,
+      // (the kind goes only when the person picked it: otherwise the helper decides from the address it checked — the name's
+      // resolved one — and what is shown here is only a guess from the typed address)
+      ask({ op: "save", name, url: p.url, key: srv.key, trust: p.trust, models, ...(srv.skind ? { skind: srv.skind } : {}), ...(prices ? { prices } : {}) }, `Add ${name}?`,
         `${p.url} joins the model gateway${p.status === "ok" ? ` with ${models.length} model${models.length === 1 ? "" : "s"}` : ", though it is not answering yet"}. ${p.status === "ok" ? "They show" : "Its models show, once it answers,"} in Chat, the Code page and the terminal ${billed}.${p.warning ? ` ${p.warning}` : ""}`, "Add server");
     });
     pbox.append(el("p", {}, saveBtn));

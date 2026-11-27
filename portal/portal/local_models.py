@@ -340,6 +340,29 @@ def parse_models(detail: str) -> list:
 _PRICE = re.compile(r"(\*|[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,127})=([0-9]{1,6}(?:\.[0-9]{1,6})?);([0-9]{1,6}(?:\.[0-9]{1,6})?)")
 
 
+def default_kind(url) -> str:
+    """lib/local_models.sh msrv_default_kind from the address as typed (no DNS here): loopback, private, link-local, tailnet and
+    *.local-style names, or a name with no dot, are "self"; anything else "hosted" (the safe direction: never booked free)."""
+    import ipaddress
+    host = re.sub(r"^[a-z]+://", "", _text(url, 200) or "").split("/")[0].lower()
+    host = host[1:host.index("]")] if host.startswith("[") and "]" in host else host.split(":")[0]
+    if not host:
+        return "hosted"
+    try:
+        ip = ipaddress.ip_address(host)
+        if getattr(ip, "ipv4_mapped", None):
+            ip = ip.ipv4_mapped
+        nets = ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10", "fc00::/7")   # (not is_private: that includes documentation ranges)
+        if ip.is_loopback or ip.is_link_local or any(ip.version == ipaddress.ip_network(n).version and ip in ipaddress.ip_network(n) for n in nets):
+            return "self"
+        return "hosted"
+    except ValueError:
+        pass
+    if host == "localhost" or host == "host.docker.internal" or host.endswith((".local", ".lan", ".internal", ".localdomain", ".home.arpa", ".ts.net")):
+        return "self"
+    return "hosted" if "." in host else "self"
+
+
 def parse_prices(raw) -> list:
     """lib/local_models.sh's "id=in;out,id=in;out" (US dollars per million input / output tokens; id * = the server's default)
     -> [{"id", "in", "out"}], field by field."""
@@ -406,7 +429,7 @@ def read_status(status_dir: Path, now: float | None = None) -> dict:
                         "key_note": _text(s.get("key_note"), 120), "models": models, "all": "*" in en, "enabled": [x for x in en if x != "*"][:200],
                         # what it is billed as (JON-849): self = this network / self-hosted, free, Local; hosted = a paid API, Remote,
                         # never free. A file from before kinds: by the address, as lib/local_models.sh msrv_default_kind would say.
-                        "kind": s.get("kind") if s.get("kind") in ("self", "hosted") else "self", "prices": parse_prices(s.get("prices"))})
+                        "kind": s.get("kind") if s.get("kind") in ("self", "hosted") else default_kind(s.get("url")), "prices": parse_prices(s.get("prices"))})
     return {"known": at is not None, "at": at, "servers": servers, "result": clean_result(d.get("result")), "stale": at is None or now - at > MAX_AGE_S,
             "runtime": {"kind": kind, "how": _text(rt.get("how"), 400), "command": "./stack local-models enable",
                         "dmr": _text(rt.get("dmr"), 20), "ollama": _text(rt.get("ollama"), 20), "mlx": _text(rt.get("mlx"), 20),
