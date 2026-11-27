@@ -131,16 +131,19 @@ def other_provider(ctx):
     init = next((e for e in evs if e["type"] == "init"), None)
     expect(init is None or init["model"] == m["id"], f"init model {init and init['model']}")
     # its spend, from LiteLLM's logs, under that model (logged as the provider's model: bedrock/us.openai.gpt-6-luna)
-    t0, rows = time.time(), []
+    t0, rows, down = time.time(), [], None
     mine = lambda r: m["id"].removeprefix("or/") in r["model"]   # noqa: E731
     while time.time() - t0 < 60:
-        rows = (c.api("GET", f"/.bn/spend?session={sid}")["json"] or {}).get("rows") or []
+        d = c.api("GET", f"/.bn/spend?session={sid}")["json"] or {}
+        # (LiteLLM's spend logs did not answer this time: said in a 200, no rows — JON-1400; asked again)
+        down = d.get("unavailable")
+        rows = d.get("rows") or rows
         if any(mine(r) for r in rows):
             break
         c.page.wait_for_timeout(2000)
     spent = sum(r["spend"] for r in rows if mine(r))
     cached = sum(r["cache_read_tokens"] for r in rows if mine(r))
-    expect(rows and spent > 0, f"no spend under {m['id']}: {rows[:3]}")
+    expect(rows and spent > 0, f"no spend under {m['id']}: {rows[:3]}" + (f" (the spend logs last said: {down})" if down else ""))
     # a Haiku session switches to it (by its full id; the picker's flag settings spare Claude Code its 5 s check) and back
     # (a Haiku session of its own, in Default: the shared one can be left in another mode by an earlier check — on
     # v0314a it was in Plan, and the model wrote a plan instead of answering)

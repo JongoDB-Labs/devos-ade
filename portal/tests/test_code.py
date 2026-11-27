@@ -804,6 +804,14 @@ def test_spend_says_when_litellm_fails_in_a_200_and_no_rows(cs):
             assert r.status_code == 200, (resp, r.status_code)
             d = r.json()
             assert d["session"] == SID and d["unavailable"].startswith("LiteLLM") and "rows" not in d and "key" not in d, d
+    # page 1 read, page 2 failing: unavailable, none of page 1's rows (a part of the spend is never shown as the whole)
+    mine = hashlib.sha256(TERM_KEY.encode()).hexdigest()
+    page1 = {"data": [{"api_key": mine, "spend": 0.5, "model": "claude-haiku-5-5", "startTime": "2026-10-15T10:00:00Z"}], "total_pages": 2}
+    t = _litellm(lambda p, req: httpx.Response(200, json=page1) if p == 1 else httpx.Response(500, text="boom"), [])
+    with _client(cs, transport=t) as c:
+        tok, ut = unlocked(c)
+        d = _guarded(c, f"/auth/code-spend?session={SID}", tok, ut).json()
+        assert d.get("unavailable") == "LiteLLM answered HTTP 500" and "rows" not in d and "total" not in d, d
     with _client(replace(cs, keys=cs.keys[:-1])) as c:
         tok, ut = unlocked(c)
         r = _guarded(c, f"/auth/code-spend?session={SID}", tok, ut)
