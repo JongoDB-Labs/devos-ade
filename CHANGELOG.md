@@ -4,7 +4,7 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.72.0] - 2026-11-27
 
 ### Added
 
@@ -14,6 +14,9 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 - **A long project name no longer runs over the model picker** in the Code page's top bar: the project's name and folder stay inside their chip, cut short with an ellipsis. (JON-1425)
 - **A menu on the Code page closes with Escape however quickly you press it.** A menu that had just opened, with the keyboard or a right-click, could miss an Escape or an arrow key pressed at once on a busy or slow device, and stay open; it now hears its keys from the moment it opens.
+
+### To get it
+Existing installs: Home › Update now.
 
 ## [0.71.0] - 2026-11-27
 
