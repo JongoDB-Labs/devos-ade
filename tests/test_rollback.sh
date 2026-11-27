@@ -556,3 +556,26 @@ test_a_passing_check_lets_the_update_finish() {
   assert_eq "$(tr '\n' ';' < "$TMP/steps")" "dc config;dc pull;VERIFY;AFTER;"
   assert_contains "$(cat "$(update_record_file)")" "result=done"
 }
+
+test_rollback_puts_back_every_local_build_the_update_kept_before_the_restore() {
+  # images_snapshot_before tags each <project>/<name>:local as :previous; every one of them comes back, Open WebUI's and
+  # the Code page's too (a new Open WebUI left running during 2/3's restore converts the restored database forward:
+  # JON-1444). A build with no :previous (caddy-dns, or one not built before the update) is left alone.
+  printf 'COMPOSE_PROJECT_NAME=bn-t\n' > "$ENV_FILE"
+  docker() {
+    echo "docker $*" >> "$TMP/docker"
+    case "$1 $2 $3" in "image inspect bn-t/caddy-dns:previous" | "image inspect bn-t/stt:previous") return 1 ;; esac
+    return 0
+  }
+  _rollback_local_builds
+  d="$(cat "$TMP/docker")"
+  for n in open-webui code terminal-egress portal shared-mcp terminal; do
+    assert_contains "$d" "docker tag bn-t/$n:previous bn-t/$n:local"
+  done
+  assert_not_contains "$d" "docker tag bn-t/caddy-dns:previous"
+  assert_not_contains "$d" "docker tag bn-t/stt:previous"
+  # (the order in cmd_rollback: the builds before 2/3's restore)
+  body="$(sed -n '/^cmd_rollback() {/,/^}/p' "$STACK_DIR/lib/rollback.sh")"
+  before="${body%%rollback: 2/3*}"
+  assert_contains "$before" "_rollback_local_builds"
+}

@@ -71,11 +71,12 @@ _rollback_checkout() {
   else ( umask 022; git -C "$STACK_DIR" -c advice.detachedHead=false checkout --quiet "$1" ); fi
 }
 
-# _rollback_local_builds — the previous portal/shared-mcp/stt/terminal builds (<project>/<name>:previous) become :local
-# again
+# _rollback_local_builds — every previous local build (<project>/<name>:previous, which images_snapshot_before kept for
+# each of LOCAL_BUILDS) becomes :local again, BEFORE 2/3's restore starts the services: a new build left running there
+# (Open WebUI's) would convert the restored database forward again, and the old one would not start on it (JON-1444)
 _rollback_local_builds() {
   local p n; p="$(project_name)"
-  for n in portal shared-mcp stt terminal; do
+  for n in $LOCAL_BUILDS; do
     docker image inspect "$p/$n:previous" >/dev/null 2>&1 || continue
     docker tag "$p/$n:previous" "$p/$n:local" >/dev/null 2>&1 || warn "could not restore the previous $n build — it will be rebuilt"
   done
