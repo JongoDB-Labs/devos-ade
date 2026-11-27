@@ -12,7 +12,7 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ### Changed
 
-- **The browser terminal's Claude Code no longer asks whether you trust /workspace.** A repository cloned or made inside /workspace still gets the question the first time you start Claude Code in it, before that repository's own settings (its hooks and MCP servers) can run. A folder in /workspace that is not a git repository is trusted along with /workspace. (JON-518)
+- **The browser terminal's Claude Code no longer asks whether you trust /workspace.** A repository cloned or made inside /workspace still gets the question the first time you start Claude Code in it, before that repository's own settings (its hooks and MCP servers) can run. A folder in /workspace that is not a git repository is trusted along with /workspace. Claude Code then also adds its official plugin marketplace, as it does in any folder you trust, so the Code page's Plugins menu lists those plugins to install if you want them. (JON-518)
 
 ## [0.74.0] - 2026-11-27
 

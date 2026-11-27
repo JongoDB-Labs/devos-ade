@@ -88,5 +88,23 @@
   "control": "button:✓ The portal: your one sign-in (done)",
   "why": "JON-1251: what you read says 'web app' instead of 'portal' (DevOS Portal is now a separate product); the same control, renamed: '✓ The web app: your one sign-in (done)'.",
   "changelog": "v0.73.0"
+ },
+ {
+  "state": "code-*",
+  "control": "button:Select sessions (to add them to a project)",
+  "why": "JON-605: the same select button now also archives and deletes several sessions, and its name says so: 'Select sessions (to add them to a project, archive or delete them)'.",
+  "changelog": "v0.75.0"
+ },
+ {
+  "state": "portal-code-tab-*",
+  "control": "button:Select sessions (to add them to a project)",
+  "why": "JON-605: the same select button now also archives and deletes several sessions, and its name says so: 'Select sessions (to add them to a project, archive or delete them)'.",
+  "changelog": "v0.75.0"
+ },
+ {
+  "state": "code-menu-plugins-*",
+  "control": "tab:Marketplaces",
+  "why": "JON-518: the terminal's Claude Code now starts past its trust question in /workspace and, as it does in any folder you trust, adds its official plugin marketplace; the Plugins menu's tab then shows the count ('Marketplaces (1)') and Discover lists that marketplace's plugins.",
+  "changelog": "v0.75.0"
  }
 ]

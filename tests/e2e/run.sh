@@ -1398,7 +1398,12 @@ elif [ "$HOST_SESSIONS" = 1 ]; then
   BN_SESSIONS_HOME="$HS/home" cli sessions-consent 0 'without asking again' sessions consent --project e2e-sessions-app --always
   BN_SESSIONS_HOME="$HS/home" cli sessions-scan 0 "$([ "$HS_REAL" = 1 ] && echo 3 || echo 2) session\\(s\\) of Claude Code and devos-claude listed" sessions scan --project e2e-sessions-app
   t0="$(now)"
-  readers="$(docker ps -a --filter name=bn-reader- --format '{{.Names}}' | grep -c . || true)"
+  # (a docker run --rm container goes just after it ends, and the test host is shared with other lanes' readers: a reader
+  # left for good is one still there after 15 s)
+  for _ in $(seq 1 15); do
+    readers="$(docker ps -a --filter name=bn-reader- --format '{{.Names}}' | grep -c . || true)"
+    [ "${readers:-0}" = 0 ] && break; sleep 1
+  done
   if [ "${readers:-0}" = 0 ]; then record projects host-sessions-reader-gone PASS "$(( $(now) - t0 ))" "the reader's throwaway container is gone after the look"
   else record projects host-sessions-reader-gone FAIL 0 "$readers reader container(s) left"; fi
   BN_SESSIONS_HOME="$HS/home" cli sessions-fetch 0 'read into the Code page' sessions fetch --project e2e-sessions-app --all
@@ -1456,7 +1461,12 @@ elif [ "$HOST_CONFIG" = 1 ]; then
   BN_SESSIONS_HOME="$HC/home" cli setup-consent 0 'without asking again' sessions config consent --always
   BN_SESSIONS_HOME="$HC/home" cli setup-scan 0 'item\(s\) of Claude Code, devos-claude, Git listed' sessions config scan
   t0="$(now)"
-  readers="$(docker ps -a --filter name=bn-reader- --format '{{.Names}}' | grep -c . || true)"
+  # (a docker run --rm container goes just after it ends, and the test host is shared with other lanes' readers: a reader
+  # left for good is one still there after 15 s)
+  for _ in $(seq 1 15); do
+    readers="$(docker ps -a --filter name=bn-reader- --format '{{.Names}}' | grep -c . || true)"
+    [ "${readers:-0}" = 0 ] && break; sleep 1
+  done
   if [ "${readers:-0}" = 0 ]; then record projects host-config-reader-gone PASS "$(( $(now) - t0 ))" "the reader's throwaway container is gone after the look"
   else record projects host-config-reader-gone FAIL 0 "$readers reader container(s) left"; fi
   BN_SESSIONS_HOME="$HC/home" cli setup-open 0 'read into the Code page' sessions config open --all

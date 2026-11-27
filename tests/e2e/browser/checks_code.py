@@ -2887,11 +2887,13 @@ def ui_session_delete_and_new_project(ctx):
 @check("browser", "code-ui-sessions-bulk")
 @saved
 def ui_sessions_bulk(ctx):
-    """Several sessions at once (JON-605), on the real stack, no model calls: three sessions with no prompt yet (Haiku picked;
-    nothing is sent) are selected together — Archive moves them under Archived, Unarchive lists two again, Delete… asks once
-    (naming them; Cancel deletes nothing) and then deletes each with its own request. The backend says the same:
-    /api/state no longer lists them after a reload. Screenshots sb1-sb2."""
+    """Several sessions at once (JON-605), on the real stack: three Haiku sessions with one short exchange each (a session
+    with no prompt yet has no conversation saved in the sandbox, so once archived and closed it is listed nowhere) are
+    selected together — Archive moves them under Archived, Unarchive lists two again, Delete… asks once (naming them;
+    Cancel deletes nothing) and then deletes each with its own request. The backend says the same: /api/state no longer
+    lists them after a reload. Screenshots sb1-sb2."""
     need_on()
+    need_haiku()
     page, rec = ui_page(ctx, "code-ui-sessions-bulk", fresh_ws=True)
     c = Code.on(page, rec, goto=False)
     page.get_by_test_id("side-sessions").click()
@@ -2903,6 +2905,9 @@ def ui_sessions_bulk(ctx):
             old = _last_session(page)
             page.get_by_test_id("new-session").click()
             sids.append(_new_session_id(page, old))
+        for sid in sids:   # (one exchange each: the conversation is saved in the sandbox and the session is listed)
+            c.request({"type": "attach", "session": sid, "since": 0})
+            c.turn(sid, "Reply with exactly the word: ok")
         _unfold(page, "ws")
         ws = _proj(page, "ws")
 
