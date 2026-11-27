@@ -1368,14 +1368,34 @@ def check_menus(page, failures, label):
         page.keyboard.press("Escape")
         if page.locator(".ctx-menu").count() or page.evaluate("() => document.activeElement && document.activeElement.closest('.set-row') !== null") is not True:
             failures.append(f"{label}: Shift+F10 / Escape did not open and close the row menu, focus back on the row")
-        # a scroll while the menu holds the focus closes it, and the focus goes back to the row, not to the page: a
-        # keyboard user keeps their place (the page scrolled by focusing a row could close a just-opened menu, gates 0730b)
+        # a scroll's event for a scroll that moved nothing (one that happened before the menu opened: focusing a row
+        # scrolls it into view, and its event can come late) leaves the menu open (gates 0730b and 0730c)
+        on_row = "() => document.activeElement && document.activeElement.closest('.set-row') !== null"
         ctl.focus()
         page.keyboard.press("Shift+F10")
         page.wait_for_selector(".ctx-menu", timeout=3000)
         page.evaluate("() => document.dispatchEvent(new Event('scroll'))")
-        if page.locator(".ctx-menu").count() or page.evaluate("() => document.activeElement && document.activeElement.closest('.set-row') !== null") is not True:
-            failures.append(f"{label}: a scroll closed the row menu but the focus did not go back to the row")
+        if not page.locator(".ctx-menu").count():
+            failures.append(f"{label}: a scroll event that moved nothing closed the row menu")
+        # a scroll that moves the row closes the menu, and the focus goes back to the row, not to the page
+        moved = ctl.evaluate("""el => {
+            let n = el.parentElement;
+            while (n && n !== document.body && !(n.scrollHeight > n.clientHeight + 40 && /auto|scroll/.test(getComputedStyle(n).overflowY))) n = n.parentElement;
+            const s = n && n !== document.body ? n : document.scrollingElement;
+            const before = s.scrollTop;
+            s.scrollTop = before > 40 ? before - 40 : before + 40;
+            return s.scrollTop !== before;
+        }""")
+        if moved:
+            try:
+                page.wait_for_selector(".ctx-menu", state="detached", timeout=3000)
+            except Exception:
+                failures.append(f"{label}: a scroll that moved the row left its menu open")
+            if page.evaluate(on_row) is not True:
+                failures.append(f"{label}: a scroll closed the row menu but the focus did not go back to the row")
+        else:
+            failures.append(f"{label}: the settings page did not scroll, so the menu's scroll rule went unchecked")
+        page.keyboard.press("Escape")
     # screenshots, light and dark, three widths
     for scheme in ("light", "dark"):
         page.emulate_media(color_scheme=scheme)

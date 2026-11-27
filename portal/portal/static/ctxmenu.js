@@ -50,7 +50,15 @@
     if ((refocus || held) && f && f.isConnected) f.focus({ preventScroll: true });
   }
   const onOutside = (e) => { if (menu && !menu.contains(e.target)) close(false); };
-  const onScroll = (e) => { if (menu && !(e.target instanceof Node && menu.contains(e.target))) close(false); };
+  // (a scroll closes the menu only when it moved the row the menu belongs to: focusing a row scrolls it into view, and
+  // that scroll's event can come after the menu has opened, for a scroll that happened before it)
+  let anchorAt = null;
+  const rectOf = (n) => { const r = n.getBoundingClientRect(); return `${Math.round(r.left)},${Math.round(r.top)}`; };
+  const onScroll = (e) => {
+    if (!menu || (e.target instanceof Node && menu.contains(e.target))) return;
+    if (back && back.isConnected && anchorAt !== null && rectOf(back) === anchorAt) return;
+    close(false);
+  };
   const onResize = () => close(false);
 
   function place(x, y) {
@@ -101,6 +109,7 @@
     (document.querySelector("dialog[open]") || document.body).append(m);
     menu = m; back = from || null;
     place(x, y);
+    anchorAt = back ? rectOf(back) : null;
     m.addEventListener("keydown", onKey);
     m.addEventListener("contextmenu", (e) => e.preventDefault());
     document.addEventListener("pointerdown", onOutside, true);
