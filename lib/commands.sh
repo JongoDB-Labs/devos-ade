@@ -899,15 +899,18 @@ PROBE_UPDATE_MAX_S="${DEVOS_ADE_PROBE_UPDATE_MAX_AGE_S:-2592000}"
 probe_mark_file() { printf '%s\n' "$STATE_DIR/models/probe.mark"; }
 # probe_models_code -> lib/models.sh as code: each function it defines (the names are the file's `name() ` lines, sorted) as
 # bash prints it back (`declare -f` drops comments and spacing), and BEDROCK_APP_LINE, the one top-level value that is code.
-# PRICES, the other top-level assignment, is a path, so it is left out. A copy of the file is sourced in a subshell, so
-# nothing defined elsewhere (or stubbed) is read, and the same text prints the same on bash 3.2 and 5.
+# PRICES, the other top-level assignment, is a path, so it is left out. One bash prints it, /bin/bash where there is one,
+# in a clean environment, whichever bash runs the stack: a terminal may run a newer bash than the update helper's
+# /bin/bash, two versions print a function differently, and the fingerprint must not change with who asks. The file is
+# sourced there, so nothing defined elsewhere (or stubbed) is read.
 probe_models_code() {
-  local f="$STACK_DIR/lib/models.sh" names
+  local f="$STACK_DIR/lib/models.sh" sh=/bin/bash names
   [ -r "$f" ] || return 0
+  [ -x "$sh" ] || sh="${BASH:-bash}"
   names="$(sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)() .*/\1/p' "$f" | LC_ALL=C sort -u)"
-  ( set +eu; . "$f" > /dev/null 2>&1
-    # shellcheck disable=SC2086  # the names are plain identifiers, split on purpose
-    declare -f $names 2>/dev/null; declare -p BEDROCK_APP_LINE 2>/dev/null )
+  # shellcheck disable=SC2086,SC2016  # the names are plain identifiers, split on purpose; $1 is the inner shell's
+  env -i PATH="$PATH" LC_ALL=C "$sh" --noprofile --norc -c \
+    '. "$1" > /dev/null 2>&1; shift; declare -f "$@" 2>/dev/null; declare -p BEDROCK_APP_LINE 2>/dev/null' _ "$f" $names
 }
 # probe_fingerprint -> a hash of what the probe's answers depend on: .env's AWS_* lines (the key, its region, how it
 # signs in — hashed, never kept as they are), the model catalog, LiteLLM's image and the probe's own code (not its comments)

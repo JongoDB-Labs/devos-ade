@@ -45,6 +45,15 @@ test_a_changed_aws_line_changes_the_fingerprint() {
   printf 'AWS_REGION_NAME=us-east-1\nPORTAL_PASSWORD=other\n' > "$ENV_FILE"
   assert_eq "$(probe_fingerprint)" "$a"   # a line that is not AWS_ changes nothing
 }
+test_the_caller_s_shell_does_not_change_the_fingerprint() {
+  # one bash prints the code, in a clean environment: a terminal's own bash, its exported values and functions, or a
+  # stub of a models.sh function in the calling shell change nothing
+  _pf_setup; a="$(probe_fingerprint)"
+  code="$(probe_models_code)"   # (not piped into grep -q: its early exit would fail the pipe)
+  case "$code" in *"kind_short ()"*) ;; *) fail "the code of lib/models.sh was not printed" ;; esac
+  b="$(export BEDROCK_APP_LINE=changed; kind_short() { echo stub; }; export -f kind_short; BASH=/nonexistent; probe_fingerprint)"
+  assert_eq "$b" "$a"
+}
 test_a_mark_with_the_new_fingerprint_is_reusable() {
   _pf_setup; _pf_write_mark "$(probe_fingerprint)"
   probe_reusable > /dev/null || fail "refused a mark with today's fingerprint"
