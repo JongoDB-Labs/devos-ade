@@ -905,6 +905,7 @@ function seedProject() {
 }
 const checkpoints = new Map(); // id -> {prompts, changes}: a session's file checkpoints, across its processes
 const spendRows = new Map(); // id -> rows
+const busySaved = new Set(); // sessions a turn runs in, as far as Delete and Archive know (/__mock/busy?title=)
 const inTerminal = new Set(); // sessions handed to the terminal (a resume here is refused until /__mock/terminal-exit)
 const terminalLog = [];       // what the terminal was asked to type
 const promptLog = [];         // the prompts' texts as the page sent them (the @-mention checks read them)
@@ -2248,7 +2249,7 @@ async function api(req, res, url) {
     }
     if (im[2] === 'delete') {
       if (b.confirm !== id) return json(res, 400, { error: 'confirm: the session\'s own id (the page asks first, naming the session)' });
-      if (live && (live.state === 'busy' || live.state === 'starting')) return json(res, 409, { error: 'a turn is running in this session: stop it first' });
+      if ((live && (live.state === 'busy' || live.state === 'starting')) || busySaved.has(id)) return json(res, 409, { error: 'a turn is running in this session: stop it first' });
       if (inTerminal.has(id)) return json(res, 409, { error: 'This conversation is open in the terminal (or elsewhere in the sandbox) right now: exit Claude Code there (/exit), then try again here.' });
       if (!live && !saved.has(id)) return json(res, 404, { error: 'no such session' });
       if (live) { live.setState('closed'); sessions.delete(id); }
@@ -3239,6 +3240,13 @@ const server = http.createServer(async (req, res) => {
         if (saved.get(id)) saved.get(id).modified = Date.now() - ms;
         return json(res, 200, { ok: !!(s || saved.get(id)) });
       }
+      if (url.pathname === '/__mock/busy') {
+        // a turn runs in the saved session whose title holds ?title= (its Delete is refused, as the backend does)
+        const t = url.searchParams.get('title') || '';
+        const hit = [...saved.values()].filter((x) => t && x.title.includes(t));
+        for (const x of hit) busySaved.add(x.id);
+        return json(res, 200, { ok: hit.length > 0, count: hit.length });
+      }
       if (url.pathname === '/__mock/terminal-exit') {
         inTerminal.delete(url.searchParams.get('session') || '');
         return json(res, 200, { ok: true });
@@ -3278,6 +3286,7 @@ const server = http.createServer(async (req, res) => {
         userPrefs = { model: null, settingsDefault: null, at: null };
         projectLog.length = 0;
         inTerminal.clear();
+        busySaved.clear();
         terminalLog.length = 0;
         promptLog.length = 0;
         answerLog.length = 0;

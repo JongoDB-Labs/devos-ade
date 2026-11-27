@@ -5812,6 +5812,120 @@ def plog(base=None):
     return mock_get(base or NORMAL, "/__mock/project-log")["log"]
 
 
+def bulk_sessions_flow(browser, name, phone):
+    """Select several sessions: Archive, Unarchive, Delete… (one confirm; a session a turn runs in is skipped and named)."""
+    post(NORMAL + "/__mock/reset")
+    post(NORMAL + "/__mock/projects?seed=1")
+    if phone:
+        p = Page(browser, NORMAL, name, viewport={"width": 320, "height": 640}, device_scale_factor=2, is_mobile=True, has_touch=True, color_scheme="light")
+        page = p.open()
+        page.get_by_test_id("phone-sessions").tap()
+        root = page.get_by_test_id("sheet-sessions")
+    else:
+        p = Page(browser, NORMAL, name, **DESKTOP)
+        page = p.open()
+        page.get_by_test_id("side-sessions").click()
+        root = page
+    ws = proj(root, "ws")
+    rows = ws.get_by_test_id("session-row")
+    expect(rows).to_have_count(4, timeout=10_000)
+    A, B, C, D = "Add jitter", "Why does CI fail", "Refactor the HTTP", "Write a latency"
+
+    def select(*titles, archived=False):
+        scope = ws.get_by_test_id("archived-list") if archived else ws
+        for t in titles:
+            scope.get_by_test_id("session-row").filter(has_text=t).get_by_test_id("session-pick").check()
+
+    def bar_fits():
+        bar = root.get_by_test_id("sessions-picked")
+        expect(bar).to_be_visible()
+        bb = bar.bounding_box()
+        boxes = [b.bounding_box() for b in bar.locator("button").all() if b.is_visible()]
+        for b in boxes:
+            assert b["height"] >= 24 and b["width"] >= 24, f"a bar button under 24 px: {b}"
+            assert b["x"] >= bb["x"] - 0.5 and b["x"] + b["width"] <= bb["x"] + bb["width"] + 0.5, f"a bar button leaves the bar: {b} {bb}"
+        for i, a in enumerate(boxes):
+            for b in boxes[i + 1:]:
+                assert a["x"] + a["width"] <= b["x"] + 0.5 or b["x"] + b["width"] <= a["x"] + 0.5 or a["y"] + a["height"] <= b["y"] + 0.5 or b["y"] + b["height"] <= a["y"] + 0.5, f"bar buttons overlap: {a} {b}"
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth"), "horizontal overflow"
+
+    def go(t):
+        (t.tap() if phone else t.click())
+
+    # select 3, Archive: they move under Archived, select mode ends, one notice
+    go(root.get_by_test_id("sessions-select"))
+    select(A, B, C)
+    expect(root.get_by_test_id("sessions-picked")).to_contain_text("3 selected")
+    expect(root.get_by_test_id("sessions-unarchive")).to_have_count(0)
+    bar_fits()
+    p.shot("bulk-select-bar.png")
+    go(root.get_by_test_id("sessions-archive"))
+    expect(rows).to_have_count(1, timeout=10_000)
+    expect(page.get_by_test_id("toast").filter(has_text="Archived 3.")).to_have_count(1)
+    expect(root.get_by_test_id("sessions-picked")).to_have_count(0)
+    assert len([x for x in plog() if x.startswith("archive ")]) == 3, plog()
+    go(ws.get_by_test_id("archived-toggle"))
+    expect(ws.get_by_test_id("archived-list").get_by_test_id("session-row")).to_have_count(3)
+    p.shot("bulk-archived.png")
+    # select 2 archived: Unarchive is there, and brings them back
+    go(root.get_by_test_id("sessions-select"))
+    select(A, B, archived=True)
+    expect(root.get_by_test_id("sessions-unarchive")).to_be_visible()
+    bar_fits()
+    p.shot("bulk-select-bar-archived.png")
+    go(root.get_by_test_id("sessions-unarchive"))
+    expect(rows).to_have_count(3, timeout=10_000)
+    expect(page.get_by_test_id("toast").filter(has_text="Listed again 2.")).to_have_count(1)
+    assert len([x for x in plog() if x.startswith("unarchive ")]) == 2, plog()
+    expect(ws.get_by_test_id("archived-list").get_by_test_id("session-row")).to_have_count(1)
+    # Delete…: one dialog naming them; Cancel deletes nothing; Delete removes them
+    go(root.get_by_test_id("sessions-select"))
+    select(B, D)
+    go(root.get_by_test_id("sessions-delete"))
+    dlg = page.get_by_test_id("delete-sessions-dialog")
+    expect(dlg).to_be_visible()
+    expect(dlg).to_contain_text("Delete 2 sessions?")
+    expect(dlg).to_contain_text(B)
+    expect(dlg).to_contain_text(D)
+    expect(dlg).to_contain_text("for good")
+    expect(dlg).to_contain_text("The files they changed")
+    p.shot("bulk-delete-dialog.png")
+    go(dlg.get_by_role("button", name="Cancel"))
+    expect(dlg).to_have_count(0)
+    assert not any(x.startswith("delete ") for x in plog()), plog()
+    expect(rows).to_have_count(3)
+    go(root.get_by_test_id("sessions-delete"))
+    go(page.get_by_test_id("delete-sessions-confirm"))
+    expect(rows).to_have_count(1, timeout=10_000)
+    expect(page.get_by_test_id("toast").filter(has_text="Deleted 2.")).to_have_count(1)
+    expect(root.get_by_test_id("sessions-picked")).to_have_count(0)
+    assert len([x for x in plog() if x.startswith("delete ")]) == 2, plog()
+    # a session a turn runs in is skipped and named; the other goes
+    post(NORMAL + "/__mock/busy?title=" + urllib.parse.quote(A))
+    go(root.get_by_test_id("sessions-select"))
+    select(A)
+    select(C, archived=True)
+    go(root.get_by_test_id("sessions-delete"))
+    expect(page.get_by_test_id("delete-sessions-dialog")).to_contain_text("Delete 2 sessions?")
+    go(page.get_by_test_id("delete-sessions-confirm"))
+    expect(page.get_by_test_id("toast").filter(has_text="Deleted 1; 1 skipped: a turn is running in it.")).to_have_count(1, timeout=10_000)
+    expect(rows.filter(has_text=A)).to_have_count(1)
+    assert len([x for x in plog() if x.startswith("delete ")]) == 3, plog()
+    p.shot("bulk-skipped.png")
+    p.assert_clean()
+    p.close()
+
+
+@check("sessions selected together (desktop): Archive, Unarchive, Delete… with one confirm; a session a turn runs in is skipped and named")
+def bulk_sessions_desktop(browser):
+    bulk_sessions_flow(browser, "bulk-sessions", False)
+
+
+@check("sessions selected together (phone, 320 px): the bar's buttons fit and are tappable; Archive, Unarchive, Delete… work")
+def bulk_sessions_phone(browser):
+    bulk_sessions_flow(browser, "bulk-sessions-phone", True)
+
+
 @check("item menus: right-click, Shift+F10 and a long press on a session, a project, a file and a model open the item's actions; Archive, Delete (confirmed), folder terminal, Copy path; the editor keeps the browser's menu")
 def item_menus(browser):
     post(NORMAL + "/__mock/reset")
