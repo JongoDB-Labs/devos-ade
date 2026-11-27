@@ -229,6 +229,8 @@ export function normEvent(v: unknown): Ev | null {
         uuid: isUuid(o.uuid) ? o.uuid.toLowerCase() : null,
         images: Math.min(20, Math.max(0, Math.floor(num(Array.isArray(o.images) ? o.images.length : o.images)))),
       };
+    case 'unqueued':
+      return isUuid(o.uuid) ? { kind: 'unqueued', uuid: o.uuid.toLowerCase() } : null;
     case 'delta':
       return { kind: 'delta', text: cap(o.text, LIMITS.text), parent };
     case 'thinking_delta':
@@ -2303,6 +2305,7 @@ export type ClientMsg =
   | { type: 'set_budget'; session: string; usd: number | null; hard: boolean; spent?: number; req?: string }
   | { type: 'rewind_files'; session: string; message: string; dryRun: boolean; req: string }
   | { type: 'interrupt'; session: string }
+  | { type: 'unqueue'; session: string; uuid: string; req: string }
   | { type: 'set_model'; session: string; model: string; req?: string }
   | { type: 'set_mode'; session: string; mode: Mode; confirmed?: boolean; req?: string }
   | { type: 'watch_revert'; session: string; id: string; path?: string; req: string }

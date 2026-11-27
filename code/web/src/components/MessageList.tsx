@@ -6,7 +6,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/ho
 import type { Item, Queued, SessionView } from '../session';
 import { shownCost, turnCosts } from '../spend';
 import { ago, duration, label, money, tokens } from '../text';
-import { forkFrom, loadEarlier, openGitDialog, rewindCancel, rewindConfirm, rewindPreview, sendPrompt, showGit, store, currentProject, openProjectDialog, openModelMenu, resumeSession, setProject } from '../app';
+import { cancelQueued, forkFrom, loadEarlier, openGitDialog, rewindCancel, rewindConfirm, rewindPreview, sendPrompt, showGit, store, currentProject, openProjectDialog, openModelMenu, resumeSession, setProject } from '../app';
 import { useSel } from '../store';
 import { MarkdownView } from './MarkdownView';
 import { ToolCard } from './ToolCard';
@@ -203,6 +203,18 @@ const Assistant = memo(function Assistant({ it }: { it: Extract<Item, { t: 'assi
 function QueuedMsg({ q }: { q: Queued }) {
   return (
     <div class="msg-user queued" data-testid="msg-user">
+      {q.uuid && (
+        <button
+          type="button"
+          class="queued-cancel icon-btn tiny"
+          title="Cancel this message: it is not sent"
+          aria-label="Cancel queued message"
+          onClick={() => void cancelQueued([q.uuid as string])}
+          data-testid="queued-cancel"
+        >
+          <Icon name="close" size={13} />
+        </button>
+      )}
       <UserText text={q.text} />
       <div class="msg-user-meta">
         {q.images > 0 && (
@@ -499,6 +511,16 @@ export function MessageList({ view }: { view: SessionView | undefined }) {
             )}
             {shown.map(render)}
             {busy && !streaming && !view.permissions.length && <Working since={lastTurn?.end === null ? lastTurn.start : 0} status={view.status} />}
+            {view.queued.filter((q) => q.uuid).length >= 2 && (
+              <button
+                type="button"
+                class="linkish queued-cancel-all"
+                onClick={() => void cancelQueued(view.queued.flatMap((q) => (q.uuid ? [q.uuid] : [])))}
+                data-testid="queued-cancel-all"
+              >
+                Cancel all
+              </button>
+            )}
             {view.queued.map((q, i) => (
               <QueuedMsg key={`q${i}-${q.uuid ?? ''}`} q={q} />
             ))}

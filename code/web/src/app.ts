@@ -3,7 +3,7 @@
 import * as api from './api';
 import type { BnModels, ConnStatus } from './api';
 import { createStore, type Store } from './store';
-import { addPrompt, applySeq, changedFiles, dropPrompt, endedMidTurn, idleWithoutResult, mergeHistory, newView, pendingCount, prependHistory, withEarlier, type SessionView } from './session';
+import { addPrompt, applyEvent, applySeq, changedFiles, dropPrompt, endedMidTurn, idleWithoutResult, mergeHistory, newView, pendingCount, prependHistory, withEarlier, type SessionView } from './session';
 import { exportName, toMarkdown } from './transcript';
 import { appendMemory, memoryLine } from './palette';
 import { fullModel, modelCommand, startModel } from './models';
@@ -2100,6 +2100,24 @@ export function sendToSession(id: string, text: string): boolean {
     return false;
   }
   return deliver(id, text, []);
+}
+
+/** Cancel prompts of yours that wait behind the turn (Claude Code's own queue or the session's): each is answered by
+ *  the backend (`cancelled` false: already being answered — Stop ends the turn). -> how many were cancelled */
+export async function cancelQueued(uuids: string[]): Promise<number> {
+  const id = get().active;
+  if (!id) return 0;
+  let done = 0, kept = 0;
+  for (const uuid of uuids) {
+    const r = await wsRequest({ type: 'unqueue', session: id, uuid }, 15_000);
+    if (!r.ok) { toast(r.error || 'The message was not cancelled.', 'error'); continue; }
+    if ((r.data as { cancelled?: unknown } | null)?.cancelled === true) {
+      done++;
+      updateView(id, (x) => applyEvent(x, { kind: 'unqueued', uuid }));
+    } else kept++;
+  }
+  if (kept) toast('Already being answered — use Stop to end the turn.', 'info');
+  return done;
 }
 
 export function interrupt(): void {

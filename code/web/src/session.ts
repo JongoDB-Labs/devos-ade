@@ -223,6 +223,13 @@ export function applyEvent(v: SessionView, ev: Ev, now = Date.now()): SessionVie
       if (turnOpen(v)) return { ...v, queued: [...v.queued, { text: ev.text, images: ev.images, uuid: ev.uuid }].slice(-20) };
       return startTurn(v, { text: ev.text, images: ev.images, uuid: ev.uuid }, now);
     }
+    case 'unqueued': {
+      // a prompt of yours taken back before Claude answered it: gone from the queue, and from the list when it was
+      // already shown as waiting (a replay shows what the page saw then, in order)
+      const queued = v.queued.filter((q) => q.uuid !== ev.uuid);
+      const items = v.items.filter((it) => !(it.t === 'user' && it.queued && it.uuid === ev.uuid));
+      return queued.length === v.queued.length && items.length === v.items.length ? v : { ...v, queued, items };
+    }
     case 'delta':
     case 'thinking_delta': {
       const t = ev.kind === 'delta' ? 'assistant' : 'thinking';

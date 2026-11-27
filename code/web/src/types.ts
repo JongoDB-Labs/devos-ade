@@ -88,6 +88,8 @@ export interface Usage {
 export type Ev =
   | { kind: 'init'; init: InitInfo }
   | { kind: 'user'; text: string; uuid: string | null; images: number }
+  /** a prompt of yours cancelled before Claude answered it (JON-626): dropped from the queue */
+  | { kind: 'unqueued'; uuid: string }
   | { kind: 'delta'; text: string; parent: string | null }
   | { kind: 'thinking_delta'; text: string; parent: string | null }
   | { kind: 'thinking'; text: string; parent: string | null }

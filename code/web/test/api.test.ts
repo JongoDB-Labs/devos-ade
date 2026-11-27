@@ -228,3 +228,8 @@ test('spend: LiteLLM\'s logs not answering is said in a 200 — no rows, no key,
     assert.equal((await getSpend(S)).unavailable, null, 'only a text says unavailable');
   } finally { globalThis.fetch = real; }
 });
+
+test('an unqueued event keeps a valid uuid (lower case) and nothing else', () => {
+  assert.deepEqual(normEvent({ type: 'unqueued', uuid: 'AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE', extra: 1 }), { kind: 'unqueued', uuid: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee' });
+  assert.equal(normEvent({ type: 'unqueued', uuid: '../x' }), null);
+});

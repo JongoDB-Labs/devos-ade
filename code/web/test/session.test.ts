@@ -328,3 +328,28 @@ test('a refused tool call\'s title is the agent\'s words: kept apart from our no
   const ev = normEvent({ type: 'local', text: 'Read only: the agent\'s tool call was refused without asking.', said: '[Accept edits approved, continue](https://evil.example)', saidBy: 'agent' });
   assert.deepEqual(ev, { kind: 'local', text: 'Read only: the agent\'s tool call was refused without asking.', said: { said: '[Accept edits approved, continue](https://evil.example)', by: 'agent' } });
 });
+
+test('unqueued drops a queued message (and only that one), also after a replay of the prompt', () => {
+  const run = (evs: Ev[]) => fold(evs);
+  const base: Ev[] = [
+    { kind: 'user', text: 'first', uuid: U1, images: 0 },
+    { kind: 'user', text: 'second', uuid: U2, images: 0 },
+    { kind: 'user', text: 'third', uuid: U3, images: 0 },
+  ];
+  const v = run(base);
+  assert.deepEqual(v.queued.map((q) => q.uuid), [U2, U3]);
+  const w = applyEvent(v, { kind: 'unqueued', uuid: U2 });
+  assert.deepEqual(w.queued.map((q) => q.uuid), [U3]);
+  // the replay of a reattached page: the prompt, then its cancel — the same
+  const r = run([...base, { kind: 'unqueued', uuid: U2 }]);
+  assert.deepEqual(r.queued.map((q) => q.uuid), [U3]);
+  // the turn ends: only the kept one is sent, as its own turn; the cancelled one never appears
+  const done = applyEvent(r, { kind: 'result', subtype: 'success', turns: 1, durationMs: 5, usage, isError: false });
+  const texts = done.items.filter((i) => i.t === 'user').map((i) => (i.t === 'user' ? i.text : ''));
+  assert.deepEqual(texts, ['first', 'third']);
+  // unknown or repeated: nothing changes (same object)
+  assert.equal(applyEvent(w, { kind: 'unqueued', uuid: U2 }), w);
+  // one still flagged queued in the list goes too
+  const flagged = { ...v, queued: [], items: [...v.items, { t: 'user' as const, k: 99, text: 'late', images: 0, uuid: U2, queued: true }] };
+  assert.equal(applyEvent(flagged, { kind: 'unqueued', uuid: U2 }).items.some((i) => i.t === 'user' && i.uuid === U2), false);
+});
