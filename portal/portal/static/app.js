@@ -1099,9 +1099,14 @@ async function copy(text, what) {
   try {
     await navigator.clipboard.writeText(text);
   } catch (_) {
+    // (the page's own way, where the browser refuses its clipboard — an http:// address, a permission denied: a text box
+    // holds the focus for a moment; the focus then goes back to what had it — the control a menu came from, say — never
+    // left on nothing, which a keyboard would lose its place to: JON-1435)
+    const back = document.activeElement;
     const ta = el("textarea", { readonly: "", "aria-hidden": "true" }); ta.value = text;
     ta.style.position = "fixed"; ta.style.opacity = "0"; document.body.append(ta); ta.select();
     const ok = document.execCommand("copy"); ta.remove();
+    if (back instanceof HTMLElement && back !== document.body && back.isConnected) back.focus({ preventScroll: true });
     if (!ok) { toast("Copy is blocked by the browser"); return; }
   }
   toast(`Copied ${what}`);
