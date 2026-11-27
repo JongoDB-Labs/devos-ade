@@ -50,8 +50,9 @@
     if ((refocus || hadFocus) && f && f.isConnected) f.focus({ preventScroll: true });
   }
   const onOutside = (e) => { if (menu && !menu.contains(e.target)) close(false); };
-  // (a scroll closes the menu only when it moved the row the menu belongs to, or the row is not rendered at all: focusing a row scrolls it into view, and
-  // that scroll's event can come after the menu has opened, for a scroll that happened before it)
+  // (a scroll closes the menu only when it moved the row the menu belongs to, or the row is not rendered at all:
+  // focusing a row scrolls it into view, and that scroll's event can come after the menu has opened, for a scroll that
+  // happened before it)
   let anchorAt = null;
   const rectOf = (n) => { const r = n.getBoundingClientRect(); return `${Math.round(r.left)},${Math.round(r.top)}`; };
   const onScroll = (e) => {

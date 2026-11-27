@@ -1383,7 +1383,7 @@ def check_menus(page, failures, label):
             while (n && n !== document.body && !(n.scrollHeight > n.clientHeight + 40 && /auto|scroll/.test(getComputedStyle(n).overflowY))) n = n.parentElement;
             const s = n && n !== document.body ? n : document.scrollingElement;
             const before = s.scrollTop;
-            window.__ctxScrollBack = () => { s.scrollTop = before; };   // (put back below: the test leaves the page where it was)
+            window.__ctxScrollBack = () => s.scrollTo({ top: before, behavior: 'instant' });   // (put back below: the test leaves the page where it was)
             s.scrollTop = before > 40 ? before - 40 : before + 40;
             return s.scrollTop !== before;
         }""")
@@ -1397,7 +1397,6 @@ def check_menus(page, failures, label):
         else:
             failures.append(f"{label}: the settings page did not scroll, so the menu's scroll rule went unchecked")
         page.evaluate("() => { if (window.__ctxScrollBack) { window.__ctxScrollBack(); window.__ctxScrollBack = null; } }")
-        page.wait_for_timeout(700)   # (smooth scrolling)
         if page.locator(".ctx-menu").count():
             page.keyboard.press("Escape")
     # screenshots, light and dark, three widths
