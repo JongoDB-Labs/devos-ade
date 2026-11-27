@@ -1113,8 +1113,10 @@ def trash_waits_for_terminal(ctx):
     from checks_journeys import extra_page
     from playwright.sync_api import expect as see
     c = Code(ctx, "terminal-trash-waits-code")
+    folder_there = lambda: TRASH_ROOT in {e["name"] for e in (c.api("GET", "/api/fs?path=.")["json"] or {}).get("entries", [])}
     _drop_projects(c, (TRASH_ROOT,))
-    c.api("DELETE", f"/api/fs?path={TRASH_ROOT}")   # (a folder left by an earlier run: into the trash)
+    if folder_there():   # (a folder left by an earlier run: into the trash; asked only when there — a 404 is a page error)
+        c.api("DELETE", f"/api/fs?path={TRASH_ROOT}")
     r = c.api("POST", "/api/projects", {"kind": "new", "folder": TRASH_ROOT, "name": TRASH_NAME, "git": False})
     expect(r["status"] == 200, f"the Code project: {r['status']} {r['text'][:200]}")
     pid = r["json"]["project"]["id"]
@@ -1127,7 +1129,6 @@ def trash_waits_for_terminal(ctx):
     f = terminal_frame(tp)
     if f.locator("h1", has_text="Unlock the terminal").count() or f.locator("#password").count():
         unlock_in(f, ENV["PORTAL_PASSWORD"])
-    folder_there = lambda: TRASH_ROOT in {e["name"] for e in (c.api("GET", "/api/fs?path=.")["json"] or {}).get("entries", [])}
     try:
         # a shell of the terminal goes into the project's folder (as a person would: cd)
         wait_text(f, r"\$ ?$")
@@ -1168,7 +1169,8 @@ def trash_waits_for_terminal(ctx):
         try:
             type_line(tp, f, "cd /workspace")
             _drop_projects(c, (TRASH_ROOT,))
-            c.api("DELETE", f"/api/fs?path={TRASH_ROOT}")
+            if folder_there():
+                c.api("DELETE", f"/api/fs?path={TRASH_ROOT}")
         except Exception:  # noqa: BLE001 — tidying never hides the failure
             pass
     return (f"a shell of the terminal in /workspace/{TRASH_ROOT}: Remove from Code with its folder refused in the dialog, plainly "
