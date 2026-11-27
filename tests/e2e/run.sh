@@ -328,6 +328,24 @@ cli() {
   record cli "$id" PASS "$(( $(now) - t0 ))" "exit $rc"
 }
 
+# signin_link CONTAINER TOOL PATTERN — the tool's own sign-in (`subscriptions login TOOL`) in a pseudo-terminal in the
+# sandbox CONTAINER, for 40 s, until a link matching PATTERN (a request to the provider; never completed). A provider's
+# device sign-in is sometimes slow to answer: with no link, it is tried once more (JON-1426). 0 with a link (and, on the
+# second try, what the first one printed); 1 with what both printed.
+signin_link() {
+  local c="$1" t="$2" pat="$3" try out said=''
+  for try in 1 2; do
+    out="$(docker exec "$c" timeout 40 script -qec "subscriptions login $t" /dev/null </dev/null 2>&1 | tr -d '\r' | head -c 20000)"
+    if printf '%s' "$out" | grep -E "$pat" >/dev/null; then
+      [ "$try" = 1 ] || printf 'on a second try (the first printed no link: %s)' "$said"
+      return 0
+    fi
+    said="${said:+$said | the second: }$(printf '%s' "$out" | sed -E 's/\x1b\[[0-9;?]*[A-Za-z]//g' | tr '\n' ' ' | tail -c 300)"
+  done
+  printf '%s' "$said"
+  return 1
+}
+
 # follow_logs ID SERVICE — ./stack logs SVC follows forever: read 6 s of it (notty --timeout ends the whole group);
 # nothing in 6 s (a busy test host: Compose alone can take that long to start) reads 30 s once more
 follow_logs() {
@@ -1507,9 +1525,8 @@ elif [ "$SUBSCRIPTIONS" = 1 ]; then
   for spec in 'codex|auth\.openai\.com/codex/device' 'copilot|github\.com/login/device' 'cursor|cursor\.com/loginDeepControl' \
               'grok|x\.ai/oauth2/device' 'claude|claude\.(com|ai)/.*oauth/authorize'; do
     t="${spec%%|*}"; pat="${spec#*|}"; t0="$(now)"
-    out="$(docker exec "$tc" timeout 40 script -qec "subscriptions login $t" /dev/null </dev/null 2>&1 | tr -d '\r' | head -c 20000)"
-    if printf '%s' "$out" | grep -E "$pat" >/dev/null; then record subscriptions "signin-$t" PASS "$(( $(now) - t0 ))" "its own sign-in printed its link in the sandbox; ended there, never completed"
-    else record subscriptions "signin-$t" FAIL "$(( $(now) - t0 ))" "no /$pat/ in: $(printf '%s' "$out" | sed -E 's/\x1b\[[0-9;?]*[A-Za-z]//g' | tr '\n' ' ' | tail -c 300)"; fi
+    if said="$(signin_link "$tc" "$t" "$pat")"; then record subscriptions "signin-$t" PASS "$(( $(now) - t0 ))" "its own sign-in printed its link in the sandbox${said:+ $said}; ended there, never completed"
+    else record subscriptions "signin-$t" FAIL "$(( $(now) - t0 ))" "no /$pat/ in two tries: $said"; fi
   done
   # Gemini CLI signs in inside its own screen: its trust question answered "Don't trust", then its Google link
   t0="$(now)"
@@ -1626,9 +1643,8 @@ JS
     cli subscriptions-status-chat 0 'Codex +[0-9.]+ +no — \./stack subscriptions login codex --chat' subscriptions status --chat
     cli subscriptions-chat-not-cursor 1 'Cursor CLI is not a Chat model' subscriptions login cursor --chat
     t0="$(now)"
-    out="$(docker exec "$sc" timeout 40 script -qec "subscriptions login codex" /dev/null </dev/null 2>&1 | tr -d '\r' | head -c 20000)"
-    if printf '%s' "$out" | grep -E 'auth\.openai\.com/codex/device' >/dev/null; then record subscriptions signin-codex-chat PASS "$(( $(now) - t0 ))" "Codex's own sign-in, for Chat, in Chat's sandbox: printed its link; ended there, never completed"
-    else record subscriptions signin-codex-chat FAIL "$(( $(now) - t0 ))" "no device link in: $(printf '%s' "$out" | sed -E 's/\x1b\[[0-9;?]*[A-Za-z]//g' | tr '\n' ' ' | tail -c 300)"; fi
+    if said="$(signin_link "$sc" codex 'auth\.openai\.com/codex/device')"; then record subscriptions signin-codex-chat PASS "$(( $(now) - t0 ))" "Codex's own sign-in, for Chat, in Chat's sandbox: printed its link${said:+ $said}; ended there, never completed"
+    else record subscriptions signin-codex-chat FAIL "$(( $(now) - t0 ))" "no device link in two tries: $said"; fi
   else record subscriptions chat-sandbox SKIP 0 "needs the Code page (Chat's sandbox)"; fi
   # claude-sub: the image's claude without the stack's variables (a stand-in in the workspace prints its environment)
   ws="$(get_env TERMINAL_WORKSPACE)"; t0="$(now)"
