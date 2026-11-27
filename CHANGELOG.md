@@ -4,6 +4,13 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **Copy no longer loses your keyboard's place.** Where the browser refuses its clipboard (the web app opened at an http:// address, or a permission denied), the web app copies its own way. That left the keyboard focus on nothing, for example after Copy from a Settings row's menu. The focus now goes back where it was. (JON-1435)
+- **The Code page's "Add a git host" form keeps offering Sign in on a slow network.** A list of git hosts that arrived late could replace a newer one, and switch the open form from Sign in to an access token. The page now keeps only the newest answer. (JON-1431)
+
 ## [0.73.3] - 2026-11-27
 
 ### Fixed
