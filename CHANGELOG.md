@@ -4,6 +4,16 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Cancel a queued message on the Code page.** A message you type while Claude is working waits for the turn to end. Each waiting message now has a ✕ to cancel it, and "Cancel all" appears when two or more are waiting. A cancelled message is never sent. Claude Code drops it from its own queue, and Codex and other agents' sessions drop it from theirs. A message Claude has already taken into the turn can't be cancelled; the page says so, and Stop ends the turn. Works on the desktop and on the phone's Code tab. (JON-626)
+
+### Fixed
+
+- **Rollback after an update that changed Open WebUI could fail and leave Chat down.** Rollback restores your data from the backup taken before the update. It restarted the new Open WebUI on that data, which converted it forward again, and the older Open WebUI then could not start on it. Rollback now puts back the previous Open WebUI, Code page and egress proxy builds before it restores the data, as it already did for the others. Found while testing the coming move to Open WebUI 0.13, which would have hit it. (JON-1444)
+
 ## [0.73.4] - 2026-11-27
 
 ### Fixed
