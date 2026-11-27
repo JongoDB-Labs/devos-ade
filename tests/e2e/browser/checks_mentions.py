@@ -51,7 +51,7 @@ def _preview(page, chip):
 @saved
 def ui_mentions(ctx):
     need_haiku()
-    page, rec = ui_page(ctx, "code-ui-mentions")
+    page, rec = ui_page(ctx, "code-ui-mentions", fresh_ws=True)   # its Run task is in the Workspace: not a journey's project (JON-1433)
     page.set_viewport_size({"width": 1440, "height": 900})
     c = Code.on(page, rec, goto=False)
     had_pkg = _read(c, "package.json")
