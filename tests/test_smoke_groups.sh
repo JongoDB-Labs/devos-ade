@@ -192,3 +192,24 @@ test_a_groups_exit_hooks_are_its_own() {
   ( on_exit _sg_parent_hook; fails=0; slow=0; slow_list=''; _test_checks > /dev/null 2>&1; echo checked >> "$TMP/hooks" )
   assert_eq "$(tr '\n' ' ' < "$TMP/hooks")" "group checked parent "
 }
+
+test_bashs_setpgid_line_on_the_way_into_the_background_is_not_said_its_other_words_are() {
+  _sg_setup
+  # JON-1432: bash 3.2 on macOS now and then says "child setpgid (N to N): Operation not permitted" as a group goes into
+  # the background, before the group's own 2> applies: on the caller's stderr, so setup's and Update now's output. The
+  # group is in its own process group all the same. 3000 groups that end at once say it a few times (most runs) where
+  # this bash does; where it never does, this passes without telling anything.
+  local i=0 err
+  err="$( ( _TC_PIDS=''; fails=0; slow=0; slow_list=''; d="$TMP/g"; mkdir -p "$d"
+    while [ "$i" -lt 3000 ]; do
+      _test_group "$d" "g$i" true; i=$((i + 1))
+      [ $((i % 50)) -ne 0 ] || _test_wait
+    done
+    _test_wait ) 2>&1 >/dev/null )"
+  assert_not_contains "$err" "setpgid"
+  # what bash says then, but that line, is said (a fork retry, say), on stderr
+  printf 'x: child setpgid (41 to 41): Operation not permitted\nx: fork: retry: Resource temporarily unavailable\n' > "$TMP/f.fork"
+  assert_eq "$(_test_fork_said "$TMP/f.fork" 2>&1 >/dev/null)" "x: fork: retry: Resource temporarily unavailable"
+  assert_eq "$(_test_fork_said "$TMP/f.fork" 2>/dev/null)" ""
+  assert_eq "$(_test_fork_said "$TMP/none.fork" 2>&1)" ""
+}

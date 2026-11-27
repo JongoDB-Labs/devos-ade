@@ -1914,21 +1914,29 @@ _test_mcp() {
 # _test_group DIR NAME FUNC — FUNC, a group of checks, in a subshell in the background, on counts of its own: what it
 # prints goes to DIR/NAME.out and NAME.err, its counts to NAME.n and NAME.slow, a die's message to NAME.die. In a process
 # group of its own (set -m, as _with_deadline's): a job in the background does not see a Ctrl-C, so _test_checks_stop
-# ends it, and everything it started, on the way out. Its pid joins _TC_PIDS.
+# ends it, and everything it started, on the way out. Its pid joins _TC_PIDS. What bash itself says as the group goes
+# into the background, before the group's own 2> applies, goes to NAME.fork (_test_fork_said says it).
 _test_group() {
   local d="$1" g="$2" m=''; shift 2
   case $- in *m*) m=1 ;; esac
   set -m
-  (
+  { (
     _TG_DIE="$d/$g.die"; on_exit _test_group_die
     fails=0; slow=0; slow_list=''
     "$@"
     printf '%s %s\n' "$fails" "$slow" > "$d/$g.n"; printf '%s' "$slow_list" > "$d/$g.slow"
-  ) < /dev/null > "$d/$g.out" 2> "$d/$g.err" &
+  ) < /dev/null > "$d/$g.out" 2> "$d/$g.err" & } 2> "$d/$g.fork"
   _TC_PIDS="${_TC_PIDS:-} $!"
   [ -n "$m" ] || set +m
 }
 _test_group_die() { [ -z "${_BN_DIE_MSG:-}" ] || printf '%s' "$_BN_DIE_MSG" > "$_TG_DIE"; }
+# _test_fork_said FILE — what bash said as a group went into the background (_test_group's NAME.fork), on stderr, but
+# for "child setpgid (N to N): Operation not permitted": bash 3.2 on macOS says that now and then under load, and the
+# group is in its own process group all the same (the shell's own call put it there: checked, JON-1432)
+_test_fork_said() {
+  [ -s "$1" ] || return 0
+  grep -v ': child setpgid (' "$1" >&2 || true
+}
 # _test_wait — the groups started since the last wait have ended (their own pids only: setup has other work in the
 # background). Each leaves _TC_PIDS once it is waited for: _test_checks_stop never signals a process group that ended
 # (its number may be another's by then).
@@ -1971,7 +1979,7 @@ _test_checks() {
   # lib/stt.sh: Bedrock speech-to-text, when on (~$0.00005)
   _test_group "$d" stt stt_test_checks; _test_wait
   for g in litellm portal mcp stt terminal projects code; do
-    cat "$d/$g.out" 2>/dev/null || true; cat "$d/$g.err" >&2 2>/dev/null || true
+    cat "$d/$g.out" 2>/dev/null || true; cat "$d/$g.err" >&2 2>/dev/null || true; _test_fork_said "$d/$g.fork"
     if [ -s "$d/$g.n" ]; then
       read -r n s < "$d/$g.n"; fails=$((fails + n)); slow=$((slow + s))
       x="$(cat "$d/$g.slow" 2>/dev/null; printf .)"; slow_list="$slow_list${x%.}"

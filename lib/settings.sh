@@ -1348,7 +1348,9 @@ _cfg_followup_start() {
   d="$(settings_dir)"
   [ "$(wc -c < "$d/followup.log" 2>/dev/null || echo 0)" -lt 200000 ] || mv -f "$d/followup.log" "$d/followup.log.old" 2>/dev/null || true
   set -m
-  ( trap '' HUP; cd "$STACK_DIR" && exec env DEVOS_ADE_NO_OPEN=1 NO_COLOR=1 "$STACK_DIR/stack" config followup ) </dev/null >> "$d/followup.log" 2>&1 &
+  # (what bash says as it goes into the background, before its own 2>, goes to its log too: lib/commands.sh
+  # _test_fork_said, JON-1432)
+  { ( trap '' HUP; cd "$STACK_DIR" && exec env DEVOS_ADE_NO_OPEN=1 NO_COLOR=1 "$STACK_DIR/stack" config followup ) </dev/null >> "$d/followup.log" 2>&1 & } 2>> "$d/followup.log"
   p=$!
   set +m
   ( umask 077; _xl_pid_line "$p" > "$d/followup.pid" )
