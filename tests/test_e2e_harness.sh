@@ -425,6 +425,9 @@ test_e2e_teardown_removes_the_terminal_workspace_only_with_its_marker() {
   # (Open WebUI's own build too: every run used to leave it behind)
   assert_contains "$(cat "$TMP/docker")" "docker image rm bne2e/open-webui:local"
   assert_contains "$(cat "$TMP/docker")" "docker image rm bne2e/open-webui:previous"
+  # (LiteLLM's own build too, JON-1484)
+  assert_contains "$(cat "$TMP/docker")" "docker image rm bne2e/litellm:local"
+  assert_contains "$(cat "$TMP/docker")" "docker image rm bne2e/litellm:previous"
   # (the suite's git server, --git-server: by its own names, never compose's)
   assert_contains "$(cat "$TMP/docker")" "docker rm -f bne2e-gitsrv"
   assert_contains "$(cat "$TMP/docker")" "docker image rm bne2e/e2e-gitsrv:local"

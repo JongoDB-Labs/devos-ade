@@ -64,7 +64,7 @@ test_migrate_direct_ports_drops_only_the_old_keys() {
 # --- cmd_up keeps PORTAL_ORIGIN in sync with hand-edited PORTAL_HOST / PORTAL_PORT ---
 
 _stub_up() {
-  ensure_images() { :; }; owui_build() { :; }; run_phase() { :; }; sync_budget_banner() { :; }; cmd_status() { :; }; maybe_auto_open() { :; }
+  ensure_images() { :; }; owui_build() { :; }; litellm_build() { :; }; run_phase() { :; }; sync_budget_banner() { :; }; cmd_status() { :; }; maybe_auto_open() { :; }
   portal_login() { echo 303; }; aws_auth_check() { :; }   # (tested in test_host.sh)
   dc() { :; }; refresh_prices() { :; }   # never the real Compose project (it may be a live install)
   owui_apply_hidden() { :; }   # (lib/owui.sh: tested in test_settings.sh)

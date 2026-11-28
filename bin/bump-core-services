@@ -9,7 +9,7 @@ that is pulled within days never gets pinned), unless a maintainer names its sec
 release-note text alone never skips the cooldown, it is only reported). Then it resolves the image DIGEST, rewrites the pins in place and prints an old -> new table with release-note
 links:
 
-  compose.yaml, open-webui/Dockerfile, caddy/Dockerfile      LiteLLM, Open WebUI, RustFS, Caddy, pgvector, SearXNG, aws-cli
+  compose.yaml, open-webui/litellm-image/caddy Dockerfiles   LiteLLM, Open WebUI, RustFS, Caddy, pgvector, SearXNG, aws-cli
   portal/, shared-mcp/, stt/, code/, terminal/ Dockerfiles   the python / node / alpine base images (tag kept, digest moved)
   terminal/Dockerfile ARGs                                   Codex, Copilot CLI, ttyd, gh (versions + SHA-256 of the files)
   */requirements.txt                                         the pip locks, re-locked with hashes (uv pip compile)
@@ -658,7 +658,7 @@ def targets() -> list:
     gh = lambda repo, rx: GithubReleases(repo, rx)
     ver = r"(\d+\.\d+\.\d+)"
     return [
-        ImageTarget("litellm", "LiteLLM", gh("BerriAI/litellm", "v" + ver), [("ghcr.io/berriai/litellm", "{v}")], ["compose.yaml"], service="litellm", tested="litellm"),
+        ImageTarget("litellm", "LiteLLM", gh("BerriAI/litellm", "v" + ver), [("ghcr.io/berriai/litellm", "{v}")], ["compose.yaml", "litellm-image/Dockerfile"], service="litellm", tested="litellm"),
         ImageTarget("open-webui", "Open WebUI", gh("open-webui/open-webui", "v" + ver), [("ghcr.io/open-webui/open-webui", "v{v}-slim")],
                     ["compose.yaml", "open-webui/Dockerfile"], service="open-webui", tested="open-webui"),
         ImageTarget("rustfs", "RustFS", gh("rustfs/rustfs", ver), [("rustfs/rustfs", "{v}")], ["compose.yaml"], service="rustfs", tested="rustfs"),

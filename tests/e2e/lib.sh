@@ -309,7 +309,7 @@ teardown() {
       done
     done
     for img in "$PROJECT/portal:local" "$PROJECT/shared-mcp:local" "$PROJECT/portal:previous" "$PROJECT/shared-mcp:previous" \
-               "$PROJECT/open-webui:local" "$PROJECT/open-webui:previous" \
+               "$PROJECT/open-webui:local" "$PROJECT/open-webui:previous" "$PROJECT/litellm:local" "$PROJECT/litellm:previous" \
                "$PROJECT/caddy-dns:local" "$PROJECT/e2e-playwright:local" "$PROJECT/stt:local" "$PROJECT/stt:previous" \
                "$PROJECT/terminal:local" "$PROJECT/terminal:previous" "$PROJECT/terminal-egress:local" "$PROJECT/terminal-egress:previous" \
                "$PROJECT/code:local" "$PROJECT/code:previous" "$PROJECT/e2e-gitsrv:local"; do

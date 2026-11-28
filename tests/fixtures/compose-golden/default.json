@@ -79,7 +79,7 @@
   },
   "litellm": {
    "container_name": null,
-   "image": "ghcr.io/berriai/litellm:1.106.3@sha256:74d0696a9f0afcc993c7659d246f0c542f003368298633e852228250779f1032",
+   "image": "devos-ade/litellm:local",
    "labels": {},
    "networks": [
     "default",

@@ -64,7 +64,16 @@ services:
     logging: *logging
 
   litellm:
-    image: ghcr.io/berriai/litellm:1.106.3@sha256:74d0696a9f0afcc993c7659d246f0c542f003368298633e852228250779f1032
+    # LiteLLM as pinned (the base below), with its Python compiled at build time (litellm-image/: a start no longer compiles
+    # 2776 files, JON-1484) — built here, never pulled (no registry image can take its name); ./stack setup, update and up
+    # build it
+    build:
+      context: ./litellm-image
+      args:
+        # the pinned LiteLLM, by digest (litellm-image/Dockerfile's default is the same: tests/test_litellm_image.sh)
+        image: ghcr.io/berriai/litellm:1.106.3@sha256:74d0696a9f0afcc993c7659d246f0c542f003368298633e852228250779f1032
+    image: ${COMPOSE_PROJECT_NAME:-devos-ade}/litellm:local   # per project, like portal
+    pull_policy: never
     restart: unless-stopped
     # Directory mount (not a single-file mount): setup replaces config.yaml atomically via mv,
     # which a file bind mount would not follow.

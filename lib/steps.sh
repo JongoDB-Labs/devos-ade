@@ -386,12 +386,12 @@ _upd_compose_early() {
     compose_overlays 2>/dev/null | { grep -vE '^(compose\.(terminal|terminal-proxy|terminal-egress|code|code-proxy|code-egress|code-offline|localgit)\.yaml|@projects)$' || true; }
     project_name; } | cksum
 }
-# _upd_local_ids -> the IDs of the images this checkout builds (portal, shared-mcp, Open WebUI, stt), one docker call, kept for
+# _upd_local_ids -> the IDs of the images this checkout builds (portal, shared-mcp, Open WebUI, LiteLLM, stt), one docker call, kept for
 # the rest of one digest (upd_hash runs in a subshell: each digest asks Docker again — never an ID from before a build)
 _upd_local_ids() {
   if [ "$UPD_IDS_SET" = 0 ]; then
     local p; p="$(project_name)"
-    UPD_IDS="$(printf '%s\n' "$p/portal:local" "$p/shared-mcp:local" "$p/open-webui:local" "$p/stt:local" | snapshot_refs 2>/dev/null | LC_ALL=C sort)"
+    UPD_IDS="$(printf '%s\n' "$p/portal:local" "$p/shared-mcp:local" "$p/open-webui:local" "$p/litellm:local" "$p/stt:local" | snapshot_refs 2>/dev/null | LC_ALL=C sort)"
     UPD_IDS_SET=1
   fi
   printf '%s\n' "$UPD_IDS"

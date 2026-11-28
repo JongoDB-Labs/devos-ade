@@ -3162,6 +3162,8 @@ stt/                          the speech-to-text service for Voxtral on Bedrock 
 owui/functions/               the Open WebUI cost filter and the Make it a project action (tests in owui/tests)
 open-webui/                   our Open WebUI image: the pinned one, with the Python runner's packages (packages.txt,
                               vendor.py; tests in tests/test_openwebui.sh)
+litellm-image/                our LiteLLM image: the pinned one with its Python compiled at build time, so a start does
+                              not compile it again (tests in tests/test_litellm_image.sh)
 catalog/                      models, prices, display names, icons, AWS price map; settings.tsv: every setting
                               (the Settings page, ./stack config and the update helper's allowlist),
                               settings-layout.tsv where the page shows each; code-models.tsv: how each model works

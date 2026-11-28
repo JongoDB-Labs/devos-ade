@@ -7,7 +7,7 @@
 #   before.tsv    the images in use when the running update started (written before 3/4 images)
 #   previous.tsv  the images of the version before the current one: KEPT, so ./stack rollback is instant
 # After a successful update, before.tsv becomes previous.tsv and the old previous.tsv (previous-previous) is
-# removed. Locally built images (<project>/portal:local, <project>/shared-mcp:local, <project>/stt:local) keep their previous build
+# removed. Locally built images (<project>/portal:local, <project>/shared-mcp:local, <project>/litellm:local, …) keep their previous build
 # as <project>/<name>:previous.
 
 images_dir() { printf '%s/images\n' "$STATE_DIR"; }
@@ -258,7 +258,7 @@ EOF
 
 # LOCAL_BUILDS — the images this project builds itself: <project>/<name>:local (and :previous, the build before the
 # last update's, kept for ./stack rollback); caddy-dns only with the own-domain overlay, and never a :previous
-LOCAL_BUILDS="portal shared-mcp stt terminal terminal-egress code caddy-dns open-webui"
+LOCAL_BUILDS="portal shared-mcp stt terminal terminal-egress code caddy-dns open-webui litellm"
 
 # local_builds_remove — ./stack uninstall, after compose's down: this install's built images by their exact names,
 # only those that exist. Never forced and never a prune: an image something still uses stays (and is named).

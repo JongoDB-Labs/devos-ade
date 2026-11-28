@@ -53,18 +53,22 @@ _stub_docker() {
 # every core service running exactly what compose.yaml pins
 _all_match() {
   local id ref d
-  for id in postgres rustfs rustfs-init litellm searxng caddy; do
+  for id in postgres rustfs rustfs-init searxng caddy; do
     ref="$(compose_service_image "$id")"; d="$(ref_digest "$ref")"
     _img "img-$id" "${ref%%@*}@$d"; _ctr "$id" "img-$id" "$ref"
   done
   ref="$(compose_service_image open-webui)"
   _img img-open-webui "" "$ref"; _ctr open-webui img-open-webui "bn-t/open-webui:local"
+  ref="$(compose_service_image litellm)"   # (a local build on the pinned base, like Open WebUI: JON-1484)
+  _img img-litellm "" "$ref"; _ctr litellm img-litellm "bn-t/litellm:local"
   for id in portal shared-mcp stt; do _img "img-$id" ""; _ctr "$id" "img-$id" "bn-t/$id:local"; _built "bn-t/$id:local" "img-$id"; done
 }
 
 test_pins_are_read_from_compose_yaml() {
-  assert_eq "$(ref_version "$(compose_service_image litellm)")" "$(sed -n 's|^    image: ghcr.io/berriai/litellm:\([0-9.]*\)@.*|\1|p' "$STACK_DIR/compose.yaml")"
+  assert_eq "$(ref_version "$(compose_service_image litellm)")" "$(sed -n 's|^        image: ghcr.io/berriai/litellm:\([0-9.]*\)@.*|\1|p' "$STACK_DIR/compose.yaml")"
   assert_contains "$(compose_service_image open-webui)" "ghcr.io/open-webui/open-webui:v"   # its build argument, not the :local image
+  assert_contains "$(compose_service_image litellm)" "ghcr.io/berriai/litellm:"   # likewise (JON-1484: built here too)
+  assert_not_contains "$(compose_service_image litellm)" ":local"
   assert_not_contains "$(compose_service_image open-webui)" ":local"
   assert_eq "$(compose_service_image nonesuch)" ""
 }
@@ -133,6 +137,22 @@ test_open_webui_must_be_built_on_the_pinned_base() {
   assert_contains "$(cat "$TMP/err")" "open-webui runs"
   _img img-open-webui "" ""   # an image with no label at all (built before the label existed)
   if update_verify_images 2>/dev/null; then return 1; fi
+}
+
+test_litellm_must_be_built_on_the_pinned_base() {
+  # (JON-1484: LiteLLM is a local build on the pinned image, like Open WebUI; its label says which)
+  _stub_docker; _all_match
+  _img img-litellm "" "ghcr.io/berriai/litellm:1.105.0@sha256:$(printf 'a%.0s' $(seq 64))"
+  if update_verify_images 2> "$TMP/err"; then echo "an old LiteLLM base passed" >&2; return 1; fi
+  assert_contains "$(cat "$TMP/err")" "litellm runs"
+  _img img-litellm "" ""   # no label at all
+  if update_verify_images 2>/dev/null; then echo "an unlabelled LiteLLM passed" >&2; return 1; fi
+  # the container's own copy of the label stands when its image was rebuilt from the cache under another id
+  rm "$TMP/img/img-litellm.digest" "$TMP/img/img-litellm.label"
+  compose_service_image litellm > "$TMP/ctr/litellm.label"
+  update_verify_images 2> "$TMP/err" || { cat "$TMP/err" >&2; return 1; }
+  assert_eq "$(versions_row litellm | cut -f3)" "$(ref_version "$(compose_service_image litellm)")"   # (what runs: the pinned release)
+  assert_not_contains "$(versions_row litellm | cut -f6)" pending
 }
 
 test_a_local_build_that_is_not_the_fresh_one_fails() {

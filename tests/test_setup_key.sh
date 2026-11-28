@@ -38,7 +38,7 @@ test_admin_calls_still_use_master_key() {
 test_setup_key_created_before_probe() {
   STACK_DIR="$TMP"; mkdir -p "$TMP/litellm"
   printf 'BUDGET_SETUP=5\n' > "$ENV_FILE"
-  render_config() { :; }; ensure_images() { :; }; owui_build() { :; }; run_phase() { :; }; choose_defaults() { :; }
+  render_config() { :; }; ensure_images() { :; }; owui_build() { :; }; litellm_build() { :; }; run_phase() { :; }; choose_defaults() { :; }
   dc() { :; }; refresh_prices() { :; }   # never a real build/run in a (possibly live) Compose project
   ensure_virtual_key() { echo "KEY $*" >> "$TMP/calls"; }
   probe_models() { echo "PROBE" >> "$TMP/calls"; echo big > "$1"; }
@@ -54,7 +54,7 @@ _probe_setup() {
   printf '  litellm:\n    image: ghcr.io/berriai/litellm:1.105.0\n' > "$STACK_DIR/compose.yaml"
   printf '# probe v1\nprobe_rule() { echo 1; }\n' > "$STACK_DIR/lib/models.sh"
   printf 'BUDGET_SETUP=5\nAWS_ACCESS_KEY_ID=id-one\nAWS_SECRET_ACCESS_KEY=s1\nAWS_REGION_NAME=us-east-1\n' > "$ENV_FILE"
-  render_config() { echo "RENDER ${1:+enabled}" >> "$TMP/calls"; }; ensure_images() { :; }; owui_build() { :; }; choose_defaults() { :; }
+  render_config() { echo "RENDER ${1:+enabled}" >> "$TMP/calls"; }; ensure_images() { :; }; owui_build() { :; }; litellm_build() { :; }; choose_defaults() { :; }
   run_phase() { echo "PHASE $1" >> "$TMP/calls"; }
   dc() { :; }; refresh_prices() { :; }   # never a real build/run in a (possibly live) Compose project
   ensure_virtual_key() { echo "KEY $2" >> "$TMP/calls"; }

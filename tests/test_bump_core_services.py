@@ -151,7 +151,10 @@ class PickTests(unittest.TestCase):
 
 COMPOSE = """services:
   litellm:
-    image: ghcr.io/berriai/litellm:1.105.0
+    build:
+      args:
+        image: ghcr.io/berriai/litellm:1.105.0@%s
+    image: ${COMPOSE_PROJECT_NAME:-devos-ade}/litellm:local
   open-webui:
     build:
       args:
@@ -159,7 +162,7 @@ COMPOSE = """services:
     image: ${COMPOSE_PROJECT_NAME:-devos-ade}/open-webui:local
   caddy:
     image: caddy:2.11.7-alpine@%s
-""" % (D(1), D(2))
+""" % (D(4), D(1), D(2))
 
 
 class ImageTargetTests(unittest.TestCase):
@@ -167,7 +170,8 @@ class ImageTargetTests(unittest.TestCase):
         return next(t for t in bump.targets() if t.name == name)
 
     def test_litellm_is_pinned_by_digest_and_the_e2e_tested_version_follows(self):
-        d = tree({"compose.yaml": COMPOSE, bump.E2E_TESTED: 'TESTED_WITH = {"open-webui": "v0.12.0-slim", "litellm": "1.105.0", "rustfs": "1.0.1"}\n'})
+        d = tree({"compose.yaml": COMPOSE, "litellm-image/Dockerfile": "ARG image=ghcr.io/berriai/litellm:1.105.0@%s\nFROM ${image}\n" % D(4),
+                  bump.E2E_TESTED: 'TESTED_WITH = {"open-webui": "v0.12.0-slim", "litellm": "1.105.0", "rustfs": "1.0.1"}\n'})
         net = FakeNet(gh={"BerriAI/litellm": [rel("v1.106.5", "2026-10-27T11:00:00Z"), rel("v1.106.3", "2026-10-24T09:00:00Z"),
                                               rel("v1.105.0", "2026-10-01T00:00:00Z"), rel("v1.107.0rc1", "2026-10-20T00:00:00Z", pre=True)]},
                       digests={"berriai/litellm:1.106.3": D(7)})
@@ -175,7 +179,11 @@ class ImageTargetTests(unittest.TestCase):
         m = self.target("litellm").run(net, fs, now(), 3)
         fs.flush()
         self.assertEqual((m.old, m.new, m.newest), ("1.105.0", "1.106.3", "1.106.5"))
-        self.assertIn("ghcr.io/berriai/litellm:1.106.3@" + D(7), read(d, "compose.yaml"))
+        # (the pin moves in compose.yaml and in the Dockerfile's default, which tests/test_litellm_image.sh holds equal)
+        for f in ("compose.yaml", "litellm-image/Dockerfile"):
+            self.assertIn("ghcr.io/berriai/litellm:1.106.3@" + D(7), read(d, f))
+            self.assertNotIn("1.105.0", read(d, f))
+        self.assertIn("/litellm:local", read(d, "compose.yaml"))   # the local build's name is not a pin
         self.assertIn('"litellm": "1.106.3"', read(d, bump.E2E_TESTED))
         self.assertIn('"rustfs": "1.0.1"', read(d, bump.E2E_TESTED))   # the others stay
         self.assertTrue(m.held)

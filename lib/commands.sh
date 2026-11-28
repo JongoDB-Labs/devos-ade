@@ -319,7 +319,7 @@ $img
 }
 _missing_candidates() {
   { dc config --images 2>/dev/null; compose_refs < "$STACK_DIR/compose.yaml" 2>/dev/null; } | awk '!seen[$0]++' | while IFS= read -r img; do
-    case "$img" in '' | */shared-mcp:local | */portal:local | */stt:local | */caddy-dns:local | */terminal:local | */terminal-egress:local | */code:local | */open-webui:local) continue ;; esac
+    case "$img" in '' | */shared-mcp:local | */portal:local | */stt:local | */caddy-dns:local | */terminal:local | */terminal-egress:local | */code:local | */open-webui:local | */litellm:local) continue ;; esac
     printf '%s\n' "$img"
   done
 }
@@ -364,8 +364,17 @@ owui_vendor_try() {
   printf '%s\n' "$try"
 }
 
+# litellm_build — builds <project>/litellm:local (litellm-image/Dockerfile: the pinned LiteLLM with its Python compiled, so
+# a start does not compile it again — JON-1484), from Docker's cache unless the Dockerfile or the pin changed: a build that
+# came wholly from the cache is the same content (LiteLLM's container stays; Compose recreates one whose image changed).
+# Built already in this command by setup_build_images: nothing more to do.
+litellm_build() {
+  built_now litellm && return 0
+  building "LiteLLM's image (with its Python compiled)" dc build -q litellm
+}
+
 # setup_build_images [--sandboxes] — the images setup builds, in one compose call, which builds them side by side
-# (Docker's cache makes an unchanged one a matter of seconds): the portal, shared-mcp and Open WebUI. With --sandboxes
+# (Docker's cache makes an unchanged one a matter of seconds): the portal, shared-mcp, Open WebUI and LiteLLM. With --sandboxes
 # (./stack setup, ./stack update) the browser terminal's, its egress proxy's and the Code page's too, while they are on
 # and their folder usable — in a compose call of their own, in the background (lib/steps.sh sandbox_build_start): LiteLLM,
 # Open WebUI and the portal come up meanwhile, and the terminal's step waits for them (sandbox_build_wait). Your
@@ -377,7 +386,7 @@ owui_vendor_try() {
 # A helper job's log gets "still building" lines while it runs, like a phase's (building).
 # shellcheck disable=SC2034  # SETUP_BUILT: read by built_now (lib/common.sh)
 setup_build_images() {
-  local svcs=(portal shared-mcp open-webui) sbx=() args e out start _PHASE_TICK=''
+  local svcs=(portal shared-mcp open-webui litellm) sbx=() args e out start _PHASE_TICK=''
   SETUP_BUILT=''; _OWUI_TRY="$(owui_vendor_try)"
   args=(--build-arg "BN_VENDOR_TRY=$_OWUI_TRY")
   if [ "${1:-}" = --sandboxes ] && terminal_on && [ -z "$(terminal_why_out)" ]; then
@@ -1040,6 +1049,7 @@ _setup_prices() {
 # missing, as on a first setup)
 _setup_downloads() { pulls_wait; ensure_images; }
 _setup_owui_image() {
+  litellm_build || die "could not build LiteLLM's image (./stack logs is empty for a build: run ./stack setup again and read its output)"
   owui_build || die "could not build Open WebUI's image (./stack logs is empty for a build: run ./stack setup again and read its output)"
 }
 # (the default models from the models found: .env only — before Postgres starts, nothing reads them)
@@ -1539,6 +1549,7 @@ cmd_up() {
   settings_pending_check        # a settings change cut short: reconciled below
   ensure_portal_dirs; write_version_file   # lib/version.sh
   ensure_images "./stack up"
+  litellm_build || die "could not build LiteLLM's image — run ./stack up again and read its output"
   owui_build || die "could not build Open WebUI's image — run ./stack up again and read its output"
   # Prices (lib/prices.sh): refresh if the last check is older than 12 h (fast: LiteLLM's list only, at most
   # 20 s; the portal's daily run does the AWS cross-check). OpenRouter's hook comes next: when its models

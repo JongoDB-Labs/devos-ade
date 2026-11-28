@@ -9,11 +9,11 @@
 #             maintainer's tool, run before every release — docs/releasing.md); users' computers never ask upstream
 #
 # The check (update_verify_images) is by DIGEST: a registry image's container must be of an image whose digest is the one
-# compose.yaml pins; Open WebUI's local build must say (label) it was built on the pinned base; the portal's, shared-mcp's
+# compose.yaml pins; Open WebUI's and LiteLLM's local builds must say (label) they were built on the pinned base; the portal's, shared-mcp's
 # and stt's builds must be the image just built. Anything else — or an image that cannot be read — fails the update.
 
 core_services_tsv() { printf '%s/catalog/core-services.tsv\n' "$STACK_DIR"; }
-BN_BASE_LABEL=dev.devos-ade.base-image   # open-webui/Dockerfile's label: the pinned image the local build is on
+BN_BASE_LABEL=dev.devos-ade.base-image   # open-webui/ and litellm-image/ Dockerfiles' label: the pinned image the local build is on
 
 # core_service_ids -> the services of catalog/core-services.tsv (compose service names), in file order
 core_service_ids() { awk -F'\t' '!/^#/ && NF >= 2 { print $1 }' "$(core_services_tsv)" 2>/dev/null; }
@@ -228,7 +228,7 @@ EOF
 }
 
 # update_verify_images — after ./stack update's setup: every container this release recreated runs the image the
-# release pins (digest match for registry images; the base-image label for Open WebUI's local build; the fresh build for
+# release pins (digest match for registry images; the base-image label for Open WebUI's and LiteLLM's local builds; the fresh build for
 # the portal, shared-mcp and stt). Prints each mismatch; 0 when all match, 1 otherwise. A service with no container
 # (an optional one that is off) is skipped; one whose image cannot be read fails.
 update_verify_images() {

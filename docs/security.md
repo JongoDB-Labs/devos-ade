@@ -4049,6 +4049,14 @@ never reads, copies, keeps, passes on or relays a login.**
   and its report's alone). Any other package keeps its CDN URL, and its import fails
   with Chat's policy refusing the request (the e2e: `browser/chat-python-runner`, `-numpy`, `-not-vendored`,
   `http/chat-python-runtime-public-and-exact`; the remote harness checks that no cookie reaches Open WebUI there).
+- [x] **LiteLLM's Python is compiled when its image is built, never while it runs.** LiteLLM holds every provider key.
+  The upstream image ships its packages as source only, so each new container compiled them again (about 6 s of a
+  start). The stack builds its own LiteLLM image (`litellm-image/`: the pinned image, by digest, as its base;
+  `<project>/litellm:local`, never pulled) whose one added step runs `python -m compileall` over the image's own
+  site-packages, beside their sources. Nothing LiteLLM runs can write the bytecode it later runs: no cache volume, no
+  `PYTHONPYCACHEPREFIX`, no other setting; the image's entrypoint, command, user and folders are the pin's. A compiled
+  file is used only while its source is unchanged (the default check of the source's time and size), and the sources in
+  the image never change. The config folder, mounted read-only, is not compiled. (`tests/test_litellm_image.sh`.)
 - [ ] **What Chat's page and an artifact can still do.** A name the browser looks up on its own for a host a document
   names — DNS prefetching, a `<link rel=preconnect>` — and a WebRTC peer connection's STUN request to a server the
   document names are governed by no directive of Chat's policy: the host name, or the request, can carry a little out.

@@ -173,6 +173,24 @@ test_the_processors_count_as_busy_from_a_percentage() {
 
 # --- the run ---
 
+test_prepare_builds_litellms_image_when_the_release_has_one() {
+  # JON-1484: a release whose compose.yaml builds LiteLLM (litellm-image/) has it built ahead as <project>-prep/litellm:local,
+  # recorded with the others; Update now's own build of <project>/litellm:local is then Docker's cache
+  _pw
+  local o="$TMP/origin"
+  mkdir -p "$o/litellm-image"; echo "FROM scratch" > "$o/litellm-image/Dockerfile"
+  { _compose "$DIG_NEW" | grep -v 'litellm\|berriai'
+    printf '  litellm:\n    build: { context: ./litellm-image }\n    image: ${COMPOSE_PROJECT_NAME:-devos-ade}/litellm:local\n'; } > "$o/compose.yaml"
+  git -C "$o" add . ; git -C "$o" commit -qm three; git -C "$o" tag v0.5.0; _seen v0.5.0
+  out="$(prepare_run v0.5.0 2>&1)"
+  _prep_read; assert_eq "$PS_state" "ready"
+  assert_contains "$(cat "$STATE_DIR/update/prepare/images.tsv")" "bn-t-prep/litellm:local"
+  assert_eq "$(grep -c ' build ' "$DLOG")" "4"
+  assert_contains "$out" "==> Prepare: build litellm ready ("
+  # (and one of the release before, which has no such folder, builds three)
+  assert_eq "$(git -C "$STACK_DIR" show v0.4.0:compose.yaml | grep -c 'litellm-image')" "0"
+}
+
 test_prepare_builds_under_its_own_name_and_touches_nothing_the_stack_uses() {
   _pw
   head0="$(_head)"; env0="$(cksum < "$ENV_FILE")"; before="$(cat "$IMGS")"

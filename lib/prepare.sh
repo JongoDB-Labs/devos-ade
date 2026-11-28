@@ -11,7 +11,7 @@
 #               working tree, no .env, no update record). Removed when the run ends.
 #   3. download the images the release's compose files pin by digest and this computer does not have (a tag is never
 #               pulled: only a digest never moves a name something uses). First, and not held back by a busy computer.
-#   4. build    each image of the release (the portal, shared-mcp, Open WebUI; speech-to-text while Bedrock's is on; the
+#   4. build    each image of the release (the portal, shared-mcp, Open WebUI, LiteLLM; speech-to-text while Bedrock's is on; the
 #               Terminal's and the Code page's while they are on), one at a time, as <project>-prep/<image>:local (the name
 #               Compose gives the service's image: chat-egress builds terminal-egress) from that copy and a private copy of
 #               .env whose project is <project>-prep. BuildKit's layer cache is shared, so ./stack update's own build of
@@ -257,6 +257,7 @@ _prepare_unpack() {
 _prep_services() {
   local e
   printf '%s\n' portal shared-mcp open-webui
+  [ ! -f "$STACK_DIR/litellm-image/Dockerfile" ] || echo litellm   # (a release that builds LiteLLM's image; an older one pulls it)
   [ -z "$(stt_services)" ] || echo stt   # Bedrock speech-to-text on (lib/stt.sh: STT_PROVIDER=bedrock), as setup decides
   if terminal_on && [ -z "$(terminal_why_out)" ]; then
     echo terminal

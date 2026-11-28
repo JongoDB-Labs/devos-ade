@@ -52,7 +52,7 @@ What it does, per pin:
   service (`auth.docker.io`); any other address is refused. Neither is carried across a redirect. Docker Hub's next-page
   link must stay on `https://hub.docker.com`.
 - **Rewrites.** `compose.yaml`, `compose.terminal.yaml`, `compose.tailscale.yaml`, `open-webui/Dockerfile`,
-  `caddy/Dockerfile`, `tests/caddy-validate.sh`, the python/node/alpine bases of `portal/`, `shared-mcp/`, `stt/`,
+  `litellm-image/Dockerfile` (its default for the LiteLLM pin), `caddy/Dockerfile`, `tests/caddy-validate.sh`, the python/node/alpine bases of `portal/`, `shared-mcp/`, `stt/`,
   `code/` and `terminal/`, terminal/Dockerfile's `CODEX_`, `COPILOT_`, `TTYD_` and `GH_` versions with the SHA-256 of
   each file (downloaded and hashed), the versions the e2e suite is run with (`tests/e2e/browser/common.py`), and the
   three `requirements.txt` locks (`uv pip compile --generate-hashes --exclude-newer <cooldown>`).

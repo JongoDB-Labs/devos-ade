@@ -569,7 +569,7 @@ test_rollback_puts_back_every_local_build_the_update_kept_before_the_restore() {
   }
   _rollback_local_builds
   d="$(cat "$TMP/docker")"
-  for n in open-webui code terminal-egress portal shared-mcp terminal; do
+  for n in open-webui litellm code terminal-egress portal shared-mcp terminal; do
     assert_contains "$d" "docker tag bn-t/$n:previous bn-t/$n:local"
   done
   assert_not_contains "$d" "docker tag bn-t/caddy-dns:previous"

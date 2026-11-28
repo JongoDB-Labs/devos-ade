@@ -64,8 +64,13 @@ test_a_changed_env_value_or_image_recreates_the_services_that_use_it() {
   h="$(_hashes)"; printf 'TERMINAL_AUTO_MODE=true\n' >> "$ENV_FILE"; assert_eq "$(_changed "$h")" terminal
   # an image pinned anew (an update's compose.yaml): that service. (An image built here keeps its name and gets a new
   # ID: compose compares the container's image with it at each up — setup builds every image before its ups.)
+  h="$(_hashes)"; sed -i.bak -E 's#(pgvector/pgvector:)[0-9.]+#\19.99.9#' "$STACK_DIR/compose.yaml"
+  assert_eq "$(_changed "$h")" postgres
+  # (LiteLLM is built here too, JON-1484: a new pin is a build argument, not part of its configuration — its rebuilt image
+  # has a new ID and compose recreates it then; with the pin unchanged the build is Docker's cache, the same image, no
+  # recreate. So the pin alone changes no hash.)
   h="$(_hashes)"; sed -i.bak -E 's#(ghcr.io/berriai/litellm:)[0-9.]+#\19.99.9#' "$STACK_DIR/compose.yaml"
-  assert_eq "$(_changed "$h")" litellm
+  assert_eq "$(_changed "$h")" ""
 }
 
 # config_sums: one line a service, a checksum of names and contents (nothing for a file that is not there), the
@@ -404,32 +409,33 @@ test_setup_builds_every_image_side_by_side_once() {
   # (the sandboxes' images in a build of their own, in the background — lib/steps.sh — collected at the terminal's step)
   sandbox_build_wait 2>> "$TMP/err"
   assert_eq "$(sort "$TMP/dc")" "$(printf '%s\n' "dc --progress plain build --build-arg APT_REFRESH=$(date -u +%G-%V) --build-arg BN_AI_TOOLS=all terminal terminal-egress code" \
-    "dc --progress plain build --build-arg BN_VENDOR_TRY=0 portal shared-mcp open-webui" | sort)"
-  assert_eq "$SETUP_BUILT" " portal shared-mcp open-webui terminal terminal-egress code "
+    "dc --progress plain build --build-arg BN_VENDOR_TRY=0 portal shared-mcp open-webui litellm" | sort)"
+  assert_eq "$SETUP_BUILT" " portal shared-mcp open-webui litellm terminal terminal-egress code "
   assert_contains "$(cat "$TMP/err")" "Images ready ("
   assert_contains "$(cat "$TMP/err")" "Sandbox images ready ("
   # its steps build nothing more
   : > "$TMP/dc"
   python_runner_status() { :; }
-  owui_build && terminal_build && code_build || return 1
+  owui_build && litellm_build && terminal_build && code_build || return 1
   ensure_portal_password_hash() { :; }; compose_reads_contexts() { :; }
   _build_and_up_front open-webui portal caddy shared-mcp > /dev/null || return 1
   assert_eq "$(grep -c '^dc build' "$TMP/dc")" 0
   # without --sandboxes (./stack models --recheck): the stack's own images only
   : > "$TMP/dc"; setup_build_images 2>/dev/null
-  assert_eq "$(cat "$TMP/dc")" "dc --progress plain build --build-arg BN_VENDOR_TRY=0 portal shared-mcp open-webui"
+  assert_eq "$(cat "$TMP/dc")" "dc --progress plain build --build-arg BN_VENDOR_TRY=0 portal shared-mcp open-webui litellm"
   [ -z "$SANDBOX_BUILD_PID" ] || { echo "a background build without --sandboxes" >&2; return 1; }
   # the builds fail: none is taken as built, so each step builds its own
   dc() { echo "dc $*" >> "$TMP/dc"; case "$*" in *" terminal terminal-egress code") echo "failed to solve: terminal"; return 1 ;;
-    *" portal shared-mcp open-webui") echo "failed to solve: portal"; return 1 ;; esac; return 0; }
+    *" portal shared-mcp open-webui litellm") echo "failed to solve: portal"; return 1 ;; esac; return 0; }
   : > "$TMP/dc"; setup_build_images --sandboxes 2> "$TMP/err" || return 1
   sandbox_build_wait 2>> "$TMP/err"
   assert_eq "$SETUP_BUILT" ""
   assert_contains "$(cat "$TMP/err")" "each is built on its own next"
   assert_contains "$(cat "$TMP/err")" "failed to solve: terminal"
   assert_contains "$(cat "$TMP/err")" "failed to solve: portal"
-  owui_build; terminal_build; code_build
+  owui_build; litellm_build; terminal_build; code_build
   assert_contains "$(cat "$TMP/dc")" "dc build -q --build-arg BN_VENDOR_TRY=0 open-webui"
+  assert_contains "$(cat "$TMP/dc")" "dc build -q litellm"
   assert_contains "$(cat "$TMP/dc")" "dc build -q --build-arg APT_REFRESH=$(date -u +%G-%V) --build-arg BN_AI_TOOLS=all terminal"
   assert_contains "$(cat "$TMP/dc")" "dc build -q code"
 }
