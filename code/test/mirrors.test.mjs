@@ -203,7 +203,7 @@ test('resolve: a connected host\'s id and a path give the https address and the 
   assert.ok(!JSON.stringify(r).includes(GTOK));
   assert.equal(m.resolve({ host: gh, path: 'octo/app.git' }).remote, 'https://github.com/octo/app.git');
   const bad = (b, re) => assert.throws(() => m.resolve(b), re, JSON.stringify(b));
-  bad({ host: 'h_000000000000', path: 'o/r' }, /not a connected git host/);
+  bad({ host: 'h_00000000beef', path: 'o/r' }, /not a connected git host/);
   bad({ host: store.read().hosts.find((h) => h.builtin).id, path: 'o/r' }, /built-in git server itself/);
   bad({ host: gh, path: '../x' }, /repository/);
   bad({ host: gh, path: 'o/r?x=1' }, /repository/);
