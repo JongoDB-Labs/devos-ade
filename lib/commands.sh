@@ -2069,7 +2069,11 @@ _backup_space_check() {
     kb="$(du -sk "$last" 2>/dev/null | cut -f1 || true)"; case "$kb" in '' | *[!0-9]*) kb=0 ;; esac
   fi
   free="$(df -Pk "$STACK_DIR/backups" 2>/dev/null | awk 'NR == 2 { print $4 }' || true)"; case "$free" in '' | *[!0-9]*) return 0 ;; esac
-  [ -z "$last" ] || [ "$free" -lt $((kb * 4 + 1048576)) ] || return 0   # (plenty: no volume job)
+  # (plenty: no volume job — unless the git server is on and the newest backup holds no copy of its repositories, whose size
+  # then says nothing about theirs)
+  if [ -n "$last" ] && [ "$free" -ge $((kb * 4 + 1048576)) ] && { [ -f "${last}gitdata.tar.gz" ] || ! localgit_on; }; then
+    return 0
+  fi
   git="$(localgit_volume_kb 2>/dev/null || true)"; case "$git" in '' | *[!0-9]*) git=0 ;; esac
   if [ "$git" -gt 0 ] && [ -f "${last}gitdata.tar.gz" ]; then
     own="$(du -sk "${last}gitdata.tar.gz" 2>/dev/null | cut -f1 || true)"; case "$own" in '' | *[!0-9]*) own=0 ;; esac

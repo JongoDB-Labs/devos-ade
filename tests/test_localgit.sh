@@ -1018,10 +1018,18 @@ unpacked_kb")"
 }
 
 test_the_space_check_skips_the_volume_job_when_there_is_plenty_of_room() {
-  STACK_DIR="$TMP/stack"; _space_stubs 10240 9000000 5120
+  STACK_DIR="$TMP/stack"; _space_stubs 10240 9000000 5120; printf 'LOCALGIT=on\n' > "$ENV_FILE"
+  : > "$STACK_DIR/backups/20260101-000000/gitdata.tar.gz"   # the newest backup holds the repositories: its size covers them
   : > "$TMP/jobs"; localgit_volume_kb() { echo job >> "$TMP/jobs"; echo 5120; }
   ( _backup_space_check ) 2>/dev/null || return 1
   assert_eq "$(wc -l < "$TMP/jobs" | tr -d ' ')" 0
+  rm -f "$STACK_DIR/backups/20260101-000000/gitdata.tar.gz"   # no copy of them in it (the git server was off then): measure
+  ( _backup_space_check ) 2>/dev/null || return 1
+  assert_eq "$(wc -l < "$TMP/jobs" | tr -d ' ')" 1
+  : > "$TMP/jobs"; printf 'LOCALGIT=off\n' > "$ENV_FILE"   # git server off now: nothing to measure
+  ( _backup_space_check ) 2>/dev/null || return 1
+  assert_eq "$(wc -l < "$TMP/jobs" | tr -d ' ')" 0
+  printf 'LOCALGIT=on\n' > "$ENV_FILE"; : > "$STACK_DIR/backups/20260101-000000/gitdata.tar.gz"; : > "$TMP/jobs"
   _space_stubs 10240 1050000 5120                  # under 4x + 1 GiB: the job runs
   localgit_volume_kb() { echo job >> "$TMP/jobs"; echo 5120; }
   ( _backup_space_check ) 2>/dev/null || return 1
@@ -1094,4 +1102,26 @@ test_the_swap_removes_its_marker_only_after_the_old_copy() {
   _lg_run stage || { cat "$TMP/lg.err" >&2; return 1; }        # the next restore finishes it forward
   assert_eq "$(cat "$VOL/app.ini")" "new-ini"
   assert_eq "$([ -e "$VOL/.restore-old" ] || [ -e "$VOL/.restore-swapping" ] && echo left || echo none)" "none"
+}
+
+test_the_unpacked_size_counts_whole_blocks_for_many_small_files() {
+  _lg_mkvol; mkdir -p "$SRC/objects"; local i=0
+  while [ $i -lt 200 ]; do printf 'x%s' "$i" > "$SRC/objects/o$i"; i=$((i + 1)); done   # 200 tiny loose objects
+  tar -C "$SRC" -czf "$BK/gitdata.tar.gz" .
+  local kb; kb="$(V="$VOL" B="$BK" sh -c "$(_lg_restore_script stage | sed '$d')
+unpacked_kb")"
+  [ "${kb:-0}" -ge 800 ] || { echo "200 small files read as [$kb] KB, not at least 200 blocks of 4 KB" >&2; return 1; }
+}
+
+test_only_one_restore_job_runs_on_the_volume_at_a_time() {
+  STACK_DIR="$TMP/stack"; mkdir -p "$STACK_DIR" "$TMP/bk"; sed -n '/^  forgejo:/,/^    image:/p' "$T_ROOT/compose.yaml" > "$STACK_DIR/compose.yaml"
+  printf 'LOCALGIT=on\n' > "$ENV_FILE"; : > "$TMP/dk"
+  ( docker() { echo "$*" >> "$TMP/dk"; return 0; }; dc() { :; }
+    localgit_stage_restore "$TMP/bk" && localgit_restore_from "$TMP/bk" staged ) 2>/dev/null || return 1
+  assert_eq "$(/usr/bin/grep -c -- "run --rm --name $(project_name)-git-restore " "$TMP/dk")" 2   # stage and swap, both named
+  : > "$TMP/dk"                                              # an earlier restore's container still there: refused, nothing run
+  ( docker() { echo "$*" >> "$TMP/dk"; case "$1" in ps) echo 0123abcd ;; esac; return 0; }; dc() { :; }
+    localgit_stage_restore "$TMP/bk" && exit 5; localgit_restore_from "$TMP/bk" staged && exit 6; exit 0 ) 2> "$TMP/err" || return 1
+  assert_not_contains "$(cat "$TMP/dk")" "run --rm"
+  assert_contains "$(cat "$TMP/err")" "an earlier restore's job"
 }

@@ -258,7 +258,7 @@ _lg_volume_job() {
   img="$(_lg_image)"; [ -n "$img" ] || return 1
   _docker_rootless || own=(-e "LG_UID=$(id -u)" -e "LG_GID=$(id -g)")
   # (no network, no new privileges, and only the capabilities tar and chown need to read and write the server user's files)
-  docker run --rm --network none --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER \
+  docker run --rm ${_LG_JOB_NAME:+--name "$_LG_JOB_NAME"} --network none --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER \
     --security-opt no-new-privileges --user 0 ${own[@]+"${own[@]}"} -v "$(localgit_volume):/v${vmode:+:$vmode}" \
     -v "$host:/backup:${hmode:+$hmode,}z" --entrypoint sh "$img" -c "$script"
 }
@@ -358,14 +358,16 @@ recover() {
     rmdir "$O" || stuck "the holding folder is not empty"
   fi
 }
-# the archive's unpacked size in KB, from one listing: the size is the field before the date (ISO date: busybox and GNU tar);
+# the archive's unpacked size in KB, on disk: whole 4 KB blocks (a repository of many small loose objects takes far more than
+# the sum of their sizes), one block per folder and link; from one listing: the size is the field before the date (ISO date: busybox and GNU tar);
 # bsdtar prints "mode links owner group size date", so its size is field 5. Nothing read -> empty.
 unpacked_kb() {
   tar -tzvf "$A" 2>/dev/null | awk '
     $1 ~ /^-/ { sz = ""
       for (i = 3; i <= NF; i++) if ($i ~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$/) { sz = $(i - 1); break }
       if (sz == "") sz = $5
-      if (sz ~ /^[0-9]+$/) { t += sz; n++ } else bad = 1 }
+      if (sz ~ /^[0-9]+$/) { t += int((sz + 4095) / 4096) * 4096; n++ } else bad = 1; next }
+    NF > 0 { t += 4096 }
     END { if (!bad && n > 0) printf "%d\n", (t + 1023) / 1024 }'
 }
 enough_space() {
@@ -444,7 +446,7 @@ LGEOF
 # copy of the repositories in the volume, for a backup to pick up.
 localgit_stage_restore() {
   docker volume inspect "$(localgit_volume)" >/dev/null 2>&1 || dc up --no-start --no-deps forgejo >/dev/null 2>&1 || true
-  _lg_volume_job '' "$1" ro "$(_lg_restore_script stage)" >/dev/null || return 1
+  _lg_restore_job "$1" stage || return 1
   _LG_STAGED="$1"; on_exit _lg_drop_staged
 }
 
@@ -467,7 +469,19 @@ localgit_restore_from() {
   _LG_PROFILE=1 dc rm -sf forgejo >/dev/null 2>&1 || true
   # (the swap removes the staged folder whether it succeeds or not: the exit hook has nothing left to do)
   _LG_STAGED=''; off_exit _lg_drop_staged
-  _lg_volume_job '' "$1" ro "$(_lg_restore_script "$([ "${2:-}" = staged ] && echo swap || echo all)")" >/dev/null
+  _lg_restore_job "$1" "$([ "${2:-}" = staged ] && echo swap || echo all)"
+}
+
+# _lg_restore_job DIR MODE — the restore script (MODE: stage | swap | all) in a container of a fixed name, so only one runs on
+# the volume at a time: ./stack killed mid-swap leaves its container running a few seconds more, and a restore started then
+# must not run recovery beside a live swap. (Docker refuses a second container of the name even if this check races.)
+_lg_restore_job() {
+  local name; name="$(project_name)-git-restore"
+  if [ -n "$(docker ps -aq --filter "name=^${name}\$" 2>/dev/null)" ]; then
+    warn "an earlier restore's job ($name) is still on the git server's volume: wait until docker ps no longer lists it (docker rm -f $name once it has stopped), then run ./stack restore again"
+    return 1
+  fi
+  _LG_JOB_NAME="$name" _lg_volume_job '' "$1" ro "$(_lg_restore_script "$2")" >/dev/null
 }
 
 # localgit_volume_kb -> the repositories' volume size in KB (nothing when the git server is off, has no volume, or the size
