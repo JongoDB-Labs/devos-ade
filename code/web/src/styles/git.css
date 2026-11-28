@@ -153,6 +153,6 @@ p.said-never { margin: 6px 0 2px; }
 .gitr-mirror-form label:has(> input[type=checkbox]) { display: flex; align-items: center; gap: 6px; }
 .gitr-mirror-form select, .gitr-mirror-form input[type=text] { width: 100%; max-width: 100%; box-sizing: border-box; text-overflow: ellipsis; }
 .gitr-mirror-form .btn { justify-self: start; }
-.gitr-mirrors .imp-pw { display: flex; margin-top: 8px; }
+.gitr-mirrors .imp-pw { display: flex; margin: 4px 0 8px; }
 .gitr-mirrors .imp-pw input { width: min(14em, 100%); }
 @media (max-width: 640px) { .gitr-mirrors .imp-pw { display: grid; } }

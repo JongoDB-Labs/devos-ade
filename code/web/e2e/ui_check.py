@@ -3858,6 +3858,10 @@ def git_mirrors(browser):
         # the password is asked for every change; a wrong one is said, by the portal
         sync = sec.get_by_test_id("git-mirror-sync").first
         expect(sync).to_be_disabled()
+        # (one password field, where the buttons that need it are: above the list while no form is open, inside the open form
+        # otherwise — on a phone the end of the section is out of view, and a greyed button would not say why)
+        expect(sec.get_by_test_id("git-mirror-password")).to_have_count(1)
+        assert sec.get_by_test_id("git-mirror-password").evaluate("(i) => !!(i.compareDocumentPosition(document.querySelector('[data-testid=git-mirror]')) & Node.DOCUMENT_POSITION_FOLLOWING)"), "the password comes before the list"
         sec.get_by_test_id("git-mirror-password").fill("wrong")
         sync.click()
         expect(sec.get_by_test_id("git-mirror-error")).to_contain_text("not right")
@@ -3873,6 +3877,8 @@ def git_mirrors(browser):
         # Add a mirror: what it does is said before anything is asked
         sec.get_by_test_id("git-mirror-add").click()
         form = sec.get_by_test_id("git-mirror-form")
+        expect(form.get_by_test_id("git-mirror-password")).to_be_visible()
+        expect(sec.get_by_test_id("git-mirror-password")).to_have_count(1)
         form.get_by_test_id("git-mirror-repo").fill("notes")
         form.get_by_test_id("git-mirror-path").fill("octo/notes")
         form.get_by_test_id("git-mirror-interval").fill("2h")
@@ -3889,6 +3895,8 @@ def git_mirrors(browser):
         form.get_by_test_id("git-mirror-make").click()
         expect(sec.get_by_test_id("git-mirror-note")).to_contain_text("the remote repository does not exist", timeout=15_000)
         assert sec.get_by_test_id("git-mirror-note").evaluate("(n) => n.querySelector('b') === null"), "the git server's words are text"
+        # (one sentence: the reason and the server's words in one flow, never two columns of a flex row on a phone)
+        assert sec.get_by_test_id("git-mirror-request").evaluate("(d) => [...d.childNodes].filter((n) => n.nodeType === 1 || n.textContent.trim()).length === 1"), "the refusal is split in columns"
         expect(sec.get_by_test_id("git-mirror")).to_have_count(2)
         form.get_by_test_id("git-mirror-path").fill("octo/notes")
         form.scroll_into_view_if_needed()
@@ -3903,6 +3911,7 @@ def git_mirrors(browser):
         expect(sec.get_by_test_id("git-mirror").nth(2)).to_contain_text("every 2h")
         # Change: the interval and on-every-push; the old mirror is replaced
         sec.get_by_test_id("git-mirror-change").first.click()
+        expect(sec.get_by_test_id("git-mirror-change-form").get_by_test_id("git-mirror-password")).to_be_visible()
         sec.get_by_test_id("git-mirror-change-interval").fill("30m")
         sec.get_by_test_id("git-mirror-change-onpush").uncheck()
         pw()
@@ -3915,6 +3924,7 @@ def git_mirrors(browser):
         sec.get_by_test_id("git-mirror-remove").first.click()
         confirm = sec.get_by_test_id("git-mirror-remove-confirm")
         expect(confirm).to_contain_text("is not touched")
+        expect(confirm.get_by_test_id("git-mirror-password")).to_be_in_viewport()
         p.shot(f"git-mirrors-remove-{tag}.png")
         confirm.get_by_role("button", name="Keep it").click()
         expect(sec.get_by_test_id("git-mirror")).to_have_count(3)
@@ -3948,6 +3958,7 @@ def git_mirrors(browser):
     sec = page.get_by_test_id("git-hosts-dialog").get_by_test_id("git-mirrors")
     expect(sec.get_by_test_id("git-mirrors-none")).to_be_visible()
     expect(sec.get_by_test_id("git-mirror-add")).to_be_visible()
+    expect(sec.get_by_test_id("git-mirror-password")).to_have_count(0)   # (nothing to sync: no password asked yet)
     p.shot("git-mirrors-none.png")
     p.assert_clean()
     p.close()

@@ -629,19 +629,26 @@ function MirrorsSection({ hosts, local }: { hosts: GitHostView[]; local: boolean
   const ivOk = (v: string) => /^([1-9][0-9]{0,2}[mh]|0)$/.test(iv(v)) && !/^[1-9]m$/.test(iv(v));
   const canAdd = local && !busy && pw !== '' && api.isMirrorName(form.repo) && !!form.host && api.isMirrorPath(form.path) && ivOk(form.interval) && (form.direction === 'push' || form.interval !== '0');
   const chosen = eligible.find((h) => h.id === form.host);
+  // (one password field, where the buttons that need it are: inside the open form, or above the list for Sync now — on a phone the
+  // end of the section is out of view, and a greyed button alone would not say why)
+  const pwField = <Password value={pw} onInput={setPw} testid="git-mirror-password" />;
+  const formOpen = (adding && eligible.length > 0) || editing !== null || removing !== null;
   const line = ask && (busy ? (
     <div class="imp-req small" data-testid="git-mirror-request" data-state={ask.state}><Spinner size={12} /> Waiting for the update helper on the computer…</div>
   ) : ask.state === 'done' ? (
     <div class="imp-req small" data-testid="git-mirror-request" data-state="done">Done.</div>
   ) : (
     <div class="imp-req plg-err small" role="alert" data-testid="git-mirror-request" data-state={ask.state}>
-      {(ask.why && WHY_MIRROR[ask.why]) || 'It did not go through on the computer.'}
-      {ask.note ? <> The git server said: <span data-testid="git-mirror-note">{label(ask.note, 300)}</span></> : null}
+      <span>
+        {(ask.why && WHY_MIRROR[ask.why]) || 'It did not go through on the computer.'}
+        {ask.note ? <> The git server said: <span data-testid="git-mirror-note">{label(ask.note, 300)}</span></> : null}
+      </span>
     </div>
   ));
   return (
     <section class="gitr-mirrors small" data-testid="git-mirrors">
       <h4>Mirrors of the built-in git server</h4>
+      {!formOpen && m.mirrors.length > 0 && pwField}
       {!m.mirrors.length && <p class="muted" data-testid="git-mirrors-none">No mirror yet. A mirror keeps a copy of a repository on this computer's git server on GitHub, GitLab or another host you connected, or the other way round.</p>}
       <ul role="list">
         {m.mirrors.map((x) => (
@@ -663,6 +670,7 @@ function MirrorsSection({ hosts, local }: { hosts: GitHostView[]; local: boolean
               <div class="gitr-mirror-form" data-testid="git-mirror-change-form">
                 <label>Every <input type="text" value={edit.interval} maxLength={5} spellcheck={false} onInput={(e) => setEdit({ ...edit, interval: (e.currentTarget as HTMLInputElement).value })} data-testid="git-mirror-change-interval" /></label>
                 <label><input type="checkbox" checked={edit.syncOnCommit} onChange={(e) => setEdit({ ...edit, syncOnCommit: (e.currentTarget as HTMLInputElement).checked })} data-testid="git-mirror-change-onpush" /> and on every push here</label>
+                {pwField}
                 <button type="button" class="btn small primary" disabled={busy || !pw || !ivOk(edit.interval)} data-testid="git-mirror-change-save"
                   onClick={() => void go(() => api.mirrorChange(x.repo, x.name as string, { interval: iv(edit.interval), syncOnCommit: edit.syncOnCommit }, pw))}>Save the change</button>
                 <p class="muted">The git server cannot edit a mirror, so a new one takes its place with these settings and the old one is removed.</p>
@@ -671,6 +679,7 @@ function MirrorsSection({ hosts, local }: { hosts: GitHostView[]; local: boolean
             {x.name && removing === x.name && (
               <div class="gitr-mirror-form" data-testid="git-mirror-remove-confirm">
                 <p>Remove this mirror? The repository on {label(x.remote, 120)} is not touched; the git server forgets the access token.</p>
+                {pwField}
                 <button type="button" class="btn small danger" disabled={busy || !pw} onClick={() => void go(() => api.mirrorRemove(x.repo, x.name as string, pw))} data-testid="git-mirror-remove-yes">Yes, remove it</button>
                 <button type="button" class="btn small" onClick={() => setRemoving(null)}>Keep it</button>
               </div>
@@ -719,6 +728,7 @@ function MirrorsSection({ hosts, local }: { hosts: GitHostView[]; local: boolean
                   : `A new private repository ${label(form.repo || 'name', 100)} on the git server becomes a read-only copy of ${label(chosen?.host ?? 'the host', 80)}/${label(form.path || 'owner/name', 120)}, fetched every ${niceInterval(toDuration(form.interval))}.`}
                 {' '}The access token for {label(chosen?.host ?? 'that host', 80)} is handed to the git server, which keeps it (encrypted) to do this on its own later. While a mirror exists the git server gets a network of its own to the internet, limited to the mirrors' hosts.
               </p>
+              {pwField}
               <button type="button" class="btn small primary" disabled={!canAdd} data-testid="git-mirror-make"
                 onClick={() => void go(() => api.mirrorAdd({ ...form, interval: iv(form.interval) }, pw))}>Make the mirror</button>
               <button type="button" class="btn small" onClick={() => setAdding(false)}>Cancel</button>
@@ -726,7 +736,6 @@ function MirrorsSection({ hosts, local }: { hosts: GitHostView[]; local: boolean
           )}
         </div>
       )}
-      <Password value={pw} onInput={setPw} testid="git-mirror-password" />
       {err && <p class="plg-err small" role="alert" data-testid="git-mirror-error">{label(err, 300)}</p>}
       {line}
     </section>
