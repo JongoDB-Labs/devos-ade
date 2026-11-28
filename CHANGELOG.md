@@ -6,9 +6,15 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.77.1] - 2026-11-28
+
 ### Fixed
 
 - **A Code session on Llama no longer hangs on a web search.** Llama 3.3 70B on Bedrock sometimes sent a web search with its optional site lists empty (`null`). Claude Code refused that call, Llama sent it again, and the turn never ended. Such empty optional values are now left out before Claude Code sees the call. (JON-805)
+
+### To get it
+
+Existing installs: Home › Update now. This update restarts LiteLLM once to load the fix, so it takes about half a minute longer than usual.
 
 ## [0.77.0] - 2026-11-28
 
