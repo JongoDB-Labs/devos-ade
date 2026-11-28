@@ -282,6 +282,12 @@ function gitStatusMock() {
 // --- the Git panel's remotes and Git hosts (code/server/gitremote.mjs's API, in memory): one remote, origin on
 // github.com; Git hosts added here keep their token in memory only and never answer it; a plan, then a run
 let gitHostsMock = [];
+// the built-in git server's mirrors (JON-970): what GET /api/git/mirrors lists; the Git hosts dialog changes them through the portal's
+// POST /.bn/sessions (git-mirror-*), as the real helper would. The token of a host is never here: a host is named by id and a path.
+const mirrorSeed = () => [{ direction: 'push', name: 'remote_mirror_ab12', repo: 'devos/app', remote: 'https://github.com/you/app.git', interval: '8h0m0s', syncOnCommit: true, lastSync: '2026-10-28T03:00:00Z', lastError: null },
+  { direction: 'pull', name: null, repo: 'devos/up', remote: 'https://gitlab.com/g/up.git', interval: '1h0m0s', syncOnCommit: false, lastSync: null, lastError: 'authentication failed' }];
+let mirrorsMock = mirrorSeed();
+const durationOf = (v) => { const m = /^([0-9]+)([mh])$/.exec(v); if (v === '0') return '0s'; if (!m) return '8h0m0s'; const n = Number(m[1]); return m[2] === 'h' ? `${n}h0m0s` : `${Math.floor(n / 60)}h${n % 60}m0s`; };
 const gitEventsMock = [];
 let gitRemoteBranches = ['main'];
 let gitBranchesMock = [{ name: 'main', upstream: { remote: 'origin', branch: 'main' } }];
@@ -319,6 +325,7 @@ const MOCK_URL = 'https://github.com/mock/app.git';
 function resetGitRemote() {
   gitSaid = '';
   gitHostsMock = [];
+  mirrorsMock = mirrorSeed();
   signInFlows.clear();
   signInApp = true;
   gitHostsHold = 0;
@@ -351,8 +358,7 @@ async function gitRemotePanel(p, m, url, req) {
     }
     return [200, { repos: [...(!root && gitRepo ? [{ path: '' }] : []), ...inside.map((r) => ({ path: r }))], above }];
   }
-  if (p === '/api/git/mirrors' && m === 'GET') return [200, { available: true, mirrors: [{ direction: 'push', repo: 'devos/app', remote: 'https://github.com/you/app.git', interval: '8h0m0s', syncOnCommit: true, lastSync: '2026-10-28T03:00:00Z', lastError: null },
-    { direction: 'pull', repo: 'devos/up', remote: 'https://gitlab.com/g/up.git', interval: '1h0m0s', syncOnCommit: false, lastSync: null, lastError: 'authentication failed' }] }];
+  if (p === '/api/git/mirrors' && m === 'GET') return [200, { available: true, mirrors: mirrorsMock }];
   if (p === '/api/git/hosts' && m === 'GET') {
     // (/__mock/git-hosts-hold?ms=: the NEXT hosts' view is read now and answered that much later — a slow network, a
     // response that arrives after a newer one)
@@ -1902,6 +1908,7 @@ async function bnSessions(req, res) {
   if (typeof b.password !== 'string' || b.password !== 'correct horse') return json(res, 403, { error: 'That password is not right. It is the web app password (PORTAL_PASSWORD in .env).' });
   if ((b.action === 'sessions-scan' || b.action === 'sessions-suggest') && remote) return json(res, 403, { error: 'Only on the computer running DevOS ADE: a look at its sessions is allowed in a dialog on its screen (or ./stack sessions in a terminal there).' });
   if (!importHelper) return json(res, 503, { error: 'The update helper is not running on the computer: in a terminal there, ./stack sessions (./stack helper install keeps it running).' });
+  if (/^git-mirror-/.test(String(b.action))) return bnMirror(b, res);
   if (b.action === 'sessions-scan') {
     const h = hostOf(b.project);
     if (!h) return json(res, 400, { error: 'bad request' });
@@ -1951,6 +1958,36 @@ async function bnSessions(req, res) {
     return json(res, 202, { request: id });
   }
   return json(res, 400, { error: 'unknown action' });
+}
+// the Git hosts dialog's mirrors: fixed fields checked as the portal does, then the helper's work (the host named by id and path)
+function bnMirror(b, res) {
+  const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/, PATH = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}(\/[A-Za-z0-9][A-Za-z0-9._-]{0,99}){0,4}$/, IV = /^([1-9][0-9]{0,2}[mh]|0)?$/;
+  const bad = () => json(res, 400, { error: 'bad request' });
+  if ((b.action === 'git-mirror-add' || b.action === 'git-mirror-change' || b.action === 'git-mirror-remove') && remote) return json(res, 403, { error: 'Only on the computer running DevOS ADE: a mirror is made, changed or removed here, or in a terminal there (./stack git-server mirror). Syncing one works from anywhere.' });
+  const known = { 'git-mirror-add': ['direction', 'repo', 'host', 'path', 'interval', 'sync'], 'git-mirror-sync': ['direction', 'repo'], 'git-mirror-change': ['repo', 'name', 'interval', 'sync'], 'git-mirror-remove': ['repo', 'name'] }[b.action];
+  if (!known || Object.keys(b).some((k) => !['action', 'password', ...known].includes(k)) || !NAME.test(String(b.repo))) return bad();
+  const full = `devos/${b.repo}`;
+  const find = () => mirrorsMock.find((x) => x.repo === full && (x.direction === 'pull' ? !b.name : x.name === b.name));
+  const done = (action, then) => json(res, 202, { request: importRequest(action, null, then) });
+  if (b.action === 'git-mirror-add') {
+    const h = gitHostsMock.find((x) => x.id === b.host);
+    if (!['push', 'pull'].includes(b.direction) || !h || h.auth !== 'token' || !PATH.test(String(b.path)) || !IV.test(String(b.interval ?? ''))) return bad();
+    if (b.path === 'fail/repo') return done('git-mirror-add', { state: 'failed', why: 'mirror', note: 'no mirror made: the git server refused: the remote repository does not exist <b>x</b>' });
+    return done('git-mirror-add', () => mirrorsMock.push({ direction: b.direction, name: b.direction === 'push' ? `remote_mirror_${crypto.randomBytes(3).toString('hex')}` : null, repo: full, remote: `https://${h.host}/${b.path}.git`,
+      interval: durationOf(b.interval || '8h'), syncOnCommit: b.direction === 'push' && b.sync !== 'no', lastSync: null, lastError: null }));
+  }
+  if (b.action === 'git-mirror-sync') {
+    if (!['push', 'pull'].includes(b.direction ?? 'push')) return bad();
+    const x = mirrorsMock.find((y) => y.repo === full && y.direction === (b.direction ?? 'push'));
+    if (!x) return done('git-mirror-sync', { state: 'failed', why: 'mirror', note: 'not synced: no such mirror' });
+    return done('git-mirror-sync', () => { x.lastSync = new Date().toISOString().replace(/\.\d+Z$/, 'Z'); x.lastError = null; });
+  }
+  if (!NAME.test(String(b.name))) return bad();
+  const x = find();
+  if (!x) return done(b.action, { state: 'failed', why: 'mirror', note: `no mirror ${b.name}` });
+  if (b.action === 'git-mirror-remove') return done('git-mirror-remove', () => { mirrorsMock = mirrorsMock.filter((y) => y !== x); });
+  if (!IV.test(String(b.interval ?? '')) || !['yes', 'no', 'keep'].includes(b.sync ?? 'keep') || (!b.interval && (b.sync ?? 'keep') === 'keep')) return bad();
+  return done('git-mirror-change', () => { if (b.interval) x.interval = durationOf(b.interval); if (b.sync === 'yes' || b.sync === 'no') x.syncOnCommit = b.sync === 'yes'; x.name = `remote_mirror_${crypto.randomBytes(3).toString('hex')}`; });
 }
 // --- Bring your setup ---
 const setupKeyOf = (r) => `s_${crypto.createHash('sha256').update(`${r.tool}\0${r.kind}\0${r.scope}\0${r.name}`).digest('hex').slice(0, 16)}`;
@@ -2082,13 +2119,14 @@ async function importsApi(req, res, url, p, m) {
     const r = importRequests.get(mm[1]);
     if (!r) return json(res, 200, { id: mm[1], state: 'unknown' });
     r.polls++;
-    if (r.state !== 'done' && r.state !== 'refused') {
+    if (r.state !== 'done' && r.state !== 'refused' && r.state !== 'failed') {
       if (r.polls === 1) r.state = r.action === 'sessions-fetch' || r.action === 'setup-fetch' ? 'reading' : r.action === 'sessions-copy' || r.action === 'setup-copy' ? 'copying' : 'asking';
       else if (r.polls === 2) r.state = 'reading';
       else if (typeof r.then === 'string') { r.state = 'refused'; r.why = r.then.split(':')[1]; }
+      else if (r.then && typeof r.then === 'object') Object.assign(r, r.then);   // (a mirror request that failed: why and note)
       else { r.state = 'done'; r.then(); }
     }
-    return json(res, 200, { id: r.id, action: r.action, project: r.project, state: r.state, why: r.why, at: r.at, ...(r.results ? { results: r.results } : {}) });
+    return json(res, 200, { id: r.id, action: r.action, project: r.project, state: r.state, why: r.why, at: r.at, ...(r.note ? { note: r.note } : {}), ...(r.results ? { results: r.results } : {}) });
   }
   if (p === '/api/imports/preview' && m === 'GET') {
     const x = st(url.searchParams.get('project')), id = url.searchParams.get('id'), v = x.staged.get(id);
@@ -3117,6 +3155,10 @@ const server = http.createServer(async (req, res) => {
             expiresAt: source === 'glab' ? Date.now() + 90 * 86400000 : null, importedAt: Date.now() } };
         gitHostsMock.push(h);
         gitEvent({ action: 'host', host: h.label, target: host, text: `connected with ${source}'s login as ${account} (./stack git-host import)` });
+        return json(res, 200, { ok: true });
+      }
+      if (url.pathname === '/__mock/git-mirrors') {
+        if (url.searchParams.get('none') === '1') mirrorsMock = [];
         return json(res, 200, { ok: true });
       }
       if (url.pathname === '/__mock/git-hosts-hold') {

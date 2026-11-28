@@ -36,6 +36,7 @@ import { inProject, type Project } from '../projects';
 import { ago, label } from '../text';
 import { Icon, Spinner } from './icons';
 import { Dialog } from './ui';
+import { Password } from './Import';
 import { PRODUCT } from '../brand';
 
 /** How a credential is named: "HTTPS token", "SSH key", "sign-in". */
@@ -552,7 +553,7 @@ export function GitHostsDialog({ onClose }: { onClose: () => void }) {
           <Icon name="plus" size={13} /> Connect a git host…
         </button>
       ))}
-      {view && <MirrorsSection />}
+      {view && <MirrorsSection hosts={view.hosts} local={local} />}
       {events.length > 0 && (
         <details class="gitr-events small" data-testid="git-events">
           <summary>Recent use ({events.length})</summary>
@@ -573,34 +574,173 @@ export function GitHostsDialog({ onClose }: { onClose: () => void }) {
   );
 }
 
-// The built-in git server's mirrors and when they last synced (read-only: a mirror is made on the computer running DevOS ADE with
-// `./stack git-server mirror add`, which also gives the git server its way out to the remote). Nothing is shown while there is none
-// or the server does not answer.
-function MirrorsSection() {
+// The built-in git server's mirrors (JON-970): the list with when each last synced and its error, Add a mirror, Sync now, Change and
+// Remove. Every request goes to the portal with the web app password (POST /.bn/sessions), which writes the update helper's request:
+// the git server's way out to the other host is a change only the computer running DevOS ADE may make. A connected host is named by
+// its id and a repository path there; its access token never reaches this page (the Code page's container hands it to the git
+// server). Nothing is shown while the built-in server is off or does not answer.
+const niceInterval = (iv: string): string => {
+  const m = /^(\d+)h(\d+)m0s$/.exec(iv);
+  if (m) return `${Number(m[1]) ? `${Number(m[1])}h` : ''}${Number(m[2]) ? `${Number(m[2])}m` : ''}` || iv;
+  return iv === '0s' ? 'never on a timer' : iv;
+};
+const WHY_MIRROR: Record<string, string> = {
+  password: 'The web app password was not right.',
+  busy: 'The computer is busy with another ./stack command: try again when it has finished.',
+  limit: 'Please wait a moment between changes, then try again.',
+  remote: `Only on the computer running ${PRODUCT}: a mirror is made, changed or removed there.`,
+  'bad-request': 'The update helper refused the request.',
+  timeout: 'It took too long on the computer and was stopped.',
+};
+type MirrorAsk = { id: string; state: string; why: string | null; note: string | null };
+function MirrorsSection({ hosts, local }: { hosts: GitHostView[]; local: boolean }) {
   const [m, setM] = useState<GitMirrorsView | null>(null);
-  useEffect(() => {
-    let live = true;
-    api.getGitMirrors().then((v) => { if (live) setM(v); }, () => { if (live) setM(null); });
-    return () => { live = false; };
-  }, []);
-  if (!m || !m.available || !m.mirrors.length) return null;
+  const [pw, setPw] = useState('');
+  const [ask, setAsk] = useState<MirrorAsk | null>(null);
+  const [err, setErr] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<string | null>(null);
+  const [form, setForm] = useState({ direction: 'push' as 'push' | 'pull', repo: '', host: '', path: '', interval: '8h', syncOnCommit: true });
+  const [edit, setEdit] = useState({ interval: '', syncOnCommit: true });
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reload = () => { api.getGitMirrors().then(setM, () => setM(null)); };
+  useEffect(() => { reload(); return () => { if (timer.current) clearTimeout(timer.current); }; }, []);
+  // (access tokens only: a sign-in's token lasts hours and cannot be renewed inside the git server; the built-in host is the server itself)
+  const eligible = hosts.filter((h) => h.auth === 'token' && !h.builtin && h.hasToken);
+  useEffect(() => { if (!form.host && eligible[0]) setForm((f) => ({ ...f, host: eligible[0].id })); }, [eligible.length]);
+  if (!m || !m.available) return null;
+  const busy = !!ask && !['done', 'refused', 'cancelled', 'failed'].includes(ask.state);
+  const follow = (id: string, n = 0) => {
+    timer.current = setTimeout(async () => {
+      let r = null;
+      try { r = await api.importRequestState(id); } catch { /* next time */ }
+      if (r) setAsk({ id, state: r.state, why: r.why, note: r.note });
+      if (r && ['done', 'refused', 'cancelled', 'failed'].includes(r.state)) { reload(); if (r.state === 'done') { setAdding(false); setEditing(null); setRemoving(null); setPw(''); } return; }
+      if (n < 400) follow(id, n + 1);
+      else setAsk({ id, state: 'failed', why: 'timeout', note: null });
+    }, n < 10 ? 700 : 1500);
+  };
+  const go = async (send: () => Promise<string>) => {
+    setErr('');
+    try { const id = await send(); setAsk({ id, state: 'sent', why: null, note: null }); follow(id); } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+  };
+  const iv = (v: string) => v.trim();
+  const ivOk = (v: string) => /^([1-9][0-9]{0,2}[mh]|0)$/.test(iv(v)) && !/^[1-9]m$/.test(iv(v));
+  const canAdd = local && !busy && pw !== '' && api.isMirrorName(form.repo) && !!form.host && api.isMirrorPath(form.path) && ivOk(form.interval) && (form.direction === 'push' || form.interval !== '0');
+  const chosen = eligible.find((h) => h.id === form.host);
+  const line = ask && (busy ? (
+    <div class="imp-req small" data-testid="git-mirror-request" data-state={ask.state}><Spinner size={12} /> Waiting for the update helper on the computer…</div>
+  ) : ask.state === 'done' ? (
+    <div class="imp-req small" data-testid="git-mirror-request" data-state="done">Done.</div>
+  ) : (
+    <div class="imp-req plg-err small" role="alert" data-testid="git-mirror-request" data-state={ask.state}>
+      {(ask.why && WHY_MIRROR[ask.why]) || 'It did not go through on the computer.'}
+      {ask.note ? <> The git server said: <span data-testid="git-mirror-note">{label(ask.note, 300)}</span></> : null}
+    </div>
+  ));
   return (
     <section class="gitr-mirrors small" data-testid="git-mirrors">
       <h4>Mirrors of the built-in git server</h4>
+      {!m.mirrors.length && <p class="muted" data-testid="git-mirrors-none">No mirror yet. A mirror keeps a copy of a repository on this computer's git server on GitHub, GitLab or another host you connected, or the other way round.</p>}
       <ul role="list">
         {m.mirrors.map((x) => (
-          <li key={`${x.direction} ${x.repo} ${x.remote}`} class={x.lastError ? 'warn-text' : ''} data-testid="git-mirror">
+          <li key={`${x.direction} ${x.repo} ${x.remote} ${x.name ?? ''}`} class={x.lastError ? 'warn-text' : ''} data-testid="git-mirror">
             <strong>{x.repo}</strong> {x.direction === 'push' ? '→' : '←'} {x.remote} ·{' '}
-            {x.direction === 'push' ? 'push mirror: the remote is a copy, its refs are force-updated' : 'pull mirror: a read-only copy of the remote'} · every {x.interval}
+            {x.direction === 'push' ? 'push mirror: the remote is a copy, its refs are force-updated' : 'pull mirror: a read-only copy of the remote'} · every {niceInterval(x.interval)}
             {x.syncOnCommit ? ' and on every push here' : ''} · {x.lastSync ? `last sync ${ago(Date.parse(x.lastSync))}` : 'not synced yet'}
             {x.lastError ? ` — failed: ${x.lastError}` : ''}
+            <div class="gitr-mirror-actions">
+              <button type="button" class="btn small" disabled={busy || !pw} onClick={() => void go(() => api.mirrorSync(x.repo, x.direction, pw))} data-testid="git-mirror-sync">Sync now</button>
+              {x.direction === 'push' && x.name && local && (
+                <>
+                  <button type="button" class="btn small" disabled={busy} onClick={() => { setEditing(editing === x.name ? null : x.name); setRemoving(null); setEdit({ interval: niceInterval(x.interval) === 'never on a timer' ? '0' : niceInterval(x.interval), syncOnCommit: x.syncOnCommit }); }} data-testid="git-mirror-change">Change</button>
+                  <button type="button" class="btn small ghost danger" disabled={busy} onClick={() => { setRemoving(removing === x.name ? null : x.name); setEditing(null); }} data-testid="git-mirror-remove">Remove</button>
+                </>
+              )}
+            </div>
+            {x.name && editing === x.name && (
+              <div class="gitr-mirror-form" data-testid="git-mirror-change-form">
+                <label>Every <input type="text" value={edit.interval} maxLength={5} spellcheck={false} onInput={(e) => setEdit({ ...edit, interval: (e.currentTarget as HTMLInputElement).value })} data-testid="git-mirror-change-interval" /></label>
+                <label><input type="checkbox" checked={edit.syncOnCommit} onChange={(e) => setEdit({ ...edit, syncOnCommit: (e.currentTarget as HTMLInputElement).checked })} data-testid="git-mirror-change-onpush" /> and on every push here</label>
+                <button type="button" class="btn small primary" disabled={busy || !pw || !ivOk(edit.interval)} data-testid="git-mirror-change-save"
+                  onClick={() => void go(() => api.mirrorChange(x.repo, x.name as string, { interval: iv(edit.interval), syncOnCommit: edit.syncOnCommit }, pw))}>Save the change</button>
+                <p class="muted">The git server cannot edit a mirror, so a new one takes its place with these settings and the old one is removed.</p>
+              </div>
+            )}
+            {x.name && removing === x.name && (
+              <div class="gitr-mirror-form" data-testid="git-mirror-remove-confirm">
+                <p>Remove this mirror? The repository on {label(x.remote, 120)} is not touched; the git server forgets the access token.</p>
+                <button type="button" class="btn small danger" disabled={busy || !pw} onClick={() => void go(() => api.mirrorRemove(x.repo, x.name as string, pw))} data-testid="git-mirror-remove-yes">Yes, remove it</button>
+                <button type="button" class="btn small" onClick={() => setRemoving(null)}>Keep it</button>
+              </div>
+            )}
           </li>
         ))}
       </ul>
-      <p class="muted">Made and removed with <code>./stack git-server mirror</code> on the computer running {PRODUCT}.</p>
+      {m.mirrors.some((x) => x.direction === 'pull') && <p class="muted">A pull mirror is a repository on the git server: to remove or change it, use the git server's own web page (Settings › Danger zone).</p>}
+      {!local && <p class="muted" data-testid="git-mirrors-remote">Over remote access you can sync a mirror. Adding, changing and removing work only from the computer running {PRODUCT}.</p>}
+      {local && !adding && (
+        <button type="button" class="btn small" onClick={() => setAdding(true)} data-testid="git-mirror-add"><Icon name="plus" size={13} /> Add a mirror…</button>
+      )}
+      {local && adding && (
+        <div class="gitr-mirror-form" data-testid="git-mirror-form">
+          {!eligible.length ? (
+            <p class="muted" data-testid="git-mirror-nohost">Connect GitHub, GitLab or another git host with an access token first (a sign-in cannot be used: its token lasts hours and cannot be renewed inside the git server).</p>
+          ) : (
+            <>
+              <label>Direction
+                <select value={form.direction} onChange={(e) => setForm({ ...form, direction: (e.currentTarget as HTMLSelectElement).value as 'push' | 'pull', interval: form.interval === '0' ? '8h' : form.interval })} data-testid="git-mirror-direction">
+                  <option value="push">Push: my repository here is the source, the other host gets a copy</option>
+                  <option value="pull">Pull: a read-only copy here of a repository on the other host</option>
+                </select>
+              </label>
+              <label>Repository on the built-in git server
+                <input type="text" value={form.repo} maxLength={100} spellcheck={false} placeholder="my-project" onInput={(e) => setForm({ ...form, repo: (e.currentTarget as HTMLInputElement).value.trim() })} data-testid="git-mirror-repo" />
+              </label>
+              <label>Host
+                <select value={form.host} onChange={(e) => setForm({ ...form, host: (e.currentTarget as HTMLSelectElement).value })} data-testid="git-mirror-host">
+                  {eligible.map((h) => <option key={h.id} value={h.id}>{label(h.label, 60)} ({label(h.host, 80)})</option>)}
+                </select>
+              </label>
+              <label>Repository there
+                <input type="text" value={form.path} maxLength={300} spellcheck={false} placeholder="owner/name" onInput={(e) => setForm({ ...form, path: (e.currentTarget as HTMLInputElement).value.trim() })} data-testid="git-mirror-path" />
+              </label>
+              <label>Every
+                <input type="text" value={form.interval} maxLength={5} spellcheck={false} placeholder="8h" onInput={(e) => setForm({ ...form, interval: (e.currentTarget as HTMLInputElement).value })} data-testid="git-mirror-interval" />
+                <span class="muted"> 10m to 999h{form.direction === 'push' ? ', or 0 to push only when something is pushed here' : ''}</span>
+              </label>
+              {form.direction === 'push' && (
+                <label><input type="checkbox" checked={form.syncOnCommit} onChange={(e) => setForm({ ...form, syncOnCommit: (e.currentTarget as HTMLInputElement).checked })} data-testid="git-mirror-onpush" /> Also on every push here</label>
+              )}
+              <p class="warn-text" data-testid="git-mirror-says">
+                {form.direction === 'push'
+                  ? `Every ${niceInterval(toDuration(form.interval))}${form.syncOnCommit ? ' and on every push here' : ''}, the git server pushes ALL branches and tags of ${label(form.repo || 'the repository', 100)} to ${label(chosen?.host ?? 'the host', 80)}/${label(form.path || 'owner/name', 120)} and FORCE-UPDATES the remote's refs: anything only there is overwritten. The remote repository must exist already (empty is fine).`
+                  : `A new private repository ${label(form.repo || 'name', 100)} on the git server becomes a read-only copy of ${label(chosen?.host ?? 'the host', 80)}/${label(form.path || 'owner/name', 120)}, fetched every ${niceInterval(toDuration(form.interval))}.`}
+                {' '}The access token for {label(chosen?.host ?? 'that host', 80)} is handed to the git server, which keeps it (encrypted) to do this on its own later. While a mirror exists the git server gets a network of its own to the internet, limited to the mirrors' hosts.
+              </p>
+              <button type="button" class="btn small primary" disabled={!canAdd} data-testid="git-mirror-make"
+                onClick={() => void go(() => api.mirrorAdd({ ...form, interval: iv(form.interval) }, pw))}>Make the mirror</button>
+              <button type="button" class="btn small" onClick={() => setAdding(false)}>Cancel</button>
+            </>
+          )}
+        </div>
+      )}
+      <Password value={pw} onInput={setPw} testid="git-mirror-password" />
+      {err && <p class="plg-err small" role="alert" data-testid="git-mirror-error">{label(err, 300)}</p>}
+      {line}
     </section>
   );
 }
+// '8h' -> '8h0m0s' (the form of the list), so the sentence above says the same as the list does
+const toDuration = (v: string): string => {
+  const t = v.trim();
+  if (t === '0') return '0s';
+  const m = /^([0-9]+)([mh])$/.exec(t);
+  if (!m) return '8h0m0s';
+  const n = Number(m[1]);
+  return m[2] === 'h' ? `${n}h0m0s` : `${Math.floor(n / 60)}h${n % 60}m0s`;
+};
 
 function HostCard({ h, local, remote }: { h: GitHostView; local: boolean; remote: GitRemoteState | null }) {
   const [testUrl, setTestUrl] = useState('');

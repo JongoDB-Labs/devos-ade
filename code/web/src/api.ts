@@ -2563,6 +2563,8 @@ function mirrorRepo(repo: string): string {
   if (!MIRROR_NAME.test(name) || repo.split('/').length !== 2) throw new ApiError(400, 'bad request');
   return name;
 }
+export const isMirrorName = (v: string): boolean => MIRROR_NAME.test(v);
+export const isMirrorPath = (v: string): boolean => MIRROR_PATH.test(v);
 const mirrorBadName = (n: string) => { if (!MIRROR_NAME.test(n)) throw new ApiError(400, 'bad request'); };
 /** Make a mirror of REPO (a name on the built-in server) of a connected host's repository. -> the request */
 export async function mirrorAdd(b: { direction: 'push' | 'pull'; repo: string; host: string; path: string; interval: string; syncOnCommit: boolean }, password: string): Promise<string> {

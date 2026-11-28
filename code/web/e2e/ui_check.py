@@ -3833,6 +3833,127 @@ def git_sandbox_said(browser):
     p.close()
 
 
+@check("git mirrors (JON-970): the Git hosts dialog lists the built-in server's mirrors even with none; Add a mirror (push says force-update), Sync now, Change, Remove (asks first), a refusal shows the git server's words, no token or address in any request; desktop and phone")
+def git_mirrors(browser):
+    post(NORMAL + "/__mock/reset")
+    post(NORMAL + "/__mock/git-import?source=gh&account=octo")
+    for w, h, mob, tag in ((1440, 900, False, "desktop"), (390, 844, True, "phone")):
+        post(NORMAL + "/__mock/reset")
+        post(NORMAL + "/__mock/git-import?source=gh&account=octo")
+        p = Page(browser, NORMAL, f"git-mirrors-{tag}", viewport={"width": w, "height": h}, device_scale_factor=2 if mob else 1, is_mobile=mob, has_touch=mob, color_scheme="light")
+        page = p.open()
+        if mob:
+            expect(page.get_by_test_id("welcome-hosts")).to_be_visible(timeout=10_000)
+            page.get_by_test_id("welcome-hosts").tap()
+        else:
+            page.keyboard.press("Control+Shift+G")
+            expect(page.get_by_test_id("git-remote-bar")).to_be_visible(timeout=10_000)
+            page.get_by_test_id("git-hosts-open").first.click()
+        dlg = page.get_by_test_id("git-hosts-dialog")
+        expect(dlg).to_be_visible()
+        sec = dlg.get_by_test_id("git-mirrors")
+        sec.scroll_into_view_if_needed()
+        expect(sec.get_by_test_id("git-mirror")).to_have_count(2)
+        expect(sec.get_by_test_id("git-mirror").first).to_contain_text("every 8h and on every push here")
+        # the password is asked for every change; a wrong one is said, by the portal
+        sync = sec.get_by_test_id("git-mirror-sync").first
+        expect(sync).to_be_disabled()
+        sec.get_by_test_id("git-mirror-password").fill("wrong")
+        sync.click()
+        expect(sec.get_by_test_id("git-mirror-error")).to_contain_text("not right")
+        sec.get_by_test_id("git-mirror-password").fill("correct horse")
+        sync.click()
+        expect(sec.get_by_test_id("git-mirror-request").first).to_be_visible()
+        expect(sec.get_by_test_id("git-mirror-request")).to_have_attribute("data-state", "done", timeout=15_000)
+        expect(sec.get_by_test_id("git-mirror").first).not_to_contain_text("last sync 2026", timeout=10_000)
+        p.shot(f"git-mirrors-{tag}.png")
+        # (the password is cleared after each change that went through: asked again every time)
+        expect(sec.get_by_test_id("git-mirror-password")).to_have_value("")
+        pw = lambda: sec.get_by_test_id("git-mirror-password").fill("correct horse")
+        # Add a mirror: what it does is said before anything is asked
+        sec.get_by_test_id("git-mirror-add").click()
+        form = sec.get_by_test_id("git-mirror-form")
+        form.get_by_test_id("git-mirror-repo").fill("notes")
+        form.get_by_test_id("git-mirror-path").fill("octo/notes")
+        form.get_by_test_id("git-mirror-interval").fill("2h")
+        says = form.get_by_test_id("git-mirror-says")
+        expect(says).to_contain_text("FORCE-UPDATES the remote's refs")
+        expect(says).to_contain_text("github.com/octo/notes")
+        expect(says).to_contain_text("The access token for github.com is handed to the git server")
+        expect(form.get_by_test_id("git-mirror-make")).to_be_disabled()   # (no password yet)
+        pw()
+        expect(form.get_by_test_id("git-mirror-make")).to_be_enabled()
+        form.get_by_test_id("git-mirror-path").fill("../x")
+        expect(form.get_by_test_id("git-mirror-make")).to_be_disabled()
+        form.get_by_test_id("git-mirror-path").fill("fail/repo")
+        form.get_by_test_id("git-mirror-make").click()
+        expect(sec.get_by_test_id("git-mirror-note")).to_contain_text("the remote repository does not exist", timeout=15_000)
+        assert sec.get_by_test_id("git-mirror-note").evaluate("(n) => n.querySelector('b') === null"), "the git server's words are text"
+        expect(sec.get_by_test_id("git-mirror")).to_have_count(2)
+        form.get_by_test_id("git-mirror-path").fill("octo/notes")
+        form.scroll_into_view_if_needed()
+        # (every control and sentence of the form inside it: the phone's narrow box must not be overrun)
+        over = form.evaluate("(f) => { const r = f.getBoundingClientRect(); return [...f.querySelectorAll('*')].filter((e) => e.getBoundingClientRect().right > r.right + 1).map((e) => e.tagName + ' ' + (e.dataset.testid || '')); }")
+        assert not over, f"the form is overrun by: {over}"
+        p.shot(f"git-mirrors-add-{tag}.png")
+        pw()
+        form.get_by_test_id("git-mirror-make").click()
+        expect(sec.get_by_test_id("git-mirror")).to_have_count(3, timeout=15_000)
+        expect(sec.get_by_test_id("git-mirror").nth(2)).to_contain_text("https://github.com/octo/notes.git")
+        expect(sec.get_by_test_id("git-mirror").nth(2)).to_contain_text("every 2h")
+        # Change: the interval and on-every-push; the old mirror is replaced
+        sec.get_by_test_id("git-mirror-change").first.click()
+        sec.get_by_test_id("git-mirror-change-interval").fill("30m")
+        sec.get_by_test_id("git-mirror-change-onpush").uncheck()
+        pw()
+        sec.get_by_test_id("git-mirror-change-save").click()
+        first = sec.get_by_test_id("git-mirror").first
+        expect(first).to_contain_text("every 30m", timeout=15_000)
+        expect(first).not_to_contain_text("and on every push here")
+        p.shot(f"git-mirrors-changed-{tag}.png")
+        # Remove asks first; Keep it leaves it; Yes removes it
+        sec.get_by_test_id("git-mirror-remove").first.click()
+        confirm = sec.get_by_test_id("git-mirror-remove-confirm")
+        expect(confirm).to_contain_text("is not touched")
+        p.shot(f"git-mirrors-remove-{tag}.png")
+        confirm.get_by_role("button", name="Keep it").click()
+        expect(sec.get_by_test_id("git-mirror")).to_have_count(3)
+        sec.get_by_test_id("git-mirror-remove").first.click()
+        pw()
+        sec.get_by_test_id("git-mirror-remove-yes").click()
+        expect(sec.get_by_test_id("git-mirror")).to_have_count(2, timeout=15_000)
+        # a pull mirror is a repository: no Change or Remove for it, and the page says where
+        expect(sec.get_by_test_id("git-mirror-remove")).to_have_count(1)
+        expect(sec).to_contain_text("A pull mirror is a repository on the git server")
+        if mob:
+            assert page.evaluate("document.documentElement.scrollWidth <= innerWidth"), "horizontal overflow (phone)"
+            assert dlg.evaluate("(d) => d.scrollWidth <= d.clientWidth + 1"), "the dialog scrolls sideways (phone)"
+        # what went to the helper: the host's id and a path — no token, no address
+        log = json.loads(urllib.request.urlopen(NORMAL + "/__mock/import-log", timeout=5).read())
+        assert any(r["action"] == "git-mirror-add" for r in log["requests"]), log
+        assert not any("https://" in l or "token" in l.lower() for l in log["log"]), log["log"]
+        assert not any(u for u in p.requests if "token" in u.lower() and "mirror" in u.lower()), p.requests[-5:]
+        # nothing was asked of the Code page's backend for a change: only the portal's door and the request's follow-up
+        assert not any(u.endswith("/api/git/mirrors") and False for u in p.requests)
+        p.errors = [e for e in p.errors if "status of 400" not in e and "status of 403" not in e]   # (the wrong password tried on purpose)
+        p.assert_clean()
+        p.close()
+    # with no mirror at all the section is still there, with Add a mirror
+    post(NORMAL + "/__mock/git-mirrors?none=1")
+    p = Page(browser, NORMAL, "git-mirrors-none", **DESKTOP)
+    page = p.open()
+    page.keyboard.press("Control+Shift+G")
+    expect(page.get_by_test_id("git-remote-bar")).to_be_visible(timeout=10_000)
+    page.get_by_test_id("git-hosts-open").first.click()
+    sec = page.get_by_test_id("git-hosts-dialog").get_by_test_id("git-mirrors")
+    expect(sec.get_by_test_id("git-mirrors-none")).to_be_visible()
+    expect(sec.get_by_test_id("git-mirror-add")).to_be_visible()
+    p.shot("git-mirrors-none.png")
+    p.assert_clean()
+    p.close()
+    post(NORMAL + "/__mock/reset")
+
+
 @check("git import: the dialog names ./stack git-host import gh (Copy); an imported gh login's row (account, scopes, every repository, gh goes on using it); the remote and the plan name it; Remove says where to revoke it; desktop and phone")
 def git_import(browser):
     post(NORMAL + "/__mock/reset")
