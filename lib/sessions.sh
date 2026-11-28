@@ -933,7 +933,7 @@ _ss_check_request() {
   # (the Git hosts dialog's mirrors, lib/localgit.sh — a connected host by its id and a repository there, never an address or a
   # credential; the fields travel in this line's slots: repo -> PROJECT, direction -> TOOL, host id -> SCAN, path -> ROWS,
   # mirror name -> SESSION, interval -> DIGEST ("-": none), sync yes|no|keep -> THINKING)
-  local nm='[A-Za-z0-9][A-Za-z0-9._-]{0,99}' iv='([1-9][0-9]{0,2}[mh]|0)'
+  local nm='[A-Za-z0-9][A-Za-z0-9._-]{0,99}' iv='([1-9][0-9]{1,2}m|[1-9][0-9]{0,2}h|0)'
   local re_madd="$head"',"direction":"(push|pull)","repo":"('"$nm"')","host":"(h_[0-9a-f]{12})","path":"('"$nm"'(/'"$nm"'){0,4})","interval":"('"$iv"'?)","sync":"(yes|no)"\}$'
   local re_msync="$head"',"direction":"(push|pull)","repo":"('"$nm"')"\}$'
   local re_mchange="$head"',"repo":"('"$nm"')","name":"('"$nm"')","interval":"('"$iv"'?)","sync":"(yes|no|keep)"\}$'

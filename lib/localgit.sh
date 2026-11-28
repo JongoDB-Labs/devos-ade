@@ -712,6 +712,12 @@ _lg_remote_host() {
   printf '%s\n' "$h"
 }
 
+# _lg_interval_ok VALUE: empty, 0, 10m to 999m or 1h to 999h (the git server's floor is 10 minutes; the portal and the helper hold the same rule)
+_lg_interval_ok() {
+  case "$1" in '' | 0 | [1-9][0-9]m | [1-9][0-9][0-9]m | [1-9]h | [1-9][0-9]h | [1-9][0-9][0-9]h) return 0 ;; esac
+  return 1
+}
+
 localgit_mirror_add() {
   { set +x; } 2>/dev/null
   local dir="${1:-}" repo="${2:-}" url='' interval='' sync=true host cur json own=1 hostid='' rpath='' ready=0
@@ -730,7 +736,7 @@ localgit_mirror_add() {
     esac
   done
   case "$repo" in '' | *[!A-Za-z0-9._-]* | -*) die "REPO: the repository's name on the built-in server (letters, digits, . _ -)" ;; esac
-  case "$interval" in '' | [1-9]*[mh] | 0) ;; *) die "--interval: 10m to 999h (8h, 30m), or 0 for a push mirror that pushes only when something is pushed here" ;; esac
+  _lg_interval_ok "$interval" || die "--interval: 10m to 999h (8h, 30m), or 0 for a push mirror that pushes only when something is pushed here"
   if [ -n "$hostid$rpath" ]; then
     # a connected host by its id and a repository there (the Code page's dialog): the container says its name and address
     [ -z "$url" ] || die "name the remote by one of: REMOTE_URL, or --host and --path"
@@ -792,13 +798,14 @@ localgit_mirror_change() {
       *) localgit_mirror_usage >&2; die "unknown: $1" ;;
     esac
   done
-  case "$interval" in '' | [1-9]*[mh] | 0) ;; *) die "--interval: 10m to 999h (8h, 30m), or 0 for a push mirror that pushes only when something is pushed here" ;; esac
+  _lg_interval_ok "$interval" || die "--interval: 10m to 999h (8h, 30m), or 0 for a push mirror that pushes only when something is pushed here"
   [ -n "$interval$sync" ] || die "nothing to change: --interval and/or --sync-on-commit | --no-sync-on-commit"
   _lg_code_ready
   ! stack_lock_ours || own=0
   stack_lock git-server
   json="{\"op\":\"change\",\"repo\":$(_lg_json_str "$repo"),\"name\":$(_lg_json_str "$name")${interval:+,\"interval\":\"$interval\"}${sync:+,\"syncOnCommit\":$sync}}"
-  _lg_mirror_op "$json" || { [ "$own" = 0 ] || stack_unlock; die "not changed: $(_lg_op_error)"; }
+  # (the code container's words say what happened — "not changed: …", or both mirrors left and which to remove: as they are)
+  _lg_mirror_op "$json" || { [ "$own" = 0 ] || stack_unlock; [ -n "$_LG_ANSWER" ] || die "not changed: $(_lg_op_error)"; die "$(_lg_op_error)"; }
   localgit_mirror_reconcile
   [ "$own" = 0 ] || stack_unlock
   printf 'Mirror %s of %s changed (a new mirror took its place: ./stack git-server mirror list shows its name).\n' "$name" "$repo"

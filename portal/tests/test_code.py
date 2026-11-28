@@ -1333,6 +1333,8 @@ def test_mirror_requests_each_field_checked_never_an_address_or_a_token(cs, tmp_
             {"action": "git-mirror-add", "direction": "push", "repo": "a b", "host": H, "path": "me/app"},
             {"action": "git-mirror-add", "direction": "push", "repo": "app", "host": H, "path": "me/app", "interval": "5x"},
             {"action": "git-mirror-add", "direction": "push", "repo": "app", "host": H, "path": "me/app", "interval": "1000h"},
+            {"action": "git-mirror-add", "direction": "push", "repo": "app", "host": H, "path": "me/app", "interval": "5m"},
+            {"action": "git-mirror-change", "repo": "app", "name": "m1", "interval": "9m"},
             {"action": "git-mirror-add", "direction": "push", "repo": "app", "host": H, "path": "me/app", "sync": "maybe"},
             {"action": "git-mirror-add", "direction": "pull", "repo": "app", "host": H, "path": "me/app", "sync": "no"},
             {"action": "git-mirror-change", "repo": "app", "name": "../x"}, {"action": "git-mirror-change", "repo": "app", "name": "m1", "sync": "no", "path": "x"},

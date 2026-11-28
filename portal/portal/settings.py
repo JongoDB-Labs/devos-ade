@@ -80,7 +80,7 @@ MIRROR_REQUESTS = ("git-mirror-add", "git-mirror-sync", "git-mirror-change", "gi
 MIRROR_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}")
 MIRROR_PATH = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}(?:/[A-Za-z0-9][A-Za-z0-9._-]{0,99}){0,4}")
 MIRROR_HOST = re.compile(r"h_[0-9a-f]{12}")
-MIRROR_INTERVAL = re.compile(r"[1-9][0-9]{0,2}[mh]|0")
+MIRROR_INTERVAL = re.compile(r"[1-9][0-9]{1,2}m|[1-9][0-9]{0,2}h|0")   # (10m to 999m, 1h to 999h, or 0: the git server's own floor is 10 minutes)
 MIRROR_FIELDS = {"git-mirror-add": ("direction", "repo", "host", "path", "interval", "sync"), "git-mirror-sync": ("direction", "repo"),
                  "git-mirror-change": ("repo", "name", "interval", "sync"), "git-mirror-remove": ("repo", "name")}
 SETUP_TOOLS = ("claude", "claude-bedrock", "git")

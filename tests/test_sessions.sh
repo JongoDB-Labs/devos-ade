@@ -290,7 +290,7 @@ test_the_helper_takes_the_code_pages_requests_from_the_portal_only_in_their_fixe
   # never a path, an extra field, another action, a range of rows, a keep that is not a token, a wrong password; a
   # request used once
   : > "$CALLS"; : > "$TMP/dc"
-  local n=44444444444444444444444444444440 t
+  local n i=0 t
   for t in '"sessions-scan"|,"project":"p_0000aaaa","tool":"both","path":"/home/x"' '"sessions-scan"|,"project":"/home/x/src","tool":"both"' \
            '"sessions-scan"|,"project":"p_0000aaaa","tool":"codex"' '"sessions-fetch"|,"project":"p_0000aaaa","scan":"'"$NONCE"'","rows":"1-5"' \
            '"sessions-fetch"|,"project":"p_0000aaaa","scan":"../x","rows":"1"' '"sessions-fetch"|,"project":"p_0000aaaa","scan":"'"$NONCE"'","id":"'"$UUID_A"'","rows":"1"' \
@@ -300,7 +300,7 @@ test_the_helper_takes_the_code_pages_requests_from_the_portal_only_in_their_fixe
            '"sessions-copy"|,"project":"p_0000aaaa","session":"'"$UUID_A"'","digest":"'"$dig"'","thinking":"keep","outputs":"all","keep":"main#0123456789abcdef"' \
            '"sessions-copy"|,"project":"p_0000aaaa","session":"'"$UUID_A"'","digest":"'"$dig"'","thinking":"keep","keep":"main#0123456789abcdef"' \
            '"sessions-import"|,"project":"p_0000aaaa"'; do
-    n="${n%?}$(( ${n: -1} + 1 ))"
+    i=$((i + 1)); n="$(printf '8888%028x' "$i")"   # (a well-formed id each time, past 9 cases too: only the field is wrong)
     _ses "$n" "${t%%|*}" "${t#*|}"
     sessions_poll_once 2>/dev/null || true
   done
@@ -370,7 +370,7 @@ test_the_helper_runs_the_git_hosts_dialogs_mirror_requests_as_git_server_command
   assert_contains "$(cat "$TMP/dc")" "--state refused --why remote --action git-mirror-"
   # never an address, a token, a path of the computer, an option, a bad name, an extra field, a wrong password
   : > "$CALLS"; : > "$TMP/dc"
-  local n=88888888888888888888888888888880 t
+  local n i=0 t
   for t in '"git-mirror-add"|,"direction":"push","repo":"app","host":"'$H'","path":"https://github.com/me/app","interval":"","sync":"yes"' \
            '"git-mirror-add"|,"direction":"push","repo":"app","host":"'$H'","path":"me/app","remote":"https://github.com/me/app","interval":"","sync":"yes"' \
            '"git-mirror-add"|,"direction":"push","repo":"app","host":"github.com","path":"me/app","interval":"","sync":"yes"' \
@@ -378,11 +378,13 @@ test_the_helper_runs_the_git_hosts_dialogs_mirror_requests_as_git_server_command
            '"git-mirror-add"|,"direction":"push","repo":"app","host":"'$H'","path":"../me/app","interval":"","sync":"yes"' \
            '"git-mirror-add"|,"direction":"push","repo":"app","host":"'$H'","path":"me/app --token","interval":"","sync":"yes"' \
            '"git-mirror-add"|,"direction":"push","repo":"app","host":"'$H'","path":"me/app","interval":"5x","sync":"yes"' \
+           '"git-mirror-add"|,"direction":"push","repo":"app","host":"'$H'","path":"me/app","interval":"5m","sync":"yes"' \
+           '"git-mirror-change"|,"repo":"app","name":"m1","interval":"9m","sync":"keep"' \
            '"git-mirror-add"|,"direction":"both","repo":"app","host":"'$H'","path":"me/app","interval":"","sync":"yes"' \
            '"git-mirror-change"|,"repo":"app","name":"../x","interval":"","sync":"yes"' \
            '"git-mirror-change"|,"repo":"app","name":"m1","interval":"","sync":"maybe"' \
            '"git-mirror-remove"|,"repo":"app","name":"m1 m2"' '"git-mirror-sync"|,"direction":"push","repo":"a;b"' '"git-mirror-drop"|,"repo":"app"'; do
-    n="${n%?}$(( ${n: -1} + 1 ))"
+    i=$((i + 1)); n="$(printf '8888%028x' "$i")"   # (a well-formed id each time, past 9 cases too: only the field is wrong)
     _ses "$n" "${t%%|*}" "${t#*|}"
     sessions_poll_once 2>/dev/null || true
   done

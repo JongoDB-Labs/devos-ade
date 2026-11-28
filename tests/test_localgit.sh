@@ -493,7 +493,7 @@ _lg_stubs_for_the_dialog() {
       *'"op":"resolve"'*) _LG_ANSWER='{"ok":true,"host":"github.com","label":"GitHub","remote":"https://github.com/me/app.git"}' ;;
       *) _LG_ANSWER='{"ok":true}' ;;
     esac
-    [ "$OP_OK" = 1 ] || { _LG_ANSWER='{"ok":false,"error":"the git server refused: nope"}'; return 1; }
+    [ "$OP_OK" = 1 ] || { _LG_ANSWER="$([ "${OP_ERR-x}" = '' ] || printf '{"ok":false,"error":"%s"}' "${OP_ERR:-the git server refused: nope}")"; return 1; }
   }
   localgit_mirror_reconcile() { echo "reconcile" >> "$TMP/calls"; }
   _ss_code() { local a; for a in "$@"; do case "$a" in --secs | 30) ;; *) printf '%s ' "$a" >> "$TMP/told"; ;; esac; done; echo >> "$TMP/told"; }
@@ -512,7 +512,8 @@ test_a_mirror_made_from_the_dialog_names_a_host_by_id_and_a_path_and_never_an_ad
   # what is not an id or a path is refused before anything is asked of the container
   : > "$TMP/calls"
   for args in "push app --host nope --path me/app" "push app --host h_0123456789ab --path ../x" "push app --host h_0123456789ab" "push app --path me/app" \
-              "push app --host h_0123456789ab --path me/app https://github.com/me/app" "push app --host h_0123456789ab --path 'a b'"; do
+              "push app --host h_0123456789ab --path me/app https://github.com/me/app" "push app --host h_0123456789ab --path 'a b'" \
+              "push app --host h_0123456789ab --path me/app --interval 9m" "push app --host h_0123456789ab --path me/app --interval 1x2m"; do
     out="$(eval "localgit_mirror_add $args" 2>&1)" && { echo "accepted: $args" >&2; return 1; }
   done
   assert_eq "$(cat "$TMP/calls")" ""
@@ -526,12 +527,21 @@ test_a_mirror_changed_from_the_dialog_keeps_the_way_out_and_says_what_it_asked()
   : > "$TMP/calls"; localgit_mirror_change app m1 --sync-on-commit >/dev/null 2>&1
   assert_contains "$(cat "$TMP/calls")" '{"op":"change","repo":"app","name":"m1","syncOnCommit":true}'
   : > "$TMP/calls"
-  for args in "" "app" "app m1 --interval 5x" "app m1 --bogus" "'a b' m1" "app m1 --interval"; do
+  for args in "" "app" "app m1 --interval 5x" "app m1 --interval 5m" "app m1 --interval 1x2m" "app m1 --interval 1000h" "app m1 --bogus" "'a b' m1" "app m1 --interval"; do
     out="$(eval "localgit_mirror_change $args" 2>&1)" && { echo "accepted: $args" >&2; return 1; }
   done
   assert_not_contains "$(cat "$TMP/calls")" "op {"
-  OP_OK=0; out="$(localgit_mirror_change app m1 --interval 2h 2>&1)" && return 1
+  # (the code container's words say what happened: not changed, or both mirrors left — said as they are, never "not changed" twice)
+  OP_OK=0; OP_ERR='not changed: the git server refused: nope'; out="$(localgit_mirror_change app m1 --interval 2h 2>&1)" && return 1
   assert_contains "$out" "not changed: the git server refused: nope"
+  assert_not_contains "$out" "not changed: not changed"
+  OP_ERR='a new mirror m2 was made, but the old one m1 could not be removed (x): both push to https://github.com/me/app.git now: remove m1'
+  out="$(localgit_mirror_change app m1 --interval 2h 2>&1)" && return 1
+  assert_contains "$out" "a new mirror m2 was made, but the old one m1 could not be removed"
+  assert_not_contains "$out" "not changed"
+  OP_ERR=''; out="$(localgit_mirror_change app m1 --interval 2h 2>&1)" && return 1
+  assert_contains "$out" "not changed: the Code page's container did not answer"
+  unset OP_ERR
   assert_contains "$(localgit_mirror_usage)" "mirror change REPO NAME"
   assert_contains "$(localgit_mirror_usage)" "--host ID --path OWNER/REPO"
 }

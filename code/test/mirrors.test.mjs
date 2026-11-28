@@ -268,6 +268,42 @@ test('no credential in any error: the server echoing a connected host\'s token (
   assert.ok(!JSON.stringify(out).includes(GTOK) && /push failed with/.test(out[0].lastError));
 });
 
+test('change: an old mirror that cannot be deleted -> the new one is removed again and nothing changed; if that fails too, both are named', async () => {
+  const store = setup('change2');
+  const old = { remote_name: 'm1', remote_address: 'https://github.com/octo/app.git', interval: '8h0m0s', sync_on_commit: true };
+  const base = { 'GET /api/v1/repos/devos/app/push_mirrors': [200, [old]], 'POST /api/v1/repos/devos/app/push_mirrors': [200, { ...old, remote_name: 'm2', interval: '2h0m0s' }] };
+  const f = fake({ ...base, 'DELETE /api/v1/repos/devos/app/push_mirrors/m1': [500, { message: 'boom' }], 'DELETE /api/v1/repos/devos/app/push_mirrors/m2': [204, null] });
+  await assert.rejects(makeMirrors({ store, fetchImpl: f.fetchImpl }).change({ repo: 'app', name: 'm1', interval: '2h' }), (e) => {
+    assert.match(e.message, /^not changed: the old mirror m1 could not be removed \(the git server refused: boom\), so the new one was removed again/);
+    return true;
+  });
+  assert.deepEqual(f.calls.map((c) => c.key), ['GET /api/v1/repos/devos/app/push_mirrors', 'POST /api/v1/repos/devos/app/push_mirrors',
+    'DELETE /api/v1/repos/devos/app/push_mirrors/m1', 'DELETE /api/v1/repos/devos/app/push_mirrors/m2']);
+  const g = fake({ ...base, 'DELETE /api/v1/repos/devos/app/push_mirrors/m1': [500, { message: 'boom' }], 'DELETE /api/v1/repos/devos/app/push_mirrors/m2': [500, { message: 'down' }] });
+  await assert.rejects(makeMirrors({ store, fetchImpl: g.fetchImpl }).change({ repo: 'app', name: 'm1', interval: '2h' }), (e) => {
+    assert.match(e.message, /new mirror m2 was made, but the old one m1 could not be removed .*both push to https:\/\/github\.com\/octo\/app\.git now: remove m1/);
+    assert.ok(!e.message.includes(GTOK));
+    return true;
+  });
+  // a refusal before the new one: said as not changed
+  const h = fake({ 'GET /api/v1/repos/devos/app/push_mirrors': [200, [old]], 'POST /api/v1/repos/devos/app/push_mirrors': [403, { message: 'already exists' }] });
+  await assert.rejects(makeMirrors({ store, fetchImpl: h.fetchImpl }).change({ repo: 'app', name: 'm1', interval: '3h' }), (e) => /^not changed: the git server refused: already exists/.test(e.message));
+});
+
+test('no credential in any error, encoded either: a token echoed URL-encoded, or in a Basic header, is cut too', async () => {
+  const store = setup('scrub2');
+  const STOK = ['gl', 'pat-', 'a/b+c=d', 'S'.repeat(12)].join('');
+  store.add({ kind: 'gitlab', auth: 'token', token: STOK, username: 'g' });
+  const b64 = (t) => Buffer.from(t).toString('base64');
+  const said = `bad ${encodeURIComponent(STOK)} auth Basic ${b64(`g:${STOK}`)} and ${b64(`x-access-token:${STOK}`)} and ${b64(STOK)}`;
+  const echo = fake({ 'GET /api/v1/repos/devos/app': [200, {}], 'POST /api/v1/repos/devos/app/push_mirrors': [400, { message: said }] });
+  await assert.rejects(makeMirrors({ store, fetchImpl: echo.fetchImpl }).add({ direction: 'push', repo: 'app', host: hostId(store, 'gitlab.com'), path: 'g/r' }), (e) => {
+    for (const t of [STOK, encodeURIComponent(STOK), b64(`g:${STOK}`), b64(`x-access-token:${STOK}`), b64(STOK)]) assert.ok(!e.message.includes(t), `${t} in: ${e.message}`);
+    assert.match(e.message, /the git server refused: bad /);
+    return true;
+  });
+});
+
 test('the script: resolve, add by host id, change; the answers never hold a token', async () => {
   const store = setup('script2');
   const old = { remote_name: 'm1', remote_address: 'https://github.com/octo/app.git', interval: '8h0m0s', sync_on_commit: true };

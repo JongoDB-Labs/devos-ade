@@ -46,7 +46,10 @@ export function makeMirrors({ store = new GitHosts(), fetchImpl = globalThis.fet
     try {
       for (const h of store.read().hosts) {
         const sec = GitHosts.secret(h);
-        if (typeof sec === 'string' && sec.length >= 4) t = t.split(sec).join('…');
+        if (typeof sec !== 'string' || sec.length < 4) continue;
+        // (as sent, URL-encoded, and as a Basic header carries it: user:token in base64, or the token alone)
+        const b64 = (x) => Buffer.from(x).toString('base64');
+        for (const form of [sec, encodeURIComponent(sec), b64(`${h.username || 'x-access-token'}:${sec}`), b64(`x-access-token:${sec}`), b64(sec)]) t = t.split(form).join('…');
       }
     } catch { /* (an unreadable store: the address rule below still holds) */ }
     return short(t.replace(/\/\/[^/@\s]*@/g, '//'), max);
@@ -166,6 +169,27 @@ export function makeMirrors({ store = new GitHosts(), fetchImpl = globalThis.fet
   // new one is made first (the connected host's token is read here, as add does) and the old one deleted after; a new one the server
   // refuses leaves the old as it was. What is left out keeps the old mirror's value.
   async function change(b) {
+    let made = null;
+    try { made = await changeMake(b); } catch (e) { throw err(e?.status ?? 400, `not changed: ${e?.message ?? e}`); }
+    const { owner, repo, name, r } = made;
+    try {
+      await api('DELETE', `/repos/${owner}/${repo}/push_mirrors/${name}`);
+    } catch (e) {
+      // the old one stays: take the new one away again, so one mirror pushes, as before; if that fails too, say both
+      const first = e?.message ?? String(e);
+      const fresh = made.mirror?.remote_name;
+      try {
+        if (!NAME.test(String(fresh || ''))) throw err(502, 'the git server did not name the new mirror');
+        await api('DELETE', `/repos/${owner}/${repo}/push_mirrors/${fresh}`);
+      } catch (e2) {
+        throw err(502, `a new mirror ${short(String(fresh || '?'), 100)} was made, but the old one ${name} could not be removed (${first}; ${e2?.message ?? e2}): both push to ${r.web} now: remove ${name} (Remove in the list, or ./stack git-server mirror remove ${repo} ${name})`);
+      }
+      throw err(e?.status ?? 502, `not changed: the old mirror ${name} could not be removed (${first}), so the new one was removed again`);
+    }
+    return view(owner, repo, made.mirror);
+  }
+  // (change, up to the new mirror made: -> what the old one's delete needs)
+  async function changeMake(b) {
     const { owner } = local();
     const repo = String(b?.repo || '');
     if (!NAME.test(repo)) throw err(400, 'the repository on the built-in server');
@@ -179,8 +203,7 @@ export function makeMirrors({ store = new GitHosts(), fetchImpl = globalThis.fet
     const r = remoteFor(String(old.remote_address || '').replace(/\/\/[^/@]*@/, '//'));
     const made = await api('POST', `/repos/${owner}/${repo}/push_mirrors`, { remote_address: r.web, remote_username: r.h.username || 'x-access-token', remote_password: r.secret,
       interval: interval ?? (typeof old.interval === 'string' && /^[0-9hms]{2,20}$/.test(old.interval) ? old.interval : '8h0m0s'), sync_on_commit: b?.syncOnCommit ?? old.sync_on_commit === true });
-    await api('DELETE', `/repos/${owner}/${repo}/push_mirrors/${name}`);
-    return view(owner, repo, made);
+    return { owner, repo, name, r, mirror: made };
   }
 
   async function remove(b) {
