@@ -6,6 +6,10 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Added
+
+- **Mirrors of the built-in git server, from the Code page.** The Git hosts dialog has a Mirrors section, shown even when there is none. Add a mirror: push a repository here to GitHub, GitLab or another git host you connected with an access token, or keep a read-only copy here of one there. Pick how often it syncs and, for a push mirror, whether it also syncs on every push here. Each mirror shows when it last synced and its last error, with Sync now, Change (a push mirror's timing) and Remove (it asks first). The dialog says plainly that a push mirror force-updates the other repository. Every change asks for the web app password. Adding, changing and removing work only on the computer running DevOS ADE; syncing works from anywhere. The host's access token never reaches the page: it goes from the Code page's container to the git server. In a terminal, `./stack git-server mirror` gains `add … --host ID --path OWNER/REPO` and `change`. (JON-970)
+
 ## [0.77.3] - 2026-11-28
 
 ### Changed
