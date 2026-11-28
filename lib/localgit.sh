@@ -332,17 +332,24 @@ bail() { rm -rf "$N"; echo "!! the git server's repositories were NOT changed: $
 stuck() { echo "!! an earlier restore was cut off and could not be finished ($1): NOTHING was deleted — the repositories' files are in $V, $O and $N; run ./stack restore again, or ask for help before removing them" >&2; exit 1; }
 # recover — finish a swap that a kill or power loss cut off, before anything is removed (.restore-old may hold the only copy).
 #  marker present: every old entry was set aside and the new ones were checked whole before the swap began -> move what is
-#                  left of .restore-new in, then remove .restore-old and the marker;
-#  no marker, .restore-old there: the swap was still setting the old entries aside -> put them back.
+#                  left of .restore-new in (no .restore-new: the swap had moved everything in and was removing what was
+#                  left), then remove .restore-old, then the marker;
+#  no marker, .restore-old there: the swap was still setting the old entries aside -> put them back. (The swap removes the
+#                  marker only after .restore-old is gone, so the top then holds old entries only: no name can collide.)
 recover() {
   if [ -e "$K" ]; then
-    [ -d "$N" ] || stuck "the swap marker is there but the unpacked copy is not"
-    for e in "$N"/* "$N"/.[!.]* "$N"/..?*; do
-      { [ -e "$e" ] || [ -L "$e" ]; } || continue
-      case "${e##*/}" in .restore-new | .restore-old | .restore-swapping) continue ;; esac
-      mv "$e" "$V"/ || stuck "an entry could not be moved into place"
-    done
-    rm -rf "$O" "$N"; rm -f "$K"
+    if [ -d "$N" ]; then
+      for e in "$N"/* "$N"/.[!.]* "$N"/..?*; do
+        { [ -e "$e" ] || [ -L "$e" ]; } || continue
+        case "${e##*/}" in .restore-new | .restore-old | .restore-swapping) continue ;; esac
+        mv "$e" "$V"/ || stuck "an entry could not be moved into place"
+      done
+      own="$(stat -c '%u:%g' "$N" 2>/dev/null)"; mode="$(stat -c '%a' "$N" 2>/dev/null)"
+      [ -z "$own" ] || chown "$own" "$V" 2>/dev/null || true
+      [ -z "$mode" ] || chmod "$mode" "$V" 2>/dev/null || true
+    fi
+    rm -rf "$O" || { echo "!! an earlier restore was finished, but its old copy could not be removed from $O: remove it, then run ./stack restore again" >&2; exit 1; }
+    rm -rf "$N"; rm -f "$K"
   elif [ -d "$O" ]; then
     for e in "$O"/* "$O"/.[!.]* "$O"/..?*; do
       { [ -e "$e" ] || [ -L "$e" ]; } || continue
@@ -418,8 +425,14 @@ swap() {
   own="$(stat -c '%u:%g' "$N" 2>/dev/null)"; mode="$(stat -c '%a' "$N" 2>/dev/null)"
   [ -z "$own" ] || chown "$own" "$V" 2>/dev/null || true
   [ -z "$mode" ] || chmod "$mode" "$V" 2>/dev/null || true
-  rm -rf "$N"; rm -f "$K"
-  rm -rf "$O" || echo "!! the old contents could not be removed from $O; the next restore removes them" >&2
+  # the end, in this order: the old copy goes while the marker still says "finish forward", then the staged folder, the
+  # marker last. A kill anywhere here is finished forward by recover. (Removed before the old copy, a kill during that long
+  # removal would leave no marker, and recover would try to put old entries back on top of the new ones.)
+  if rm -rf "$O"; then
+    rm -rf "$N"; rm -f "$K"
+  else
+    rm -rf "$N"; echo "!! the old contents could not all be removed from $O; the next restore removes them" >&2
+  fi
 }
 case "$M" in stage) stage ;; swap) swap ;; *) stage; swap ;; esac
 LGEOF

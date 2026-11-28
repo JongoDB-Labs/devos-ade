@@ -1058,3 +1058,40 @@ test_the_volume_size_job_mounts_an_empty_folder_of_its_own_not_the_backups() {
   assert_contains "$(cat "$TMP/dk")" "$STACK_DIR/.state/lg-size:/backup"
   assert_eq "$(ls -A "$STACK_DIR/.state/lg-size" | wc -l | tr -d ' ')" 0
 }
+
+# the swap's end: every new entry in place, the old copy being removed (the longest step), then the staged folder, the marker
+_lg_cut_end() {  # _lg_cut_end with-new|without-new — killed while .restore-old was being removed
+  _lg_mkvol; mkdir -p "$VOL/.restore-old" "$VOL/.restore-new"
+  mv "$VOL/git" "$VOL/app.ini" "$VOL/.hidden" "$VOL/.restore-old/"
+  tar -C "$VOL/.restore-new" -xzf "$BK/gitdata.tar.gz"
+  : > "$VOL/.restore-swapping"
+  for e in "$VOL/.restore-new"/* "$VOL/.restore-new"/.dot; do mv "$e" "$VOL/"; done
+  rm -rf "$VOL/.restore-old/git"                                # part of the old copy already gone
+  [ "$1" = with-new ] || rm -rf "$VOL/.restore-new"
+}
+
+test_a_swap_killed_while_removing_the_old_copy_is_finished_not_undone() {
+  local k
+  for k in with-new without-new; do
+    _lg_cut_end "$k"
+    printf 'not a tar' > "$BK/gitdata.tar.gz"                   # a bad archive next: the finished copy must stay, nothing stuck
+    _lg_run stage && return 1
+    assert_not_contains "$(cat "$TMP/lg.err")" "NOTHING was deleted"
+    assert_eq "$(cat "$VOL/app.ini")" "new-ini"
+    assert_eq "$(cat "$VOL/git/repositories/new/HEAD")" "new-head"
+    assert_eq "$([ -e "$VOL/.hidden" ] && echo old || echo gone)" "gone"
+    assert_eq "$(ls -A "$VOL" | /usr/bin/grep -c 'restore' || true)" "0"
+  done
+}
+
+test_the_swap_removes_its_marker_only_after_the_old_copy() {
+  _lg_mkvol
+  _lg_shim rm 'case "$*" in *.restore-old*) exit 1 ;; esac; exec /bin/rm "$@"'   # the old copy cannot be removed
+  _lg_run_p all || { cat "$TMP/lg.err" >&2; return 1; }
+  assert_eq "$(cat "$VOL/app.ini")" "new-ini"
+  [ -e "$VOL/.restore-swapping" ] || { echo "the marker went before the old copy" >&2; return 1; }
+  /bin/rm -f "$TMP/shim/rm"
+  _lg_run stage || { cat "$TMP/lg.err" >&2; return 1; }        # the next restore finishes it forward
+  assert_eq "$(cat "$VOL/app.ini")" "new-ini"
+  assert_eq "$([ -e "$VOL/.restore-old" ] || [ -e "$VOL/.restore-swapping" ] && echo left || echo none)" "none"
+}
