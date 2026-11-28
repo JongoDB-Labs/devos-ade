@@ -1934,7 +1934,7 @@ def _drop_projects(c, roots):
             c.api("DELETE", f"/api/projects/{x['id']}")
 
 
-@check("browser", "code-ui-git-mirrors")
+@check("settings", "code-ui-git-mirrors")   # settings/*: run.sh runs them while the update helper runs
 @saved
 def ui_git_mirrors(ctx):
     """JON-970: the Git hosts dialog's Mirrors section on the real stack (the built-in git server on, the update helper running:
