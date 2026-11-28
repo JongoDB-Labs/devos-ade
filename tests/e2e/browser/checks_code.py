@@ -4951,9 +4951,11 @@ def export_to_files(ctx):
             "Everything and .git history change the plan; the code host alone has no Export to Files and saves the same zip; no CSP violations")
 
 
-SHORT_TITLE_PROMPT = ("Please could you take a very long look at the way the nightly export job of our little weather station handles its retry budget "
-                      "whenever the upstream archive is slow, and say in one plain sentence what you would look at first. "
-                      "End your answer with the sum of 7919 and 4242 written in digits.")
+# (a question about nothing in the workspace, answered without tools: worded as a task, Haiku went looking for an export job in the
+# shared test workspace with Bash and waited on a permission request — matrix 0.76.0a)
+SHORT_TITLE_PROMPT = ("Without using any tool and without looking at any file, from this message alone: if the nightly export job of a little "
+                      "weather station handled its retry budget badly whenever the upstream archive was slow, what would you look at first? "
+                      "Say it in one plain sentence, then end your answer with the sum of 7919 and 4242 written in digits.")
 SHORT_TITLE_ANSWER_ONLY = "12161"   # (7919 + 4242: in Claude's answer, nowhere in the prompt)
 
 
