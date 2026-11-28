@@ -649,6 +649,12 @@ def sweep_portal(browser, width, theme):
         p.wait_for_selector("iframe[data-app=chat]", timeout=20000)
         fl = p.frame_locator("iframe[data-app=chat]")
         fl.locator("#chat-input").wait_for(timeout=60000)
+        # (Open WebUI 0.13 draws its model picker, in the message box, once the model list has come: the page is ready
+        # then. The message box alone came up to a few seconds earlier: 5 of 6 states were taken without the picker.)
+        try:
+            fl.locator("#model-selector-model-button").wait_for(timeout=30000)
+        except PwError as e:
+            find("state not reached", f"chat model picker: {str(e).splitlines()[0][:200]}")
         p.wait_for_timeout(1500)
         capture(p, "chat", full=False, frame_hosts=(f"chat.{HOST}",))
         opts = p.eval_on_selector_all("#answers-chat option", "os => os.map(o => [o.textContent.trim(), o.disabled])") \

@@ -7,7 +7,10 @@ from __future__ import annotations
 import base64
 import json
 import re
+import time
 from pathlib import Path
+
+from playwright.sync_api import Error as PwError
 
 from checks_browser import chat_frame, login, shot
 from common import ENV, Skip, check, expect, need, origin
@@ -69,6 +72,39 @@ def home_voice(ctx):
 END_CALL = "button[aria-label='End call']:not([title])"
 
 
+# Chat has set up its new conversation once its model picker names the selected model. Open WebUI 0.13.5 sets a new chat
+# up after the model list arrives, and that ends any call (Chat.svelte initNewChat: voiceCall false): a call started
+# before it never opens, silently (0.79.0a: the first call of a lane; the next one, with the list already fetched, opened).
+SETTLED = "#model-selector-model-button[aria-label^='Selected model:']"
+
+
+def chat_settled(fl) -> float:
+    """Waits (30 s at most) until Chat has set up its new conversation; returns the seconds it took."""
+    t0 = time.monotonic()
+    fl.locator(SETTLED).wait_for(timeout=30000)
+    return time.monotonic() - t0
+
+
+def call_opens(page, fl, f, rec, name: str) -> None:
+    """Waits for the call's End call button; when it does not come in 15 s, fails with what Chat showed instead
+    (a screenshot NAME-not-open and the frame's visible buttons and dialogs)."""
+    try:
+        fl.locator(END_CALL).wait_for(timeout=15000)
+        return
+    except PwError:
+        pass
+    shot(page, f"{name}-not-open")
+    seen = f.evaluate("""() => {
+        const vis = e => !!(e.offsetWidth || e.offsetHeight || e.getClientRects().length);
+        const btn = [...document.querySelectorAll('button')].filter(vis).map(b =>
+            ((b.getAttribute('aria-label') || b.textContent || '').trim().slice(0, 40)) + (b.title ? ' [title]' : ''));
+        const dlg = [...document.querySelectorAll('[role=dialog], dialog, .modal')].filter(vis).map(d =>
+            d.textContent.trim().replace(/\\s+/g, ' ').slice(0, 160));
+        return {buttons: btn.slice(0, 40), dialogs: dlg.slice(0, 3)}; }""")
+    rec.save()
+    raise AssertionError(f"the call did not open in 15 s: dialogs {seen['dialogs']}; buttons {seen['buttons']}")
+
+
 @check("browser", "chat-voice-call")
 def chat_call(ctx):
     """Call with server speech-to-text: the call opens ("Listening…", End call); without it Open WebUI (v0.12.4) offers
@@ -86,8 +122,9 @@ def chat_call(ctx):
         shot(page, "10-chat-call-web-stt")
         rec.save()
         return "browser speech: no Call button"
+    settled = chat_settled(fl)
     fl.locator("button[aria-label='Voice mode']").click()
-    fl.locator(END_CALL).wait_for(timeout=15000)
+    call_opens(page, fl, f, rec, "10-chat-call")
     fl.locator("text=Listening").first.wait_for(timeout=15000)
     shot(page, "10-chat-call-open")
     fl.locator(END_CALL).click()
@@ -95,7 +132,8 @@ def chat_call(ctx):
     probs = rec.problems(allow=[r"No token found in localStorage", r"Permissions policy violation: screen-wake-lock"])
     rec.save()
     expect(not probs, f"errors: {probs}")
-    return f"{stt_mode()} speech-to-text: Call opens (Listening…, End call), no Web-STT error"
+    return (f"{stt_mode()} speech-to-text: Call opens (Listening…, End call), no Web-STT error; Chat set up "
+            f"{settled:.1f} s after its message box")
 
 
 @check("browser", "chat-voice-call-wake-lock")
@@ -108,8 +146,9 @@ def chat_call_wake_lock(ctx):
     page.context.grant_permissions(["microphone"], origin=origin("chat"))
     login(page)
     fl, f = chat_frame(page)
+    chat_settled(fl)
     fl.locator("button[aria-label='Voice mode']").click()
-    fl.locator(END_CALL).wait_for(timeout=15000)
+    call_opens(page, fl, f, rec, "10b-chat-call-wake-lock")
     fl.locator("text=Listening").first.wait_for(timeout=15000)
     fl.locator(END_CALL).click()
     blocked = [e["text"] for e in rec.events if e["t"] == "console" and "screen-wake-lock" in e["text"]]
