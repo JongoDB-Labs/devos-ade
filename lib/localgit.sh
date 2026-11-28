@@ -310,12 +310,95 @@ localgit_validate_archive() {
   ! printf '%s\n' "$lst" | grep -E '^/|(^|/)\.\.(/|$)' >/dev/null
 }
 
-# localgit_restore_from DIR — the volume emptied and DIR/gitdata.tar.gz unpacked into it (the container removed first, started
-# by the caller's up). Returns 1 on failure.
+# _lg_restore_script MODE -> the restore's script (sh, run by the throwaway container with the volume at /v and the backup
+# folder at /backup; a test sets V and B to temp folders and runs it with sh). The repositories are never emptied before the
+# new ones are known to be whole (JON-1145):
+#   stage  a leftover .restore-new / .restore-old of an interrupted restore is removed (never served as data), the archive is
+#          unpacked into /v/.restore-new, and what landed must equal what the archive lists (tar's exit status alone would
+#          pass a listing that tar could read but whose files are missing; the listing is read separately, from the archive).
+#          Any failure removes .restore-new and leaves the volume as it was.
+#   swap   needs the staged folder: the old contents are renamed into .restore-old, the new ones renamed into place (one
+#          filesystem: renames, no copy, so no space is needed), and only then the old ones removed. A rename that fails puts
+#          everything back.
+#   all    stage, then swap (the default; what localgit_restore_from does when nothing was staged first).
+# The folder's owners and modes are those tar unpacked (as root, as before); the volume's own top folder takes the archive's
+# "." owner and mode, which tar used to set when it unpacked straight into it.
+_lg_restore_script() {
+  printf 'M=%s\n' "${1:-all}"
+  cat <<'LGEOF'
+V="${V:-/v}"; B="${B:-/backup}"; A="$B/gitdata.tar.gz"; N="$V/.restore-new"; O="$V/.restore-old"
+bail() { rm -rf "$N"; echo "!! the git server's repositories were NOT changed: $1" >&2; exit 1; }
+stage() {
+  rm -rf "$N" "$O"
+  mkdir "$N" || bail "the staging folder could not be made (is the disk full?)"
+  tar -C "$N" -xzf "$A" || bail "the archive did not unpack completely (it is damaged, or the disk is full)"
+  want="$(tar -tzf "$A" | sed 's|^\./||; s|/$||' | sed '/^[.]\{0,1\}$/d' | sort -u)"
+  got="$(cd "$N" && find . -mindepth 1 | sed 's|^\./||' | sort -u)"
+  [ "$want" = "$got" ] || bail "what unpacked is not what the archive lists"
+}
+undo() {
+  for e in "$O"/* "$O"/.[!.]* "$O"/..?*; do
+    { [ -e "$e" ] || [ -L "$e" ]; } && mv "$e" "$V"/
+  done
+  rmdir "$O" 2>/dev/null
+  return 0
+}
+swap() {
+  [ -d "$N" ] || bail "nothing was staged"
+  rm -rf "$O"
+  mkdir "$O" || bail "the holding folder could not be made"
+  for e in "$V"/* "$V"/.[!.]* "$V"/..?*; do
+    { [ -e "$e" ] || [ -L "$e" ]; } || continue
+    case "$e" in "$N" | "$O") continue ;; esac
+    mv "$e" "$O"/ || { undo; bail "the old contents could not be set aside"; }
+  done
+  moved=''
+  for e in "$N"/* "$N"/.[!.]* "$N"/..?*; do
+    { [ -e "$e" ] || [ -L "$e" ]; } || continue
+    n="${e##*/}"
+    case "$n" in .restore-new | .restore-old) continue ;; esac
+    if mv "$e" "$V"/; then moved="$moved
+$n"; else
+      for n in $moved; do rm -rf "$V/${n:?}"; done
+      undo; bail "the new contents could not be moved into place"
+    fi
+  done
+  own="$(stat -c '%u:%g' "$N" 2>/dev/null)"; mode="$(stat -c '%a' "$N" 2>/dev/null)"
+  [ -z "$own" ] || chown "$own" "$V" 2>/dev/null || true
+  [ -z "$mode" ] || chmod "$mode" "$V" 2>/dev/null || true
+  rm -rf "$N"
+  rm -rf "$O" || echo "!! the old contents could not be removed from $O; the next restore removes them" >&2
+}
+case "$M" in stage) stage ;; swap) swap ;; *) stage; swap ;; esac
+LGEOF
+}
+
+# localgit_stage_restore DIR — the archive unpacked and checked in the volume's staging folder; the repositories are not
+# touched (cmd_restore runs it before it changes anything else). Returns 1 on failure; the job says why on stderr.
+localgit_stage_restore() {
+  docker volume inspect "$(localgit_volume)" >/dev/null 2>&1 || dc up --no-start --no-deps forgejo >/dev/null 2>&1 || true
+  _lg_volume_job '' "$1" ro "$(_lg_restore_script stage)" >/dev/null
+}
+
+# localgit_restore_from DIR [staged] — the container removed (the caller's up starts it again), then the volume's contents
+# replaced by DIR/gitdata.tar.gz atomically (see _lg_restore_script). With "staged" it swaps in what localgit_stage_restore
+# unpacked; without, it stages first. Returns 1 on failure, with the repositories as they were.
 localgit_restore_from() {
   docker volume inspect "$(localgit_volume)" >/dev/null 2>&1 || dc up --no-start --no-deps forgejo >/dev/null 2>&1 || true
   _LG_PROFILE=1 dc rm -sf forgejo >/dev/null 2>&1 || true
-  _lg_volume_job '' "$1" ro 'set -e; find /v -mindepth 1 -maxdepth 1 -exec rm -rf {} +; tar -C /v -xzf /backup/gitdata.tar.gz' >/dev/null
+  _lg_volume_job '' "$1" ro "$(_lg_restore_script "$([ "${2:-}" = staged ] && echo swap || echo all)")" >/dev/null
+}
+
+# localgit_volume_kb -> the repositories' volume size in KB (nothing when the git server is off, has no volume, or the size
+# cannot be read). A throwaway container with the volume read-only, as the backup's own: nothing else is changed.
+localgit_volume_kb() {
+  local d="$STACK_DIR/backups" kb
+  localgit_on || return 0
+  docker volume inspect "$(localgit_volume)" >/dev/null 2>&1 || return 0
+  [ -d "$d" ] || mkdir -p "$d" 2>/dev/null || return 0
+  kb="$(_lg_volume_job ro "$d" ro 'du -sk /v | cut -f1' 2>/dev/null | tail -n 1)" || return 0
+  case "$kb" in '' | *[!0-9]*) return 0 ;; esac
+  printf '%s\n' "$kb"
 }
 
 # localgit_rollback_cleanup — ./stack rollback to a version without it: the container removed by its Compose labels (the

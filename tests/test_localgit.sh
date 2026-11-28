@@ -763,3 +763,121 @@ test_localgit_a_set_subnet_still_gets_the_docker_overlap_check() {
   out="$( (localgit_net_preflight) 2>&1)" && { echo "should stop" >&2; return 1; }
   assert_contains "$out" "overlaps Docker network other (10.254.3.0/24)"
 }
+
+# --- the restore's script and the backup space check (JON-1145); the script is run by sh against temp folders, no Docker ---
+
+_lg_mkvol() { # a volume with old contents, and a backup folder holding a good archive of a different set
+  VOL="$TMP/vol"; BK="$TMP/bk"; SRC="$TMP/src"
+  rm -rf "$VOL" "$BK" "$SRC"; mkdir -p "$VOL/git/repositories/old" "$BK" "$SRC/git/repositories/new" "$SRC/gitea"
+  echo "old-head" > "$VOL/git/repositories/old/HEAD"; echo "old-ini" > "$VOL/app.ini"; echo "hid" > "$VOL/.hidden"
+  echo "new-head" > "$SRC/git/repositories/new/HEAD"; echo "new-ini" > "$SRC/app.ini"; echo "newhid" > "$SRC/.dot"
+  chmod 640 "$SRC/app.ini"
+  tar -C "$SRC" -czf "$BK/gitdata.tar.gz" .
+}
+_lg_run() { V="$VOL" B="$BK" sh -c "$(_lg_restore_script "$1")" 2> "$TMP/lg.err"; }
+_lg_snap() { (cd "$VOL" && find . -type f -exec cksum {} + | sort; find . | sort) | cksum; }
+
+test_the_restore_script_replaces_the_contents_and_leaves_no_working_folder() {
+  _lg_mkvol; chmod 600 "$BK/gitdata.tar.gz"
+  _lg_run all || { cat "$TMP/lg.err" >&2; return 1; }
+  assert_eq "$(cat "$VOL/app.ini")" "new-ini"
+  assert_eq "$(cat "$VOL/git/repositories/new/HEAD")" "new-head"
+  assert_eq "$(cat "$VOL/.dot")" "newhid"
+  assert_eq "$([ -e "$VOL/git/repositories/old" ] || [ -e "$VOL/.hidden" ] && echo old || echo gone)" "gone"
+  assert_eq "$([ -e "$VOL/.restore-new" ] || [ -e "$VOL/.restore-old" ] && echo left || echo none)" "none"
+  assert_eq "$(find "$VOL" -name app.ini -perm 640 | wc -l | tr -d ' ')" "1"   # the archive's modes kept
+}
+
+test_a_damaged_archive_leaves_the_old_contents_byte_identical_and_no_staging_folder() {
+  _lg_mkvol
+  head -c 40 /dev/urandom > "$TMP/pad"
+  # a big enough member so the gzip stream has a data section to cut after the headers
+  head -c 300000 /dev/urandom > "$SRC/git/big.pack"; tar -C "$SRC" -czf "$BK/gitdata.tar.gz" .
+  local size; size="$(wc -c < "$BK/gitdata.tar.gz" | tr -d ' ')"
+  head -c $((size / 2)) "$BK/gitdata.tar.gz" > "$TMP/cut.tgz"; mv "$TMP/cut.tgz" "$BK/gitdata.tar.gz"
+  local before; before="$(_lg_snap)"
+  if _lg_run all; then echo "a cut archive was accepted" >&2; return 1; fi
+  assert_contains "$(cat "$TMP/lg.err")" "NOT changed"
+  assert_eq "$(_lg_snap)" "$before"
+  assert_eq "$(cat "$VOL/app.ini")" "old-ini"
+  assert_eq "$(ls -A "$VOL" | /usr/bin/grep -c 'restore' || true)" "0"
+  # the same through the check step alone
+  _lg_mkvol; head -c 300000 /dev/urandom > "$SRC/big"; tar -C "$SRC" -czf "$BK/gitdata.tar.gz" .
+  size="$(wc -c < "$BK/gitdata.tar.gz" | tr -d ' ')"; head -c $((size / 2)) "$BK/gitdata.tar.gz" > "$TMP/cut.tgz"; mv "$TMP/cut.tgz" "$BK/gitdata.tar.gz"
+  if _lg_run stage; then return 1; fi
+  assert_eq "$(ls -A "$VOL" | /usr/bin/grep -c 'restore' || true)" "0"
+}
+
+test_the_stage_step_alone_changes_nothing_and_the_swap_then_completes_it() {
+  _lg_mkvol
+  local before; before="$(_lg_snap)"
+  _lg_run stage || { cat "$TMP/lg.err" >&2; return 1; }
+  assert_eq "$(cat "$VOL/app.ini")" "old-ini"
+  [ -d "$VOL/.restore-new" ] || return 1
+  _lg_run swap || { cat "$TMP/lg.err" >&2; return 1; }
+  assert_eq "$(cat "$VOL/app.ini")" "new-ini"
+  assert_eq "$(ls -A "$VOL" | /usr/bin/grep -c 'restore' || true)" "0"
+  # a swap with nothing staged fails and changes nothing
+  _lg_mkvol; before="$(_lg_snap)"
+  if _lg_run swap; then return 1; fi
+  assert_eq "$(_lg_snap)" "$before"
+}
+
+test_a_leftover_staging_or_holding_folder_is_cleaned_and_never_served() {
+  _lg_mkvol
+  mkdir -p "$VOL/.restore-new/junk" "$VOL/.restore-old/git"; echo x > "$VOL/.restore-new/junk/f"; echo y > "$VOL/.restore-old/git/g"
+  _lg_run all || { cat "$TMP/lg.err" >&2; return 1; }
+  assert_eq "$(cat "$VOL/app.ini")" "new-ini"
+  assert_eq "$(find "$VOL" -name f -o -name g | wc -l | tr -d ' ')" "0"
+  assert_eq "$(ls -A "$VOL" | /usr/bin/grep -c 'restore' || true)" "0"
+  # leftovers are also cleaned when the new archive then fails: the old contents stay, the leftovers go
+  _lg_mkvol; mkdir -p "$VOL/.restore-new/junk"; printf 'not a tar' > "$BK/gitdata.tar.gz"
+  if _lg_run all; then return 1; fi
+  assert_eq "$(cat "$VOL/app.ini")" "old-ini"
+  assert_eq "$(ls -A "$VOL" | /usr/bin/grep -c 'restore' || true)" "0"
+}
+
+_space_stubs() { # newest backup = $1 KB, free = $2 KB, git volume = $3 KB (empty = git server off/no volume)
+  mkdir -p "$STACK_DIR/backups/20260101-000000"
+  du() { printf '%s\t%s\n' "$_SP_KB" "$2"; }
+  df() { printf 'Filesystem 1024-blocks Used Available Capacity Mounted\nx 1 1 %s 1%% /\n' "$_SP_FREE"; }
+  localgit_volume_kb() { [ -z "$_SP_GIT" ] || echo "$_SP_GIT"; }
+  _SP_KB="$1"; _SP_FREE="$2"; _SP_GIT="$3"
+}
+
+test_the_backup_space_check_counts_the_git_volume() {
+  STACK_DIR="$TMP/stack"
+  _space_stubs 10240 30000 ""                      # twice 10 MB = 20 MB fits in 30 MB
+  ( _backup_space_check ) 2>/dev/null || { echo "a backup that fits was refused" >&2; return 1; }
+  _space_stubs 10240 30000 5120                    # + 5 MB of repositories = 25 MB, fits
+  ( _backup_space_check ) 2>/dev/null || { echo "a backup with the git share that fits was refused" >&2; return 1; }
+  _space_stubs 10240 30000 20480                   # + 20 MB = 40 MB: only the git volume tips it over
+  out="$( (_backup_space_check) 2>&1)" && { echo "should refuse" >&2; return 1; }
+  assert_contains "$out" "git server's repositories"
+  assert_contains "$out" "not enough free disk space"
+  _space_stubs 10240 10000 ""                      # git off: the old message, unchanged
+  out="$( (_backup_space_check) 2>&1)" && { echo "should refuse" >&2; return 1; }
+  assert_not_contains "$out" "git server"
+  assert_contains "$out" "9 MB free, and one needs about 11 MB (twice that is kept free)"
+}
+
+test_the_git_volume_alone_is_checked_before_a_first_backup() {
+  STACK_DIR="$TMP/stack"; mkdir -p "$STACK_DIR/backups"
+  df() { printf 'h\nx 1 1 1000 1%% /\n'; }; localgit_volume_kb() { echo 5000; }
+  if ( _backup_space_check ) 2>/dev/null; then echo "a first backup that cannot fit was accepted" >&2; return 1; fi
+  localgit_volume_kb() { :; }
+  ( _backup_space_check ) 2>/dev/null || return 1   # git off, no backup yet: as before
+}
+
+test_the_volume_size_is_read_in_a_read_only_throwaway_container_only_when_the_git_server_is_on() {
+  STACK_DIR="$TMP/stack"; mkdir -p "$STACK_DIR"; sed -n '/^  forgejo:/,/^    image:/p' "$T_ROOT/compose.yaml" > "$STACK_DIR/compose.yaml"
+  : > "$TMP/dk"
+  docker() { echo "$*" >> "$TMP/dk"; case "$1 $2" in "volume inspect") return 0 ;; "run --rm") echo 4096 ;; esac; }
+  printf 'LOCALGIT=on\n' > "$ENV_FILE"
+  assert_eq "$(localgit_volume_kb)" 4096
+  assert_contains "$(cat "$TMP/dk")" ":/v:ro"
+  assert_contains "$(cat "$TMP/dk")" "du -sk /v"
+  : > "$TMP/dk"; printf 'LOCALGIT=off\n' > "$ENV_FILE"
+  assert_eq "$(localgit_volume_kb)" ""
+  assert_eq "$(cat "$TMP/dk")" ""
+}

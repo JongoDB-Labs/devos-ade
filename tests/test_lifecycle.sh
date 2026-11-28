@@ -30,6 +30,8 @@ _stub_dc() { # logs every dc call; pg_dump prints a fake dump unless PG_FAIL=1
 # of $TMP/gitsrc into the folder mounted at /backup, a "restore" run extracts the one it finds there into $TMP/gitvol.
 _stub_gitdata_docker() {
   docker() {
+    # (the backup's space check reads the volume's size in a throwaway container: answered, not logged — the tests below count the copies)
+    case "$*" in *"du -sk /v"*) echo 2048; return 0 ;; esac
     echo "docker $*" >> "$TMP/calls"
     case "$1 $2" in
       "volume inspect") [ "${LG_VOL:-0}" = 1 ] ;;
@@ -408,11 +410,29 @@ test_restore_replaces_the_git_volume_and_reapplies_the_account() {
   assert_contains "$c" "dc rm -sf forgejo"
   assert_contains "$c" "AFTER_UP"
   assert_contains "$(cat "$TMP/err")" "git server"
-  # the script itself empties the volume before it extracts
-  assert_contains "$(grep 'xzf' "$TMP/calls")" "rm -rf {}"
-  assert_not_contains "$(grep 'xzf' "$TMP/calls")" ":/v:ro"      # the volume is written, the backup only read
-  assert_contains "$(grep 'xzf' "$TMP/calls")" ":/backup:ro,z"
-  assert_eq "$(grep -n 'dc rm -sf forgejo\|xzf\|AFTER_UP' "$TMP/calls" | sed 's/^[0-9]*://' | cut -c1-11 | tr '\n' ' ')" "dc rm -sf f docker run  AFTER_UP "
+  # the script unpacks beside the repositories and swaps; it never empties the volume first (JON-1145)
+  assert_contains "$(cat "$TMP/calls")" ".restore-new"
+  assert_not_contains "$(cat "$TMP/calls")" "rm -rf {}"
+  assert_not_contains "$(grep 'docker run' "$TMP/calls")" ":/v:ro"      # the volume is written, the backup only read
+  assert_contains "$(grep 'docker run' "$TMP/calls")" ":/backup:ro,z"
+  # the archive is checked (staged) first, before any database is touched; the swap follows the buckets, with the container gone
+  assert_eq "$(grep -n 'dc rm -sf forgejo\|docker run\|AFTER_UP' "$TMP/calls" | sed 's/^[0-9]*://' | cut -c1-11 | tr '\n' ' ')" "docker run  dc rm -sf f docker run  AFTER_UP "
+}
+
+test_a_git_archive_that_will_not_unpack_stops_the_restore_before_anything_changes() {
+  printf 'LOCALGIT=on\nSHARED_MCP_PORT=8765\nSHARED_MCP_TOKEN=t0k\n' > "$ENV_FILE"; _mk_backup 'LOCALGIT=on\n'; _stub_dc; LG_VOL=1; _mk_gitsrc
+  tar -C "$TMP/gitsrc" -czf "$B/gitdata.tar.gz" .
+  confirm() { case "$1" in *"backup of the current state"*) return 1 ;; *) return 0 ;; esac; }
+  cmd_test() { :; }; ASSUME_YES=1
+  docker() { echo "docker $*" >> "$TMP/calls"; case "$1 $2" in "volume inspect") return 0 ;; "run --rm") return 1 ;; esac; }
+  if out="$( (cmd_restore "$B") 2>&1)"; then echo "the restore went on" >&2; return 1; fi
+  assert_contains "$out" "did not unpack completely"
+  assert_contains "$out" "NOT changed"
+  c="$(cat "$TMP/calls")"
+  assert_not_contains "$c" "dc stop"
+  assert_not_contains "$c" "dc rm -sf forgejo"
+  assert_not_contains "$c" "restored."
+  assert_not_contains "$c" "s3 "
 }
 
 test_restore_leaves_the_git_server_alone_when_the_backup_has_no_archive() {

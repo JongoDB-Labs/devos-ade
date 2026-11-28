@@ -2058,15 +2058,26 @@ cmd_backup() {
 PORTAL_BACKUPS_KEEP=5   # backups made from the portal (Back up now): the newest 5 are kept
 
 # _backup_space_check — refuses a backup that would not fit: at least twice the newest backup's size must be free
-# (a full disk stops the databases too)
+# (a full disk stops the databases too), plus the git server's volume when it is on (JON-1145: the repositories' copy is made
+# new each time; localgit_volume_kb, lib/localgit.sh, is its size, the upper bound of the compressed archive)
 _backup_space_check() {
-  local last='' d kb free
+  local last='' d kb=0 free git=0 need
   for d in "$STACK_DIR"/backups/*/; do [ -d "$d" ] || continue; case "$d" in *.partial/) ;; *) last="$d" ;; esac; done   # newest last
-  [ -n "$last" ] || return 0
-  kb="$(du -sk "$last" 2>/dev/null | cut -f1 || true)"; case "$kb" in '' | *[!0-9]*) return 0 ;; esac
+  if [ -n "$last" ]; then
+    kb="$(du -sk "$last" 2>/dev/null | cut -f1 || true)"; case "$kb" in '' | *[!0-9]*) kb=0 ;; esac
+  fi
+  git="$(localgit_volume_kb 2>/dev/null || true)"; case "$git" in '' | *[!0-9]*) git=0 ;; esac
+  [ $((kb + git)) -gt 0 ] || return 0
   free="$(df -Pk "$STACK_DIR/backups" 2>/dev/null | awk 'NR == 2 { print $4 }' || true)"; case "$free" in '' | *[!0-9]*) return 0 ;; esac
-  [ "$free" -ge $((kb * 2)) ] ||
-    die "not enough free disk space for a backup: $((free / 1024)) MB free, and one needs about $((kb / 1024 + 1)) MB (twice that is kept free) — delete old backups in backups/ first"
+  need=$((kb * 2 + git))
+  [ "$free" -ge "$need" ] && return 0
+  if [ "$git" -gt 0 ] && [ "$free" -ge $((kb * 2)) ]; then
+    die "not enough free disk space for a backup: $((free / 1024)) MB free, and the git server's repositories alone take about $((git / 1024 + 1)) MB on top of twice the newest backup ($((kb / 1024 + 1)) MB each) — delete old backups in backups/ first"
+  fi
+  if [ "$git" -gt 0 ]; then
+    die "not enough free disk space for a backup: $((free / 1024)) MB free, and one needs about $((need / 1024 + 1)) MB (twice the newest backup, plus the git server's repositories, about $((git / 1024 + 1)) MB) — delete old backups in backups/ first"
+  fi
+  die "not enough free disk space for a backup: $((free / 1024)) MB free, and one needs about $((kb / 1024 + 1)) MB (twice that is kept free) — delete old backups in backups/ first"
 }
 
 # _BACKUP_S3_PY — runs inside the running Open WebUI container (its S3_* settings are RustFS's root key; boto3 is there for
@@ -2295,6 +2306,15 @@ cmd_restore() {
     hint="no pre-restore backup was taken (you declined it), so fix the cause and re-run ./stack restore ${dir#"$STACK_DIR"/}"
   fi
   _data_services_up
+  # the git server's archive unpacked and checked in the volume's staging folder BEFORE anything else changes: a damaged
+  # archive or a full disk stops the restore here, nothing changed (the swap itself is below, where the git step was)
+  local gitstaged=''
+  if [ -f "$dir/gitdata.tar.gz" ] && localgit_on; then
+    log "checking the git server's archive (unpacked beside the repositories; they are not touched yet)"
+    localgit_stage_restore "$dir" ||
+      die "the git server's archive did not unpack completely, so the restore stopped before changing anything: the repositories, databases and buckets were NOT changed"
+    gitstaged=1
+  fi
   log "stopping Open WebUI, LiteLLM and shared-mcp while the databases are replaced"
   dc stop open-webui litellm shared-mcp
   for db in litellm openwebui; do
@@ -2333,7 +2353,7 @@ cmd_restore() {
     warn "the backup holds the git server's repositories, but LOCALGIT=off now — skipped (./stack config set LOCALGIT on, then restore again to bring them back)"
   else
     log "restoring the git server's repositories, database and config"
-    localgit_restore_from "$dir" || die "restoring the git server's volume failed (databases and buckets are restored, the git server is stopped); $hint"
+    localgit_restore_from "$dir" ${gitstaged:+staged} || die "restoring the git server's volume failed; its repositories were not changed (databases and buckets are restored, the git server is stopped); $hint"
     gitback=1
   fi
   ensure_portal_password_hash   # lib/settings.sh: a .env copied from an older backup has no PORTAL_PASSWORD_HASH yet
