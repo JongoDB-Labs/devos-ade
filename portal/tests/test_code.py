@@ -1294,6 +1294,7 @@ def test_jon849_a_hosted_model_servers_models_are_remote_never_free_and_a_missin
 # --- JON-970: the Git hosts dialog's mirrors — the same door; a connected host by its id and a path, never an address or a token;
 # --- add, change and remove only on the computer itself, a sync from anywhere ---
 
+PX = {"X-Portal-Proxy": PROXY}   # (Caddy's proxy secret: what makes a request provably local)
 MIRROR_ACTS = ("git-mirror-add", "git-mirror-sync", "git-mirror-change", "git-mirror-remove")
 
 
@@ -1317,7 +1318,7 @@ def test_mirror_requests_each_field_checked_never_an_address_or_a_token(cs, tmp_
         ]
         for body, tail in good:
             time.sleep(2.1)   # (one request every 2 s)
-            r = _ses(c, {**body, "password": PW}, tok, ut)
+            r = _ses(c, {**body, "password": PW}, tok, ut, extra=PX)
             assert r.status_code == 202, (body, r.text)
             line = (s.request_dir / f"ses-{r.json()['request']}.json").read_text()
             assert line.endswith(tail + "\n"), line
@@ -1341,7 +1342,7 @@ def test_mirror_requests_each_field_checked_never_an_address_or_a_token(cs, tmp_
         ]
         before = _ses_files(s)
         for body in bad:
-            r = _ses(c, {**body, "password": PW}, tok, ut)
+            r = _ses(c, {**body, "password": PW}, tok, ut, extra=PX)
             assert r.status_code in (400, 429), (body, r.status_code)
         assert _ses_files(s) == before
 
@@ -1380,3 +1381,30 @@ def test_a_helper_that_does_not_know_mirrors_yet_is_said(cs, tmp_path):
         r = _ses(c, {"action": "git-mirror-sync", "repo": "app", "password": PW}, tok, ut)
         assert r.status_code == 409 and "helper" in r.json()["error"].lower(), r.text
         assert _ses_files(s) == []
+
+
+def test_mirror_origin_fails_closed_without_the_proxy_secret_or_with_a_remote_marker(cs, tmp_path):
+    """Only a request PROVEN local (is_local: Caddy's proxy secret, no remote marker) may add, change or remove a mirror; one that
+    is merely 'not remote' (a marker with remote access off, a missing secret) is treated as remote: refused for those three,
+    and a sync from it is written with origin remote."""
+    import time
+    s = _sessions_dirs(cs, tmp_path, actions=MIRROR_ACTS)
+    H = "h_0123456789ab"
+    adds = [{"action": "git-mirror-add", "direction": "push", "repo": "app", "host": H, "path": "me/app"},
+            {"action": "git-mirror-change", "repo": "app", "name": "m1", "interval": "2h"}, {"action": "git-mirror-remove", "repo": "app", "name": "m1"}]
+    with _client(s) as c:
+        tok, ut = unlocked(c)
+        for marker in ({}, {"X-Portal-Remote": "1"}, {"X-Portal-Remote": "0"}, {"X-Portal-Remote": "x"}, {**PX, "X-Portal-Remote": "0"}, {**PX, "X-Portal-Remote": "x"}):
+            for body in adds:   # (refused before the rate limit counts: no wait)
+                r = _ses(c, {**body, "password": PW}, tok, ut, extra=marker)
+                assert r.status_code in (403, 404), (marker, body, r.status_code, r.text)
+            assert _ses_files(s) == []
+        time.sleep(2.1)
+        r = _ses(c, {"action": "git-mirror-sync", "repo": "app", "password": PW}, tok, ut, extra={**PX, "X-Portal-Remote": "0"})
+        assert r.status_code == 202, r.text
+        assert '"origin":"remote"' in (s.request_dir / f"ses-{r.json()['request']}.json").read_text()
+        for body in adds:   # a proper local request: origin local
+            time.sleep(2.1)
+            r = _ses(c, {**body, "password": PW}, tok, ut, extra=PX)
+            assert r.status_code == 202, r.text
+            assert '"origin":"local"' in (s.request_dir / f"ses-{r.json()['request']}.json").read_text()

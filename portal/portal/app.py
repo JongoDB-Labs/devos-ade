@@ -844,6 +844,10 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
         act = data.get("action")
         if act not in settings_mod.SESSIONS_REQUESTS:
             return sessions_err(400, "unknown action")
+        # a mirror's origin fails closed: only a request PROVEN local (is_local: Caddy's proxy secret, no remote marker) is local;
+        # "not remote" alone is not enough (a missing secret or a marker with remote access off is not remote either)
+        if act in settings_mod.MIRROR_REQUESTS:
+            rem = not is_local(request.headers, settings)
         if act in ("sessions-scan", "sessions-suggest") and rem:
             return sessions_err(403, f"Only on the computer running {brand.NAME}: a look at its sessions is allowed in a dialog on its screen "
                                      "(or ./stack sessions in a terminal there).")
