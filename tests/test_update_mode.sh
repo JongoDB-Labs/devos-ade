@@ -162,8 +162,10 @@ test_the_aws_key_check_runs_for_another_key_or_region_and_once_a_day() {
   assert_not_contains "$(cat "$STATE_DIR/update/step-inputs.tsv")" "s1"
   sed -i.bak 's/^AWS_SECRET_ACCESS_KEY=.*/AWS_SECRET_ACCESS_KEY=s2/' "$ENV_FILE"; assert_eq "$(_aws_run)" aws; assert_eq "$(_aws_run)" ""
   sed -i.bak 's/us-east-1/eu-west-1/' "$ENV_FILE"; assert_eq "$(_aws_run)" aws; assert_eq "$(_aws_run)" ""
-  export AWS_ACCESS_KEY_ID=AKIA-SHELL; assert_eq "$(_aws_run)" aws; assert_eq "$(_aws_run)" ""
-  unset AWS_ACCESS_KEY_ID; assert_eq "$(_aws_run)" aws
+  # (a shell key id alone is not one setup takes: both are needed, _env_aws_creds_chosen)
+  export AWS_ACCESS_KEY_ID=AKIA-SHELL; assert_eq "$(_aws_run)" ""
+  export AWS_SECRET_ACCESS_KEY=s-shell; assert_eq "$(_aws_run)" aws; assert_eq "$(_aws_run)" ""
+  unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY; assert_eq "$(_aws_run)" aws
   # a day after the check passed: again (and a check that failed leaves its time as it was)
   touch -t 202601010000 "$STATE_DIR/update/aws-checked"; assert_eq "$(_aws_run)" aws; assert_eq "$(_aws_run)" ""
   touch -t 202601010000 "$STATE_DIR/update/aws-checked"
@@ -494,4 +496,70 @@ test_a_change_of_the_code_page_keys_runs_the_code_page_default_step_and_the_ones
     sed -i.bak "s/^$k=.*/$k=changed-$k/" "$ENV_FILE"
     assert_eq "$(_um_run update)" "codedefault gitafter smoke"; assert_eq "$(_um_run update)" ""
   done
+}
+
+# JON-1480: a new install's setup runs in a terminal (AWS_* in the shell), the first Update now in the update helper (none).
+# The shell's keys are an input only when setup would use something other than what .env holds: keys that differ from .env's,
+# a session token with them, or a region that differs.
+test_the_aws_check_ignores_shell_keys_equal_to_envs_and_follows_any_other() {
+  _um_setup
+  printf 'AWS_ACCESS_KEY_ID=AKIA-T\nAWS_SECRET_ACCESS_KEY=s1\n' >> "$ENV_FILE"
+  setup_aws_creds() { echo aws >> "$TMP/ran"; }
+  _aws_run() { : > "$TMP/ran"; upd_begin; UPD_MODE="${1:-1}"; upd_gate aws "AWS key check" "why" _setup_aws_check >/dev/null; upd_commit; tr -d '\n' < "$TMP/ran"; }
+  unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_REGION_NAME AWS_REGION
+  # setup in a terminal whose keys and region are .env's own; the update helper has none
+  export AWS_ACCESS_KEY_ID=AKIA-T AWS_SECRET_ACCESS_KEY=s1 AWS_REGION_NAME=us-east-1
+  assert_eq "$(_aws_run 0)" aws
+  unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_REGION_NAME
+  assert_eq "$(_aws_run)" ""
+  # the region only in AWS_REGION, the same as .env's
+  export AWS_REGION=us-east-1; assert_eq "$(_aws_run)" ""; unset AWS_REGION
+  # a different key or secret: setup would take it, so the check runs; and once with it noted, without it again
+  export AWS_ACCESS_KEY_ID=AKIA-NEW AWS_SECRET_ACCESS_KEY=s1; assert_eq "$(_aws_run)" aws; assert_eq "$(_aws_run)" ""
+  export AWS_ACCESS_KEY_ID=AKIA-T AWS_SECRET_ACCESS_KEY=s9; assert_eq "$(_aws_run)" aws
+  unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY; assert_eq "$(_aws_run)" aws; assert_eq "$(_aws_run)" ""
+  # the same keys with a session token (setup refuses temporary keys), and a different region
+  export AWS_ACCESS_KEY_ID=AKIA-T AWS_SECRET_ACCESS_KEY=s1 AWS_SESSION_TOKEN=tok; assert_eq "$(_aws_run)" aws
+  unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN; assert_eq "$(_aws_run)" aws; assert_eq "$(_aws_run)" ""
+  export AWS_REGION_NAME=eu-west-1; assert_eq "$(_aws_run)" aws
+  unset AWS_REGION_NAME; assert_eq "$(_aws_run)" aws; assert_eq "$(_aws_run)" ""
+  export AWS_REGION=eu-west-1; assert_eq "$(_aws_run)" aws
+  unset AWS_REGION; assert_eq "$(_aws_run)" aws
+  assert_not_contains "$(cat "$STATE_DIR/update/step-inputs.tsv")" "s9"
+}
+
+# JON-1480: the keys the steps after them write (LiteLLM's keys and admin mark by the keys step; Chat's API key by the sign-in
+# step) are inputs of the steps before only when those steps read them. Setup's own order is used here.
+_um_new_install_gates() { _GATES="settings voice searxng websearch gitserver keys stt_service codedefault gitafter signin syncs smoke"; }
+_um_new_install_setup() {   # a first setup: .env has none of the late keys until the step that writes them has run
+  _um_setup; _um_new_install_gates
+  sed -i.bak '/^LITELLM_KEY_CLAUDE_CODE=/d;/^LITELLM_KEY_OPENWEBUI=/d;/^OPENWEBUI_API_KEY=/d;/^LITELLM_DB_ADMIN_READY=/d' "$ENV_FILE"
+  _um_writes_keys() { printf 'LITELLM_KEY_CLAUDE_CODE=sk-b\nLITELLM_KEY_OPENWEBUI=sk-c\nLITELLM_DB_ADMIN_READY=true\n' >> "$ENV_FILE"; }
+  _um_writes_owui_key() { printf 'OPENWEBUI_API_KEY=sk-d\n' >> "$ENV_FILE"; }
+  local g; upd_begin; UPD_MODE=0; : > "$TMP/ran"
+  for g in $_GATES; do
+    case "$g" in
+      keys) upd_gate "$g" "step $g" why _um_writes_keys ;;
+      signin) upd_gate "$g" "step $g" why _um_writes_owui_key ;;
+      *) upd_gate "$g" "step $g" why sh -c "echo $g >> '$TMP/ran'" ;;
+    esac
+  done
+  upd_commit
+}
+test_the_keys_the_keys_and_sign_in_steps_write_run_no_earlier_step_again() {
+  _um_new_install_setup
+  assert_eq "$(_um_run update)" ""
+  assert_eq "$(_um_run update)" ""
+}
+test_a_key_a_step_reads_still_runs_it() {
+  _um_new_install_setup; _um_run update >/dev/null
+  # Chat's API key: the sign-in, the syncs and the smoke test use it; the keys step and the search check do not
+  sed -i.bak 's/^OPENWEBUI_API_KEY=.*/OPENWEBUI_API_KEY=sk-new/' "$ENV_FILE"; assert_eq "$(_um_run update)" "signin syncs smoke"; assert_eq "$(_um_run update)" ""
+  # LiteLLM's keys and admin mark: the keys step reads them, and Open WebUI's sign-in, syncs and the smoke test; not the search
+  local k
+  for k in LITELLM_KEY_CLAUDE_CODE LITELLM_KEY_OPENWEBUI LITELLM_DB_ADMIN_READY; do
+    sed -i.bak "s/^$k=.*/$k=changed-$k/" "$ENV_FILE"; assert_eq "$(_um_run update)" "keys signin syncs smoke"; assert_eq "$(_um_run update)" ""
+  done
+  # the search check's own key
+  sed -i.bak 's/^LITELLM_KEY_SETUP=.*/LITELLM_KEY_SETUP=sk-new/' "$ENV_FILE"; assert_eq "$(_um_run update)" "websearch keys signin syncs smoke"
 }

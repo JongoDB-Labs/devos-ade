@@ -355,10 +355,20 @@ UPD_ENV_CODE_LATE='^(CODE_ENABLED|CODE_CHAT_KEY|CODE_PROXY_SECRET|PREVIEW_DOMAIN
 # _upd_env_early [DERIVED] -> _upd_env without them: for the steps before the Code page default
 _upd_env_early() { _upd_env "$@" | { grep -vE "$UPD_ENV_CODE_LATE" || true; }; }
 _upd_env_settings() { _upd_env_early '^(LITELLM_KEY_[A-Z_]*|OPENWEBUI_API_KEY|LITELLM_UI_USER|LITELLM_DB_ADMIN_READY|OWUI_[A-Z_]*|STT_PROVIDER|STT_MODEL|STT_BEDROCK_MODEL|CLAUDE_BEDROCK_[A-Z_]*|PORTAL_GID|REMOTE_SIDECAR_IP|LOCALGIT_CADDY_IP)='; }
-# _upd_keys -> the keys' lines, as get_env reads each (the last line of a name wins), in one awk
+# _upd_keys [NAMES] -> the keys' lines, as get_env reads each (the last line of a name wins), in one awk. NAMES: the keys the
+# step reads, one per word; all five without it.
+# JON-1480: setup writes LITELLM_KEY_CLAUDE_CODE, LITELLM_KEY_OPENWEBUI and LITELLM_DB_ADMIN_READY in the keys step (noted
+# after it, so its own), and OPENWEBUI_API_KEY in the sign-in step, which come after the web search check and, for the
+# last, after the keys step. As an input of a step before the one that writes them, the first Update now ran that step again:
+#  - the keys step reads LiteLLM's keys and its admin mark (the check of each key, ensure_litellm_db_admin), not Chat's API
+#    key (commands.sh ensure_virtual_key, owui.sh setup_litellm_admin, settings.sh alert_pct_mark: none reads it; the
+#    compose service that carries it, shared-mcp, is not one the step starts);
+#  - the web search check reads the setup key only (websearch.sh: setup_key for the search and the redaction of its answer;
+#    the backend's own WEBSEARCH_* keys and AWS_*, which .env hashes).
+# The sign-in, the Open WebUI syncs and the smoke test read them all, and are noted after they are written.
 # shellcheck disable=SC2086  # ($k: one key per word)
 _upd_keys() {
-  local k='LITELLM_KEY_CLAUDE_CODE LITELLM_KEY_OPENWEBUI LITELLM_KEY_SETUP OPENWEBUI_API_KEY LITELLM_DB_ADMIN_READY'
+  local k="${1:-LITELLM_KEY_CLAUDE_CODE LITELLM_KEY_OPENWEBUI LITELLM_KEY_SETUP OPENWEBUI_API_KEY LITELLM_DB_ADMIN_READY}"
   if [ -f "$ENV_FILE" ] && [ -r "$ENV_FILE" ] && K="$k" awk 'BEGIN { n = split(ENVIRON["K"], k, " ") }
       { for (i = 1; i <= n; i++) if (index($0, k[i] "=") == 1) v[i] = substr($0, length(k[i]) + 2) }
       END { for (i = 1; i <= n; i++) printf "%s=%s\n", k[i], v[i] }' "$ENV_FILE" 2>/dev/null; then :
@@ -413,14 +423,33 @@ upd_in_settings() {
   _upd_files "$STACK_DIR"/lib/ports.sh "$STACK_DIR"/lib/remote.sh "$STACK_DIR"/lib/localgit.sh "$STACK_DIR"/lib/openrouter.sh "$STACK_DIR"/lib/explabs.sh "$STACK_DIR"/lib/stt.sh
   if ! remote_on; then echo remote-off; else echo "remote-on $RANDOM$RANDOM"; fi
 }
+# _upd_shell_aws -> the AWS settings in this shell that setup_aws_creds would act on (JON-1480). Setup runs in a terminal, the
+# update in the helper, whose environment has no AWS_* variables: the keys of the one were an input the other did not have, so
+# the first Update now ran the check again. Only what changes the check's result is recorded:
+#  - AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY, with the session token, when both are set and are not .env's own pair
+#    (_env_aws_creds_chosen takes only both; the same pair gives what no shell key gives: .env's key is checked; a token, or
+#    a temporary ASIA key, is refused by _reject_temporary_creds, so it is an input);
+#  - the region the shell names (AWS_REGION_NAME, else AWS_REGION: the default of setup's question, written to .env) when it
+#    is not the one .env holds.
+# Any other key or region in the shell is an input as before: a new or changed one runs the check.
+_upd_shell_aws() {
+  local id="${AWS_ACCESS_KEY_ID:-}" secret="${AWS_SECRET_ACCESS_KEY:-}" tok="${AWS_SESSION_TOKEN:-}" reg="${AWS_REGION_NAME:-${AWS_REGION:-}}"
+  if [ -n "$id" ] && [ -n "$secret" ]; then
+    if [ "$id" != "$(get_env AWS_ACCESS_KEY_ID)" ] || [ "$secret" != "$(get_env AWS_SECRET_ACCESS_KEY)" ] || [ -n "$tok" ]; then
+      printf 'SHELL_AWS=%s %s %s\n' "$id" "$secret" "$tok"
+    fi
+  fi
+  if [ -n "$reg" ] && [ "$reg" != "$(get_env AWS_REGION_NAME)" ]; then printf 'SHELL_AWS_REGION=%s\n' "$reg"; fi
+  return 0
+}
 # The AWS key check: the key, its secret and the region in .env (or this machine's IAM role), the AWS keys in your shell
 # (setup takes those), the aws-cli image and the check's code; and a check passed in the last 24 hours
 upd_in_aws() {
   local k
   for k in AWS_AUTH AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_REGION_NAME; do printf '%s=%s\n' "$k" "$(get_env "$k")"; done
-  printf 'SHELL_AWS=%s %s %s %s %s\n' "${AWS_ACCESS_KEY_ID:-}" "${AWS_SECRET_ACCESS_KEY:-}" "${AWS_SESSION_TOKEN:-}" "${AWS_REGION_NAME:-}" "${AWS_REGION:-}"
+  _upd_shell_aws
   printf 'image=%s\n' "$AWS_CLI_IMAGE"
-  _upd_fn _setup_aws_check setup_aws_creds setup_instance_role _env_aws_creds_chosen _reject_temporary_creds verify_key_leaving_role \
+  _upd_fn _setup_aws_check _upd_shell_aws setup_aws_creds setup_instance_role _env_aws_creds_chosen _reject_temporary_creds verify_key_leaving_role \
     aws_cli aws_run aws_run_role
   if [ -n "$(find "$STATE_DIR/update/aws-checked" -mmin -1440 2>/dev/null)" ]; then echo fresh; else echo "stale $RANDOM$RANDOM"; fi
 }
@@ -472,7 +501,7 @@ upd_in_stt_service() {
 # LiteLLM's virtual keys and its admin account (kept in its database): the budgets (.env), the keys as they are now, LiteLLM's
 # image (the compose files), the database's volume (one made again holds no key) and the code
 upd_in_keys() {
-  _upd_env_early; _upd_keys; _upd_compose_early
+  _upd_env_early; _upd_keys 'LITELLM_KEY_CLAUDE_CODE LITELLM_KEY_OPENWEBUI LITELLM_KEY_SETUP LITELLM_DB_ADMIN_READY'; _upd_compose_early
   printf 'pgdata=%s\n' "$(docker volume inspect --format '{{.CreatedAt}}' "$(project_name)_pgdata" 2>/dev/null || echo missing)"
   _upd_fn _setup_litellm_keys ensure_virtual_key setup_litellm_admin ensure_litellm_db_admin alert_pct_mark
 }
@@ -514,7 +543,7 @@ upd_in_gitafter() {
 }
 # The web search check (one search through LiteLLM) and the smoke test: LiteLLM's container, its config, models and keys
 upd_in_websearch() {
-  _upd_env_early; _upd_keys; _upd_container_of litellm; printf 'cfg=%s\n' "$(litellm_compose_sum)"
+  _upd_env_early; _upd_keys LITELLM_KEY_SETUP; _upd_container_of litellm; printf 'cfg=%s\n' "$(litellm_compose_sum)"
   printf 'fp=%s\n' "$(_ws_search_fp "$(websearch_backend 2>/dev/null)" 2>/dev/null | _upd_sum)"
   _upd_files "$STACK_DIR/litellm/enabled-models.txt" "$STACK_DIR"/lib/websearch.sh
   _upd_fn websearch_after_start websearch_search_check websearch_report

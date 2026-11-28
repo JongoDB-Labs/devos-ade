@@ -406,8 +406,10 @@ _stt_store() {
 }
 
 # _stt_store_bedrock MODEL — Bedrock needs no key; a key left from openai/groq is removed from .env. (On again: no notice.)
+# Only a key that holds a value: .env.example's empty STT_API_KEY= line stays. Removing it changed .env after the settings step
+# had noted its digest, so the first Update now ran that step again (JON-1480).
 _stt_store_bedrock() {
-  set_env STT_PROVIDER bedrock; unset_env STT_API_KEY
+  set_env STT_PROVIDER bedrock; [ -z "$(get_env STT_API_KEY)" ] || unset_env STT_API_KEY
   if [ "$1" = voxtral-small ]; then unset_env STT_MODEL; else set_env STT_MODEL "$1"; fi
   stt_sync_env
   stt_notice_clear

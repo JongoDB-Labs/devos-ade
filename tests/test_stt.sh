@@ -1453,3 +1453,18 @@ test_audio_checks_have_a_deadline_and_up_waits_one_at_most() {
   assert_eq "$(stt_probe_audio voxtral-mini ok)" ok
   [ "$(( $(date +%s) - t0 ))" -le 8 ] || return 1
 }
+
+# JON-1480: .env.example's empty STT_API_KEY= line is not a key. Turning Bedrock speech-to-text on at a first setup removed it
+# after the settings step had noted its digest, so the first Update now ran that step again; a key that holds a value (left from
+# openai/groq) is still removed.
+test_turning_bedrock_on_keeps_the_empty_key_line_and_removes_a_key() {
+  stt_sync_env() { :; }; stt_notice_clear() { :; }
+  printf 'STT_PROVIDER=\nSTT_API_KEY=\nSTT_MODEL=\n' > "$ENV_FILE"
+  _stt_store_bedrock voxtral-small
+  assert_eq "$(grep -c '^STT_API_KEY=$' "$ENV_FILE")" 1
+  assert_eq "$(get_env STT_PROVIDER)" bedrock
+  printf 'STT_PROVIDER=openai\nSTT_API_KEY=%s\n' "$OKEY" > "$ENV_FILE"
+  _stt_store_bedrock voxtral-small
+  assert_eq "$(grep -c '^STT_API_KEY=' "$ENV_FILE" || true)" 0
+  assert_eq "$(get_env STT_PROVIDER)" bedrock
+}
