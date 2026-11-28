@@ -438,14 +438,36 @@ def offered_tools(request) -> dict:
     return out
 
 
+def _allows_null(schema) -> bool:
+    """Whether a property SCHEMA lets null through: type null (alone or in a list), or an anyOf/oneOf with such a branch.
+    A schema that says nothing of its type (a bare {}) allows anything, null too."""
+    if not isinstance(schema, Mapping):
+        return True
+    t = schema.get("type")
+    if t == "null" or (isinstance(t, list) and "null" in t):
+        return True
+    if any(isinstance(b, Mapping) and _allows_null(b) for k in ("anyOf", "oneOf") for b in (schema.get(k) or [])
+           if isinstance(schema.get(k), list)):
+        return True
+    return "type" not in schema and not any(k in schema for k in ("anyOf", "oneOf", "allOf", "$ref", "enum", "const"))
+
+
 def _tool_call(name, args, tools):
     """(NAME, ARGS) when NAME is a tool of TOOLS and ARGS an object with every key that tool's schema requires; None
-    otherwise. (The values are the model's: Claude Code checks them against the schema, as for any model's call.)"""
+    otherwise. A key the model wrote as null is left out when the schema knows it, does not require it and does not
+    allow null (a weaker model's "allowed_domains": null: Claude Code refuses the call, the model repeats it, the turn
+    never ends — JON-805); a required one stays as sent. Every other value is the model's: Claude Code checks it
+    against the schema, as for any model's call."""
     if not isinstance(name, str) or name not in tools or not isinstance(args, dict):
         return None
     required = tools[name].get("required")
     if isinstance(required, list) and not all(isinstance(k, str) and k in args for k in required):
         return None
+    props = tools[name].get("properties")
+    if isinstance(props, Mapping):
+        need = set(required) if isinstance(required, list) else set()
+        args = {k: v for k, v in args.items()
+                if not (v is None and k in props and k not in need and not _allows_null(props[k]))}
     return name, args
 
 

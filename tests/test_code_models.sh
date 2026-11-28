@@ -446,6 +446,49 @@ assert h.offered_tools({"toolConfig": {"tools": [None, {"toolSpec": {"name": 3}}
 '
 }
 
+# the hook: a key a model wrote as null is dropped when the tool s schema neither requires it nor allows null (JON-805:
+# Llama called WebSearch with allowed_domains and blocked_domains null, Claude Code refused it, the model repeated it);
+# a required key stays as sent, a schema that allows null keeps it, other values are untouched; text and Converse alike
+test_litellm_hook_drops_null_optional_arguments_llama_wrote() {
+  command -v python3 >/dev/null 2>&1 || return 77
+  _hook_models
+  PYTHONPATH="$TMP/h" python3 -c '
+import copy, json, bn_hooks as h
+arr = {"type": "array", "items": {"type": "string"}}
+tools = {"WebSearch": {"type": "object", "properties": {"query": {"type": "string"}, "allowed_domains": arr, "blocked_domains": arr},
+                       "required": ["query"]},
+         "Nul": {"type": "object", "properties": {"a": {"type": ["string", "null"]}, "b": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                 "c": {"oneOf": [{"type": "integer"}, {"type": "null"}]}, "d": {"type": "string"}, "e": {"type": "null"}}, "required": []},
+         "Req": {"type": "object", "properties": {"x": {"type": "string"}, "y": {"type": "string"}}, "required": ["x"]}}
+call = lambda name, args: json.dumps({"type": "function", "name": name, "parameters": args})
+T = h.text_tool_calls
+nulls = {"query": "cats", "allowed_domains": None, "blocked_domains": None}
+assert T(call("WebSearch", nulls), tools) == [("WebSearch", {"query": "cats"})]
+assert T("<function=WebSearch>" + json.dumps(nulls) + "</function>", tools) == [("WebSearch", {"query": "cats"})]
+# a required key that is null stays as sent
+assert T(call("WebSearch", {"query": None, "allowed_domains": None}), tools) == [("WebSearch", {"query": None})]
+assert T(call("Req", {"x": None, "y": None}), tools) == [("Req", {"x": None})]
+# a schema that allows null keeps it (type list, anyOf, oneOf, type null); one that does not drops it
+every = {"a": None, "b": None, "c": None, "d": None, "e": None}
+assert T(call("Nul", every), tools) == [("Nul", {"a": None, "b": None, "c": None, "e": None})]
+# values that are not null, and keys the schema does not know, as they came
+ok = {"query": "cats", "allowed_domains": ["a.org"], "blocked_domains": [], "extra": None, "n": 0, "f": False, "s": ""}
+assert T(call("WebSearch", ok), tools) == [("WebSearch", ok)]
+assert T(call("WebSearch", {"query": "q", "allowed_domains": [None]}), tools) == [("WebSearch", {"query": "q", "allowed_domains": [None]})]
+# the call of the caller is not changed
+src = {"query": "q", "allowed_domains": None}; before = copy.deepcopy(src); T(call("WebSearch", src), tools); assert src == before
+# a schema without properties: nothing is known, so the null stays
+assert T(call("TaskList", {"a": None}), {"TaskList": {"type": "object"}}) == [("TaskList", {"a": None})]
+# Converse: the toolUse block has no null keys either
+spec = lambda name: {"toolSpec": {"name": name, "description": "d", "inputSchema": {"json": tools[name]}}}
+request = {"messages": [{"role": "user", "content": [{"text": "x"}]}], "toolConfig": {"tools": [spec("WebSearch"), spec("Req")]}}
+answer = {"output": {"message": {"role": "assistant", "content": [{"text": call("WebSearch", nulls) + "\n" + call("Req", {"x": None, "y": None})}]}},
+          "stopReason": "end_turn"}
+blocks = h.converse_tool_calls(request, answer)["output"]["message"]["content"]
+assert [b["toolUse"]["input"] for b in blocks] == [{"query": "cats"}, {"x": None}], blocks
+'
+}
+
 # the hook: a call with tools to Llama on Bedrock (Converse) goes through LiteLLM's own client, its answer read on the
 # way back (above): the same call reaches Bedrock; a 200 Converse answer that is Llama's tool call comes back as toolUse
 # (a response of the same kind, without the old length); a streamed call, an error, another endpoint, another answer
