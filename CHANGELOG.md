@@ -6,6 +6,10 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Changed
+
+- **LiteLLM restarts about 7 s faster.** LiteLLM now runs from an image built on your computer from the pinned LiteLLM, with its Python compiled once, when the image is built. The published image ships none compiled, so every new LiteLLM container compiled about 2,800 files again before it could answer. On our test computer a restart (what Update now and some Settings changes do) now takes 20 s instead of 28 s, and a first start 19 s instead of 26 s. Nothing LiteLLM can write holds code it runs. The image takes about 0.45 GB more disk. A start slowed by a busy computer is also noticed within a second: the health check looks every second for the first two minutes, not 30 s. This update restarts LiteLLM once. (JON-1484)
+
 ## [0.79.0] - 2026-11-28
 
 ### Changed
