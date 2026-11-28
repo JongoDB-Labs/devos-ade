@@ -2074,12 +2074,15 @@ _backup_space_check() {
   if [ -n "$last" ] && [ "$free" -ge $((kb * 4 + 1048576)) ] && { [ -f "${last}gitdata.tar.gz" ] || ! localgit_on; }; then
     return 0
   fi
-  git="$(localgit_volume_kb 2>/dev/null || true)"; case "$git" in '' | *[!0-9]*) git=0 ;; esac
-  if [ "$git" -gt 0 ] && [ -f "${last}gitdata.tar.gz" ]; then
+  if [ -n "$last" ] && [ -f "${last}gitdata.tar.gz" ]; then
     own="$(du -sk "${last}gitdata.tar.gz" 2>/dev/null | cut -f1 || true)"; case "$own" in '' | *[!0-9]*) own=0 ;; esac
     [ "$own" -le "$kb" ] || own=0
-    kb=$((kb - own))
   fi
+  # (too little even without the repositories: refused without the volume job, which could not change the answer)
+  [ "$free" -ge $(((kb - own) * 2)) ] ||
+    die "not enough free disk space for a backup: $((free / 1024)) MB free, and one needs about $((kb / 1024 + 1)) MB (twice that is kept free) — delete old backups in backups/ first"
+  git="$(localgit_volume_kb 2>/dev/null || true)"; case "$git" in '' | *[!0-9]*) git=0 ;; esac
+  [ "$git" -eq 0 ] || kb=$((kb - own))
   [ $((kb + git)) -gt 0 ] || return 0
   need=$((kb * 2 + git))
   [ "$free" -ge "$need" ] && return 0

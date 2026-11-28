@@ -1125,3 +1125,11 @@ test_only_one_restore_job_runs_on_the_volume_at_a_time() {
   assert_not_contains "$(cat "$TMP/dk")" "run --rm"
   assert_contains "$(cat "$TMP/err")" "an earlier restore's job"
 }
+
+test_a_backup_that_cannot_fit_even_without_the_repositories_is_refused_without_the_volume_job() {
+  STACK_DIR="$TMP/stack"; _space_stubs 10240 5000 5120; printf 'LOCALGIT=on\n' > "$ENV_FILE"
+  : > "$TMP/jobs"; localgit_volume_kb() { echo job >> "$TMP/jobs"; echo 5120; }
+  local out; if out="$( (_backup_space_check) 2>&1)"; then echo "accepted with 5 MB free" >&2; return 1; fi
+  assert_contains "$out" "not enough free disk space for a backup"
+  assert_eq "$(wc -l < "$TMP/jobs" | tr -d ' ')" 0
+}
