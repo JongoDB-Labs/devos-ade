@@ -6,6 +6,22 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Added
+
+- **A model server is either yours or a paid API.** A model server you add (Settings › Models & providers › Local models, or `./stack local-models server add`) is now one of two kinds:
+  - **Self-hosted:** free, labelled Local.
+  - **Hosted API:** labelled Remote, at the prices you give it, in dollars per million tokens, for the whole server or for one model. Its spend then counts like any other: in the Code page's spend, in Chat's, and against your budgets.
+  - A hosted server without a price shows "price unknown", never $0.
+  - A new server's kind follows the address its name resolves to. A private, loopback or local address is self-hosted; anything else is hosted. Change it with "Billed as" and Billing in Settings, or `./stack local-models server kind NAME self|hosted` and `server price NAME ID|* IN OUT`. (JON-849)
+
+### Changed
+
+- **A model server you added at a public address now shows as Remote, price unknown, until you give it a price.** Before, every model server was shown and booked as free. A server at a private address stays Local and free. Moving a server to another address drops its prices, since another address is another provider. (JON-849)
+
+### Fixed
+
+- **The Code page's model picker lists the models of your model servers.** It left them out before. (JON-849)
+
 ## [0.76.0] - 2026-11-28
 
 ### Added
