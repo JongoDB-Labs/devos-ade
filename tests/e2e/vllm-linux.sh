@@ -61,7 +61,7 @@ print(json.dumps({"failures": int(sys.argv[1]), "checks": [dict(zip(("status", "
 }
 trap cleanup EXIT; trap 'exit 130' INT TERM
 rm -rf "$WORK"; mkdir -p "$WORK/state" "$WORK/litellm" "$OUT"
-LIMG="$(sed -n 's/^    image: \(ghcr.io\/berriai\/litellm:[^ ]*\)$/\1/p' "$ROOT/compose.yaml" | head -n 1)"
+LIMG="$(sed -n 's/^ *image: \(ghcr.io\/berriai\/litellm:[^ ]*\)$/\1/p' "$ROOT/compose.yaml" | head -n 1)"
 [ -n "$LIMG" ] || { echo "no LiteLLM image in compose.yaml" >&2; exit 2; }
 
 # --- this checkout's code, on a scratch .env and state dir ---

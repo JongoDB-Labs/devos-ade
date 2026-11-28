@@ -63,7 +63,7 @@ newest() { docker image ls --filter "reference=$1" --format '{{.CreatedAt}}	{{.R
 TIMG="${TIMG:-$(newest 'bne2e-cache/terminal')}"; CIMG="${CIMG:-$(newest 'bne2e-cache/code')}"; OIMG="${OIMG:-$(newest 'bne2e-cache/open-webui')}"
 need_image() { [ -n "$1" ] || { echo "no $2 image: run tests/e2e/run.sh once (it leaves bne2e-cache/$2:…), or pass --${3:-$2}-image" >&2; exit 2; }; }
 need_image "$TIMG" terminal; need_image "$CIMG" code; need_image "$OIMG" open-webui owui
-LIMG="$(sed -n 's/^    image: \(ghcr.io\/berriai\/litellm:[^ ]*\)$/\1/p' "$ROOT/compose.yaml" | head -n 1)"
+LIMG="$(sed -n 's/^ *image: \(ghcr.io\/berriai\/litellm:[^ ]*\)$/\1/p' "$ROOT/compose.yaml" | head -n 1)"
 PIMG="$(sed -n 's/^    image: \(pgvector\/pgvector:[^ ]*\)$/\1/p' "$ROOT/compose.yaml" | head -n 1)"
 [ -n "$LIMG" ] && [ -n "$PIMG" ] || { echo "no LiteLLM or Postgres image in compose.yaml" >&2; exit 2; }
 

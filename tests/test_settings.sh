@@ -1672,7 +1672,8 @@ test_litellm_restarts_when_only_its_environment_changes() {
 test_litellm_env_keys_are_compose_s() {   # lib/settings.sh LITELLM_ENV_KEYS: the .env keys of LiteLLM's environment
   local have want
   have="$(printf '%s\n' $LITELLM_ENV_KEYS | sort -u | tr '\n' ' ')"
-  want="$(awk '/^  litellm:$/ { f = 1; next } f && /^  [a-z]/ { f = 0 } f' "$T_ROOT/compose.yaml" |
+  # (its local image's name holds the project's name: not its environment, so the image line is left out — JON-1484)
+  want="$(awk '/^  litellm:$/ { f = 1; next } f && /^  [a-z]/ { f = 0 } f && /^    image: / { next } f' "$T_ROOT/compose.yaml" |
     sed -n 's/.*\${\([A-Z_][A-Z0-9_]*\).*/\1/p; s/^ *\([A-Z_][A-Z0-9_]*\):[[:space:]]*$/\1/p' | grep -vx BN_LITELLM_CONFIG_SUM | sort -u | tr '\n' ' ')"
   assert_eq "$have" "$want"
 }

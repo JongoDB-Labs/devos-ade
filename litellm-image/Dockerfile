@@ -15,8 +15,9 @@ FROM ${image}
 ARG image
 LABEL dev.devos-ade.base-image="${image}"
 # Every site-packages folder Python itself names (the folder differs between releases of the base). The config folder
-# (/app/config, mounted read-only at run time) is not compiled and stays uncached, as before.
-RUN set -e; \
-    for d in $(python -c 'import site, sysconfig; print(" ".join(dict.fromkeys(site.getsitepackages() + [sysconfig.get_paths()["purelib"]])))'); do \
-      python -m compileall -q -j 0 "$d"; \
+# (/app/config, mounted read-only at run time) is not compiled and stays uncached, as before. Compiling only saves time:
+# a file that does not compile (compileall exits 1, having compiled the rest) stays source only, as all of them were,
+# and never stops setup or an update.
+RUN for d in $(python -c 'import site, sysconfig; print(" ".join(dict.fromkeys(site.getsitepackages() + [sysconfig.get_paths()["purelib"]])))'); do \
+      python -m compileall -q -j 0 "$d" || echo "devos-ade: some files of $d did not compile: they stay source only"; \
     done

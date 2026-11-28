@@ -81,7 +81,7 @@ if [ "$MOCK" = 1 ]; then KEY="mock-key-$(od -An -N16 -tx1 /dev/urandom | tr -d '
 case "$KEY" in *[!A-Za-z0-9_-]*) KEY=''; stop "E2E_EXPLABS_API_KEY is not a key (letters, digits, - and _ only)" 2 ;; esac
 command -v docker >/dev/null 2>&1 || stop "needs docker" 2
 
-IMAGE="$(sed -n 's/^    image: \(ghcr.io\/berriai\/litellm:[^ ]*\)$/\1/p' "$ROOT/compose.yaml" | head -n 1)"
+IMAGE="$(sed -n 's/^ *image: \(ghcr.io\/berriai\/litellm:[^ ]*\)$/\1/p' "$ROOT/compose.yaml" | head -n 1)"
 [ -n "$IMAGE" ] || stop "no LiteLLM image in compose.yaml" 2
 WORK="$ROOT/tests/e2e/work/$NAME"
 mkdir -p "$OUT" "$WORK" || stop "could not make $OUT or $WORK" 2

@@ -361,7 +361,7 @@ fi
 MASTER="$(cat "$MASTER_FILE")"
 
 if [ "$REUSE" = 0 ]; then
-  IMAGE="$(sed -n 's/^    image: \(ghcr.io\/berriai\/litellm:[^ ]*\)$/\1/p' "$ROOT/compose.yaml" | head -n 1)"
+  IMAGE="$(sed -n 's/^ *image: \(ghcr.io\/berriai\/litellm:[^ ]*\)$/\1/p' "$ROOT/compose.yaml" | head -n 1)"
   CADDY="$(sed -n 's/^    image: \(caddy:[^ ]*\)$/\1/p' "$ROOT/compose.terminal.yaml" | head -n 1)"
   [ -n "$IMAGE" ] && [ -n "$CADDY" ] || die "no LiteLLM or Caddy image in compose.yaml / compose.terminal.yaml"
   TIMAGE="${E2E_PARITY_TERMINAL_IMAGE:-}"

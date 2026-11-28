@@ -53,8 +53,9 @@ test_litellm_image_compiles_site_packages_and_changes_nothing_else() {
   done
   assert_not_contains "$(cat "$STACK_DIR/compose.yaml")" 'PYTHONPYCACHEPREFIX'
   assert_not_contains "$(cat "$STACK_DIR/compose.yaml")" 'litellm-pycache'
-  # a compile that fails fails the build (set -e), never a half-compiled image
-  assert_contains "$d" 'set -e;'
+  # compiling only saves time: a file that does not compile never fails the build (setup, update, ./stack up)
+  assert_contains "$d" 'python -m compileall -q -j 0 "$d" || echo '
+  assert_not_contains "$d" 'set -e'
 }
 
 test_litellm_is_one_of_the_images_this_project_builds() {

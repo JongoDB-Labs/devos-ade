@@ -28,7 +28,7 @@ for c in "$FK" "$LL"; do
   if docker container inspect "$c" >/dev/null 2>&1 && [ "$(docker container inspect -f '{{index .Config.Labels "io.devos-ade.e2e"}}' "$c")" != model-servers ]; then echo "$c exists and is not this check's" >&2; exit 2; fi
 done
 trap cleanup EXIT; cleanup; mkdir -p "$WORK/litellm" "$WORK/state" "$OUT"; chmod 755 "$WORK" "$WORK/litellm"
-LIMG="$(sed -n 's/^    image: \(ghcr.io\/berriai\/litellm:[^ ]*\)$/\1/p' "$ROOT/compose.yaml" | head -n 1)"
+LIMG="$(sed -n 's/^ *image: \(ghcr.io\/berriai\/litellm:[^ ]*\)$/\1/p' "$ROOT/compose.yaml" | head -n 1)"
 KEYV="e2e-key-$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
 docker run -d --name "$FK" --label "$LABEL" -e FAKE_KEY="$KEYV" -v "$HERE/fake-openai.py:/fake.py:ro" --entrypoint python3 "$LIMG" /fake.py >/dev/null || { fail "the fake server did not start"; exit 1; }
 # (the address on its network: Docker 29 dropped the old top-level .NetworkSettings.IPAddress)

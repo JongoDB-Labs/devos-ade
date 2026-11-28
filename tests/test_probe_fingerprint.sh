@@ -101,3 +101,32 @@ test_probe_mark_writes_the_new_fingerprint() {
   assert_eq "$(sed -n 's/^fingerprint=//p' "$(probe_mark_file)")" "$(probe_fingerprint)"
   [ "$(probe_fingerprint)" != "$(probe_fingerprint_legacy)" ] || fail "the new fingerprint equals the legacy one"
 }
+
+# JON-1484: LiteLLM's pin moved from the service's `    image:` line (up to v0.78.0) to the build argument of its local
+# image, indented deeper. The same pin must give the same fingerprint (both formulas), or the update that moves it checks
+# the models again and restarts LiteLLM twice; a comment naming LiteLLM's image changes nothing; another pin does.
+_pf_compose_as_built() { # _pf_compose_as_built VERSION
+  printf 'services:\n  litellm:\n    # (ghcr.io/berriai/litellm: what this builds on)\n    build:\n      context: ./litellm-image\n      args:\n        image: ghcr.io/berriai/litellm:%s\n    image: ${COMPOSE_PROJECT_NAME:-devos-ade}/litellm:local\n    pull_policy: never\n' "$1" > "$STACK_DIR/compose.yaml"
+}
+test_the_pin_as_a_build_argument_keeps_both_fingerprints() {
+  _pf_setup; a="$(probe_fingerprint)"; l="$(probe_fingerprint_legacy)"
+  _pf_compose_as_built 1.105.0
+  assert_eq "$(probe_fingerprint)" "$a"
+  assert_eq "$(probe_fingerprint_legacy)" "$l"
+}
+test_a_mark_written_before_the_pin_moved_is_reusable() {
+  _pf_setup; _pf_write_mark "$(probe_fingerprint)"
+  _pf_compose_as_built 1.105.0
+  probe_reusable > /dev/null || fail "the update that moved the pin would check the models again"
+}
+test_another_pin_as_a_build_argument_changes_the_fingerprint() {
+  _pf_setup; a="$(probe_fingerprint)"
+  _pf_compose_as_built 1.106.0
+  [ "$(probe_fingerprint)" != "$a" ] || fail "a new LiteLLM pin left the fingerprint as it was"
+}
+test_this_checkout_s_compose_names_one_litellm_pin() {
+  STACK_DIR="$T_ROOT"
+  out="$(probe_litellm_pin)"
+  assert_eq "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" 1
+  case "$out" in "    image: ghcr.io/berriai/litellm:"*@sha256:*) ;; *) fail "pin line: $out" ;; esac
+}

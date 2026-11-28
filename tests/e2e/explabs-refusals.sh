@@ -59,7 +59,7 @@ newest() { docker image ls --filter "reference=$1" --format '{{.CreatedAt}}	{{.R
 TIMG="${TIMG:-$(newest 'bne2e-cache/terminal')}"; CIMG="${CIMG:-$(newest 'bne2e-cache/code')}"
 need_image() { [ -n "$1" ] || { echo "no $2 image: run tests/e2e/run.sh once (it leaves bne2e-cache/$2:…), or pass --$2-image" >&2; exit 2; }; }
 need_image "$TIMG" terminal; need_image "$CIMG" code
-LIMG="$(sed -n 's/^    image: \(ghcr.io\/berriai\/litellm:[^ ]*\)$/\1/p' "$ROOT/compose.yaml" | head -n 1)"
+LIMG="$(sed -n 's/^ *image: \(ghcr.io\/berriai\/litellm:[^ ]*\)$/\1/p' "$ROOT/compose.yaml" | head -n 1)"
 [ -n "$LIMG" ] || { echo "no LiteLLM image in compose.yaml" >&2; exit 2; }
 
 WORK="$ROOT/tests/e2e/work/$P"

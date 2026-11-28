@@ -925,14 +925,20 @@ probe_models_code() {
 # probe_fingerprint -> a hash of what the probe's answers depend on: .env's AWS_* lines (the key, its region, how it
 # signs in — hashed, never kept as they are), the model catalog, LiteLLM's image and the probe's own code (not its comments)
 probe_fingerprint() {
-  { grep -E '^AWS_' "$ENV_FILE" 2>/dev/null; catalog_rows 2>/dev/null; grep -E 'berriai/litellm' "$STACK_DIR/compose.yaml" 2>/dev/null
+  { grep -E '^AWS_' "$ENV_FILE" 2>/dev/null; catalog_rows 2>/dev/null; probe_litellm_pin
     probe_models_code; } | openssl dgst -sha256 | awk '{ print $NF }'
+}
+# probe_litellm_pin -> LiteLLM's pin (compose.yaml), written as the line that held it up to v0.78.0 — the service's own
+# `    image:` line; since then the build argument of its local image (litellm-image/Dockerfile), indented deeper. The
+# same pin gives the same fingerprint, so the update that moved it did not check the models again (JON-1484).
+probe_litellm_pin() {
+  sed -n 's|^ *image: \(ghcr\.io/berriai/litellm:[^ ]*\)$|    image: \1|p' "$STACK_DIR/compose.yaml" 2>/dev/null
 }
 # probe_fingerprint_legacy -> the fingerprint up to v0.72.x, which hashed the text of lib/models.sh, comments and all.
 # probe_reusable still accepts it, and rewrites such a mark with today's fingerprint (its time kept), so the update that
 # ships probe_models_code does not check the models again. It can go a few releases after that one.
 probe_fingerprint_legacy() {
-  { grep -E '^AWS_' "$ENV_FILE" 2>/dev/null; catalog_rows 2>/dev/null; grep -E 'berriai/litellm' "$STACK_DIR/compose.yaml" 2>/dev/null
+  { grep -E '^AWS_' "$ENV_FILE" 2>/dev/null; catalog_rows 2>/dev/null; probe_litellm_pin
     cat "$STACK_DIR/lib/models.sh" 2>/dev/null; } | openssl dgst -sha256 | awk '{ print $NF }'
 }
 # probe_reusable -> 0 when the last probe's answers still stand: the same fingerprint, younger than PROBE_REUSE_MAX_S

@@ -86,7 +86,10 @@ printf '%s\n' claude-haiku-5-5 titan-embed-v2 > "$STACK/.state/enabled-1"
 printf '%s\n' claude-haiku-5-5 titan-embed-v2 mistral-large-3 > "$STACK/.state/enabled-2"
 printf '%s\n' titan-embed-v2 mistral-large-3 > "$STACK/.state/enabled-3"
 
-echo "==> $(sed -n 's|^    image: \(ghcr.io/berriai/litellm:[^ ]*\)$|\1|p' "$STACK/compose.yaml")" | tee -a "$LOG" >&2
+# (the pin: the build argument of LiteLLM's local image since JON-1484, the service's image line before)
+PIN="$(sed -n 's|^ *image: \(ghcr.io/berriai/litellm:[^ ]*\)$|\1|p' "$STACK/compose.yaml" | head -n 1)"
+[ -n "$PIN" ] || { echo "xx no LiteLLM pin in $STACK/compose.yaml" >&2; exit 2; }
+echo "==> $PIN" | tee -a "$LOG" >&2
 run_stack render_config "$STACK/.state/enabled-1" || { echo "xx could not render the config" >&2; exit 1; }
 cp "$STACK/litellm/config.yaml" "$STACK/.state/config-1.yaml"
 
@@ -96,10 +99,10 @@ ok "postgres and litellm are up on the pinned images"
 
 cid="$(docker ps -q --no-trunc --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.oneoff=False --filter "label=com.docker.compose.service=litellm")"
 started="$(docker inspect -f '{{.State.StartedAt}}' "$cid")"
-# the pinned image really is the one running (the digest check ./stack update makes)
-pinned="$(sed -n 's|^    image: ghcr.io/berriai/litellm:[^@ ]*@\(sha256:[0-9a-f]*\)$|\1|p' "$STACK/compose.yaml")"
+# the pinned image really is the one running: a local build on it (its base-image label: the check ./stack update makes)
 img="$(docker inspect -f '{{.Image}}' "$cid")"
-have "LiteLLM runs the image this checkout pins (digest)" "$(docker image inspect -f '{{range .RepoDigests}}{{println .}}{{end}}' "$img")" "$pinned"
+check "LiteLLM runs a build on the image this checkout pins (base-image label)" \
+  "$(docker image inspect -f '{{index .Config.Labels "dev.devos-ade.base-image"}}' "$img")" "$PIN"
 check "LiteLLM's liveliness" "$(curl -s -m 10 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/health/liveliness")" 200
 
 models="$(api "http://127.0.0.1:$PORT/v1/models")"

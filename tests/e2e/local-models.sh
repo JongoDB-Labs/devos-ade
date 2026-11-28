@@ -48,7 +48,7 @@ if docker container inspect "$LL" >/dev/null 2>&1 && [ "$(docker container inspe
 trap cleanup EXIT; trap 'exit 130' INT TERM
 docker rm -f "$LL" >/dev/null 2>&1 || true
 mkdir -p "$WORK/state" "$WORK/litellm" "$OUT"
-LIMG="$(sed -n 's/^    image: \(ghcr.io\/berriai\/litellm:[^ ]*\)$/\1/p' "$ROOT/compose.yaml" | head -n 1)"
+LIMG="$(sed -n 's/^ *image: \(ghcr.io\/berriai\/litellm:[^ ]*\)$/\1/p' "$ROOT/compose.yaml" | head -n 1)"
 [ -n "$LIMG" ] || { echo "no LiteLLM image in compose.yaml" >&2; exit 2; }
 
 # --- this checkout's code, on a scratch .env and state dir (never an installed stack) ---
