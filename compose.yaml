@@ -69,6 +69,28 @@ services:
     # Directory mount (not a single-file mount): setup replaces config.yaml atomically via mv,
     # which a file bind mount would not follow.
     command: ["--config", "/app/config/config.yaml", "--port", "4000"]
+    # The image ships its Python as source only, so each new container compiled all of it again before it could answer
+    # (~6 s of a ~25 s start; JON-1484). The compiled files are kept in the litellm-pycache volume, in a folder named by
+    # the image's package records (every installed file's hash): a container of the same image (a changed config.yaml or
+    # hook) reuses them; another image never reads them, and its folder replaces the old one. The mounted config folder's
+    # (the hook's) are never kept: its files change between starts. No records where this looks: no cache. Then the
+    # image's own entrypoint, as before.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        k=
+        for f in /app/.venv/lib/python*/site-packages/*.dist-info/RECORD; do
+          [ -f "$$f" ] && k="$$(cat /app/.venv/lib/python*/site-packages/*.dist-info/RECORD | sha256sum | cut -c1-16)"
+          break
+        done
+        if [ -n "$$k" ]; then
+          find /pycache -mindepth 1 -maxdepth 1 ! -name "$$k" -exec rm -rf {} + 2>/dev/null
+          rm -rf "/pycache/$$k/app/config"
+          export PYTHONPYCACHEPREFIX="/pycache/$$k"
+        fi
+        exec docker/prod_entrypoint.sh "$$@"
+      - sh
     environment:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/litellm
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?run ./stack setup}
@@ -111,6 +133,7 @@ services:
       BN_CONFIG_SUM: ${BN_LITELLM_CONFIG_SUM:-}
     volumes:
       - ./litellm:/app/config:ro,z
+      - litellm-pycache:/pycache   # (a cache only: never backed up; ./stack uninstall removes it)
     ports:
       - "127.0.0.1:${LITELLM_PORT:-4000}:4000"
     # stt: the speech-to-text container's only network (no internet access); websearch: the built-in SearXNG's (LiteLLM
@@ -128,7 +151,9 @@ services:
       interval: 10s
       timeout: 5s
       retries: 30
-      start_period: 30s
+      # checked every second for the first two minutes: a start slowed past half a minute (a loaded computer) is seen
+      # healthy within a second, not at the next 10 s check (JON-1484)
+      start_period: 120s
       start_interval: 1s
     logging: *logging
 
@@ -769,3 +794,4 @@ volumes:
   portal-state:
   gitdata:
   ollama-models:
+  litellm-pycache:

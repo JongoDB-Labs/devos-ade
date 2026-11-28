@@ -433,3 +433,76 @@ test_setup_builds_every_image_side_by_side_once() {
   assert_contains "$(cat "$TMP/dc")" "dc build -q --build-arg APT_REFRESH=$(date -u +%G-%V) --build-arg BN_AI_TOOLS=all terminal"
   assert_contains "$(cat "$TMP/dc")" "dc build -q code"
 }
+
+# --- LiteLLM's start (JON-1484) ---
+
+# _litellm_json -> LiteLLM's service as `docker compose config` renders it (JSON; the real docker compose, config only)
+_litellm_json() {
+  _hash_stack || return
+  # shellcheck disable=SC2329  # called by dc
+  docker() { case "$*" in *" config --format json") "$BN_REAL_DOCKER" "$@" ;; *) echo "unexpected docker $*" >&2; return 97 ;; esac; }
+  command -v python3 >/dev/null || { echo "python3 not on the host" >&2; return 77; }
+  dc config --format json 2>/dev/null | python3 -c 'import json, sys; print(json.dumps(json.load(sys.stdin)["services"]["litellm"]))'
+}
+
+# A start that runs past its first half minute (a loaded computer) is still checked every second: Compose's --wait sees
+# it healthy within a second of LiteLLM answering, not up to 10 s later at the next regular check.
+test_litellm_health_is_checked_every_second_through_a_slow_start() {
+  local j; j="$(_litellm_json)" || return
+  python3 - "$j" <<'PY'
+import json, re, sys
+h = json.loads(sys.argv[1])["healthcheck"]
+def secs(d):  # Compose renders durations the Go way: "2m0s", "1s", "1m30s"
+    m = re.fullmatch(r"(?:(\d+)h)?(?:(\d+)m)?(?:(\d+(?:\.\d+)?)s)?", d)
+    assert m and d, d
+    return int(m.group(1) or 0) * 3600 + int(m.group(2) or 0) * 60 + float(m.group(3) or 0)
+assert secs(h["start_interval"]) == 1, h
+assert secs(h["start_period"]) >= 120, h
+PY
+}
+
+# LiteLLM's image ships its Python as source only: each new container compiled all of it again (~6 s of a ~25 s start).
+# The compiled files are kept in a volume, in a folder named by the image's package records (every installed file's
+# hash): the same image reuses them, another image never reads them (its folder replaces the old one), and the hook in
+# the mounted config folder is always compiled afresh. Without records (a layout this script does not know): no cache.
+test_litellm_keeps_its_compiled_python_per_image_and_never_the_hooks() {
+  local j script out k1 k2 app="$TMP/img/app"
+  j="$(_litellm_json)" || return
+  script="$(python3 - "$j" <<'PY'
+import json, sys
+s = json.loads(sys.argv[1])
+ep, cmd = s["entrypoint"], s["command"]
+assert ep[:2] == ["/bin/sh", "-c"] and ep[3:] == ["sh"], ep
+assert cmd == ["--config", "/app/config/config.yaml", "--port", "4000"], cmd
+vols = {(v["type"], v.get("source", ""), v["target"]) for v in s["volumes"]}
+assert ("volume", "litellm-pycache", "/pycache") in vols, vols
+print(ep[2].replace("$$", "$"))   # (config output keeps the $$ escapes; the container gets one $)
+PY
+)" || return 1
+  # a fake image: its paths moved under $TMP (the script's own /app and /pycache), its entrypoint saying what it got
+  mkdir -p "$app/.venv/lib/python3.13/site-packages/litellm-1.0.dist-info" "$app/.venv/lib/python3.13/site-packages/prisma-0.1.dist-info" \
+    "$app/docker" "$TMP/pyc/0123456789abcdef"
+  printf 'litellm/a.py,sha256=AAA,10\n' > "$app/.venv/lib/python3.13/site-packages/litellm-1.0.dist-info/RECORD"
+  printf 'prisma/b.py,sha256=BBB,5\n' > "$app/.venv/lib/python3.13/site-packages/prisma-0.1.dist-info/RECORD"
+  printf '#!/bin/sh\necho "prefix=${PYTHONPYCACHEPREFIX:-none} args=$*"\n' > "$app/docker/prod_entrypoint.sh"; chmod +x "$app/docker/prod_entrypoint.sh"
+  script="$(printf '%s' "$script" | sed -e "s#/app/#$app/#g" -e "s#/pycache#$TMP/pyc#g")"
+  _run() { (cd "$app" && /bin/sh -c "$script" sh --config /app/config/config.yaml --port 4000); }
+  out="$(_run)"
+  k1="$(printf '%s' "$out" | sed -n "s#^prefix=$TMP/pyc/\([0-9a-f]\{16\}\) args=.*#\1#p")"
+  [ -n "$k1" ] || { echo "no cache folder named by a 16-hex key: $out" >&2; return 1; }
+  assert_contains "$out" "args=--config /app/config/config.yaml --port 4000"
+  [ ! -e "$TMP/pyc/0123456789abcdef" ] || { echo "another image's cache was kept" >&2; return 1; }
+  # the same image again: the same folder, kept, but never the config folder's (the hook's) compiled files
+  mkdir -p "$TMP/pyc/$k1/litellm" "$TMP/pyc/$k1${app}/config"
+  assert_eq "$(_run)" "$out"
+  [ -d "$TMP/pyc/$k1/litellm" ] || { echo "the same image's cache was dropped" >&2; return 1; }
+  [ ! -e "$TMP/pyc/$k1${app}/config" ] || { echo "the hook's compiled file was kept" >&2; return 1; }
+  # another image (one installed file's hash differs): another folder, and the old one goes
+  printf 'litellm/a.py,sha256=CCC,10\n' > "$app/.venv/lib/python3.13/site-packages/litellm-1.0.dist-info/RECORD"
+  k2="$(_run | sed -n "s#^prefix=$TMP/pyc/\([0-9a-f]\{16\}\) args=.*#\1#p")"
+  [ -n "$k2" ] && [ "$k2" != "$k1" ] || { echo "a changed image kept the key $k1 ($k2)" >&2; return 1; }
+  [ ! -e "$TMP/pyc/$k1" ] || { echo "the older image's cache was kept" >&2; return 1; }
+  # no package records where the script looks: no cache, LiteLLM still starts
+  rm -rf "$app/.venv"
+  assert_eq "$(_run)" "prefix=none args=--config /app/config/config.yaml --port 4000"
+}
