@@ -547,6 +547,8 @@ localgit_mirror_usage() {
 Usage: ./stack git-server status
        ./stack git-server mirror list
        ./stack git-server mirror add push|pull REPO REMOTE_URL [--interval 8h] [--no-sync-on-commit] [--yes]
+       ./stack git-server mirror add push|pull REPO --host ID --path OWNER/REPO [--interval 8h] [--no-sync-on-commit] [--yes]
+       ./stack git-server mirror change REPO NAME [--interval 8h] [--sync-on-commit | --no-sync-on-commit]
        ./stack git-server mirror sync REPO [--pull]
        ./stack git-server mirror remove REPO NAME
        ./stack git-server mirror reconcile
@@ -562,7 +564,11 @@ Usage: ./stack git-server status
   The token is handed to Forgejo, which keeps it (encrypted with its own secret, in the gitdata volume) because it pushes
   and fetches on its own later. Until a mirror exists the git server has no network to the internet; while one does it
   has one of its own, limited to the mirrors' host names. You confirm first (--yes: without asking). Only on the computer
-  running DevOS ADE, with the Code page running. Status (last sync, last error): this list, the Code page's Git hosts
+  running DevOS ADE, with the Code page running. The Code page's Git hosts dialog makes, changes, syncs and removes
+  mirrors the same way (through the update helper); there a connected host is named by its id (--host, as the dialog's
+  request carries it) and the repository there by --path: the access token never leaves the Code page's container.
+  change replaces a push mirror by one with the new interval or on-every-push setting (the git server has no edit call).
+  Status (last sync, last error): this list, the Code page's Git hosts
   dialog, and the repository's Settings › Mirror settings in the git server's web UI.
 EOT
 }
@@ -630,16 +636,52 @@ cmd_git_server() {
 }
 
 localgit_mirror_cmd() {
-  local act="${1:-}"; [ $# -eq 0 ] || shift
+  local act="${1:-}" a args=(); [ $# -eq 0 ] || shift
+  # --request NONCE: the update helper's request from the Code page (lib/sessions.sh): how it went is told to the Code page's
+  # container — done, or failed with the words die said (the code container took every credential out of those words)
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --request) [ $# -ge 2 ] || die "--request needs the request's id"; _lg_req_set "$2" "$act"; shift 2 ;;
+      *) args+=("$1"); shift ;;
+    esac
+  done
+  set -- ${args[@]+"${args[@]}"}
   case "$act" in
     list) _lg_code_ready; localgit_mirror_list ;;
     add) localgit_mirror_add "$@" ;;
+    change) localgit_mirror_change "$@" ;;
     sync) localgit_mirror_sync "$@" ;;
     remove) localgit_mirror_remove "$@" ;;
     reconcile) _lg_code_ready; localgit_mirror_reconcile ;;
     '' | help | -h | --help) localgit_mirror_usage ;;
     *) localgit_mirror_usage >&2; die "unknown: ./stack git-server mirror $act" ;;
   esac
+  _lg_req_done
+}
+
+# the helper's request: _lg_req_set ID ACTION (a 32-hex id and one of the four actions; anything else is no request)
+_LG_REQ=''; _LG_REQ_ACTION=''
+_lg_req_set() {
+  case "$1" in *[!0-9a-f]* | '') return 0 ;; esac
+  [ "${#1}" = 32 ] || return 0
+  case "$2" in add | sync | change | remove) ;; *) return 0 ;; esac
+  _LG_REQ="$1"; _LG_REQ_ACTION="git-mirror-$2"
+  on_exit _lg_req_failed
+}
+_lg_req_tell() { # STATE [NOTE]
+  [ -n "$_LG_REQ" ] || return 0
+  _ss_code --secs 30 request --id "$_LG_REQ" --state "$1" ${2:+--why mirror} --action "$_LG_REQ_ACTION" ${2:+--note "$2"} >/dev/null 2>&1 || true
+  printf 'sessions-result: %s\n' "$1" >&2
+}
+_lg_req_done() { [ -n "$_LG_REQ" ] || return 0; off_exit _lg_req_failed; _lg_req_tell done; _LG_REQ=''; }
+# (the exit hook: a command that ended with a failure, or a refusal, before _lg_req_done)
+_lg_req_failed() {
+  local note
+  [ -n "$_LG_REQ" ] || return 0
+  [ "${_EXIT_RC:-1}" != 0 ] || return 0
+  note="$(printf '%s' "${_BN_DIE_MSG:-it was not done}" | LC_ALL=C tr -d '\000-\037\177' | cut -c1-300)"
+  _lg_req_tell failed "${note:-it was not done}"
+  _LG_REQ=''
 }
 
 # localgit_mirror_list -> one line per mirror: direction, repository, remote, interval, last sync, last error
@@ -672,22 +714,36 @@ _lg_remote_host() {
 
 localgit_mirror_add() {
   { set +x; } 2>/dev/null
-  local dir="${1:-}" repo="${2:-}" url="${3:-}" interval='' sync=true host cur json own=1
-  [ $# -ge 3 ] || { localgit_mirror_usage >&2; die "usage: ./stack git-server mirror add push|pull REPO REMOTE_URL"; }
-  shift 3
+  local dir="${1:-}" repo="${2:-}" url='' interval='' sync=true host cur json own=1 hostid='' rpath='' ready=0
+  [ $# -ge 2 ] || { localgit_mirror_usage >&2; die "usage: ./stack git-server mirror add push|pull REPO REMOTE_URL"; }
+  shift 2
+  case "${1:-}" in '' | -*) ;; *) url="$1"; shift ;; esac
   case "$dir" in push | pull) ;; *) die "push or pull (./stack git-server --help)" ;; esac
   while [ $# -gt 0 ]; do
     case "$1" in
       --interval) [ $# -ge 2 ] || die "--interval needs a value (8h, 30m)"; interval="$2"; shift 2 ;;
       --interval=*) interval="${1#--interval=}"; shift ;;
       --no-sync-on-commit) sync=false; shift ;;
+      --host) [ $# -ge 2 ] || die "--host needs a connected host's id"; hostid="$2"; shift 2 ;;
+      --path) [ $# -ge 2 ] || die "--path needs the repository there (owner/name)"; rpath="$2"; shift 2 ;;
       *) localgit_mirror_usage >&2; die "unknown: $1" ;;
     esac
   done
-  host="$(_lg_remote_host "$url")" || die "the remote must be an https:// URL of a connected git host (https://github.com/owner/repo)"
   case "$repo" in '' | *[!A-Za-z0-9._-]* | -*) die "REPO: the repository's name on the built-in server (letters, digits, . _ -)" ;; esac
   case "$interval" in '' | [1-9]*[mh] | 0) ;; *) die "--interval: 10m to 999h (8h, 30m), or 0 for a push mirror that pushes only when something is pushed here" ;; esac
-  _lg_code_ready
+  if [ -n "$hostid$rpath" ]; then
+    # a connected host by its id and a repository there (the Code page's dialog): the container says its name and address
+    [ -z "$url" ] || die "name the remote by one of: REMOTE_URL, or --host and --path"
+    [ -n "$hostid" ] && [ -n "$rpath" ] || die "--host and --path go together"
+    case "$hostid" in h_[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;; *) die "--host: a connected host's id (the Code page's Git hosts)" ;; esac
+    case "$rpath" in '' | *[!A-Za-z0-9._/-]* | /* | */ | *//* | .* | */.*) die "--path: the repository there, owner/name (letters, digits, . _ -)" ;; esac
+    _lg_code_ready; ready=1
+    _lg_mirror_op "{\"op\":\"resolve\",\"host\":$(_lg_json_str "$hostid"),\"path\":$(_lg_json_str "$rpath")}" || die "no mirror made: $(_lg_op_error)"
+    url="$(printf '%s' "$_LG_ANSWER" | sed -n 's/.*"remote":"\([^"]*\)".*/\1/p')"
+  fi
+  [ -n "$url" ] || { localgit_mirror_usage >&2; die "usage: ./stack git-server mirror add push|pull REPO REMOTE_URL"; }
+  host="$(_lg_remote_host "$url")" || die "the remote must be an https:// URL of a connected git host (https://github.com/owner/repo)"
+  [ "$ready" = 1 ] || _lg_code_ready
   cur="$(_lg_hosts_csv)" || die "could not ask the git server which mirrors it has: $(_lg_op_error)"
   case ",$cur," in *",$host,"*) ;; *) cur="${cur:+$cur,}$host" ;; esac
   printf '\nMirror %s: %s  %s  %s?\n' "$dir" "$repo" "$([ "$dir" = push ] && echo '->' || echo '<-')" "$url"
@@ -717,6 +773,35 @@ localgit_mirror_add() {
   [ "$own" = 0 ] || stack_unlock
   printf 'Mirror made: %s %s. ./stack git-server mirror list shows its last sync.\n' "$dir" "$repo"
   if [ "$dir" = push ]; then _lg_mirror_op "{\"op\":\"sync\",\"repo\":$(_lg_json_str "$repo")}" >/dev/null 2>&1 && printf 'A first push to the remote was asked for.\n' || true; fi
+}
+
+# localgit_mirror_change REPO NAME [--interval 8h] [--sync-on-commit | --no-sync-on-commit] — a push mirror with the new settings
+# (the code container makes the new one and then deletes the old: the git server has no edit call). The host is the same, so the
+# way out stays as it is; reconcile only checks.
+localgit_mirror_change() {
+  local repo="${1:-}" name="${2:-}" interval='' sync='' own=1 json
+  case "$repo$name" in '' | *[!A-Za-z0-9._-]*) die "usage: ./stack git-server mirror change REPO NAME [--interval 8h] [--sync-on-commit | --no-sync-on-commit]" ;; esac
+  [ -n "$repo" ] && [ -n "$name" ] || die "usage: ./stack git-server mirror change REPO NAME [--interval 8h] [--sync-on-commit | --no-sync-on-commit]"
+  shift 2
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --interval) [ $# -ge 2 ] || die "--interval needs a value (8h, 30m)"; interval="$2"; shift 2 ;;
+      --interval=*) interval="${1#--interval=}"; shift ;;
+      --sync-on-commit) sync=true; shift ;;
+      --no-sync-on-commit) sync=false; shift ;;
+      *) localgit_mirror_usage >&2; die "unknown: $1" ;;
+    esac
+  done
+  case "$interval" in '' | [1-9]*[mh] | 0) ;; *) die "--interval: 10m to 999h (8h, 30m), or 0 for a push mirror that pushes only when something is pushed here" ;; esac
+  [ -n "$interval$sync" ] || die "nothing to change: --interval and/or --sync-on-commit | --no-sync-on-commit"
+  _lg_code_ready
+  ! stack_lock_ours || own=0
+  stack_lock git-server
+  json="{\"op\":\"change\",\"repo\":$(_lg_json_str "$repo"),\"name\":$(_lg_json_str "$name")${interval:+,\"interval\":\"$interval\"}${sync:+,\"syncOnCommit\":$sync}}"
+  _lg_mirror_op "$json" || { [ "$own" = 0 ] || stack_unlock; die "not changed: $(_lg_op_error)"; }
+  localgit_mirror_reconcile
+  [ "$own" = 0 ] || stack_unlock
+  printf 'Mirror %s of %s changed (a new mirror took its place: ./stack git-server mirror list shows its name).\n' "$name" "$repo"
 }
 
 localgit_mirror_sync() {

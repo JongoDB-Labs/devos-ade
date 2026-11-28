@@ -477,6 +477,82 @@ test_the_mirror_commands_refuse_what_is_not_theirs() {
   assert_contains "$(localgit_mirror_usage)" "A normal remote you fetch from and push to is a different thing"
 }
 
+# --- JON-970: the Git hosts dialog's requests, through the update helper, run these same commands ---
+
+_lg_stubs_for_the_dialog() {
+  printf 'LOCALGIT_MIRROR_EGRESS=off\n' > "$ENV_FILE"
+  _lg_code_ready() { return 0; }; stack_lock() { :; }; stack_unlock() { :; }; stack_lock_ours() { return 1; }
+  services_status_write() { :; }; run_phase() { shift 2; "$@"; }
+  ASSUME_YES=1
+  _lg_hosts_csv() { printf 'gitlab.com'; }
+  dc() { echo "dc $*" >> "$TMP/calls"; }
+  OP_OK=1
+  _lg_mirror_op() {
+    echo "op $1" >> "$TMP/calls"
+    case "$1" in
+      *'"op":"resolve"'*) _LG_ANSWER='{"ok":true,"host":"github.com","label":"GitHub","remote":"https://github.com/me/app.git"}' ;;
+      *) _LG_ANSWER='{"ok":true}' ;;
+    esac
+    [ "$OP_OK" = 1 ] || { _LG_ANSWER='{"ok":false,"error":"the git server refused: nope"}'; return 1; }
+  }
+  localgit_mirror_reconcile() { echo "reconcile" >> "$TMP/calls"; }
+  _ss_code() { local a; for a in "$@"; do case "$a" in --secs | 30) ;; *) printf '%s ' "$a" >> "$TMP/told"; ;; esac; done; echo >> "$TMP/told"; }
+  : > "$TMP/calls"; : > "$TMP/told"
+}
+
+test_a_mirror_made_from_the_dialog_names_a_host_by_id_and_a_path_and_never_an_address_or_a_token() {
+  _lg_stubs_for_the_dialog
+  out="$(localgit_mirror_add push app --host h_0123456789ab --path me/app --interval 2h 2>&1)"
+  c="$(tr '\n' '|' < "$TMP/calls")"
+  # the host's name comes from the code container (resolve), before the way out; the add then carries the address it gave
+  assert_contains "$c" 'op {"op":"resolve","host":"h_0123456789ab","path":"me/app"}|'
+  assert_eq "$(get_env LOCALGIT_MIRROR_HOSTS)" "gitlab.com,github.com"
+  assert_contains "$c" '"op":"add","direction":"push","repo":"app","remote":"https://github.com/me/app.git","syncOnCommit":true,"interval":"2h"'
+  assert_contains "$out" "Mirror made: push app"
+  # what is not an id or a path is refused before anything is asked of the container
+  : > "$TMP/calls"
+  for args in "push app --host nope --path me/app" "push app --host h_0123456789ab --path ../x" "push app --host h_0123456789ab" "push app --path me/app" \
+              "push app --host h_0123456789ab --path me/app https://github.com/me/app" "push app --host h_0123456789ab --path 'a b'"; do
+    out="$(eval "localgit_mirror_add $args" 2>&1)" && { echo "accepted: $args" >&2; return 1; }
+  done
+  assert_eq "$(cat "$TMP/calls")" ""
+}
+
+test_a_mirror_changed_from_the_dialog_keeps_the_way_out_and_says_what_it_asked() {
+  _lg_stubs_for_the_dialog
+  out="$(localgit_mirror_change app remote_mirror_ab12 --interval 2h --no-sync-on-commit 2>&1)"
+  assert_contains "$(cat "$TMP/calls")" '{"op":"change","repo":"app","name":"remote_mirror_ab12","interval":"2h","syncOnCommit":false}'
+  assert_contains "$out" "Mirror remote_mirror_ab12 of app changed"
+  : > "$TMP/calls"; localgit_mirror_change app m1 --sync-on-commit >/dev/null 2>&1
+  assert_contains "$(cat "$TMP/calls")" '{"op":"change","repo":"app","name":"m1","syncOnCommit":true}'
+  : > "$TMP/calls"
+  for args in "" "app" "app m1 --interval 5x" "app m1 --bogus" "'a b' m1" "app m1 --interval"; do
+    out="$(eval "localgit_mirror_change $args" 2>&1)" && { echo "accepted: $args" >&2; return 1; }
+  done
+  assert_not_contains "$(cat "$TMP/calls")" "op {"
+  OP_OK=0; out="$(localgit_mirror_change app m1 --interval 2h 2>&1)" && return 1
+  assert_contains "$out" "not changed: the git server refused: nope"
+  assert_contains "$(localgit_mirror_usage)" "mirror change REPO NAME"
+  assert_contains "$(localgit_mirror_usage)" "--host ID --path OWNER/REPO"
+}
+
+test_a_request_from_the_page_is_told_done_or_failed_with_the_reason_and_never_a_credential() {
+  _lg_stubs_for_the_dialog
+  local n=0123456789abcdef0123456789abcdef
+  localgit_mirror_cmd sync app --request "$n" >/dev/null 2>&1
+  assert_contains "$(cat "$TMP/told")" "request --id $n --state done --action git-mirror-sync"
+  assert_contains "$(cat "$TMP/calls")" '{"op":"sync","repo":"app","direction":"push"}'
+  # a failure: the helper is told failed, why "mirror", and the words (the code container cleaned them)
+  : > "$TMP/told"; OP_OK=0
+  ( localgit_mirror_cmd remove app m1 --request "$n" ) >"$TMP/out" 2>&1 && return 1
+  assert_contains "$(cat "$TMP/told")" "request --id $n --state failed --why mirror --action git-mirror-remove --note not removed: the git server refused: nope"
+  assert_contains "$(cat "$TMP/out")" "sessions-result: failed"
+  # a bad request id is no request: the command runs, nothing is told
+  : > "$TMP/told"; OP_OK=1
+  localgit_mirror_cmd sync app --request nonsense >/dev/null 2>&1 || true
+  assert_eq "$(cat "$TMP/told")" ""
+}
+
 test_the_web_site_signs_the_owner_in_only_after_the_portal_and_the_sandboxs_paths_remove_the_header() {
   s="$(cat "$T_ROOT/caddy/localgit-on.caddy")"
   # the header is set in the proxy block of the site that imports portal_auth, after it (route order), and nowhere else
