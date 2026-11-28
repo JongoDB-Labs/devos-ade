@@ -6,6 +6,15 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Changed
+
+- **Chat runs Open WebUI 0.13.5, with its security fixes.** Open WebUI 0.12.4 → 0.13.5, pinned by digest. Upstream asks everyone to take 0.13.5 promptly for its security fixes; their details are not published yet. What you will notice in Chat:
+  - The header's Controls button is now **Model controls**, beside the message box. The Integrations menu's items (tools, skills, image generation, code interpreter) are in the message box's **+** menu.
+  - A voice call also opens as a tab of the chat.
+  - Two built-in tools that Open WebUI 0.13 sends with every chat request are off, like the others: searching the user directory, and the model writing an Open WebUI tool (Python that runs on Open WebUI's server). An admin can turn them on per model.
+  - Many new Open WebUI features come with it (folder workspaces, automations, notes in folders, citations beside the chat); see its release notes. Automations can start from a webhook; none exists until you make one.
+  - The first start converts Chat's database. Rollback after this update puts the previous Open WebUI and its data back together. (JON-1272)
+
 ## [0.78.0] - 2026-11-28
 
 ### Added
