@@ -6,6 +6,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.77.0] - 2026-11-28
+
 ### Added
 
 - **A model server is either yours or a paid API.** A model server you add (Settings › Models & providers › Local models, or `./stack local-models server add`) is now one of two kinds:
@@ -21,6 +23,9 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 ### Fixed
 
 - **The Code page's model picker lists the models of your model servers.** It left them out before. (JON-849)
+
+### To get it
+Existing installs: Home › Update now.
 
 ## [0.76.0] - 2026-11-28
 
