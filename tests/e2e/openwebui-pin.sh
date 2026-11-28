@@ -45,8 +45,16 @@ teardown() {
 [ "$KEEP" = 1 ] || trap teardown EXIT
 
 # the throwaway checkout: this tree's files (not .git, not other runs' output), with its own .env
-rsync -a --delete --exclude .git --exclude node_modules --exclude 'tests/e2e/work' --exclude 'tests/e2e/out' --exclude .state --exclude backups \
-  --exclude '.env' "$ROOT/" "$STACK/" || { echo "xx rsync failed" >&2; exit 1; }
+# (rsync where there is one; else tar — the Linux test host has no rsync — with the same exclusions, and what rsync
+# --delete keeps there: the excluded .env, .state and backups)
+if command -v rsync > /dev/null; then
+  rsync -a --delete --exclude .git --exclude node_modules --exclude 'tests/e2e/work' --exclude 'tests/e2e/out' --exclude .state --exclude backups \
+    --exclude '.env' "$ROOT/" "$STACK/" || { echo "xx rsync failed" >&2; exit 1; }
+else
+  find "$STACK" -mindepth 1 -maxdepth 1 ! -name .env ! -name .state ! -name backups -exec rm -rf {} + &&
+    tar -C "$ROOT" --exclude .git --exclude node_modules --exclude tests/e2e/work --exclude tests/e2e/out --exclude .state \
+      --exclude backups --exclude .env -cf - . | tar -C "$STACK" -xf - || { echo "xx copying the checkout failed" >&2; exit 1; }
+fi
 mkdir -p "$STACK/litellm" "$STACK/.state"
 rnd() { LC_ALL=C tr -dc 'a-f0-9' < /dev/urandom | head -c "${1:-32}"; }
 # a made-up key shaped like an access key, assembled here (the literal never exists in the repository)
