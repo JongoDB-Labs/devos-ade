@@ -58,7 +58,7 @@ cd "$W" || exit 2
 # shellcheck disable=SC1091
 . lib/common.sh; . lib/ports.sh; . lib/portal.sh; . lib/models.sh; . lib/commands.sh; . lib/prices.sh
 cleanup() {
-  docker rm -f "$P-portal-stub" "$P-remote" "$P-mclient" >/dev/null 2>&1
+  docker rm -f "$P-portal-stub" "$P-remote" "$P-mclient" "$P-git-restore" >/dev/null 2>&1
   _LG_PROFILE=1 dc down -v --remove-orphans >/dev/null 2>&1
   docker volume rm "${P}_gitdata" >/dev/null 2>&1
   docker rmi -f "$P-client" >/dev/null 2>&1
@@ -181,6 +181,25 @@ check "main's protection is as it was" "$(api repos/devos/e2e-one/branch_protect
 check "git sees the same commit (ls-remote on the repository)" "$(dc exec -T forgejo sh -c 'r=$(find /var/lib/gitea -type d -name e2e-one.git | head -n 1); git ls-remote "$r" refs/heads/main | cut -f1' | tr -d '\r')" "$sha_before"
 check "the token made before still works (its database came back)" "$(api repos/devos/e2e-one | python3 -c 'import sys, json; print(json.load(sys.stdin)["full_name"])')" devos/e2e-one
 check "files are the server's own again (uid 1000)" "$(dc exec -T forgejo sh -c 'stat -c %u /var/lib/gitea/app.ini' | tr -d '\r')" 1000
+
+# --- JON-1145: the restore ./stack restore runs over repositories that are there: staged beside them, then swapped in ---
+heads() { dc exec -T forgejo sh -c 'r=$(find /var/lib/gitea -type d -name e2e-one.git | head -n 1); git --git-dir="$r" for-each-ref --format="%(refname:short)" refs/heads | sort | tr "\n" " "' | tr -d '\r'; }
+leftovers() { dc exec -T forgejo sh -c 'ls -A /var/lib/gitea | grep -c "^\.restore-" || true' | tr -d '\r'; }
+dc exec -T forgejo sh -c 'r=$(find /var/lib/gitea -type d -name e2e-one.git | head -n 1); git --git-dir="$r" update-ref -d refs/heads/feature/x' >/dev/null 2>&1
+check "(before) a branch deleted after the backup" "$(heads)" "main "
+localgit_stage_restore "$S/bk" && pass "localgit_stage_restore unpacks and checks the copy beside the repositories" || fail "localgit_stage_restore unpacks and checks the copy"
+check "staging leaves the repositories as they are (the server still running)" "$(heads)" "main "
+localgit_restore_from "$S/bk" staged && pass "localgit_restore_from swaps the staged copy in" || fail "localgit_restore_from swaps the staged copy in"
+dc up -d --no-deps --wait forgejo >/dev/null 2>&1 && pass "the git server starts on the swapped volume" || fail "the git server starts on the swapped volume"
+check "the deleted branch is back: the backup's repositories, whole" "$(heads)" "feature/x main "
+check "the same main commit after the swap" "$(api repos/devos/e2e-one/branches/main | python3 -c 'import sys, json; print(json.load(sys.stdin)["commit"]["id"])')" "$sha_before"
+check "no staging or holding folder is left in the volume" "$(leftovers)" 0
+check "files are the server's own after the swap (uid 1000)" "$(dc exec -T forgejo sh -c 'stat -c %u /var/lib/gitea/app.ini' | tr -d '\r')" 1000
+# one restore job at a time: while an earlier one's container is there, a restore is refused and changes nothing
+docker create --name "$P-git-restore" --entrypoint true "$(_lg_image)" >/dev/null 2>&1
+if localgit_stage_restore "$S/bk" 2>/dev/null; then fail "a restore is refused while an earlier restore's job is there"; else pass "a restore is refused while an earlier restore's job is there"; fi
+check "the refused restore left no staging folder" "$(leftovers)" 0
+docker rm -f "$P-git-restore" >/dev/null 2>&1
 
 # --- mirroring: Forgejo's own repository mirroring to a connected host, the way out only while a mirror exists ---
 # (a second Forgejo plays GitHub: https, a certificate of this run's own, on the network the git server gets only for a mirror)
