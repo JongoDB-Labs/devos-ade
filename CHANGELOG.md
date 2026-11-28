@@ -6,10 +6,16 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.77.2] - 2026-11-28
+
 ### Fixed
 
 - **Restoring a backup can no longer leave the git server's repositories half empty.** Restore used to empty the git server's storage and then unpack the backup's copy into it, so a damaged archive or a full disk stopped it halfway with no way back. Now the copy is unpacked beside the repositories and checked first, then swapped in by renaming. If anything fails before the swap, the repositories are left exactly as they were and the restore says so. A restore cut off during the swap is finished by the next `./stack restore`. The git archive is also checked before the databases and buckets are changed, and a restore without the free space to unpack it is refused first. (JON-1145)
 - **A backup's free-space check counts the git server's repositories.** Before, a backup could start on a disk without room for them. When there is plenty of room, the check takes no extra time, so Update now is not slowed. (JON-1145)
+
+### To get it
+
+Existing installs: Home › Update now.
 
 ## [0.77.1] - 2026-11-28
 
