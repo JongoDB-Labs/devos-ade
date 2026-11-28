@@ -881,3 +881,25 @@ test_the_volume_size_is_read_in_a_read_only_throwaway_container_only_when_the_gi
   assert_eq "$(localgit_volume_kb)" ""
   assert_eq "$(cat "$TMP/dk")" ""
 }
+
+test_a_restore_that_stops_after_staging_removes_the_staged_copy_and_one_that_swapped_does_not() {
+  STACK_DIR="$TMP/stack"; mkdir -p "$STACK_DIR" "$TMP/bk"; sed -n '/^  forgejo:/,/^    image:/p' "$T_ROOT/compose.yaml" > "$STACK_DIR/compose.yaml"
+  printf 'LOCALGIT=on\n' > "$ENV_FILE"
+  : > "$TMP/dk"
+  # (each case in its own bash, which runs its EXIT trap the way ./stack does when a later restore step dies)
+  ( docker() { echo "$*" >> "$TMP/dk"; return 0; }; dc() { :; }
+    localgit_stage_restore "$TMP/bk" || exit 3
+    exit 1 ) 2>/dev/null || :
+  assert_contains "$(cat "$TMP/dk")" "rm -rf /v/.restore-new /v/.restore-old"
+  : > "$TMP/dk"
+  ( docker() { echo "$*" >> "$TMP/dk"; return 0; }; dc() { :; }
+    localgit_stage_restore "$TMP/bk" || exit 3
+    localgit_restore_from "$TMP/bk" staged || exit 4
+    exit 1 ) 2>/dev/null || :
+  assert_not_contains "$(cat "$TMP/dk")" "rm -rf /v/.restore-new /v/.restore-old"
+  : > "$TMP/dk"
+  ( docker() { echo "$*" >> "$TMP/dk"; case "$1" in run) return 1 ;; esac; return 0; }; dc() { :; }
+    localgit_stage_restore "$TMP/bk" && exit 5
+    exit 1 ) 2>/dev/null || :
+  assert_not_contains "$(cat "$TMP/dk")" "rm -rf /v/.restore-new /v/.restore-old"   # a stage that failed cleaned up itself
+}

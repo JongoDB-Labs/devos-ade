@@ -374,10 +374,22 @@ LGEOF
 }
 
 # localgit_stage_restore DIR — the archive unpacked and checked in the volume's staging folder; the repositories are not
-# touched (cmd_restore runs it before it changes anything else). Returns 1 on failure; the job says why on stderr.
+# touched (cmd_restore runs it before it changes anything else). Returns 1 on failure; the job says why on stderr. Until the
+# swap runs, an exit hook removes the staged copy: a restore that stops between them (a later step failed) leaves no second
+# copy of the repositories in the volume, for a backup to pick up.
 localgit_stage_restore() {
   docker volume inspect "$(localgit_volume)" >/dev/null 2>&1 || dc up --no-start --no-deps forgejo >/dev/null 2>&1 || true
-  _lg_volume_job '' "$1" ro "$(_lg_restore_script stage)" >/dev/null
+  _lg_volume_job '' "$1" ro "$(_lg_restore_script stage)" >/dev/null || return 1
+  _LG_STAGED="$1"; on_exit _lg_drop_staged
+}
+
+# _lg_drop_staged — the exit hook above (nothing once the swap has run)
+_lg_drop_staged() {
+  local dir="${_LG_STAGED:-}"
+  [ -n "$dir" ] || return 0
+  _LG_STAGED=''; off_exit _lg_drop_staged
+  _lg_volume_job '' "$dir" ro 'rm -rf /v/.restore-new /v/.restore-old' >/dev/null 2>&1 ||
+    warn "the git server's volume still holds an unused copy of the repositories (.restore-new); the next ./stack restore removes it"
 }
 
 # localgit_restore_from DIR [staged] — the container removed (the caller's up starts it again), then the volume's contents
@@ -386,6 +398,8 @@ localgit_stage_restore() {
 localgit_restore_from() {
   docker volume inspect "$(localgit_volume)" >/dev/null 2>&1 || dc up --no-start --no-deps forgejo >/dev/null 2>&1 || true
   _LG_PROFILE=1 dc rm -sf forgejo >/dev/null 2>&1 || true
+  # (the swap removes the staged folder whether it succeeds or not: the exit hook has nothing left to do)
+  _LG_STAGED=''; off_exit _lg_drop_staged
   _lg_volume_job '' "$1" ro "$(_lg_restore_script "$([ "${2:-}" = staged ] && echo swap || echo all)")" >/dev/null
 }
 
