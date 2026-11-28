@@ -60,8 +60,22 @@ ok((await m.protect('e2e-one')) === 'main', 'the default branch is protected thr
 ok((await m.protect('e2e-one')) === 'main', 'a second protection of it is done, not an error');
 ok(await p('GET', '/api/v1/repos/devos/e2e-one/branch_protections') === 404, 'listing the rules is not passed (404)');
 ok(await p('DELETE', '/api/v1/repos/devos/e2e-one/branch_protections/main') === 404, 'deleting a rule is not passed (404)');
+// JON-970 (the Git hosts dialog): a connected host named by its id and a path (no address, no token); the credential is in no answer or error
+const rid = store.read().hosts.find((h) => h.host === 'remote-git').id;
+const res = m.resolve({ host: rid, path: 'rem/copy' });
+ok(res.host === 'remote-git' && res.remote === 'https://remote-git:3000/rem/copy.git' && !JSON.stringify(res).includes(process.env.E2E_REMOTE_TOKEN), `resolve by host id and path: ${JSON.stringify(res)}`);
+let refusal = '';
+try { await m.add({ direction: 'push', repo: 'e2e-one', host: store.read().hosts.find((h) => h.host === 'example.com').id, path: 'o/r' }); } catch (e) { refusal = e.message; }
+ok(/the git server refused/.test(refusal) && !refusal.includes('abcdefgh12345678') && !refusal.includes(process.env.E2E_REMOTE_TOKEN) && !refusal.includes(process.env.E2E_GIT_TOKEN), `the git server's refusal, with no credential in it: ${refusal}`);
+// Change: Forgejo has no edit call, so a new push mirror is made and the old one removed (the real server must take a second mirror of the same remote)
+const changed = await m.change({ repo: 'e2e-one', name: pm.name, interval: '2h', syncOnCommit: false });
+ok(changed.direction === 'push' && changed.interval === '2h0m0s' && changed.syncOnCommit === false && changed.name && changed.name !== pm.name, `change: ${JSON.stringify(changed)}`);
+const left = (await m.list()).filter((x) => x.direction === 'push');
+ok(left.length === 1 && left[0].name === changed.name && left[0].interval === '2h0m0s', `one push mirror is left, the new one: ${JSON.stringify(left)}`);
+await m.sync({ repo: 'e2e-one' });
+ok(!JSON.stringify(left).includes(process.env.E2E_REMOTE_TOKEN), 'no credential in the list');
 // removing the push mirror
-const name = pm.name;
+const name = changed.name;
 await m.remove({ repo: 'e2e-one', name });
 ok(!(await m.list()).some((x) => x.direction === 'push'), 'the push mirror is removed');
 console.log(`${n} checks`);

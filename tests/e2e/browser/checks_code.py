@@ -1934,6 +1934,66 @@ def _drop_projects(c, roots):
             c.api("DELETE", f"/api/projects/{x['id']}")
 
 
+@check("browser", "code-ui-git-mirrors")
+@saved
+def ui_git_mirrors(ctx):
+    """JON-970: the Git hosts dialog's Mirrors section on the real stack (the built-in git server on, the update helper running:
+    run.sh --helper; with E2E_GIT_SERVER=1 the suite's git server is connected as a host). The section is there with no mirror and
+    Add a mirror; a wrong web app password is said by the real portal; with the right one, a mirror of a repository the built-in
+    server does not have (push needs it first) goes the whole real way — the portal's request, the update helper, ./stack
+    git-server mirror add (the git server's way out made, then taken away again by the reconcile), the code container, Forgejo —
+    and ends as a failure whose note is the git server's own words; no token in the page, the request's answer or the note.
+    No model calls. (The happy path, Change and Remove against a real second Forgejo: tests/e2e/localgit/run.sh.)"""
+    need_on()
+    _need_helper(ctx)
+    page, rec = ui_page(ctx, "code-ui-git-mirrors")
+    c = Code.on(page, rec, goto=False)
+    page.keyboard.press("Control+Shift+G")
+    see(page.get_by_test_id("git-panel")).to_be_visible(timeout=30000)
+    token = os.environ.get("E2E_GIT_TOKEN", "")
+    if GIT_SERVER:
+        ca = base64.b64decode(os.environ.get("E2E_GIT_CA_B64", "")).decode()
+        dlg = _gitsrv_https_host(page, token, ca, "https://gitsrv:8443/e2e/demo.git")
+    else:
+        palette(page, "git: git hosts")
+        dlg = page.get_by_test_id("git-hosts-dialog")
+        see(dlg).to_be_visible(timeout=30000)
+    sec = dlg.get_by_test_id("git-mirrors")
+    see(sec).to_be_visible(timeout=30000)
+    see(sec.get_by_test_id("git-mirror-add")).to_be_visible()
+    shot(page, "m1-code-git-mirrors")
+    pw = sec.get_by_test_id("git-mirror-password")
+    if not GIT_SERVER:
+        # (no host to mirror to: the form says so; a wrong password is still said by the portal when a request is sent — needs a host)
+        sec.get_by_test_id("git-mirror-add").click()
+        see(sec.get_by_test_id("git-mirror-nohost")).to_be_visible()
+        dlg.get_by_role("button", name="Close").click()
+        return "the Mirrors section and Add a mirror are there with no mirror; with no token host it says to connect one (the rest needs E2E_GIT_SERVER=1)"
+    sec.get_by_test_id("git-mirror-add").click()
+    form = sec.get_by_test_id("git-mirror-form")
+    form.get_by_test_id("git-mirror-repo").fill("e2e-no-such-repo")
+    form.get_by_test_id("git-mirror-path").fill("e2e/demo")
+    form.get_by_test_id("git-mirror-interval").fill("2h")
+    see(form.get_by_test_id("git-mirror-says")).to_contain_text("FORCE-UPDATES the remote's refs")
+    pw.fill("not the password")
+    form.get_by_test_id("git-mirror-make").click()
+    see(sec.get_by_test_id("git-mirror-error")).to_contain_text("not right", timeout=30000)
+    pw.fill(ENV["PORTAL_PASSWORD"])
+    form.get_by_test_id("git-mirror-make").click()
+    req = sec.get_by_test_id("git-mirror-request")
+    see(req).to_have_attribute("data-state", "failed", timeout=240000)
+    see(sec.get_by_test_id("git-mirror-note")).to_contain_text("no repository devos/e2e-no-such-repo", timeout=30000)
+    shot(page, "m2-code-git-mirrors-refused")
+    text = page.evaluate("document.body.innerText")
+    expect(token and token not in text and "PRIVATE KEY" not in text, "a secret on the page")
+    listed = c.api("GET", "/api/git/mirrors")
+    expect(listed["json"]["available"] is True and not any(m["repo"] == "devos/e2e-no-such-repo" for m in listed["json"]["mirrors"]), f"a mirror was made: {listed['text'][:300]}")
+    expect(token not in listed["text"], "a secret in GET /api/git/mirrors")
+    dlg.get_by_role("button", name="Close").click()
+    _drop_hosts(c)
+    return "Add a mirror went the whole real way (portal, helper, ./stack, Forgejo) and was refused in the git server's words; the wrong password was said; no secret anywhere"
+
+
 @check("browser", "code-ui-git-remotes")
 @saved
 def ui_git_remotes(ctx):
