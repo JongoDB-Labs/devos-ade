@@ -1,5 +1,5 @@
 // ./stack git-server mirror … on the code container's side (lib/localgit.sh, from `docker compose exec -T code node
-// server/mirror-host.mjs`): one JSON request on stdin — {op: list | hosts | add | sync | remove, …} (mirrors.mjs) —, one JSON
+// server/mirror-host.mjs`): one JSON request on stdin — {op: list | hosts | resolve | add | change | sync | remove, …} (mirrors.mjs) —, one JSON
 // line out: {ok: true, …} or {ok: false, error}. Only from the computer running DevOS ADE (nothing of the page calls it); the
 // connected hosts' credentials stay in this container: what leaves it is the one access token a mirror needs, in a request to
 // the git server on this stack's own network. Never prints a token. Node built-ins only (githosts.mjs, mirrors.mjs).
@@ -18,10 +18,12 @@ export async function run(input, mirrors = makeMirrors()) {
   switch (b.op) {
     case 'list': return { mirrors: await mirrors.list() };
     case 'hosts': return { hosts: await mirrors.hosts() };
+    case 'resolve': return mirrors.resolve(b);
     case 'add': return { mirror: await mirrors.add(b) };
+    case 'change': return { mirror: await mirrors.change(b) };
     case 'sync': return await mirrors.sync(b);
     case 'remove': return await mirrors.remove(b);
-    default: throw new HostError(400, 'op: list, hosts, add, sync or remove');
+    default: throw new HostError(400, 'op: list, hosts, resolve, add, change, sync or remove');
   }
 }
 

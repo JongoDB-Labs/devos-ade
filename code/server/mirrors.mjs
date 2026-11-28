@@ -38,6 +38,19 @@ export function toInterval(v) {
 }
 
 export function makeMirrors({ store = new GitHosts(), fetchImpl = globalThis.fetch, base = API, now = () => Date.now() } = {}) {
+  // clean(text, max) -> the server's words, cut, on one line, with every credential this store holds (and any user:password@ in an
+  // address) taken out: what Forgejo or a remote says can echo a token, and these words reach the page and the helper's record
+  // (JON-970: nothing a connected host's token is in may leave this container)
+  function clean(text, max = 300) {
+    let t = typeof text === 'string' ? text : '';
+    try {
+      for (const h of store.read().hosts) {
+        const sec = GitHosts.secret(h);
+        if (typeof sec === 'string' && sec.length >= 4) t = t.split(sec).join('…');
+      }
+    } catch { /* (an unreadable store: the address rule below still holds) */ }
+    return short(t.replace(/\/\/[^/@\s]*@/g, '//'), max);
+  }
   // the built-in host's token (repository scope): what Forgejo's API gets
   function local() {
     const h = store.read().hosts.find((x) => x.builtin === LOCALGIT.id);
@@ -55,7 +68,7 @@ export function makeMirrors({ store = new GitHosts(), fetchImpl = globalThis.fet
     let json = null;
     const text = await res.text().catch(() => '');
     try { json = text ? JSON.parse(text) : null; } catch { json = null; }
-    if (!res.ok) throw err(res.status === 404 ? 404 : res.status === 401 || res.status === 403 ? 502 : 400, `the git server refused: ${short(json?.message || `HTTP ${res.status}`, 300)}`);
+    if (!res.ok) throw err(res.status === 404 ? 404 : res.status === 401 || res.status === 403 ? 502 : 400, `the git server refused: ${clean(json?.message || `HTTP ${res.status}`, 300)}`);
     return json;
   }
   // the remote host and credential a mirror uses: a connected git host with an access token, for the URL's host
@@ -65,6 +78,9 @@ export function makeMirrors({ store = new GitHosts(), fetchImpl = globalThis.fet
     if (p.scheme !== 'https') throw err(400, 'a mirror needs an https:// remote (with a connected host\'s access token)');
     const h = store.match(p);
     if (!h) throw err(400, `${p.host}${p.port ? `:${p.port}` : ''} is not a connected git host: connect it (Git hosts) with an access token first`);
+    return remoteWith(h, p);
+  }
+  function remoteWith(h, p) {
     if (h.builtin === LOCALGIT.id) throw err(400, 'that is the built-in git server itself');
     if (h.auth === 'oauth') throw err(400, `${h.label} is connected with a sign-in, whose token lasts hours and cannot be renewed inside the git server: connect it with an access token to mirror to it`);
     if (!httpsAuth(h.auth)) throw err(400, 'a mirror needs an access token');
@@ -73,9 +89,25 @@ export function makeMirrors({ store = new GitHosts(), fetchImpl = globalThis.fet
     const web = `https://${p.host}${p.port ? `:${p.port}` : ''}/${p.path.replace(/^~?\/*/, '').replace(/\.git\/?$/, '')}.git`;
     return { p, h, secret, web };
   }
+  // a connected host named by its id and a repository path there (what the page sends: never an address or a credential)
+  const REPO_PATH = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}(?:\/[A-Za-z0-9][A-Za-z0-9._-]{0,99}){0,4}$/;
+  function remoteByHost(hostId, repoPath) {
+    const h = typeof hostId === 'string' ? store.read().hosts.find((x) => x.id === hostId) : null;
+    if (!h) throw err(400, 'that is not a connected git host: connect it (Git hosts) with an access token first');
+    if (h.builtin === LOCALGIT.id) throw err(400, 'that is the built-in git server itself');
+    const bare = typeof repoPath === 'string' ? repoPath.replace(/\.git$/, '') : '';
+    if (!REPO_PATH.test(bare) || bare.split('/').some((x) => x === '.' || x === '..')) throw err(400, 'the repository on the other host: owner/name (letters, digits, . _ -)');
+    return remoteWith(h, { host: h.host, port: h.port && h.port !== 443 ? h.port : null, path: bare });
+  }
+  // resolve({host, path} | {remote}) -> {host, label, remote}: the host name (for the git server's way out) and the https address —
+  // no credential (./stack git-server mirror asks this before it opens the way out)
+  function resolve(b) {
+    const r = b?.host !== undefined || b?.path !== undefined ? remoteByHost(b.host, b.path) : remoteFor(b?.remote);
+    return { host: r.p.host, label: r.h.label, remote: r.web };
+  }
   const view = (owner, repo, m) => ({ direction: 'push', repo: `${owner}/${repo}`, name: short(m.remote_name, 100), remote: short(String(m.remote_address || '').replace(/\/\/[^/@]*@/, '//'), 300),
     interval: short(m.interval, 20), syncOnCommit: m.sync_on_commit === true, createdAt: ago(m.created), lastSync: m.last_update && !GO_ZERO.test(m.last_update) ? ago(m.last_update) : null,
-    lastError: m.last_error ? short(m.last_error, 300) : null, force: true });
+    lastError: m.last_error ? clean(m.last_error, 300) : null, force: true });
   const pullView = (r) => ({ direction: 'pull', repo: short(r.full_name, 140), name: null, remote: short(String(r.original_url || '').replace(/\/\/[^/@]*@/, '//'), 300), interval: short(r.mirror_interval, 20),
     syncOnCommit: false, createdAt: ago(r.created_at), lastSync: ago(r.mirror_updated), lastError: null, force: false });
 
@@ -106,7 +138,8 @@ export function makeMirrors({ store = new GitHosts(), fetchImpl = globalThis.fet
     if (direction !== 'push' && direction !== 'pull') throw err(400, 'direction: push or pull');
     const repo = String(b?.repo || '');
     if (!NAME.test(repo)) throw err(400, 'the repository on the built-in server (its name: letters, digits, . _ -)');
-    const r = remoteFor(b?.remote);
+    if (b?.host !== undefined && b?.remote !== undefined) throw err(400, 'name the remote by one of: a connected host and a path, or an address');
+    const r = b?.host !== undefined || b?.path !== undefined ? remoteByHost(b.host, b.path) : remoteFor(b?.remote);
     const interval = toInterval(b?.interval);
     if (direction === 'push') {
       if (interval !== '0s' && Number.parseInt(interval, 10) < 0) throw err(400, 'interval');
@@ -127,6 +160,27 @@ export function makeMirrors({ store = new GitHosts(), fetchImpl = globalThis.fet
     const direction = b?.direction === 'pull' ? 'pull' : 'push';
     await api('POST', `/repos/${owner}/${repo}/${direction === 'pull' ? 'mirror-sync' : 'push_mirrors-sync'}`);
     return { ok: true, repo: `${owner}/${repo}`, direction, at: now() };
+  }
+
+  // change({repo, name, interval?, syncOnCommit?}) -> the mirror (as list shows it): Forgejo has no call to edit a push mirror, so the
+  // new one is made first (the connected host's token is read here, as add does) and the old one deleted after; a new one the server
+  // refuses leaves the old as it was. What is left out keeps the old mirror's value.
+  async function change(b) {
+    const { owner } = local();
+    const repo = String(b?.repo || '');
+    if (!NAME.test(repo)) throw err(400, 'the repository on the built-in server');
+    const name = String(b?.name || '');
+    if (!NAME.test(name)) throw err(400, 'the mirror\'s name (./stack git-server mirror list)');
+    const interval = b?.interval === undefined || b?.interval === null || b?.interval === '' ? null : toInterval(b.interval);
+    if (b?.syncOnCommit !== undefined && typeof b.syncOnCommit !== 'boolean') throw err(400, 'syncOnCommit: true or false');
+    const ms = await api('GET', `/repos/${owner}/${repo}/push_mirrors`);
+    const old = Array.isArray(ms) ? ms.find((m) => m && m.remote_name === name) : null;
+    if (!old) throw err(404, `no mirror ${name} of ${owner}/${repo} (./stack git-server mirror list)`);
+    const r = remoteFor(String(old.remote_address || '').replace(/\/\/[^/@]*@/, '//'));
+    const made = await api('POST', `/repos/${owner}/${repo}/push_mirrors`, { remote_address: r.web, remote_username: r.h.username || 'x-access-token', remote_password: r.secret,
+      interval: interval ?? (typeof old.interval === 'string' && /^[0-9hms]{2,20}$/.test(old.interval) ? old.interval : '8h0m0s'), sync_on_commit: b?.syncOnCommit ?? old.sync_on_commit === true });
+    await api('DELETE', `/repos/${owner}/${repo}/push_mirrors/${name}`);
+    return view(owner, repo, made);
   }
 
   async function remove(b) {
@@ -212,5 +266,5 @@ export function makeMirrors({ store = new GitHosts(), fetchImpl = globalThis.fet
     for (const m of await list()) { try { set.add(new URL(m.remote).hostname); } catch { /* not a URL */ } }
     return [...set].sort();
   }
-  return { list, add, sync, remove, hosts, owner, nameFree, create, protect, defaultBranch };
+  return { list, add, change, resolve, sync, remove, hosts, owner, nameFree, create, protect, defaultBranch };
 }

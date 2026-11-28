@@ -190,3 +190,93 @@ test('protect asks for the default branch, then makes the one rule that refuses 
   assert.equal(await makeMirrors({ store: setup('protect5'), fetchImpl: fake({ 'GET /api/v1/repos/devos/kept-app': [200, { default_branch: '' }] }).fetchImpl, base: 'http://caddy:8099' }).defaultBranch('kept-app'), null);
   await assert.rejects(m.protect('../x'), (e) => e.status === 400);
 });
+
+// --- JON-970: the Git hosts dialog names a connected host by id and a path; the token stays here ---
+const hostId = (store, host) => store.list().find((h) => h.host === host).id;
+
+test('resolve: a connected host\'s id and a path give the https address and the host name; never a token; refused for an unknown id, a sign-in, the built-in host, a bad path', () => {
+  const store = setup('resolve');
+  const m = makeMirrors({ store, fetchImpl: fake().fetchImpl });
+  const gh = hostId(store, 'github.com');
+  const r = m.resolve({ host: gh, path: 'octo/app' });
+  assert.deepEqual(r, { host: 'github.com', label: 'GitHub', remote: 'https://github.com/octo/app.git' });
+  assert.ok(!JSON.stringify(r).includes(GTOK));
+  assert.equal(m.resolve({ host: gh, path: 'octo/app.git' }).remote, 'https://github.com/octo/app.git');
+  const bad = (b, re) => assert.throws(() => m.resolve(b), re, JSON.stringify(b));
+  bad({ host: 'h_000000000000', path: 'o/r' }, /not a connected git host/);
+  bad({ host: store.read().hosts.find((h) => h.builtin).id, path: 'o/r' }, /built-in git server itself/);
+  bad({ host: gh, path: '../x' }, /repository/);
+  bad({ host: gh, path: 'o/r?x=1' }, /repository/);
+  bad({ host: gh, path: 'o//r' }, /repository/);
+  bad({ host: gh, path: '' }, /repository/);
+  bad({ host: 'nope', path: 'o/r' }, /not a connected git host/);
+  store.addOAuth({ kind: 'gitlab', host: 'gitlab.com', oauth: { source: 'signed-in', clientId: 'cid', accessToken: GTOK, refreshToken: `${GTOK}r`, account: 'g' } });
+  bad({ host: hostId(store, 'gitlab.com'), path: 'g/r' }, /connected with a sign-in/);
+});
+
+test('add by host id and path: the same request to the git server as by address, the token only in it', async () => {
+  const store = setup('addhost');
+  const f = fake({ 'GET /api/v1/repos/devos/app': [200, { name: 'app' }], 'POST /api/v1/repos/devos/app/push_mirrors': [200, { remote_name: 'm9', remote_address: 'https://github.com/octo/app.git', interval: '1h0m0s', sync_on_commit: false }] });
+  const m = makeMirrors({ store, fetchImpl: f.fetchImpl });
+  const r = await m.add({ direction: 'push', repo: 'app', host: hostId(store, 'github.com'), path: 'octo/app', interval: '1h', syncOnCommit: false });
+  const post = f.calls.find((c) => c.key.startsWith('POST'));
+  assert.deepEqual(post.body, { remote_address: 'https://github.com/octo/app.git', remote_username: 'octo', remote_password: GTOK, interval: '1h0m0s', sync_on_commit: false });
+  assert.ok(!JSON.stringify(r).includes(GTOK));
+  // a host id with a URL as well: refused (one way to name the remote)
+  await assert.rejects(m.add({ direction: 'push', repo: 'app', host: hostId(store, 'github.com'), path: 'o/r', remote: 'https://github.com/o/r' }), /one of/);
+});
+
+test('change: the new push mirror is made first, then the old one deleted; a refused new one leaves the old; the page can change the interval and on-every-push only', async () => {
+  const store = setup('change');
+  const old = { remote_name: 'm1', remote_address: 'https://github.com/octo/app.git', interval: '8h0m0s', sync_on_commit: true };
+  const f = fake({ 'GET /api/v1/repos/devos/app/push_mirrors': [200, [old]], 'POST /api/v1/repos/devos/app/push_mirrors': [200, { ...old, remote_name: 'm2', interval: '2h0m0s', sync_on_commit: false }],
+    'DELETE /api/v1/repos/devos/app/push_mirrors/m1': [204, null] });
+  const m = makeMirrors({ store, fetchImpl: f.fetchImpl });
+  const r = await m.change({ repo: 'app', name: 'm1', interval: '2h', syncOnCommit: false });
+  assert.deepEqual(f.calls.map((c) => c.key), ['GET /api/v1/repos/devos/app/push_mirrors', 'POST /api/v1/repos/devos/app/push_mirrors', 'DELETE /api/v1/repos/devos/app/push_mirrors/m1']);
+  const post = f.calls[1].body;
+  assert.deepEqual([post.remote_address, post.remote_password, post.interval, post.sync_on_commit], ['https://github.com/octo/app.git', GTOK, '2h0m0s', false]);
+  assert.deepEqual([r.name, r.interval, r.syncOnCommit], ['m2', '2h0m0s', false]);
+  // omitted fields keep what the mirror has
+  const g = fake({ 'GET /api/v1/repos/devos/app/push_mirrors': [200, [old]], 'POST /api/v1/repos/devos/app/push_mirrors': [200, old], 'DELETE /api/v1/repos/devos/app/push_mirrors/m1': [204, null] });
+  await makeMirrors({ store, fetchImpl: g.fetchImpl }).change({ repo: 'app', name: 'm1' });
+  assert.deepEqual([g.calls[1].body.interval, g.calls[1].body.sync_on_commit], ['8h0m0s', true]);
+  // the server refuses the new one: the old is not deleted
+  const h = fake({ 'GET /api/v1/repos/devos/app/push_mirrors': [200, [old]], 'POST /api/v1/repos/devos/app/push_mirrors': [403, { message: 'already exists' }] });
+  await assert.rejects(makeMirrors({ store, fetchImpl: h.fetchImpl }).change({ repo: 'app', name: 'm1', interval: '3h' }), /the git server refused: already exists/);
+  assert.ok(!h.calls.some((c) => c.key.startsWith('DELETE')));
+  // no such mirror; a bad name; a bad interval; a remote that is no longer a connected host: nothing sent
+  await assert.rejects(m.change({ repo: 'app', name: 'zz', interval: '2h' }), /no mirror zz/);
+  await assert.rejects(m.change({ repo: 'app', name: '../x' }), /mirror's name/);
+  await assert.rejects(m.change({ repo: 'app', name: 'm1', interval: '5m' }), /interval/);
+  const gone = fake({ 'GET /api/v1/repos/devos/app/push_mirrors': [200, [{ ...old, remote_address: 'https://gitlab.com/g/r.git' }]] });
+  await assert.rejects(makeMirrors({ store, fetchImpl: gone.fetchImpl }).change({ repo: 'app', name: 'm1', interval: '2h' }), /not a connected git host/);
+  assert.deepEqual(gone.calls.map((c) => c.key), ['GET /api/v1/repos/devos/app/push_mirrors']);
+});
+
+test('no credential in any error: the server echoing a connected host\'s token (or the built-in one) is cut before it leaves', async () => {
+  const store = setup('scrub');
+  const echo = fake({ 'GET /api/v1/repos/devos/app': [200, {}], 'POST /api/v1/repos/devos/app/push_mirrors': [400, { message: `bad credentials ${GTOK} for https://octo:${GTOK}@github.com/o/r and ${LTOK}` }] });
+  const m = makeMirrors({ store, fetchImpl: echo.fetchImpl });
+  await assert.rejects(m.add({ direction: 'push', repo: 'app', host: hostId(store, 'github.com'), path: 'o/r' }), (e) => {
+    assert.ok(!e.message.includes(GTOK) && !e.message.includes(LTOK), e.message);
+    assert.match(e.message, /the git server refused: bad credentials/);
+    return true;
+  });
+  const l = fake({ 'GET /api/v1/user/repos': [200, [{ name: 'app', owner: { login: 'devos' } }]], 'GET /api/v1/repos/devos/app/push_mirrors': [200, [{ remote_name: 'm1', remote_address: 'https://github.com/o/r.git', last_error: `push failed with ${GTOK}` }]] });
+  const out = await makeMirrors({ store, fetchImpl: l.fetchImpl }).list();
+  assert.ok(!JSON.stringify(out).includes(GTOK) && /push failed with/.test(out[0].lastError));
+});
+
+test('the script: resolve, add by host id, change; the answers never hold a token', async () => {
+  const store = setup('script2');
+  const old = { remote_name: 'm1', remote_address: 'https://github.com/octo/app.git', interval: '8h0m0s', sync_on_commit: true };
+  const f = fake({ 'GET /api/v1/repos/devos/app/push_mirrors': [200, [old]], 'POST /api/v1/repos/devos/app/push_mirrors': [200, { ...old, remote_name: 'm2' }], 'DELETE /api/v1/repos/devos/app/push_mirrors/m1': [204, null] });
+  const m = makeMirrors({ store, fetchImpl: f.fetchImpl });
+  const gh = hostId(store, 'github.com');
+  const r = await run(JSON.stringify({ op: 'resolve', host: gh, path: 'octo/app' }), m);
+  assert.deepEqual(r, { host: 'github.com', label: 'GitHub', remote: 'https://github.com/octo/app.git' });
+  const c = await run(JSON.stringify({ op: 'change', repo: 'app', name: 'm1', interval: '4h' }), m);
+  assert.equal(c.mirror.name, 'm2');
+  assert.ok(!JSON.stringify([r, c]).includes(GTOK));
+});
