@@ -96,14 +96,16 @@ def cost(name):
             mi = m.get("model_info") or {}; lp = m.get("litellm_params") or {}
             v = lp.get("input_cost_per_token", mi.get("input_cost_per_token"))
             w = lp.get("output_cost_per_token", mi.get("output_cost_per_token"))
-            return f"{v}/{w}"
+            # (as numbers: LiteLLM gives a zero price as 0.0, a missing one as None)
+            n = lambda x: "None" if x is None else ("0" if float(x) == 0 else repr(float(x)))
+            return f"{n(v)}/{n(w)}"
     return "absent"
 print(cost("ms/pub/gpt-e2e"), cost("ms/fake/fake/tiny-chat"), cost("ms/nopr/fake/tiny-chat"))
 PY
 )"
 set -- $INFO
-case "${1:-}" in 5.9e-07/7.9e-07 | 0.00000059/0.00000079 | 5.9e-7/7.9e-7) pubok=1 ;; *) pubok='' ;; esac
-{ [ -n "$pubok" ] && [ "${2:-}" = 0/0 ] && [ "${3:-}" != 0/0 ] && [ "${3:-}" != absent ]; } \
+case "${1:-}" in 5.9e-07/7.9e-07) pubok=1 ;; *) pubok='' ;; esac
+{ [ -n "$pubok" ] && [ "${2:-}" = 0/0 ] && [ "${3:-}" = None/None ]; } \
   && ok "11 LiteLLM carries the prices: pub 0.59/0.79 per million, fake 0, nopr none (not 0)" || fail "11 model info: '$INFO'"
 # 12 a real request through the hosted, priced server books a spend that is not $0; the self-hosted one booked $0 at step 4
 curl -sS -m 60 -D "$WORK/hdr2" -o "$WORK/body2" -H 'Content-Type: application/json' -H "Authorization: Bearer $MK" -d '{"model":"ms/paid/fake/tiny-chat","max_tokens":10,"messages":[{"role":"user","content":"hi"}]}' "http://127.0.0.1:$PORT/v1/chat/completions"
