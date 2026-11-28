@@ -6,9 +6,15 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.77.3] - 2026-11-28
+
 ### Changed
 
 - **A new install's first Update now skips more steps that have nothing to do.** It used to run the AWS key check, LiteLLM's keys, the web search check and the settings step again, because settings that later steps of the first setup write looked like changes to them. Each of these steps now counts only the settings it really reads. Installs made with this version or later see the gain on their first update. (JON-1480)
+
+### To get it
+
+Existing installs: Home › Update now.
 
 ## [0.77.2] - 2026-11-28
 
