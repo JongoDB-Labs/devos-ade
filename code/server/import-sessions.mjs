@@ -308,15 +308,18 @@ export class Imports {
   }
   /** noteRequest(nonce, {action, project, state, why, results}) — how a request went (the helper says it: lib/sessions.sh;
    *  fixed words only; a copy's results: as copy() gives them) */
-  noteRequest(nonce, { action = null, project = null, state, why = null, results = null }) {
+  noteRequest(nonce, { action = null, project = null, state, why = null, results = null, note = null }) {
     if (!NONCE.test(String(nonce)) || !REQUEST_STATES.includes(state) || (why !== null && !REQUEST_WHY.includes(why))) throw new ImportError(400, 'bad request state');
     if (action !== null && !HELPER_ACTIONS.includes(action)) throw new ImportError(400, 'bad request state');
     if (project !== null && !PID.test(String(project))) throw new ImportError(400, 'bad request state');
+    if (note !== null && typeof note !== 'string') throw new ImportError(400, 'bad request state');
     const list = this.requests();
     const had = list.find((r) => r.id === nonce);
     const rec = { ...(had || { id: nonce, action, project, at: this.now() }), state, why, updated: this.now() };
     if (action !== null) rec.action = action;
     if (project !== null) rec.project = project;
+    // (a mirror's: the git server's own words, one line, cut — mirrors.mjs took every credential out before ./stack passed it on)
+    if (note !== null) rec.note = note.replace(/[\u0000-\u001f\u007f]+/g, ' ').slice(0, 300);
     if (Array.isArray(results)) rec.results = results.slice(0, LIMITS.results);
     writeJson(this.dir, 'requests.json', [rec, ...list.filter((r) => r.id !== nonce)].slice(0, LIMITS.requests));
     return rec;
@@ -392,11 +395,13 @@ export class Imports {
 export const REQUEST_STATES = Object.freeze(['sent', 'asking', 'reading', 'copying', 'done', 'refused', 'cancelled', 'failed']);
 // (and Bring your setup's: a look at your Claude Code setup, an open of items of it, a copy that keeps a possible secret —
 // import-setup.mjs; their requests are kept here with the sessions' ones)
-export const HELPER_ACTIONS = Object.freeze(['sessions-scan', 'sessions-fetch', 'sessions-suggest', 'sessions-copy', 'setup-scan', 'setup-fetch', 'setup-copy']);
+export const HELPER_ACTIONS = Object.freeze(['sessions-scan', 'sessions-fetch', 'sessions-suggest', 'sessions-copy', 'setup-scan', 'setup-fetch', 'setup-copy',
+  // (the Git hosts dialog's mirrors of the built-in git server: lib/localgit.sh, JON-970)
+  'git-mirror-add', 'git-mirror-sync', 'git-mirror-change', 'git-mirror-remove']);
 // why a request did not go through (lib/sessions.sh and the helper say one of these words; the page says them in
 // sentences of its own: never a store's or a request's text)
 export const REQUEST_WHY = Object.freeze(['password', 'busy', 'limit', 'denied', 'no-screen', 'remote', 'no-consent', 'no-project', 'no-store',
-  'no-sessions', 'stale', 'reader', 'code', 'bad-request', 'changed', 'timeout']);
+  'no-sessions', 'stale', 'reader', 'code', 'bad-request', 'changed', 'timeout', 'mirror']);
 
 // --- the command line (./stack, in the code container: docker compose exec -T code node server/import-sessions.mjs) ---
 const opt = (argv, k) => { const i = argv.indexOf(k); return i >= 0 && typeof argv[i + 1] === 'string' ? argv[i + 1] : null; };
@@ -483,7 +488,7 @@ export async function cli(argv, { stdin = process.stdin, imports = new Imports({
   }
   if (cmd === 'suggest') return out({ ok: true, ...imports.saveSuggestions(await readAll(stdin, 1 << 20), { consent: opt(argv, '--consent') }) });
   if (cmd === 'request') {
-    imports.noteRequest(opt(argv, '--id'), { state: opt(argv, '--state'), why: opt(argv, '--why'), action: opt(argv, '--action'), project: opt(argv, '--project') });
+    imports.noteRequest(opt(argv, '--id'), { state: opt(argv, '--state'), why: opt(argv, '--why'), action: opt(argv, '--action'), project: opt(argv, '--project'), note: opt(argv, '--note') });
     return out({ ok: true });
   }
   if (cmd === 'forget') return out({ ok: true, ...imports.forget(opt(argv, '--project'), opt(argv, '--tool')) });
