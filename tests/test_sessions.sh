@@ -314,10 +314,87 @@ test_the_helper_takes_the_code_pages_requests_from_the_portal_only_in_their_fixe
   [ ! -s "$CALLS" ] || { echo "replayed: $(cat "$CALLS")" >&2; return 1; }
   # what it offers the Code page: in ./stack's folder for the code container (read-only there)
   sessions_helper_tick
-  assert_contains "$(cat "$(projects_public_dir)/helper.json")" '"sessions": ["sessions-scan","sessions-fetch","sessions-suggest","sessions-copy","setup-scan","setup-fetch","setup-copy"]'
+  assert_contains "$(cat "$(projects_public_dir)/helper.json")" '"sessions": ["sessions-scan","sessions-fetch","sessions-suggest","sessions-copy","setup-scan","setup-fetch","setup-copy","git-mirror-add","git-mirror-sync","git-mirror-change","git-mirror-remove"]'
   # and in the capability file the portal reads (it refuses a request the helper does not take)
   settings_helper_tick 2>/dev/null || true
-  assert_contains "$(cat "$(settings_capability_file)")" '"sessions": ["sessions-revoke","sessions-scan","sessions-fetch","sessions-suggest","sessions-copy","setup-scan","setup-fetch","setup-copy"]'
+  assert_contains "$(cat "$(settings_capability_file)")" '"sessions": ["sessions-revoke","sessions-scan","sessions-fetch","sessions-suggest","sessions-copy","setup-scan","setup-fetch","setup-copy","git-mirror-add","git-mirror-sync","git-mirror-change","git-mirror-remove"]'
+}
+
+test_the_helper_runs_the_git_hosts_dialogs_mirror_requests_as_git_server_commands_in_their_fixed_shapes_and_only_on_the_computer_for_the_ones_that_change_it() {
+  # JON-970: the Git hosts dialog's Mirrors section; the request names a connected host by its id and a repository path,
+  # never an address or a credential, and the helper turns it into ./stack git-server mirror … --request ID
+  _stubs
+  STACK_DIR="$TMP/stack"; mkdir -p "$STACK_DIR"
+  printf '#!/bin/sh\necho "$*" >> "$CALLS"\necho "sessions-result: done" >&2\n' > "$STACK_DIR/stack"; chmod +x "$STACK_DIR/stack"
+  export CALLS="$TMP/calls" HELPER_JOB_POLL_S=0 SESSIONS_JOB_MIN_INTERVAL_S=0
+  set_env_batch PORTAL_PASSWORD 'correct horse battery'
+  mkdir -p "$(helper_dir)" "$(request_dir)"; chmod 700 "$(helper_dir)"
+  ensure_portal_password_hash
+  _ses() { printf '{"action":%s,"requested_at":%s,"nonce":"%s","auth":"%s","origin":"%s"%s}\n' "$2" "$(date +%s)" "$1" "$(printf '%s' "${4-correct horse battery}" | openssl base64 -A)" "${5:-local}" "$3" > "$(request_dir)/ses-$1.json"; }
+  local H=h_0123456789ab
+  _ses 11111111111111111111111111111111 '"git-mirror-add"' ",\"direction\":\"push\",\"repo\":\"app\",\"host\":\"$H\",\"path\":\"me/app\",\"interval\":\"2h\",\"sync\":\"no\""
+  sessions_poll_once 2>/dev/null
+  assert_eq "$(cat "$CALLS")" "git-server mirror add push app --host $H --path me/app --interval 2h --no-sync-on-commit --request 11111111111111111111111111111111 --yes"
+  : > "$CALLS"
+  _ses 22222222222222222222222222222222 '"git-mirror-add"' ",\"direction\":\"pull\",\"repo\":\"up\",\"host\":\"$H\",\"path\":\"grp/sub/up\",\"interval\":\"\",\"sync\":\"yes\""
+  sessions_poll_once 2>/dev/null
+  assert_eq "$(cat "$CALLS")" "git-server mirror add pull up --host $H --path grp/sub/up --request 22222222222222222222222222222222 --yes"
+  : > "$CALLS"
+  _ses 33333333333333333333333333333333 '"git-mirror-sync"' ',"direction":"pull","repo":"up"'
+  sessions_poll_once 2>/dev/null
+  assert_eq "$(cat "$CALLS")" "git-server mirror sync up --pull --request 33333333333333333333333333333333 --yes"
+  : > "$CALLS"
+  _ses 44444444444444444444444444444444 '"git-mirror-sync"' ',"direction":"push","repo":"app"' 'correct horse battery' remote
+  sessions_poll_once 2>/dev/null
+  assert_eq "$(cat "$CALLS")" "git-server mirror sync app --request 44444444444444444444444444444444 --yes"   # (a sync is allowed from another device)
+  : > "$CALLS"
+  _ses 55555555555555555555555555555555 '"git-mirror-change"' ',"repo":"app","name":"remote_mirror_ab12","interval":"30m","sync":"keep"'
+  sessions_poll_once 2>/dev/null
+  assert_eq "$(cat "$CALLS")" "git-server mirror change app remote_mirror_ab12 --interval 30m --request 55555555555555555555555555555555 --yes"
+  : > "$CALLS"
+  _ses 56666666666666666666666666666666 '"git-mirror-change"' ',"repo":"app","name":"m1","interval":"","sync":"yes"'
+  sessions_poll_once 2>/dev/null
+  assert_eq "$(cat "$CALLS")" "git-server mirror change app m1 --sync-on-commit --request 56666666666666666666666666666666 --yes"
+  : > "$CALLS"
+  _ses 66666666666666666666666666666666 '"git-mirror-remove"' ',"repo":"app","name":"remote_mirror_ab12"'
+  sessions_poll_once 2>/dev/null
+  assert_eq "$(cat "$CALLS")" "git-server mirror remove app remote_mirror_ab12 --request 66666666666666666666666666666666 --yes"
+  # the ones that hand a token to the git server or change the computer's network are refused over remote access, said so
+  : > "$CALLS"; : > "$TMP/dc"
+  for t in '"git-mirror-add"|,"direction":"push","repo":"app","host":"'$H'","path":"me/app","interval":"","sync":"yes"' '"git-mirror-change"|,"repo":"app","name":"m1","interval":"2h","sync":"keep"' \
+           '"git-mirror-remove"|,"repo":"app","name":"m1"'; do
+    _ses 7777777777777777777777777777777$(( RANDOM % 10 )) "${t%%|*}" "${t#*|}" 'correct horse battery' remote
+    sessions_poll_once 2>/dev/null || true
+  done
+  [ ! -s "$CALLS" ] || { echo "ran over remote access: $(cat "$CALLS")" >&2; return 1; }
+  assert_contains "$(cat "$TMP/dc")" "--state refused --why remote --action git-mirror-"
+  # never an address, a token, a path of the computer, an option, a bad name, an extra field, a wrong password
+  : > "$CALLS"; : > "$TMP/dc"
+  local n=88888888888888888888888888888880 t
+  for t in '"git-mirror-add"|,"direction":"push","repo":"app","host":"'$H'","path":"https://github.com/me/app","interval":"","sync":"yes"' \
+           '"git-mirror-add"|,"direction":"push","repo":"app","host":"'$H'","path":"me/app","remote":"https://github.com/me/app","interval":"","sync":"yes"' \
+           '"git-mirror-add"|,"direction":"push","repo":"app","host":"github.com","path":"me/app","interval":"","sync":"yes"' \
+           '"git-mirror-add"|,"direction":"push","repo":"-x","host":"'$H'","path":"me/app","interval":"","sync":"yes"' \
+           '"git-mirror-add"|,"direction":"push","repo":"app","host":"'$H'","path":"../me/app","interval":"","sync":"yes"' \
+           '"git-mirror-add"|,"direction":"push","repo":"app","host":"'$H'","path":"me/app --token","interval":"","sync":"yes"' \
+           '"git-mirror-add"|,"direction":"push","repo":"app","host":"'$H'","path":"me/app","interval":"5x","sync":"yes"' \
+           '"git-mirror-add"|,"direction":"both","repo":"app","host":"'$H'","path":"me/app","interval":"","sync":"yes"' \
+           '"git-mirror-change"|,"repo":"app","name":"../x","interval":"","sync":"yes"' \
+           '"git-mirror-change"|,"repo":"app","name":"m1","interval":"","sync":"maybe"' \
+           '"git-mirror-remove"|,"repo":"app","name":"m1 m2"' '"git-mirror-sync"|,"direction":"push","repo":"a;b"' '"git-mirror-drop"|,"repo":"app"'; do
+    n="${n%?}$(( ${n: -1} + 1 ))"
+    _ses "$n" "${t%%|*}" "${t#*|}"
+    sessions_poll_once 2>/dev/null || true
+  done
+  [ ! -s "$CALLS" ] || { echo "ran: $(cat "$CALLS")" >&2; return 1; }
+  assert_contains "$(cat "$TMP/dc")" "--state refused --why bad-request"
+  _ses 99999999999999999999999999999990 '"git-mirror-remove"' ',"repo":"app","name":"m1"' 'wrong password'
+  sessions_poll_once 2>/dev/null || true
+  assert_contains "$(cat "$TMP/dc")" "request --id 99999999999999999999999999999990 --state refused --why password --action git-mirror-remove"
+  [ ! -s "$CALLS" ] || { echo "a wrong password ran: $(cat "$CALLS")" >&2; return 1; }
+  # a mirror request has its own time limit like the other Code page requests, and the helper offers the four
+  assert_eq "$(_job_deadline git-mirror-add)" "${HELPER_SESSIONS_MAX_S:-900} 0"
+  assert_contains "$SESSIONS_ACTIONS" "git-mirror-add git-mirror-sync git-mirror-change git-mirror-remove"
 }
 
 test_nothing_on_this_computer_waits_for_ever_a_dialog_a_command_in_the_code_container_a_helper_job() {
@@ -395,7 +472,7 @@ sessions consent --suggest --revoke"
   if settings_poll_once 2>/dev/null; then return 1; fi
   assert_eq "$(cat "$CALLS" | wc -l | tr -d ' ')" 3
   settings_helper_tick 2>/dev/null || true
-  assert_contains "$(cat "$(settings_capability_file)")" '"sessions": ["sessions-revoke","sessions-scan","sessions-fetch","sessions-suggest","sessions-copy","setup-scan","setup-fetch","setup-copy"]'
+  assert_contains "$(cat "$(settings_capability_file)")" '"sessions": ["sessions-revoke","sessions-scan","sessions-fetch","sessions-suggest","sessions-copy","setup-scan","setup-fetch","setup-copy","git-mirror-add","git-mirror-sync","git-mirror-change","git-mirror-remove"]'
 }
 
 test_what_a_store_said_is_printed_as_plain_ascii() {

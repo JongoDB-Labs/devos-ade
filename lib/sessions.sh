@@ -49,7 +49,7 @@ SESSIONS_EXEC_S="${SESSIONS_EXEC_S:-180}"; SESSIONS_COPY_S="${SESSIONS_COPY_S:-1
 SESSIONS_ROWS_MAX=50              # sessions one read may name
 SESSIONS_SUGGEST_MAX=500          # store folders looked at for suggestions, per tool
 SESSIONS_WALK_MAX=400             # folders listed to turn store folder names into paths, per suggest
-SESSIONS_ACTIONS="sessions-scan sessions-fetch sessions-suggest sessions-copy setup-scan setup-fetch setup-copy"   # what the Code page may ask the helper for (setup-*: lib/sessions_config.sh)
+SESSIONS_ACTIONS="sessions-scan sessions-fetch sessions-suggest sessions-copy setup-scan setup-fetch setup-copy git-mirror-add git-mirror-sync git-mirror-change git-mirror-remove"   # what the Code page may ask the helper for (setup-*: lib/sessions_config.sh; git-mirror-*: the Git hosts dialog, lib/localgit.sh)
 SESSIONS_REQ_MAX_BYTES=8192       # a ses- request (the portal's limit: portal/portal/settings.py SESSIONS_REQ_MAX)
 SESSIONS_JOB_MIN_INTERVAL_S="${SESSIONS_JOB_MIN_INTERVAL_S:-5}"; SESSIONS_JOB_MAX_PER_DAY="${SESSIONS_JOB_MAX_PER_DAY:-200}"
 SESSIONS_DIALOG_MIN_INTERVAL_S="${SESSIONS_DIALOG_MIN_INTERVAL_S:-60}"; SESSIONS_DIALOG_MAX_PER_DAY="${SESSIONS_DIALOG_MAX_PER_DAY:-10}"
@@ -161,7 +161,7 @@ _ss_code() {
 _ss_tell() {
   [ -n "$SS_REQ" ] || return 0
   local act="${SS_REQ_ACTION:-}" pid="${SS_REQ_PROJECT:-${SS_ID:-}}"
-  case "$act" in sessions-scan | sessions-fetch | sessions-suggest | sessions-copy | setup-scan | setup-fetch | setup-copy) ;; *) act='' ;; esac
+  case "$act" in sessions-scan | sessions-fetch | sessions-suggest | sessions-copy | setup-scan | setup-fetch | setup-copy | git-mirror-add | git-mirror-sync | git-mirror-change | git-mirror-remove) ;; *) act='' ;; esac
   case "$pid" in p_[0-9a-f]*) ;; *) pid='' ;; esac
   _ss_code --secs 30 request --id "$SS_REQ" --state "$1" ${2:+--why "$2"} ${act:+--action "$act"} ${pid:+--project "$pid"} >/dev/null 2>&1 || true
   case "$1" in done | refused | cancelled | failed) printf 'sessions-result: %s\n' "$1" >&2 ;; esac
@@ -918,7 +918,7 @@ _ss_check_request() {
   body="${body%x}"; body="${body%$'\n'}"
   case "$body" in *$'\n'* | *$'\r'*) echo "more than one line" >&2; return 1 ;; esac
   # (each whole line one pattern, held in a variable: a quoted part of =~ would be taken literally)
-  local head='^\{"action":"(sessions-scan|sessions-fetch|sessions-suggest|sessions-copy|setup-scan|setup-fetch|setup-copy)","requested_at":([0-9]{1,12}),"nonce":"([0-9a-f]{32})","auth":"([A-Za-z0-9+/]{4,}={0,2})","origin":"(local|remote)"'
+  local head='^\{"action":"(sessions-scan|sessions-fetch|sessions-suggest|sessions-copy|setup-scan|setup-fetch|setup-copy|git-mirror-add|git-mirror-sync|git-mirror-change|git-mirror-remove)","requested_at":([0-9]{1,12}),"nonce":"([0-9a-f]{32})","auth":"([A-Za-z0-9+/]{4,}={0,2})","origin":"(local|remote)"'
   local re_scan="$head"',"project":"(p_[0-9a-f]{8})","tool":"(claude|claude-bedrock|both)"\}$'
   local re_fetch="$head"',"project":"(p_[0-9a-f]{8})","scan":"([0-9a-f]{32})","rows":"([0-9]{1,5}(,[0-9]{1,5}){0,49})"\}$'
   local re_suggest="$head"'\}$'
@@ -930,7 +930,23 @@ _ss_check_request() {
   local re_sfetch="$head"',"scan":"([0-9a-f]{32})","rows":"([0-9]{1,5}(,[0-9]{1,5}){0,99})"\}$'
   local stok='(v|f[0-9]{1,3})#[0-9a-f]{16}'
   local re_scopy="$head"',"units":"(s_[0-9a-f]{16}(\+s_[0-9a-f]{16}){0,3})","digest":"([0-9a-f]{64})","mode":"(replace|append)","conflict":"(leave|replace)","keep":"(('"$stok"'(,'"$stok"'){0,63})?)"\}$'
-  if [[ $body =~ $re_scan ]] && [ "${BASH_REMATCH[1]}" = sessions-scan ]; then
+  # (the Git hosts dialog's mirrors, lib/localgit.sh — a connected host by its id and a repository there, never an address or a
+  # credential; the fields travel in this line's slots: repo -> PROJECT, direction -> TOOL, host id -> SCAN, path -> ROWS,
+  # mirror name -> SESSION, interval -> DIGEST ("-": none), sync yes|no|keep -> THINKING)
+  local nm='[A-Za-z0-9][A-Za-z0-9._-]{0,99}' iv='([1-9][0-9]{0,2}[mh]|0)'
+  local re_madd="$head"',"direction":"(push|pull)","repo":"('"$nm"')","host":"(h_[0-9a-f]{12})","path":"('"$nm"'(/'"$nm"'){0,4})","interval":"('"$iv"'?)","sync":"(yes|no)"\}$'
+  local re_msync="$head"',"direction":"(push|pull)","repo":"('"$nm"')"\}$'
+  local re_mchange="$head"',"repo":"('"$nm"')","name":"('"$nm"')","interval":"('"$iv"'?)","sync":"(yes|no|keep)"\}$'
+  local re_mremove="$head"',"repo":"('"$nm"')","name":"('"$nm"')"\}$'
+  if [[ $body =~ $re_madd ]] && [ "${BASH_REMATCH[1]}" = git-mirror-add ]; then
+    tool="${BASH_REMATCH[6]}"; project="${BASH_REMATCH[7]}"; scan="${BASH_REMATCH[8]}"; rows="${BASH_REMATCH[9]}"; digest="${BASH_REMATCH[11]:--}"; thinking="${BASH_REMATCH[13]}"
+  elif [[ $body =~ $re_msync ]] && [ "${BASH_REMATCH[1]}" = git-mirror-sync ]; then
+    tool="${BASH_REMATCH[6]}"; project="${BASH_REMATCH[7]}"
+  elif [[ $body =~ $re_mchange ]] && [ "${BASH_REMATCH[1]}" = git-mirror-change ]; then
+    project="${BASH_REMATCH[6]}"; session="${BASH_REMATCH[7]}"; digest="${BASH_REMATCH[8]:--}"; thinking="${BASH_REMATCH[10]}"
+  elif [[ $body =~ $re_mremove ]] && [ "${BASH_REMATCH[1]}" = git-mirror-remove ]; then
+    project="${BASH_REMATCH[6]}"; session="${BASH_REMATCH[7]}"
+  elif [[ $body =~ $re_scan ]] && [ "${BASH_REMATCH[1]}" = sessions-scan ]; then
     project="${BASH_REMATCH[6]}"; tool="${BASH_REMATCH[7]}"
   elif [[ $body =~ $re_fetch ]] && [ "${BASH_REMATCH[1]}" = sessions-fetch ]; then
     project="${BASH_REMATCH[6]}"; scan="${BASH_REMATCH[7]}"; rows="${BASH_REMATCH[8]}"
@@ -990,6 +1006,9 @@ sessions_poll_once() {
     read -r action nonce auth origin project tool scan rows session digest thinking outputs keep <<< "$res"
     _remember_nonce "$nonce"
     SS_REQ_ACTION="$action"; SS_REQ_PROJECT="$([ "$project" = - ] || echo "$project")"
+    case "$action" in git-mirror-*) SS_REQ_PROJECT='' ;; esac   # (a mirror's repo is no project id)
+    # (a mirror that is added, changed or removed hands a token to the git server and changes this computer's network: only here)
+    case "$action:$origin" in git-mirror-add:remote | git-mirror-change:remote | git-mirror-remove:remote) auth=''; _ss_tell_req "$nonce" refused remote; continue ;; esac
     if ! reason="$(_auth_ok "$auth" 2>&1)"; then auth=''; _ss_tell_req "$nonce" refused password; continue; fi
     auth=''
     if [ -n "$(stack_lock_holder)" ]; then _ss_tell_req "$nonce" refused busy; continue; fi
@@ -1003,6 +1022,11 @@ sessions_poll_once() {
       # (Bring your setup: lib/sessions_config.sh)
       setup-scan) set -- sessions config scan --tool "$tool" --project "$project" --origin "$origin" --request "$nonce" --screen ;;
       setup-fetch) set -- sessions config open --scan "$scan" --rows "$rows" --origin "$origin" --request "$nonce" ;;
+      # (the Git hosts dialog's mirrors: the same commands a terminal runs; --request tells the Code page how it went)
+      git-mirror-add) set -- git-server mirror add "$tool" "$project" --host "$scan" --path "$rows" ${digest:+$([ "$digest" = - ] || printf '%s\n%s' --interval "$digest")} $([ "$thinking" = no ] && echo --no-sync-on-commit) --request "$nonce" --yes ;;
+      git-mirror-sync) set -- git-server mirror sync "$project" $([ "$tool" = pull ] && echo --pull) --request "$nonce" --yes ;;
+      git-mirror-change) set -- git-server mirror change "$project" "$session" $([ "$digest" = - ] || printf '%s\n%s' --interval "$digest") $([ "$thinking" = yes ] && echo --sync-on-commit; [ "$thinking" = no ] && echo --no-sync-on-commit) --request "$nonce" --yes ;;
+      git-mirror-remove) set -- git-server mirror remove "$project" "$session" --request "$nonce" --yes ;;
       setup-copy) set -- sessions config copy --units "$session:$digest" --mode "$thinking" --conflict "$outputs" --keep "$keep" --origin "$origin" --request "$nonce" ;;
     esac
     logf="$(helper_dir)/last-sessions.log"
