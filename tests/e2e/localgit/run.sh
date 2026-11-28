@@ -61,10 +61,18 @@ cleanup() {
   docker rm -f "$P-portal-stub" "$P-remote" "$P-mclient" "$P-git-restore" >/dev/null 2>&1
   _LG_PROFILE=1 dc down -v --remove-orphans >/dev/null 2>&1
   docker volume rm "${P}_gitdata" >/dev/null 2>&1
+  # (what compose down no longer knows: the run ends with LOCALGIT=off, so the git server's networks — its way out among them —
+  # and any volume left are this project's by label only; JON-857)
+  local x
+  for x in $(docker ps -aq --filter "label=com.docker.compose.project=$P" 2>/dev/null); do docker rm -f "$x" >/dev/null 2>&1; done
+  for x in $(docker network ls -q --filter "label=com.docker.compose.project=$P" 2>/dev/null); do docker network rm "$x" >/dev/null 2>&1; done
+  for x in $(docker volume ls -q --filter "label=com.docker.compose.project=$P" 2>/dev/null); do docker volume rm "$x" >/dev/null 2>&1; done
   docker rmi -f "$P-client" >/dev/null 2>&1
   rm -rf "$S"
 }
-trap cleanup EXIT
+# (./stack's own exit hooks, not a trap of its own: the first on_exit or off_exit of a function this calls — the backup's
+# pause, the restore's staged copy — sets the EXIT trap again, and a raw trap here was lost with its cleanup)
+on_exit cleanup
 docker info >/dev/null 2>&1 || { echo "needs a running Docker" >&2; exit 2; }
 
 # --- ./stack's own functions ---
