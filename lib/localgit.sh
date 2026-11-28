@@ -326,47 +326,99 @@ localgit_validate_archive() {
 _lg_restore_script() {
   printf 'M=%s\n' "${1:-all}"
   cat <<'LGEOF'
-V="${V:-/v}"; B="${B:-/backup}"; A="$B/gitdata.tar.gz"; N="$V/.restore-new"; O="$V/.restore-old"
+V="${V:-/v}"; B="${B:-/backup}"; A="$B/gitdata.tar.gz"; N="$V/.restore-new"; O="$V/.restore-old"; K="$V/.restore-swapping"
 bail() { rm -rf "$N"; echo "!! the git server's repositories were NOT changed: $1" >&2; exit 1; }
+# (nothing is deleted: an earlier cut-off restore could not be finished, so the old data may be only in .restore-old)
+stuck() { echo "!! an earlier restore was cut off and could not be finished ($1): NOTHING was deleted — the repositories' files are in $V, $O and $N; run ./stack restore again, or ask for help before removing them" >&2; exit 1; }
+# recover — finish a swap that a kill or power loss cut off, before anything is removed (.restore-old may hold the only copy).
+#  marker present: every old entry was set aside and the new ones were checked whole before the swap began -> move what is
+#                  left of .restore-new in, then remove .restore-old and the marker;
+#  no marker, .restore-old there: the swap was still setting the old entries aside -> put them back.
+recover() {
+  if [ -e "$K" ]; then
+    [ -d "$N" ] || stuck "the swap marker is there but the unpacked copy is not"
+    for e in "$N"/* "$N"/.[!.]* "$N"/..?*; do
+      { [ -e "$e" ] || [ -L "$e" ]; } || continue
+      case "${e##*/}" in .restore-new | .restore-old | .restore-swapping) continue ;; esac
+      mv "$e" "$V"/ || stuck "an entry could not be moved into place"
+    done
+    rm -rf "$O" "$N"; rm -f "$K"
+  elif [ -d "$O" ]; then
+    for e in "$O"/* "$O"/.[!.]* "$O"/..?*; do
+      { [ -e "$e" ] || [ -L "$e" ]; } || continue
+      mv "$e" "$V"/ || stuck "an old entry could not be put back"
+    done
+    rmdir "$O" || stuck "the holding folder is not empty"
+  fi
+}
+# the archive's unpacked size in KB, from one listing: the size is the field before the date (ISO date: busybox and GNU tar);
+# bsdtar prints "mode links owner group size date", so its size is field 5. Nothing read -> empty.
+unpacked_kb() {
+  tar -tzvf "$A" 2>/dev/null | awk '
+    $1 ~ /^-/ { sz = ""
+      for (i = 3; i <= NF; i++) if ($i ~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$/) { sz = $(i - 1); break }
+      if (sz == "") sz = $5
+      if (sz ~ /^[0-9]+$/) { t += sz; n++ } else bad = 1 }
+    END { if (!bad && n > 0) printf "%d\n", (t + 1023) / 1024 }'
+}
+enough_space() {
+  free="$(df -Pk "$V" 2>/dev/null | awk 'NR == 2 { print $4 }')"
+  case "$free" in '' | *[!0-9]*) return 0 ;; esac
+  kb="$(unpacked_kb)"
+  # (size unreadable: twice the compressed archive's size, a rough upper bound for repositories)
+  [ -n "$kb" ] || kb=$(( $(wc -c < "$A") * 2 / 1024 ))
+  need=$(( kb + kb / 10 + 262144 ))   # a margin of 10% and 256 MB: the databases keep running on this disk
+  [ "$free" -ge "$need" ] || bail "not enough free space to unpack the git server's archive: $(( need / 1024 )) MB needed, $(( free / 1024 )) MB free — nothing was changed"
+}
 stage() {
+  recover
   rm -rf "$N" "$O"
+  enough_space
   mkdir "$N" || bail "the staging folder could not be made (is the disk full?)"
   tar -C "$N" -xzf "$A" || bail "the archive did not unpack completely (it is damaged, or the disk is full)"
   want="$(tar -tzf "$A" | sed 's|^\./||; s|/$||' | sed '/^[.]\{0,1\}$/d' | sort -u)"
   got="$(cd "$N" && find . -mindepth 1 | sed 's|^\./||' | sort -u)"
   [ "$want" = "$got" ] || bail "what unpacked is not what the archive lists"
 }
-undo() {
+undo() { # the old entries back (a failure here stops with nothing deleted)
   for e in "$O"/* "$O"/.[!.]* "$O"/..?*; do
-    { [ -e "$e" ] || [ -L "$e" ]; } && mv "$e" "$V"/
+    { [ -e "$e" ] || [ -L "$e" ]; } || continue
+    mv "$e" "$V"/ || stuck "an old entry could not be put back"
   done
   rmdir "$O" 2>/dev/null
   return 0
 }
 swap() {
+  recover
   [ -d "$N" ] || bail "nothing was staged"
   rm -rf "$O"
   mkdir "$O" || bail "the holding folder could not be made"
+  # phase 1: the old entries into .restore-old
   for e in "$V"/* "$V"/.[!.]* "$V"/..?*; do
     { [ -e "$e" ] || [ -L "$e" ]; } || continue
-    case "$e" in "$N" | "$O") continue ;; esac
+    case "$e" in "$N" | "$O" | "$K") continue ;; esac
     mv "$e" "$O"/ || { undo; bail "the old contents could not be set aside"; }
   done
-  moved=''
+  # the marker: every old entry is aside; from here a cut-off swap is finished forward (recover)
+  : > "$K" || { undo; bail "the swap marker could not be written"; }
+  # phase 2: the new entries into place
   for e in "$N"/* "$N"/.[!.]* "$N"/..?*; do
     { [ -e "$e" ] || [ -L "$e" ]; } || continue
-    n="${e##*/}"
-    case "$n" in .restore-new | .restore-old) continue ;; esac
-    if mv "$e" "$V"/; then moved="$moved
-$n"; else
-      for n in $moved; do rm -rf "$V/${n:?}"; done
-      undo; bail "the new contents could not be moved into place"
+    case "${e##*/}" in .restore-new | .restore-old | .restore-swapping) continue ;; esac
+    if ! mv "$e" "$V"/; then
+      # the volume's top now holds only new entries: all of them back into .restore-new, then the old ones back
+      for e in "$V"/* "$V"/.[!.]* "$V"/..?*; do
+        { [ -e "$e" ] || [ -L "$e" ]; } || continue
+        case "$e" in "$N" | "$O" | "$K") continue ;; esac
+        mv "$e" "$N"/ || stuck "a new entry could not be taken back"
+      done
+      rm -f "$K"; undo; bail "the new contents could not be moved into place"
     fi
   done
   own="$(stat -c '%u:%g' "$N" 2>/dev/null)"; mode="$(stat -c '%a' "$N" 2>/dev/null)"
   [ -z "$own" ] || chown "$own" "$V" 2>/dev/null || true
   [ -z "$mode" ] || chmod "$mode" "$V" 2>/dev/null || true
-  rm -rf "$N"
+  rm -rf "$N"; rm -f "$K"
   rm -rf "$O" || echo "!! the old contents could not be removed from $O; the next restore removes them" >&2
 }
 case "$M" in stage) stage ;; swap) swap ;; *) stage; swap ;; esac
@@ -383,12 +435,14 @@ localgit_stage_restore() {
   _LG_STAGED="$1"; on_exit _lg_drop_staged
 }
 
-# _lg_drop_staged — the exit hook above (nothing once the swap has run)
+# _lg_drop_staged — the exit hook above (nothing once the swap has run). It runs only between stage and swap: stage has
+# finished any cut-off swap and removed .restore-old, and no swap has started, so only .restore-new can be there. The marker
+# test is a guard all the same: while it says a swap was cut off, .restore-old may hold the only copy, and nothing is removed.
 _lg_drop_staged() {
   local dir="${_LG_STAGED:-}"
   [ -n "$dir" ] || return 0
   _LG_STAGED=''; off_exit _lg_drop_staged
-  _lg_volume_job '' "$dir" ro 'rm -rf /v/.restore-new /v/.restore-old' >/dev/null 2>&1 ||
+  _lg_volume_job '' "$dir" ro '[ -e /v/.restore-swapping ] || rm -rf /v/.restore-new /v/.restore-old' >/dev/null 2>&1 ||
     warn "the git server's volume still holds an unused copy of the repositories (.restore-new); the next ./stack restore removes it"
 }
 
@@ -406,10 +460,11 @@ localgit_restore_from() {
 # localgit_volume_kb -> the repositories' volume size in KB (nothing when the git server is off, has no volume, or the size
 # cannot be read). A throwaway container with the volume read-only, as the backup's own: nothing else is changed.
 localgit_volume_kb() {
-  local d="$STACK_DIR/backups" kb
+  local d="$STACK_DIR/.state/lg-size" kb
   localgit_on || return 0
   docker volume inspect "$(localgit_volume)" >/dev/null 2>&1 || return 0
-  [ -d "$d" ] || mkdir -p "$d" 2>/dev/null || return 0
+  # (an empty folder of its own: the job's z flag relabels what it mounts, and that must not be every backup)
+  mkdir -p "$d" 2>/dev/null && chmod 700 "$STACK_DIR/.state" "$d" 2>/dev/null || return 0
   kb="$(_lg_volume_job ro "$d" ro 'du -sk /v | cut -f1' 2>/dev/null | tail -n 1)" || return 0
   case "$kb" in '' | *[!0-9]*) return 0 ;; esac
   printf '%s\n' "$kb"

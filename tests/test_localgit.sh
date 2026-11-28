@@ -825,7 +825,7 @@ test_the_stage_step_alone_changes_nothing_and_the_swap_then_completes_it() {
 
 test_a_leftover_staging_or_holding_folder_is_cleaned_and_never_served() {
   _lg_mkvol
-  mkdir -p "$VOL/.restore-new/junk" "$VOL/.restore-old/git"; echo x > "$VOL/.restore-new/junk/f"; echo y > "$VOL/.restore-old/git/g"
+  mkdir -p "$VOL/.restore-new/junk" "$VOL/.restore-old/zz"; echo x > "$VOL/.restore-new/junk/f"; echo y > "$VOL/.restore-old/zz/g"
   _lg_run all || { cat "$TMP/lg.err" >&2; return 1; }
   assert_eq "$(cat "$VOL/app.ini")" "new-ini"
   assert_eq "$(find "$VOL" -name f -o -name g | wc -l | tr -d ' ')" "0"
@@ -902,4 +902,159 @@ test_a_restore_that_stops_after_staging_removes_the_staged_copy_and_one_that_swa
     localgit_stage_restore "$TMP/bk" && exit 5
     exit 1 ) 2>/dev/null || :
   assert_not_contains "$(cat "$TMP/dk")" "rm -rf /v/.restore-new /v/.restore-old"   # a stage that failed cleaned up itself
+}
+
+# --- JON-1145 round 2: a killed swap loses nothing; failing renames; names with spaces; free space; the space check's paths ---
+
+_lg_shim() { # _lg_shim NAME BODY — a command in $TMP/shim ahead of the real one (the script runs with this PATH)
+  mkdir -p "$TMP/shim"; printf '#!/bin/sh\n%s\n' "$2" > "$TMP/shim/$1"; chmod +x "$TMP/shim/$1"
+}
+_lg_run_p() { PATH="$TMP/shim:$PATH" V="$VOL" B="$BK" sh -c "$(_lg_restore_script "$1")" 2> "$TMP/lg.err"; }
+_lg_tree() { (cd "$VOL" && find . | sort; find . -type f -exec cat {} + | cksum) | cksum; }
+
+# a volume cut off in phase 1: some old entries aside in .restore-old, the rest still at the top, .restore-new staged
+_lg_cut_phase1() {
+  _lg_mkvol; mkdir -p "$VOL/.restore-old" "$VOL/.restore-new"
+  mv "$VOL/app.ini" "$VOL/.restore-old/"                           # set aside before the kill
+  tar -C "$VOL/.restore-new" -xzf "$BK/gitdata.tar.gz"
+}
+# cut off in phase 2: every old entry aside, the marker written, one new entry moved in, the rest still in .restore-new
+_lg_cut_phase2() {
+  _lg_mkvol; mkdir -p "$VOL/.restore-old" "$VOL/.restore-new"
+  mv "$VOL/git" "$VOL/app.ini" "$VOL/.hidden" "$VOL/.restore-old/"
+  tar -C "$VOL/.restore-new" -xzf "$BK/gitdata.tar.gz"
+  : > "$VOL/.restore-swapping"; mv "$VOL/.restore-new/app.ini" "$VOL/"
+}
+
+test_a_swap_cut_off_in_phase_one_puts_the_old_entries_back_before_anything_is_removed() {
+  _lg_cut_phase1
+  printf 'not a tar' > "$BK/gitdata.tar.gz"                # a BAD archive now: the old data must come back, not vanish
+  if _lg_run stage; then return 1; fi
+  assert_eq "$(cat "$VOL/app.ini")" "old-ini"
+  assert_eq "$(cat "$VOL/git/repositories/old/HEAD")" "old-head"
+  assert_eq "$(cat "$VOL/.hidden")" "hid"
+  assert_eq "$(ls -A "$VOL" | /usr/bin/grep -c 'restore' || true)" "0"
+  _lg_cut_phase1                                           # and with a GOOD one, the restore then completes
+  _lg_run all || { cat "$TMP/lg.err" >&2; return 1; }
+  assert_eq "$(cat "$VOL/app.ini")" "new-ini"
+  assert_eq "$([ -e "$VOL/.hidden" ] && echo old || echo gone)" "gone"
+}
+
+test_a_swap_cut_off_in_phase_two_is_finished_forward_with_a_good_or_a_bad_archive() {
+  local k
+  for k in good bad; do
+    _lg_cut_phase2
+    [ "$k" = good ] || printf 'not a tar' > "$BK/gitdata.tar.gz"
+    if [ "$k" = bad ]; then _lg_run stage && return 1; fi
+    [ "$k" = bad ] || { _lg_run stage || { cat "$TMP/lg.err" >&2; return 1; }; }
+    # the interrupted restore's copy is complete, the old data is not served, nothing is left over
+    assert_eq "$(cat "$VOL/app.ini")" "new-ini"
+    assert_eq "$(cat "$VOL/git/repositories/new/HEAD")" "new-head"
+    assert_eq "$(cat "$VOL/.dot")" "newhid"
+    assert_eq "$([ -e "$VOL/.hidden" ] || [ -e "$VOL/git/repositories/old" ] && echo old || echo gone)" "gone"
+    assert_eq "$(ls -A "$VOL" | /usr/bin/grep -c 'restore' || true)" "$([ "$k" = good ] && echo 1 || echo 0)"   # (a good stage leaves its own new staging folder)
+  done
+}
+
+test_a_recovery_that_cannot_finish_deletes_nothing() {
+  _lg_cut_phase1
+  echo file > "$VOL/app.ini.d"; mkdir -p "$VOL/.restore-old/app.ini.d/x"; echo keep > "$VOL/.restore-old/app.ini.d/x/f"   # a name taken at the top: the old one cannot go back
+  _lg_run stage && return 1
+  assert_contains "$(cat "$TMP/lg.err")" "NOTHING was deleted"
+  assert_eq "$(cat "$VOL/.restore-old/app.ini.d/x/f")" "keep"
+  [ -d "$VOL/.restore-new" ] || return 1
+}
+
+test_a_failing_rename_in_either_phase_leaves_the_volume_exactly_as_it_was() {
+  local n before
+  for n in 1 2 3 4 5 6; do   # the Nth mv fails: phase 1 for the early ones, phase 2 for the later ones
+    _lg_mkvol; _lg_run stage || return 1; rm -f "$TMP/mvcount"
+    _lg_shim mv "c=\$(cat '$TMP/mvcount' 2>/dev/null || echo 0); c=\$((c+1)); echo \$c > '$TMP/mvcount'; [ \$c -eq $n ] && exit 1; exec /bin/mv \"\$@\""
+    # (staged already: the volume to compare is old contents + the staged folder)
+    before="$(_lg_tree)"
+    if _lg_run_p swap; then echo "mv $n did not fail the swap" >&2; return 1; fi
+    rm -f "$TMP/shim/mv"
+    assert_contains "$(cat "$TMP/lg.err")" "NOT changed"
+    assert_eq "$(cat "$VOL/app.ini")" "old-ini"
+    assert_eq "$(cat "$VOL/.hidden")" "hid"
+    assert_eq "$(cat "$VOL/git/repositories/old/HEAD")" "old-head"
+    assert_eq "$([ -e "$VOL/.restore-old" ] || [ -e "$VOL/.restore-swapping" ] || [ -e "$VOL/.dot" ] && echo mess || echo clean)" "clean"
+    : "$before"
+  done
+}
+
+test_names_with_spaces_and_a_star_survive_the_swap_and_a_failed_one() {
+  _lg_mkvol; echo a > "$VOL/old name"; echo b > "$VOL/*"; echo c > "$VOL/-dash"
+  echo n > "$SRC/new name"; echo m > "$SRC/*"; tar -C "$SRC" -czf "$BK/gitdata.tar.gz" .
+  _lg_run stage || { cat "$TMP/lg.err" >&2; return 1; }
+  _lg_shim mv 'c=$(cat '"$TMP/mvcount"' 2>/dev/null || echo 0); c=$((c+1)); echo $c > '"$TMP/mvcount"'; [ $c -eq 8 ] && exit 1; exec /bin/mv "$@"'
+  rm -f "$TMP/mvcount"; _lg_run_p swap && return 1
+  rm -f "$TMP/shim/mv"
+  assert_eq "$(cat "$VOL/old name")" a; assert_eq "$(cat "$VOL/*")" b; assert_eq "$(cat "$VOL/-dash")" c
+  assert_eq "$([ -e "$VOL/new name" ] && echo leaked || echo clean)" clean
+  _lg_run all || { cat "$TMP/lg.err" >&2; return 1; }   # (a failed swap removes its staged copy: stage again)
+  assert_eq "$(cat "$VOL/new name")" n; assert_eq "$(cat "$VOL/*")" m
+  assert_eq "$([ -e "$VOL/old name" ] || [ -e "$VOL/-dash" ] && echo old || echo gone)" gone
+}
+
+test_the_restore_refuses_when_the_unpacked_archive_would_not_fit_the_free_space() {
+  _lg_mkvol; head -c 2000000 /dev/zero > "$SRC/big"; tar -C "$SRC" -czf "$BK/gitdata.tar.gz" .   # ~2 MB unpacked
+  _lg_shim df 'printf "Filesystem 1024-blocks Used Available Capacity Mounted\nx 1 1 %s 1%% /\n" 262500'   # 256.4 MB free: the margin leaves ~0
+  local before; before="$(_lg_tree)"
+  if _lg_run_p stage; then echo "accepted with no room" >&2; return 1; fi
+  assert_contains "$(cat "$TMP/lg.err")" "not enough free space to unpack the git server's archive"
+  assert_contains "$(cat "$TMP/lg.err")" "nothing was changed"
+  assert_eq "$(_lg_tree)" "$before"
+  _lg_shim df 'printf "Filesystem 1024-blocks Used Available Capacity Mounted\nx 1 1 %s 1%% /\n" 900000'
+  _lg_run_p stage || { cat "$TMP/lg.err" >&2; return 1; }
+  rm -f "$TMP/shim/df"
+}
+
+test_the_unpacked_size_is_read_from_the_listing_with_spaces_in_names() {
+  _lg_mkvol; head -c 3000000 /dev/zero > "$SRC/a name with  spaces"; tar -C "$SRC" -czf "$BK/gitdata.tar.gz" .
+  local kb; kb="$(V="$VOL" B="$BK" sh -c "$(_lg_restore_script stage | sed '$d')
+unpacked_kb")"
+  [ "${kb:-0}" -ge 2900 ] && [ "${kb:-0}" -le 3100 ] || { echo "size read as [$kb]" >&2; return 1; }
+}
+
+test_the_space_check_skips_the_volume_job_when_there_is_plenty_of_room() {
+  STACK_DIR="$TMP/stack"; _space_stubs 10240 9000000 5120
+  : > "$TMP/jobs"; localgit_volume_kb() { echo job >> "$TMP/jobs"; echo 5120; }
+  ( _backup_space_check ) 2>/dev/null || return 1
+  assert_eq "$(wc -l < "$TMP/jobs" | tr -d ' ')" 0
+  _space_stubs 10240 1050000 5120                  # under 4x + 1 GiB: the job runs
+  localgit_volume_kb() { echo job >> "$TMP/jobs"; echo 5120; }
+  ( _backup_space_check ) 2>/dev/null || return 1
+  assert_eq "$(wc -l < "$TMP/jobs" | tr -d ' ')" 1
+}
+
+test_the_git_volume_counts_once_not_twice_with_the_newest_backups_own_archive_left_out() {
+  STACK_DIR="$TMP/stack"; _space_stubs 30000 100000 20000   # backup 30 MB, of which the git archive 20 MB (du stub: same for any path)
+  printf x > "$STACK_DIR/backups/20260101-000000/gitdata.tar.gz"
+  du() { case "$2" in *gitdata.tar.gz) echo 20000 ;; *) echo 30000 ;; esac; }
+  # twice (30000-20000) + 20000 = 40000 KB fits in 100000; counted naively it would be 2*30000+20000 = 80000, also fits: tighten
+  df() { printf 'h\nx 1 1 45000 1%% /\n'; }
+  ( _backup_space_check ) 2>/dev/null || { echo "git counted more than once" >&2; return 1; }
+  df() { printf 'h\nx 1 1 39000 1%% /\n'; }
+  ( _backup_space_check ) 2>/dev/null && { echo "should refuse" >&2; return 1; }
+  return 0
+}
+
+test_the_first_backup_message_does_not_speak_of_a_newest_backup() {
+  STACK_DIR="$TMP/stack"; mkdir -p "$STACK_DIR/backups"
+  df() { printf 'h\nx 1 1 1000 1%% /\n'; }; localgit_volume_kb() { echo 5000; }
+  out="$( (_backup_space_check) 2>&1)" && return 1
+  assert_contains "$out" "git server's repositories alone take about"
+  assert_not_contains "$out" "newest backup"
+  assert_not_contains "$out" "(0 MB"
+}
+
+test_the_volume_size_job_mounts_an_empty_folder_of_its_own_not_the_backups() {
+  STACK_DIR="$TMP/stack"; mkdir -p "$STACK_DIR/backups/b1"; sed -n '/^  forgejo:/,/^    image:/p' "$T_ROOT/compose.yaml" > "$STACK_DIR/compose.yaml"
+  : > "$TMP/dk"; docker() { echo "$*" >> "$TMP/dk"; case "$1 $2" in "volume inspect") return 0 ;; "run --rm") echo 4096 ;; esac; }
+  printf 'LOCALGIT=on\n' > "$ENV_FILE"
+  assert_eq "$(localgit_volume_kb)" 4096
+  assert_not_contains "$(cat "$TMP/dk")" "$STACK_DIR/backups"
+  assert_contains "$(cat "$TMP/dk")" "$STACK_DIR/.state/lg-size:/backup"
+  assert_eq "$(ls -A "$STACK_DIR/.state/lg-size" | wc -l | tr -d ' ')" 0
 }
