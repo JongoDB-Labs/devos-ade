@@ -72,7 +72,17 @@ PROJECTS = "projects.json"                     # ./stack's list of project folde
 SESSIONS_ACTIONS = ("sessions-revoke",)
 # what the Code page's Import sheet asks of the computer through the portal (ses-<nonce>.json: lib/sessions.sh), and its
 # Bring your setup sheet (setup-*: lib/sessions_config.sh)
-SESSIONS_REQUESTS = ("sessions-scan", "sessions-fetch", "sessions-suggest", "sessions-copy", "setup-scan", "setup-fetch", "setup-copy")
+SESSIONS_REQUESTS = ("sessions-scan", "sessions-fetch", "sessions-suggest", "sessions-copy", "setup-scan", "setup-fetch", "setup-copy") + (
+    "git-mirror-add", "git-mirror-sync", "git-mirror-change", "git-mirror-remove")
+# the Git hosts dialog's mirrors of the built-in git server (lib/localgit.sh, through the helper): a connected host by its id and a
+# repository path there — never an address or a token (the Code page's container holds the token)
+MIRROR_REQUESTS = ("git-mirror-add", "git-mirror-sync", "git-mirror-change", "git-mirror-remove")
+MIRROR_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}")
+MIRROR_PATH = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}(?:/[A-Za-z0-9][A-Za-z0-9._-]{0,99}){0,4}")
+MIRROR_HOST = re.compile(r"h_[0-9a-f]{12}")
+MIRROR_INTERVAL = re.compile(r"[1-9][0-9]{0,2}[mh]|0")
+MIRROR_FIELDS = {"git-mirror-add": ("direction", "repo", "host", "path", "interval", "sync"), "git-mirror-sync": ("direction", "repo"),
+                 "git-mirror-change": ("repo", "name", "interval", "sync"), "git-mirror-remove": ("repo", "name")}
 SETUP_TOOLS = ("claude", "claude-bedrock", "git")
 SETUP_KEY = re.compile(r"s_[0-9a-f]{16}")
 SETUP_KEEP = re.compile(r"(v|f[0-9]{1,3})#[0-9a-f]{16}")
@@ -1062,7 +1072,8 @@ def write_subs_action(request_dir: Path, password: str, action: str, tool: str |
 def write_sessions_request(request_dir: Path, action: str, password: str, remote: bool, *, project: str | None = None,
                            tool: str = "both", scan: str | None = None, rows: list | None = None, session: str | None = None,
                            digest: str | None = None, thinking: str = "default", outputs: str = "out", keep: list | None = None,
-                           units: list | None = None, mode: str = "replace", conflict: str = "leave", now: float | None = None) -> str:
+                           units: list | None = None, mode: str = "replace", conflict: str = "leave", mirror: dict | None = None,
+                           now: float | None = None) -> str:
     """REQUEST_DIR/ses-<nonce>.json: what the Code page's Import sheet asks of the computer, for the helper — one line,
     its fields in a fixed order, every one checked here and again by the helper (lib/sessions.sh), never a path:
       sessions-scan     {…,"origin","project","tool"}               a look (asks on the computer's screen)
@@ -1078,6 +1089,11 @@ def write_sessions_request(request_dir: Path, action: str, password: str, remote
                                                                    grants, asked from another device)
                                                                     a copy of one unit (its items' keys joined by +) that
                                                                     keeps what keep names
+      git-mirror-add    {…,"origin","direction","repo","host","path","interval","sync"}   a mirror of a repository of the built-in
+                                                                    server (a connected host's id and a path there)
+      git-mirror-sync   {…,"origin","direction","repo"}              a sync now
+      git-mirror-change {…,"origin","repo","name","interval","sync"} a push mirror's interval and on-every-push setting
+      git-mirror-remove {…,"origin","repo","name"}                   a push mirror removed
     origin: remote when the portal says the request came over remote access. -> nonce"""
     if action not in SESSIONS_REQUESTS:
         raise ValueError("action not allowed")
@@ -1120,11 +1136,45 @@ def write_sessions_request(request_dir: Path, action: str, password: str, remote
             raise ValueError("bad request")
         # (no keep at all: a copy from another device of what lets Claude act without asking — it needs the password too)
         body.update({"units": "+".join(units), "digest": digest, "mode": mode, "conflict": conflict, "keep": ",".join(keep)})
+    elif action in MIRROR_REQUESTS:
+        body.update(_mirror_fields(action, mirror))
     raw = json.dumps(body, separators=(",", ":")).encode("ascii")
     if len(raw) > SESSIONS_REQ_MAX:
         raise ValueError("too large")
     _write_atomic(request_dir, "ses", f"ses-{nonce}.json", raw + b"\n")
     return nonce
+
+
+def _mirror_fields(action: str, m: dict | None) -> dict:
+    """The fixed fields of a mirror request (every one checked; a field not named for the action is refused; none is a URL or a token)."""
+    if not isinstance(m, dict) or set(m) - set(MIRROR_FIELDS[action]):
+        raise ValueError("bad request")
+    def one(key: str, rx: re.Pattern, default: str | None = None) -> str:
+        v = m.get(key, default)
+        if not isinstance(v, str) or not rx.fullmatch(v):
+            raise ValueError("bad request")
+        return v
+    direction = re.compile(r"push|pull")
+    if action == "git-mirror-add":
+        d = one("direction", direction)
+        iv = m.get("interval", "")
+        if iv != "" and not (isinstance(iv, str) and MIRROR_INTERVAL.fullmatch(iv)):
+            raise ValueError("bad request")
+        sync = one("sync", re.compile(r"yes|no"), "yes")
+        if d == "pull" and sync != "yes":
+            raise ValueError("bad request")   # (on every push here: a push mirror's)
+        return {"direction": d, "repo": one("repo", MIRROR_NAME), "host": one("host", MIRROR_HOST), "path": one("path", MIRROR_PATH), "interval": iv, "sync": sync}
+    if action == "git-mirror-sync":
+        return {"direction": one("direction", direction, "push"), "repo": one("repo", MIRROR_NAME)}
+    if action == "git-mirror-change":
+        iv = m.get("interval", "")
+        if iv != "" and not (isinstance(iv, str) and MIRROR_INTERVAL.fullmatch(iv)):
+            raise ValueError("bad request")
+        sync = one("sync", re.compile(r"yes|no|keep"), "keep")
+        if iv == "" and sync == "keep":
+            raise ValueError("bad request")   # (nothing to change)
+        return {"repo": one("repo", MIRROR_NAME), "name": one("name", MIRROR_NAME), "interval": iv, "sync": sync}
+    return {"repo": one("repo", MIRROR_NAME), "name": one("name", MIRROR_NAME)}
 
 
 def write_action(request_dir: Path, action: str, password: str, now: float | None = None) -> str:

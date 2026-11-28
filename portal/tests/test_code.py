@@ -1289,3 +1289,94 @@ def test_jon849_a_hosted_model_servers_models_are_remote_never_free_and_a_missin
     assert by["ms/nas/qwen"]["free"] is True
     assert by["ms/groq/llama"]["free"] is False and by["ms/groq/llama"]["prices"]["in"] == 0.59 and by["ms/groq/llama"]["prices"]["out"] == 0.79
     assert by["ms/groq/mystery"]["free"] is False and by["ms/groq/mystery"]["prices"]["in"] is None and by["ms/groq/mystery"]["prices"]["out"] is None
+
+
+# --- JON-970: the Git hosts dialog's mirrors — the same door; a connected host by its id and a path, never an address or a token;
+# --- add, change and remove only on the computer itself, a sync from anywhere ---
+
+MIRROR_ACTS = ("git-mirror-add", "git-mirror-sync", "git-mirror-change", "git-mirror-remove")
+
+
+def test_mirror_requests_each_field_checked_never_an_address_or_a_token(cs, tmp_path):
+    import time
+    s = _sessions_dirs(cs, tmp_path, actions=MIRROR_ACTS)
+    with _client(s) as c:
+        tok, ut = unlocked(c)
+        H = "h_0123456789ab"
+        good = [
+            ({"action": "git-mirror-add", "direction": "push", "repo": "app", "host": H, "path": "me/app", "interval": "2h", "sync": "no"},
+             f'"direction":"push","repo":"app","host":"{H}","path":"me/app","interval":"2h","sync":"no"}}'),
+            ({"action": "git-mirror-add", "direction": "pull", "repo": "up", "host": H, "path": "g/sub/up"},
+             f'"direction":"pull","repo":"up","host":"{H}","path":"g/sub/up","interval":"","sync":"yes"}}'),
+            ({"action": "git-mirror-sync", "direction": "pull", "repo": "up"}, '"direction":"pull","repo":"up"}'),
+            ({"action": "git-mirror-sync", "repo": "app"}, '"direction":"push","repo":"app"}'),
+            ({"action": "git-mirror-change", "repo": "app", "name": "remote_mirror_ab12", "interval": "30m"},
+             '"repo":"app","name":"remote_mirror_ab12","interval":"30m","sync":"keep"}'),
+            ({"action": "git-mirror-change", "repo": "app", "name": "m1", "sync": "yes"}, '"repo":"app","name":"m1","interval":"","sync":"yes"}'),
+            ({"action": "git-mirror-remove", "repo": "app", "name": "m1"}, '"repo":"app","name":"m1"}'),
+        ]
+        for body, tail in good:
+            time.sleep(2.1)   # (one request every 2 s)
+            r = _ses(c, {**body, "password": PW}, tok, ut)
+            assert r.status_code == 202, (body, r.text)
+            line = (s.request_dir / f"ses-{r.json()['request']}.json").read_text()
+            assert line.endswith(tail + "\n"), line
+        bad = [
+            {"action": "git-mirror-add", "direction": "push", "repo": "app", "host": H, "path": "https://github.com/me/app"},
+            {"action": "git-mirror-add", "direction": "push", "repo": "app", "host": "github.com", "path": "me/app"},
+            {"action": "git-mirror-add", "direction": "push", "repo": "app", "host": H, "path": "me/app", "remote": "https://github.com/me/app"},
+            {"action": "git-mirror-add", "direction": "push", "repo": "app", "host": H, "path": "../x"},
+            {"action": "git-mirror-add", "direction": "push", "repo": "app", "host": H, "path": "a/b/c/d/e/f"},
+            {"action": "git-mirror-add", "direction": "push", "repo": "app", "host": H, "path": "me/app", "token": "x" * 20},
+            {"action": "git-mirror-add", "direction": "sideways", "repo": "app", "host": H, "path": "me/app"},
+            {"action": "git-mirror-add", "direction": "push", "repo": "a b", "host": H, "path": "me/app"},
+            {"action": "git-mirror-add", "direction": "push", "repo": "app", "host": H, "path": "me/app", "interval": "5x"},
+            {"action": "git-mirror-add", "direction": "push", "repo": "app", "host": H, "path": "me/app", "interval": "1000h"},
+            {"action": "git-mirror-add", "direction": "push", "repo": "app", "host": H, "path": "me/app", "sync": "maybe"},
+            {"action": "git-mirror-add", "direction": "pull", "repo": "app", "host": H, "path": "me/app", "sync": "no"},
+            {"action": "git-mirror-change", "repo": "app", "name": "../x"}, {"action": "git-mirror-change", "repo": "app", "name": "m1", "sync": "no", "path": "x"},
+            {"action": "git-mirror-change", "repo": "app", "name": "m1"},
+            {"action": "git-mirror-remove", "repo": "app"}, {"action": "git-mirror-remove", "repo": "app", "name": "m1 m2"},
+            {"action": "git-mirror-sync", "direction": "push", "repo": "a;b"}, {"action": "git-mirror-sync"},
+        ]
+        before = _ses_files(s)
+        for body in bad:
+            r = _ses(c, {**body, "password": PW}, tok, ut)
+            assert r.status_code in (400, 429), (body, r.status_code)
+        assert _ses_files(s) == before
+
+
+def test_mirror_requests_over_remote_access_only_a_sync(cs, tmp_path, settings):
+    import time
+    rs = replace(settings, terminal=True, code=True, remote_mode="tailscale", remote_host=R_PORTAL, proxy_secret=PROXY,
+                 remote_app_hosts={"terminal": f"bn-terminal.{TN}", "code": R_CODE_HOST}, remote_terminal=True)
+    rs = _sessions_dirs(rs, tmp_path, actions=MIRROR_ACTS)
+    with _client(rs) as c:
+        r = c.post("/login", data={"password": PW, "next": "/"}, headers={"Origin": f"https://{R_PORTAL}", "Host": R_PORTAL, **REMOTE})
+        tok = _cookie(r, "__Host-bn_session").split(";", 1)[0].split("=", 1)[1]
+        c.cookies.clear()
+        r = c.post("/auth/code-unlock", data={"password": PW}, headers={"Host": R_CODE_HOST, "Origin": f"https://{R_CODE_HOST}",
+                                                                      "Cookie": f"__Host-bn_session={tok}", **REMOTE})
+        c.cookies.clear()
+        ut = _cookie(r, REMOTE_CODE_COOKIE).split(";", 1)[0].split("=", 1)[1]
+        kw = {"host": R_CODE_HOST, "origin": f"https://{R_CODE_HOST}", "extra": {**REMOTE, "Cookie": f"__Host-bn_session={tok}; {REMOTE_CODE_COOKIE}={ut}"}}
+        H = "h_0123456789ab"
+        for body in ({"action": "git-mirror-add", "direction": "push", "repo": "app", "host": H, "path": "me/app"},
+                     {"action": "git-mirror-change", "repo": "app", "name": "m1", "interval": "2h"}, {"action": "git-mirror-remove", "repo": "app", "name": "m1"}):
+            time.sleep(2.1)
+            r = _ses(c, {**body, "password": PW}, tok, ut, **kw)
+            assert r.status_code == 403 and "Only on the computer" in r.json()["error"], (body, r.text)
+        assert _ses_files(rs) == []
+        time.sleep(2.1)
+        r = _ses(c, {"action": "git-mirror-sync", "repo": "app", "password": PW}, tok, ut, **kw)
+        assert r.status_code == 202, r.text
+        assert '"origin":"remote"' in (rs.request_dir / f"ses-{r.json()['request']}.json").read_text()
+
+
+def test_a_helper_that_does_not_know_mirrors_yet_is_said(cs, tmp_path):
+    s = _sessions_dirs(cs, tmp_path, actions=("sessions-scan",))
+    with _client(s) as c:
+        tok, ut = unlocked(c)
+        r = _ses(c, {"action": "git-mirror-sync", "repo": "app", "password": PW}, tok, ut)
+        assert r.status_code == 409 and "helper" in r.json()["error"].lower(), r.text
+        assert _ses_files(s) == []
