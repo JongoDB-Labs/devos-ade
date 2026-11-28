@@ -5001,7 +5001,9 @@ def ui_short_title(ctx):
     page.get_by_test_id("side-sessions").click()
     mine = page.locator(f"[data-testid=session-row][data-session='{own}']")
     see(mine).to_contain_text(title, timeout=30000)
-    expect("nightly export" not in mine.locator(".sess-title").inner_text(), "the list still shows the first prompt")
+    # (the first prompt's own start, not its words: a good short title may well say "nightly export" — matrix 0.77.1a)
+    shown = mine.locator(".sess-title").inner_text()
+    expect(not shown.startswith(SHORT_TITLE_PROMPT[:24]), f"the list still shows the first prompt: {shown[:80]!r}")
     page.mouse.move(0, 0)
     shot(page, "117-code-ui-short-title")
     # search by the conversation: a word only Claude's answer holds finds it (any case), words nowhere find nothing
