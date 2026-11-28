@@ -229,7 +229,7 @@ test('pull request links the page opens: https pages, or the built-in git server
 });
 
 test('the built-in git server\'s mirrors: only what the page may show — checked names, times and cut texts, push and pull kept apart', () => {
-  const ok = { direction: 'push', repo: 'devos/app', remote: 'https://github.com/o/app.git', interval: '8h0m0s', syncOnCommit: true, lastSync: '2026-10-28T03:00:00Z', lastError: null };
+  const ok = { direction: 'push', name: null, repo: 'devos/app', remote: 'https://github.com/o/app.git', interval: '8h0m0s', syncOnCommit: true, lastSync: '2026-10-28T03:00:00Z', lastError: null };
   assert.deepEqual(normGitMirror(ok), ok);
   assert.equal(normGitMirror({ ...ok, direction: 'pull', lastError: 'x\u0007y'.repeat(300) })!.lastError!.length < 1200, true);
   assert.equal(/[\u0000-\u001f]/.test(normGitMirror({ ...ok, lastError: 'a\nb\u0007c' })!.lastError!), false);

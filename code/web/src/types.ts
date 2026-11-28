@@ -351,6 +351,8 @@ export interface ImportRequest {
   id: string; action: string; state: 'unknown' | 'sent' | 'asking' | 'reading' | 'copying' | 'done' | 'refused' | 'cancelled' | 'failed'; why: string | null; at: number;
   /** a copy's (one that kept findings, done by the helper) */
   results: ImportResult[] | null;
+  /** a mirror request's failure: the git server's own words, cut (credentials are taken out where they are made) */
+  note: string | null;
 }
 export interface ImportView {
   project: string;
@@ -839,6 +841,8 @@ export type GitAuth = 'token' | 'ssh' | 'oauth';
 /** One mirror of the built-in git server (GET /api/git/mirrors): a push mirror (the remote is a copy; its refs are force-updated) or a pull mirror (a read-only local copy). */
 export interface GitMirrorView {
   direction: 'push' | 'pull';
+  /** a push mirror's name on the git server (what Change and Remove name); a pull mirror is a repository: none */
+  name: string | null;
   repo: string;
   remote: string;
   interval: string;

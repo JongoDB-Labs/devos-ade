@@ -1541,10 +1541,11 @@ export async function getGitHosts(): Promise<GitHostsView> {
 // text checked and cut — the git server's words are data
 const MIRROR_REPO = /^[A-Za-z0-9][A-Za-z0-9._-]{0,38}\/[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
 const ISO = /^\d{4}-\d\d-\d\dT[\d:.]+(Z|[+-]\d\d:\d\d)$/;
+const MIRROR_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
 export function normGitMirror(v: unknown): GitMirrorView | null {
   const o = obj(v);
   if (!o || (o.direction !== 'push' && o.direction !== 'pull') || typeof o.repo !== 'string' || !MIRROR_REPO.test(o.repo)) return null;
-  return { direction: o.direction, repo: o.repo, remote: label(typeof o.remote === 'string' ? o.remote : '', 300), interval: label(typeof o.interval === 'string' ? o.interval : '', 20),
+  return { direction: o.direction, name: typeof o.name === 'string' && MIRROR_NAME.test(o.name) ? o.name : null, repo: o.repo, remote: label(typeof o.remote === 'string' ? o.remote : '', 300), interval: label(typeof o.interval === 'string' ? o.interval : '', 20),
     syncOnCommit: o.syncOnCommit === true, lastSync: typeof o.lastSync === 'string' && ISO.test(o.lastSync) ? o.lastSync : null,
     lastError: typeof o.lastError === 'string' && o.lastError ? label(o.lastError, 300) : null };
 }
@@ -2501,7 +2502,7 @@ function importRequest(v: unknown): ImportRequest | null {
   const o = obj(v);
   if (!o || typeof o.id !== 'string' || !/^[0-9a-f]{32}$/.test(o.id) || !REQUEST_STATES.includes(o.state as ImportRequest['state'])) return null;
   return { id: o.id, action: label(o.action, 40), state: o.state as ImportRequest['state'], why: typeof o.why === 'string' && /^[a-z-]{1,20}$/.test(o.why) ? o.why : null, at: time(o.at),
-    results: Array.isArray(o.results) ? importResults(o.results) : null };
+    results: Array.isArray(o.results) ? importResults(o.results) : null, note: typeof o.note === 'string' && o.note ? label(o.note, 300) : null };
 }
 const COUNT_KEYS = ['folders', 'listed', 'older', 'otherFolder', 'noCwd', 'unreadable', 'sidechain'] as const;
 /** The Import sheet's state for a project: its last list (at most 4,000 rows), the sessions waiting, the helper. */
@@ -2551,6 +2552,41 @@ export type ImportRequestState = ImportRequest;
 export async function importRequestState(id: string): Promise<ImportRequest | null> {
   if (!/^[0-9a-f]{32}$/.test(id)) return null;
   return importRequest(await request('GET', `/api/imports/request/${id}`));
+}
+// --- the Git hosts dialog's mirrors of the built-in git server (JON-970): asked of the portal with the web app password, which
+// writes the update helper's request. A connected host is named by its id and a repository path there — never an address or a
+// token (the Code page's container holds the token). The repository is the name on the built-in server ('devos/app' -> 'app').
+const MIRROR_PATH = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}(\/[A-Za-z0-9][A-Za-z0-9._-]{0,99}){0,4}$/;
+const MIRROR_INTERVAL = /^([1-9][0-9]{0,2}[mh]|0)?$/;
+function mirrorRepo(repo: string): string {
+  const name = repo.includes('/') ? repo.split('/')[1] : '';
+  if (!MIRROR_NAME.test(name) || repo.split('/').length !== 2) throw new ApiError(400, 'bad request');
+  return name;
+}
+const mirrorBadName = (n: string) => { if (!MIRROR_NAME.test(n)) throw new ApiError(400, 'bad request'); };
+/** Make a mirror of REPO (a name on the built-in server) of a connected host's repository. -> the request */
+export async function mirrorAdd(b: { direction: 'push' | 'pull'; repo: string; host: string; path: string; interval: string; syncOnCommit: boolean }, password: string): Promise<string> {
+  if ((b.direction !== 'push' && b.direction !== 'pull') || !MIRROR_NAME.test(b.repo) || !HOST_ID.test(b.host) || !MIRROR_PATH.test(b.path) || !MIRROR_INTERVAL.test(b.interval)) throw new ApiError(400, 'bad request');
+  return askComputer({ action: 'git-mirror-add', direction: b.direction, repo: b.repo, host: b.host, path: b.path, ...(b.interval ? { interval: b.interval } : {}),
+    ...(b.direction === 'push' ? { sync: b.syncOnCommit ? 'yes' : 'no' } : {}), password });
+}
+/** Sync a mirror now (repo as the list names it: devos/app). -> the request */
+export async function mirrorSync(repo: string, direction: 'push' | 'pull', password: string): Promise<string> {
+  return askComputer({ action: 'git-mirror-sync', direction, repo: mirrorRepo(repo), password });
+}
+/** A push mirror's interval and on-every-push setting (the git server has no edit call: the helper makes a new one and removes the old). -> the request */
+export async function mirrorChange(repo: string, name: string, c: { interval?: string; syncOnCommit?: boolean }, password: string): Promise<string> {
+  const r = mirrorRepo(repo);
+  mirrorBadName(name);
+  if (c.interval !== undefined && !MIRROR_INTERVAL.test(c.interval)) throw new ApiError(400, 'bad request');
+  if (!c.interval && c.syncOnCommit === undefined) throw new ApiError(400, 'nothing to change');
+  return askComputer({ action: 'git-mirror-change', repo: r, name, ...(c.interval ? { interval: c.interval } : {}), ...(c.syncOnCommit === undefined ? {} : { sync: c.syncOnCommit ? 'yes' : 'no' }), password });
+}
+/** Remove a push mirror (the remote repository is untouched). -> the request */
+export async function mirrorRemove(repo: string, name: string, password: string): Promise<string> {
+  const r = mirrorRepo(repo);
+  mirrorBadName(name);
+  return askComputer({ action: 'git-mirror-remove', repo: r, name, password });
 }
 // a finding's id is what keeps it: the file it is in and a hash (never a position) — main#<16 hex>, subagents/x#…
 const KEEP_TOKEN = /^(main|(subagents|tool-results)\/[A-Za-z0-9][A-Za-z0-9._-]{0,199})#[0-9a-f]{16}$/;
