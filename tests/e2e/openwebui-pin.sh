@@ -88,7 +88,8 @@ pinned="$(sed -n 's|^        image: ghcr.io/open-webui/open-webui:[^@ ]*@\(sha25
 have "the image's base-image label names the pinned digest" "$(docker image inspect -f '{{index .Config.Labels "dev.devos-ade.base-image"}}' "$(docker inspect -f '{{.Image}}' "$cid")")" "$pinned"
 # the version Open WebUI itself reports (/api/config): the package's own metadata is not installed in the image
 ver="$(docker exec "$cid" python3 -c 'import json,urllib.request; print(json.load(urllib.request.urlopen("http://localhost:8080/api/config", timeout=30))["version"])' 2>/dev/null || true)"
-have "Open WebUI reports the pinned version" "$ver" "0.12.4"
+want="$(sed -n 's|^        image: ghcr.io/open-webui/open-webui:v\([0-9][0-9.]*\)-slim@sha256:[0-9a-f]*$|\1|p' "$STACK/compose.yaml")"
+have "Open WebUI reports the pinned version" "$ver" "${want:-(no Open WebUI pin found in compose.yaml)}"
 
 # the API, from inside the container (Caddy is not part of this project)
 cat > "$STACK/.state/owui_call.py" <<'PY'

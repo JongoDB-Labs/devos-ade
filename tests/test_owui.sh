@@ -908,9 +908,11 @@ assert b["meta"]["description"].startswith("AWS Bedrock"), b' || return 1
 
 # The one-run sync builds its update bodies from GET /api/v1/models/base. That it returns the whole model (params, meta,
 # access grants) and that /models/model/update replaces params and meta from the form but leaves grants alone was read in
-# Open WebUI's v0.12.4 source.
+# Open WebUI's v0.12.4 source, and again in v0.13.5's (routers/models.py, models/models.py _write_model): /base returns
+# ModelModel (now with version_id); an update replaces name, params and meta, writes grants only for a new model, keeps
+# is_active and params.model_controls when the form leaves them out, and adds a history row only when the model changed.
 test_open_webui_pin_is_the_one_whose_models_base_was_checked() {
-  grep -q 'ghcr.io/open-webui/open-webui:v0.12.4-slim@' "$STACK_DIR/compose.yaml" || {
+  grep -q 'ghcr.io/open-webui/open-webui:v0.13.5-slim@' "$STACK_DIR/compose.yaml" || {
     echo "Open WebUI was bumped: before changing this pin, re-check that GET /api/v1/models/base still returns the full model" >&2
     echo "(params, meta, access_grants, is_active) and that /api/v1/models/model/update still replaces only params and meta;" >&2
     echo "sync_openwebui_models (lib/owui.sh) posts updates built from that list. Then update this test." >&2
