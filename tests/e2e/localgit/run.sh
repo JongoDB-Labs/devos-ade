@@ -141,10 +141,10 @@ check "a client's own copy of the secret name is replaced at Caddy's web site" "
 # the name itself is what signs in: shown to a peer that knows it (this run's Caddy path is the only holder), a control that it works
 known="$(docker run --rm --network "${P}_localgit" "$P-client" sh -c "curl -s -m 10 -o /tmp/b -w '%{http_code} ' -H '$ssoh: devos' -H 'Accept: text/html' http://forgejo:3000/devos/e2e-one; grep -c 'user/logout\\|Sign Out' /tmp/b || true" 2>/dev/null | tr '\n' ' ')"
 case "$known" in "200 "[1-9]*) pass "(control) a peer that knows the secret name is signed in: the name is the whole control ($known)" ;; *) fail "(control) the secret name signs in ($known)" ;; esac
-check "no container but Caddy's and Forgejo's has the name in its environment" "$(docker ps -q --filter "label=com.docker.compose.project=$P" | while read -r c; do docker inspect -f '{{.Name}} {{range .Config.Env}}{{println .}}{{end}}' "$c" | grep -l "$ssoh" >/dev/null 2>&1 && docker inspect -f '{{.Name}}' "$c"; done | sort | tr '\n' ' ')" "/e2e-localgit-caddy-1 /e2e-localgit-forgejo-1 "
+check "no container but Caddy's and Forgejo's has the name in its environment" "$(docker ps -q --filter "label=com.docker.compose.project=$P" | while read -r c; do docker inspect -f '{{.Name}} {{range .Config.Env}}{{println .}}{{end}}' "$c" | grep -l "$ssoh" >/dev/null 2>&1 && docker inspect -f '{{.Name}}' "$c"; done | sort | tr '\n' ' ')" "/$P-caddy-1 /$P-forgejo-1 "
 login="$(curl -s -m 10 -D "$S/login.hdr" -H "Host: $host" "http://127.0.0.1:$PORT/devos/e2e-one")"
 printf '%s' "$login" | grep -q 'Forgejo' && pass "its pages are Forgejo's" || fail "its pages are Forgejo's"
-grep -qi '^content-security-policy: frame-ancestors http://'"$P"'.localhost:'"$PORT"'\r\?$' "$S/login.hdr" && pass "framed by the portal only (CSP frame-ancestors)" || fail "framed by the portal only ($(grep -i 'content-security-policy' "$S/login.hdr" | head -n 1))"
+tr -d '\r' < "$S/login.hdr" | grep -qi '^content-security-policy: frame-ancestors http://'"$P"'.localhost:'"$PORT"'$' && pass "framed by the portal only (CSP frame-ancestors)" || fail "framed by the portal only ($(grep -i 'content-security-policy' "$S/login.hdr" | head -n 1))"
 grep -qi '^x-frame-options' "$S/login.hdr" && fail "no X-Frame-Options left" || pass "no X-Frame-Options left"
 other="$(curl -s -m 10 -H "Host: 127.0.0.1:$PORT" "http://127.0.0.1:$PORT/user/login")"
 printf '%s' "$other" | grep -q 'Forgejo' && fail "another Host name never reaches Forgejo" || pass "another Host name never reaches Forgejo (the unknown-host route)"
